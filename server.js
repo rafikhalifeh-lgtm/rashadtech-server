@@ -1,3 +1,8 @@
+bash
+
+cat /home/claude/rashadtech-server/server.js
+Output
+
 const express = require('express');
 const cors = require('cors');
 const Imap = require('imap');
@@ -16,6 +21,58 @@ try {
   }
 } catch(e) {
   console.log('No email accounts configured yet');
+}
+
+// Detect email provider and return IMAP settings
+function getImapConfig(email, password) {
+  const domain = email.split('@')[1]?.toLowerCase() || '';
+  
+  if (domain.includes('gmail.com')) {
+    return {
+      user: email,
+      password: password,
+      host: 'imap.gmail.com',
+      port: 993,
+      tls: true,
+      tlsOptions: { rejectUnauthorized: false },
+      connTimeout: 15000,
+      authTimeout: 10000
+    };
+  } else if (domain.includes('outlook.com') || domain.includes('hotmail.com') || domain.includes('live.com')) {
+    return {
+      user: email,
+      password: password,
+      host: 'imap-mail.outlook.com',
+      port: 993,
+      tls: true,
+      tlsOptions: { rejectUnauthorized: false },
+      connTimeout: 15000,
+      authTimeout: 10000
+    };
+  } else if (domain.includes('yahoo.com')) {
+    return {
+      user: email,
+      password: password,
+      host: 'imap.mail.yahoo.com',
+      port: 993,
+      tls: true,
+      tlsOptions: { rejectUnauthorized: false },
+      connTimeout: 15000,
+      authTimeout: 10000
+    };
+  } else {
+    // Generic fallback
+    return {
+      user: email,
+      password: password,
+      host: 'imap.' + domain,
+      port: 993,
+      tls: true,
+      tlsOptions: { rejectUnauthorized: false },
+      connTimeout: 15000,
+      authTimeout: 10000
+    };
+  }
 }
 
 app.get('/', (req, res) => {
@@ -42,56 +99,69 @@ app.post('/get-code', async (req, res) => {
       res.json({ success: false, message: 'No code found yet' });
     }
   } catch (e) {
+    console.error('Error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
 
 function fetchEmailCode(email, password, codeType) {
   return new Promise((resolve, reject) => {
-    const imap = new Imap({
-      user: email,
-      password: password,
-      host: 'imap-mail.outlook.com',
-      port: 993,
-      tls: true,
-      tlsOptions: { rejectUnauthorized: false },
-      connTimeout: 15000,
-      authTimeout: 10000
-    });
+    const config = getImapConfig(email, password);
+    const imap = new Imap(config);
 
     imap.once('ready', () => {
       imap.openBox('INBOX', false, (err, box) => {
         if (err) { imap.end(); return reject(err); }
+
         const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
-        imap.search(['ALL', ['FROM', 'netflix.com'], ['SINCE', tenMinutesAgo]], (err, results) => {
+        
+        // Search by sender based on service type
+        const senderMap = {
+          netflix: 'netflix.com',
+          shahid: 'shahid.net',
+          osn: 'osn.com',
+          disney: 'disneyplus.com',
+          spotify: 'spotify.com'
+        };
+        const sender = senderMap[codeType] || codeType;
+        
+        imap.search(['ALL', ['FROM', sender], ['SINCE', tenMinutesAgo]], (err, results) => {
           if (err || !results || results.length === 0) {
             imap.end();
             return resolve(null);
           }
+
           const latest = results[results.length - 1];
           const fetch = imap.fetch(latest, { bodies: '' });
+          
           fetch.on('message', (msg) => {
             msg.on('body', (stream) => {
               simpleParser(stream, (err, parsed) => {
                 if (err) { imap.end(); return resolve(null); }
+                
                 const text = (parsed.text || '') + (parsed.html || '');
                 let code = null;
+                
                 const patterns = [
                   /(\d{6})\s*is your Netflix sign.in code/i,
                   /sign.in code[:\s]+(\d{6})/i,
                   /your code is[:\s]+(\d{6})/i,
                   /verification code[:\s]+(\d{6})/i,
-                  /\b(\d{6})\b/,
+                  /one.time code[:\s]+(\d{6})/i,
+                  /\b([0-9]{6})\b/,
                 ];
+                
                 for (const pattern of patterns) {
                   const match = text.match(pattern);
                   if (match) { code = match[1]; break; }
                 }
+
                 imap.end();
                 resolve(code);
               });
             });
           });
+
           fetch.once('error', () => { imap.end(); resolve(null); });
         });
       });
