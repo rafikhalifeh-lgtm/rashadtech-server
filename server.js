@@ -7,72 +7,98 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 const API_SECRET = process.env.API_SECRET || 'rashadtech2026secret';
+const TG_TOKEN = process.env.TG_TOKEN || '8761505457:AAEsL3r6rN29VTBd-cDuufrYHt1TFbW3uFs';
+const TG_ADMIN = process.env.TG_ADMIN || '1703712641';
+
 let latestCodes = {};
-let emailAccounts = {};
 
-try { if (process.env.EMAIL_ACCOUNTS) emailAccounts = JSON.parse(process.env.EMAIL_ACCOUNTS); } catch(e) {}
+app.get('/', (req, res) => {
+  res.json({ status: 'rashadtech server running', hasCode: !!latestCodes['default'] });
+});
 
-function extractNetflixCode(text) {
-  if (!text) return null;
-  const patterns = [
-    /Enter this code to sign in[\s\r\n]+(\d{4,8})[\s\r\n]+Enter the code above/i,
-    /(\d{4,8})[\s\r\n]+Enter the code above/i,
-    /Enter this code to sign in[\s\r\n]+(\d{4,8})/i,
-    /sign.in code[:\s]+(\d{4,8})/i,
-    /your code[:\s]+(\d{4,8})/i,
-    /\b(\d{4,8})\b/,
-  ];
-  for (const p of patterns) { const m = text.match(p); if (m) return m[1]; }
-  return null;
-}
-
-app.get('/', (req, res) => res.json({ status: 'rashadtech server running' }));
-
-app.post('/webhook/email', (req, res) => {
+app.post('/telegram', async (req, res) => {
   try {
-    const body = req.body;
-    const text = body.text || body.body || body.content || body.html || JSON.stringify(body);
-    const from = (body.from || body.sender || '').toLowerCase();
-    const subject = (body.subject || '').toLowerCase();
-    const isNetflix = from.includes('netflix') || subject.includes('netflix') || subject.includes('sign in') || text.includes('Enter this code to sign in') || text.includes('The Netflix team');
-    if (isNetflix) {
-      const code = extractNetflixCode(text);
-      if (code) {
-        latestCodes['default'] = { code, timestamp: Date.now() };
-        if (body.to) latestCodes[body.to.toLowerCase()] = { code, timestamp: Date.now() };
-        console.log('Netflix code stored:', code);
-        return res.json({ success: true, code });
-      }
+    const update = req.body;
+    const msg = update.message;
+    if (!msg) return res.json({ ok: true });
+
+    const chatId = String(msg.chat.id);
+    const text = (msg.text || '').trim();
+
+    if (chatId !== TG_ADMIN) {
+      await sendTG(chatId, '❌ Unauthorized');
+      return res.json({ ok: true });
     }
-    res.json({ success: false, message: 'No Netflix code found' });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+
+    if (text.startsWith('/code ')) {
+      const code = text.replace('/code ', '').trim();
+      if (code.match(/^\d{4,8}$/)) {
+        latestCodes['default'] = { code, timestamp: Date.now() };
+        await sendTG(chatId, `✅ Code saved: <b>${code}</b>\nCustomers can now get it from their subscription link.`);
+      } else {
+        await sendTG(chatId, '⚠️ Invalid code. Use: /code 1234');
+      }
+    } else if (text === '/clear') {
+      latestCodes = {};
+      await sendTG(chatId, '✅ Code cleared');
+    } else if (text === '/status') {
+      const entry = latestCodes['default'];
+      if (entry) {
+        const age = Math.round((Date.now() - entry.timestamp) / 1000);
+        await sendTG(chatId, `📋 Current code: <b>${entry.code}</b>\nAge: ${age} seconds`);
+      } else {
+        await sendTG(chatId, '📋 No code stored');
+      }
+    } else {
+      await sendTG(chatId, '📖 Commands:\n/code 1234 — save sign-in code\n/status — check current code\n/clear — clear code');
+    }
+
+    res.json({ ok: true });
+  } catch(e) {
+    console.error('Telegram webhook error:', e.message);
+    res.json({ ok: true });
+  }
 });
 
-app.post('/set-code', (req, res) => {
-  const { secret, code, email } = req.body;
-  if (secret !== API_SECRET) return res.status(401).json({ error: 'Unauthorized' });
-  const key = email ? email.toLowerCase() : 'default';
-  latestCodes[key] = { code, timestamp: Date.now() };
-  res.json({ success: true });
-});
+async function sendTG(chatId, text) {
+  await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' })
+  });
+}
 
 app.post('/get-code', (req, res) => {
   const { secret } = req.body;
   if (secret !== API_SECRET) return res.status(401).json({ error: 'Unauthorized' });
   const entry = latestCodes['default'];
-  if (!entry) return res.json({ success: false, message: 'No code found' });
+  if (!entry) return res.json({ success: false, message: 'No code yet' });
   if (Date.now() - entry.timestamp > 15 * 60 * 1000) return res.json({ success: false, message: 'Code expired' });
   res.json({ success: true, code: entry.code });
 });
 
-app.post('/add-account', (req, res) => {
-  const { secret, key, email, password } = req.body;
+app.post('/set-code', (req, res) => {
+  const { secret, code } = req.body;
   if (secret !== API_SECRET) return res.status(401).json({ error: 'Unauthorized' });
-  emailAccounts[key] = { email, password };
+  latestCodes['default'] = { code, timestamp: Date.now() };
   res.json({ success: true });
 });
 
-app.get('/debug-inbox', (req, res) => res.json({ codes: latestCodes }));
+app.post('/add-account', (req, res) => res.json({ success: true }));
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log('rashadtech server running on port ' + PORT));
+app.listen(PORT, async () => {
+  console.log('rashadtech server running on port ' + PORT);
+  try {
+    const webhookUrl = process.env.RENDER_EXTERNAL_URL + '/telegram';
+    const r = await fetch(`https://api.telegram.org/bot${TG_TOKEN}/setWebhook`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: webhookUrl })
+    });
+    const j = await r.json();
+    console.log('Telegram webhook:', j.description);
+  } catch(e) {
+    console.log('Webhook setup error:', e.message);
+  }
+});
