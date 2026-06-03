@@ -6,7 +6,6 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ── ALL SECRETS come from Render.com Environment Variables ──
 const API_SECRET = process.env.API_SECRET;
 const TG_TOKEN   = process.env.TG_TOKEN;
 const TG_ADMIN   = process.env.TG_ADMIN;
@@ -20,15 +19,15 @@ if (!API_SECRET || !TG_TOKEN || !TG_ADMIN) {
 let latestCodes = {};
 let notifiedCustomers = {};
 
+// ── HEALTH ─────────────────────────────────────────────────────────────
 app.get('/', (req, res) => {
   res.json({ status: 'rashadtech server running', codes: Object.keys(latestCodes) });
 });
-
 app.get('/ping', (req, res) => {
   res.json({ ok: true, ts: Date.now() });
 });
 
-// ── JSONBIN PROXY (keeps DB keys off the frontend) ──────────────────────
+// ── JSONBIN PROXY ──────────────────────────────────────────────────────
 app.post('/db/read', async (req, res) => {
   const { secret } = req.body;
   if (secret !== API_SECRET) return res.status(401).json({ error: 'Unauthorized' });
@@ -65,7 +64,20 @@ app.post('/db/write', async (req, res) => {
   }
 });
 
-// ── TELEGRAM BOT ─────────────────────────────────────────────────────────
+// ── TELEGRAM PROXY (NEW — keeps TG_TOKEN off the frontend) ─────────────
+app.post('/notify', async (req, res) => {
+  const { secret, message, chatId, parse_mode } = req.body;
+  if (secret !== API_SECRET) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    await sendTG(chatId || TG_ADMIN, message, parse_mode);
+    res.json({ success: true });
+  } catch(e) {
+    console.error('Notify error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── TELEGRAM BOT WEBHOOK ───────────────────────────────────────────────
 app.post('/telegram', async (req, res) => {
   try {
     const update = req.body;
@@ -90,7 +102,7 @@ app.post('/telegram', async (req, res) => {
       }
       latestCodes[key] = { code, timestamp: Date.now() };
       delete notifiedCustomers[key];
-      await sendTG(chatId, `✅ Code <b>${code}</b> saved for ${key === 'default' ? 'all' : `<b>${key}</b>`}`);
+      await sendTG(chatId, `✅ Code <b>${code}</b> saved for ${key === 'default' ? 'all' : `<b>${key}</b>`}`, 'HTML');
     } else if (text === '/clear') {
       latestCodes = {}; notifiedCustomers = {};
       await sendTG(chatId, '✅ All codes cleared');
@@ -99,12 +111,15 @@ app.post('/telegram', async (req, res) => {
       delete latestCodes[key]; delete notifiedCustomers[key];
       await sendTG(chatId, `✅ Cleared for ${key}`);
     } else if (text === '/status') {
-      if (!Object.keys(latestCodes).length) return sendTG(chatId, '📋 No codes stored').then(() => res.json({ ok: true }));
-      const lines = Object.entries(latestCodes).map(([k, v]) => {
-        const age = Math.round((Date.now() - v.timestamp) / 1000);
-        return `• ${k}: <b>${v.code}</b> (${age}s ago)${age > 900 ? ' ❌ EXPIRED' : ''}`;
-      });
-      await sendTG(chatId, '📋 Codes:\n' + lines.join('\n'));
+      if (!Object.keys(latestCodes).length) {
+        await sendTG(chatId, '📋 No codes stored');
+      } else {
+        const lines = Object.entries(latestCodes).map(([k, v]) => {
+          const age = Math.round((Date.now() - v.timestamp) / 1000);
+          return `• ${k}: <b>${v.code}</b> (${age}s ago)${age > 900 ? ' ❌ EXPIRED' : ''}`;
+        });
+        await sendTG(chatId, '📋 Codes:\n' + lines.join('\n'), 'HTML');
+      }
     } else {
       await sendTG(chatId, "📖 Commands:\n/code 1234\n/code Ali 1234\n/status\n/clear\n/clear Ali");
     }
@@ -112,13 +127,17 @@ app.post('/telegram', async (req, res) => {
   } catch(e) { console.error('TG error:', e.message); res.json({ ok: true }); }
 });
 
-async function sendTG(chatId, text) {
+async function sendTG(chatId, text, parse_mode) {
+  const body = { chat_id: chatId, text };
+  if (parse_mode) body.parse_mode = parse_mode;
   await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' })
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
   });
 }
 
+// ── CODE ENDPOINTS ─────────────────────────────────────────────────────
 app.post('/get-code', async (req, res) => {
   const { secret, profileName } = req.body;
   if (secret !== API_SECRET) return res.status(401).json({ error: 'Unauthorized' });
@@ -128,12 +147,12 @@ app.post('/get-code', async (req, res) => {
     const name = profileName || 'Unknown';
     if (!notifiedCustomers[key] || Date.now() - notifiedCustomers[key] > 5*60*1000) {
       notifiedCustomers[key] = Date.now();
-      await sendTG(TG_ADMIN, `🔔 <b>${name}</b> is waiting for a sign-in code!\nSend: /code ${name} 1234`);
+      await sendTG(TG_ADMIN, `🔔 <b>${name}</b> is waiting for a sign-in code!\nSend: /code ${name} 1234`, 'HTML');
     }
     return res.json({ success: false, message: 'Code requested — check Telegram' });
   }
   if (Date.now() - entry.timestamp > 15*60*1000) return res.json({ success: false, message: 'Code expired' });
-  await sendTG(TG_ADMIN, `👀 <b>${profileName || 'Unknown'}</b> viewed code: ${entry.code}`);
+  await sendTG(TG_ADMIN, `👀 <b>${profileName || 'Unknown'}</b> viewed code: ${entry.code}`, 'HTML');
   res.json({ success: true, code: entry.code });
 });
 
@@ -147,6 +166,7 @@ app.post('/set-code', (req, res) => {
 
 app.post('/add-account', (req, res) => res.json({ success: true }));
 
+// ── START ──────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, async () => {
   console.log('rashadtech server running on port ' + PORT);
