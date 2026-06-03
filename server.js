@@ -28,13 +28,6 @@ function getImapConfig(email, password) {
   return { user: email, password, host: 'imap.' + domain, port: 993, tls: true, tlsOptions: { rejectUnauthorized: false }, connTimeout: 15000, authTimeout: 10000 };
 }
 
-function extractNetflixCode(text) {
-  if (!text) return null;
-  const match = text.match(/Enter this code to sign in[\s\r\n]+(\d{4,8})[\s\r\n]+Enter the code above/i);
-  if (match) return match[1];
-  return null;
-}
-
 app.get('/', (req, res) => {
   res.json({ status: 'rashadtech server running' });
 });
@@ -44,6 +37,19 @@ app.post('/add-account', (req, res) => {
   if (secret !== API_SECRET) return res.status(401).json({ error: 'Unauthorized' });
   emailAccounts[key] = { email, password };
   res.json({ success: true });
+});
+
+app.post('/debug', async (req, res) => {
+  const { secret, accountKey } = req.body;
+  if (secret !== API_SECRET) return res.status(401).json({ error: 'Unauthorized' });
+  const account = emailAccounts[accountKey];
+  if (!account) return res.status(404).json({ error: 'Account not found', available: Object.keys(emailAccounts) });
+  try {
+    const emails = await fetchRawEmails(account.email, account.password);
+    res.json({ success: true, emails });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.post('/get-code', async (req, res) => {
@@ -59,11 +65,49 @@ app.post('/get-code', async (req, res) => {
   }
 });
 
+function fetchRawEmails(email, password) {
+  return new Promise((resolve, reject) => {
+    const config = getImapConfig(email, password);
+    const imap = new Imap(config);
+    imap.once('ready', () => {
+      imap.openBox('INBOX', true, (err) => {
+        if (err) { imap.end(); return reject(err); }
+        imap.search(['ALL'], (err, results) => {
+          if (err || !results || results.length === 0) { imap.end(); return resolve([]); }
+          const toFetch = results.slice(-5);
+          const emails = [];
+          let processed = 0;
+          const fetch = imap.fetch(toFetch, { bodies: '' });
+          fetch.on('message', (msg) => {
+            msg.on('body', (stream) => {
+              simpleParser(stream, (err, parsed) => {
+                processed++;
+                if (!err) {
+                  emails.push({
+                    from: parsed.from?.text,
+                    subject: parsed.subject,
+                    date: parsed.date,
+                    text: (parsed.text || '').substring(0, 500)
+                  });
+                }
+                if (processed === toFetch.length) { imap.end(); resolve(emails); }
+              });
+            });
+          });
+          fetch.once('error', () => { imap.end(); resolve(emails); });
+        });
+      });
+    });
+    imap.once('error', reject);
+    imap.once('end', () => {});
+    imap.connect();
+  });
+}
+
 function fetchLatestCode(email, password) {
   return new Promise((resolve, reject) => {
     const config = getImapConfig(email, password);
     const imap = new Imap(config);
-
     imap.once('ready', () => {
       imap.openBox('INBOX', true, (err) => {
         if (err) { imap.end(); return reject(err); }
@@ -80,9 +124,17 @@ function fetchLatestCode(email, password) {
                 if (!err) {
                   const text = parsed.text || '';
                   const date = parsed.date ? new Date(parsed.date) : new Date(0);
-                  if (text.includes('Enter this code to sign in') && text.includes('The Netflix team')) {
-                    const code = extractNetflixCode(text);
-                    if (code) codes.push({ code, date });
+                  if (text.includes('Enter this code to sign in') || text.includes('The Netflix team')) {
+                    const patterns = [
+                      /Enter this code to sign in[\s\r\n]+(\d{4,8})[\s\r\n]+Enter the code above/i,
+                      /(\d{4,8})[\s\r\n]+Enter the code above/i,
+                      /Enter this code to sign in[\s\r\n]+(\d{4,8})/i,
+                      /\b(\d{4,8})\b/,
+                    ];
+                    for (const p of patterns) {
+                      const m = text.match(p);
+                      if (m) { codes.push({ code: m[1], date }); break; }
+                    }
                   }
                 }
                 if (processed === toFetch.length) {
