@@ -18,18 +18,25 @@ try {
 
 function getImapConfig(email, password) {
   const domain = email.split('@')[1]?.toLowerCase() || '';
-  if (domain.includes('yahoo.com') || domain.includes('ymail.com')) {
-    return { user: email, password, host: 'imap.mail.yahoo.com', port: 993, tls: true, tlsOptions: { rejectUnauthorized: false }, connTimeout: 15000, authTimeout: 10000 };
-  } else if (domain.includes('outlook.com') || domain.includes('hotmail.com') || domain.includes('live.com')) {
+  if (domain.includes('outlook.com') || domain.includes('hotmail.com') || domain.includes('live.com')) {
     return { user: email, password, host: 'imap-mail.outlook.com', port: 993, tls: true, tlsOptions: { rejectUnauthorized: false }, connTimeout: 15000, authTimeout: 10000 };
+  } else if (domain.includes('yahoo.com') || domain.includes('ymail.com')) {
+    return { user: email, password, host: 'imap.mail.yahoo.com', port: 993, tls: true, tlsOptions: { rejectUnauthorized: false }, connTimeout: 15000, authTimeout: 10000 };
   } else if (domain.includes('gmail.com')) {
     return { user: email, password, host: 'imap.gmail.com', port: 993, tls: true, tlsOptions: { rejectUnauthorized: false }, connTimeout: 15000, authTimeout: 10000 };
   }
   return { user: email, password, host: 'imap.' + domain, port: 993, tls: true, tlsOptions: { rejectUnauthorized: false }, connTimeout: 15000, authTimeout: 10000 };
 }
 
+function extractNetflixCode(text) {
+  if (!text) return null;
+  const match = text.match(/Enter this code to sign in[\s\r\n]+(\d{4,8})[\s\r\n]+Enter the code above/i);
+  if (match) return match[1];
+  return null;
+}
+
 app.get('/', (req, res) => {
-  res.json({ status: 'rashadtech server running', accounts: Object.keys(emailAccounts).length });
+  res.json({ status: 'rashadtech server running' });
 });
 
 app.post('/add-account', (req, res) => {
@@ -60,9 +67,9 @@ function fetchLatestCode(email, password) {
     imap.once('ready', () => {
       imap.openBox('INBOX', true, (err) => {
         if (err) { imap.end(); return reject(err); }
-        imap.search(['ALL', ['FROM', 'netflix.com']], (err, results) => {
+        imap.search(['ALL'], (err, results) => {
           if (err || !results || results.length === 0) { imap.end(); return resolve(null); }
-          const toFetch = results.slice(-5);
+          const toFetch = results.slice(-20);
           const codes = [];
           let processed = 0;
           const fetch = imap.fetch(toFetch, { bodies: '' });
@@ -71,10 +78,12 @@ function fetchLatestCode(email, password) {
               simpleParser(stream, (err, parsed) => {
                 processed++;
                 if (!err) {
-                  const text = (parsed.text || '') + (parsed.html || '');
+                  const text = parsed.text || '';
                   const date = parsed.date ? new Date(parsed.date) : new Date(0);
-                  const patterns = [/(\d{6})\s*is your Netflix/i, /sign.in code[:\s]+(\d{6})/i, /your code[:\s]+(\d{6})/i, /verification[:\s]+(\d{6})/i, /\b(\d{6})\b/];
-                  for (const p of patterns) { const m = text.match(p); if (m) { codes.push({ code: m[1], date }); break; } }
+                  if (text.includes('Enter this code to sign in') && text.includes('The Netflix team')) {
+                    const code = extractNetflixCode(text);
+                    if (code) codes.push({ code, date });
+                  }
                 }
                 if (processed === toFetch.length) {
                   imap.end();
@@ -89,7 +98,6 @@ function fetchLatestCode(email, password) {
         });
       });
     });
-
     imap.once('error', reject);
     imap.once('end', () => {});
     imap.connect();
