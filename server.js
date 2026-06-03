@@ -29,7 +29,19 @@ function getImapConfig(email, password) {
 }
 
 app.get('/', (req, res) => {
-  res.json({ status: 'rashadtech server running' });
+  res.json({ status: 'rashadtech server running', accounts: Object.keys(emailAccounts).length });
+});
+
+app.get('/debug-inbox', async (req, res) => {
+  const accounts = Object.values(emailAccounts);
+  if (!accounts.length) return res.json({ error: 'No accounts configured' });
+  const account = accounts[0];
+  try {
+    const emails = await fetchRawEmails(account.email, account.password);
+    res.json({ email: account.email, emails });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.post('/add-account', (req, res) => {
@@ -37,19 +49,6 @@ app.post('/add-account', (req, res) => {
   if (secret !== API_SECRET) return res.status(401).json({ error: 'Unauthorized' });
   emailAccounts[key] = { email, password };
   res.json({ success: true });
-});
-
-app.post('/debug', async (req, res) => {
-  const { secret, accountKey } = req.body;
-  if (secret !== API_SECRET) return res.status(401).json({ error: 'Unauthorized' });
-  const account = emailAccounts[accountKey];
-  if (!account) return res.status(404).json({ error: 'Account not found', available: Object.keys(emailAccounts) });
-  try {
-    const emails = await fetchRawEmails(account.email, account.password);
-    res.json({ success: true, emails });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
 });
 
 app.post('/get-code', async (req, res) => {
