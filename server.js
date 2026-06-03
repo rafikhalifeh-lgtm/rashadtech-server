@@ -1,8 +1,3 @@
-bash
-
-cat /home/claude/rashadtech-server/server.js
-Output
-
 const express = require('express');
 const cors = require('cors');
 const Imap = require('imap');
