@@ -18,141 +18,9 @@ if (!API_SECRET || !TG_TOKEN || !TG_ADMIN) {
   console.error('❌ Missing required env vars: API_SECRET, TG_TOKEN, TG_ADMIN');
 }
 
+// Code detection state
 let latestCodes = {};
-let notifiedCustomers = {};
-let outlookAccounts = {}; // { email: { password, lastCheck, lastUid } }
-let gmailAccounts = {}; // { email: { password, lastCheck, lastUid } }
-
-// ── EMAIL POLLING ────────────────────────────────────────────────────────────
-async function checkOutlookEmails(email, password) {
-  return new Promise((resolve, reject) => {
-    try {
-      const imap = new Imap({
-        user: email,
-        password: password,
-        host: 'outlook.office365.com',
-        port: 993,
-        tls: true,
-        connTimeout: 15000
-      });
-
-      imap.once('error', (err) => {
-        console.log(`IMAP error for ${email}:`, err.message);
-        resolve(null);
-      });
-
-      imap.once('ready', () => {
-        console.log(`📬 IMAP connected for ${email}, checking inbox...`);
-        imap.openBox('INBOX', true, (err, box) => {
-          if (err) {
-            console.log(`❌ IMAP open error for ${email}:`, err.message);
-            imap.end();
-            resolve(null);
-            return;
-          }
-          
-          console.log(`📬 Opened inbox for ${email}, total messages: ${box.messages.total}`);
-
-          // Search for Netflix emails from last 2 days
-          const twoDaysAgo = new Date();
-          twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
-          
-          imap.search(['ALL', ['SINCE', twoDaysAgo]], (err, results) => {
-            if (err || !results || results.length === 0) {
-              imap.end();
-              resolve(null);
-              return;
-            }
-
-            const lastUid = outlookAccounts[email]?.lastUid || 0;
-            let newMessages = results.filter(uid => uid > lastUid);
-            
-            // If no new messages but we have results, check the most recent one anyway
-            // This handles the case when server restarts
-            if (newMessages.length === 0 && results.length > 0) {
-              console.log(`📬 No new messages for ${email}, checking last message anyway...`);
-              newMessages = [Math.max(...results)];
-            }
-            
-            if (newMessages.length === 0) {
-              console.log(`📬 No messages to check for ${email}`);
-              imap.end();
-              resolve(null);
-              return;
-            }
-
-            // Get the most recent email
-            const latestUid = Math.max(...newMessages);
-            console.log(`📬 Checking ${newMessages.length} messages for ${email}, latest UID: ${latestUid}`);
-            const fetch = imap.fetch(newMessages, { bodies: '' });
-            let foundCode = null;
-
-            fetch.on('message', (msg) => {
-              msg.on('body', (stream) => {
-                simpleParser(stream, async (err, parsed) => {
-                  if (err) return;
-                  
-                  const from = parsed.from?.text || '';
-                  const subject = parsed.subject || '';
-                  const body = parsed.text || '';
-                  
-                  // Check if it's a Netflix verification code email
-                  if (from.toLowerCase().includes('netflix') || 
-                      subject.toLowerCase().includes('verification') ||
-                      subject.toLowerCase().includes('code') ||
-                      subject.toLowerCase().includes('sign-in') ||
-                      subject.toLowerCase().includes('verify') ||
-                      subject.toLowerCase().includes('netflix.com')) {
-                    
-                    // Extract 4-digit code - Netflix uses 4 digits for verification
-                    // Look in body first, then subject
-                    let codeMatch = body.match(/\b(\d{4})\b/);
-                    
-                    // Also try subject in case code is mentioned there
-                    if (!codeMatch) {
-                      codeMatch = subject.match(/\b(\d{4})\b/);
-                    }
-                    
-                    // Make sure it's not just a random number - check context
-                    if (codeMatch) {
-                      const code = codeMatch[1];
-                      // Verify it's likely a Netflix code (not a phone number or other)
-                      // by checking the surrounding text or subject contains netflix/verify
-                      const fullText = body + ' ' + subject;
-                      if (fullText.toLowerCase().includes('netflix') || 
-                          fullText.toLowerCase().includes('verify') ||
-                          fullText.toLowerCase().includes('sign')) {
-                        foundCode = code;
-                      }
-                    }
-                  }
-                });
-              });
-            });
-
-            fetch.once('end', () => {
-              // Save the latest UID for this account
-              if (!outlookAccounts[email]) outlookAccounts[email] = {};
-              outlookAccounts[email].lastUid = latestUid;
-              imap.end();
-              if (foundCode) {
-                console.log(`✅ CODE FOUND for ${email}: ${foundCode}`);
-              } else {
-                console.log(`❌ No Netflix code found in ${email} inbox`);
-              }
-              resolve(foundCode);
-            });
-          });
-        });
-      });
-
-      imap.connect();
-    } catch (e) {
-      console.log(`IMAP setup error: ${e.message}`);
-      resolve(null);
-    }
-  });
-}
+let gmailAccount = null; // { email, password, lastUid }
 
 // ── GMAIL EMAIL POLLING ─────────────────────────────────────────────────────
 async function checkGmailEmails(email, password) {
@@ -169,23 +37,20 @@ async function checkGmailEmails(email, password) {
       });
 
       imap.once('error', (err) => {
-        console.log(`IMAP error for ${email}:`, err.message);
+        console.log(`Gmail IMAP error: ${err.message}`);
         resolve(null);
       });
 
       imap.once('ready', () => {
-        console.log(`📬 Gmail IMAP connected for ${email}, checking inbox...`);
+        console.log(`📬 Gmail connected: ${email}`);
         imap.openBox('INBOX', true, (err, box) => {
           if (err) {
-            console.log(`❌ IMAP open error for ${email}:`, err.message);
+            console.log(`❌ Gmail inbox error: ${err.message}`);
             imap.end();
             resolve(null);
             return;
           }
           
-          console.log(`📬 Gmail Opened inbox for ${email}, total messages: ${box.messages.total}`);
-
-          // Search for Netflix emails from last 2 days
           const twoDaysAgo = new Date();
           twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
           
@@ -196,25 +61,21 @@ async function checkGmailEmails(email, password) {
               return;
             }
 
-            const lastUid = gmailAccounts[email]?.lastUid || 0;
+            const lastUid = gmailAccount?.lastUid || 0;
             let newMessages = results.filter(uid => uid > lastUid);
             
-            // If no new messages but we have results, check the most recent one anyway
             if (newMessages.length === 0 && results.length > 0) {
-              console.log(`📬 Gmail: No new messages for ${email}, checking last message anyway...`);
               newMessages = [Math.max(...results)];
             }
             
             if (newMessages.length === 0) {
-              console.log(`📬 Gmail: No messages to check for ${email}`);
               imap.end();
               resolve(null);
               return;
             }
 
-            // Get the most recent email
             const latestUid = Math.max(...newMessages);
-            console.log(`📬 Gmail: Checking ${newMessages.length} messages for ${email}, latest UID: ${latestUid}`);
+            console.log(`📬 Gmail: checking ${newMessages.length} messages`);
             const fetch = imap.fetch(newMessages, { bodies: '' });
             let foundCode = null;
 
@@ -227,17 +88,15 @@ async function checkGmailEmails(email, password) {
                   const subject = parsed.subject || '';
                   const body = parsed.text || '';
                   
-                  // Check if it's a Netflix verification code email
+                  // Check for Netflix verification code
                   if (from.toLowerCase().includes('netflix') || 
                       subject.toLowerCase().includes('verification') ||
                       subject.toLowerCase().includes('code') ||
                       subject.toLowerCase().includes('sign-in') ||
-                      subject.toLowerCase().includes('verify') ||
-                      subject.toLowerCase().includes('netflix.com')) {
+                      subject.toLowerCase().includes('verify')) {
                     
                     // Extract 4-digit code
                     let codeMatch = body.match(/\b(\d{4})\b/);
-                    
                     if (!codeMatch) {
                       codeMatch = subject.match(/\b(\d{4})\b/);
                     }
@@ -257,14 +116,10 @@ async function checkGmailEmails(email, password) {
             });
 
             fetch.once('end', () => {
-              // Save the latest UID for this account
-              if (!gmailAccounts[email]) gmailAccounts[email] = {};
-              gmailAccounts[email].lastUid = latestUid;
+              if (gmailAccount) gmailAccount.lastUid = latestUid;
               imap.end();
               if (foundCode) {
-                console.log(`✅ Gmail CODE FOUND for ${email}: ${foundCode}`);
-              } else {
-                console.log(`❌ Gmail: No Netflix code found in ${email} inbox`);
+                console.log(`✅ Netflix code found: ${foundCode}`);
               }
               resolve(foundCode);
             });
@@ -274,34 +129,20 @@ async function checkGmailEmails(email, password) {
 
       imap.connect();
     } catch (e) {
-      console.log(`Gmail IMAP setup error: ${e.message}`);
+      console.log(`Gmail IMAP error: ${e.message}`);
       resolve(null);
     }
   });
 }
 
-// Poll all outlook accounts every 10 seconds (reduced from 30 for faster detection)
+// Poll Gmail every 10 seconds
 setInterval(async () => {
-  for (const [email, data] of Object.entries(outlookAccounts)) {
-    const code = await checkOutlookEmails(email, data.password);
-    if (code) {
-      // Save the code keyed by the Outlook email (not profile name)
-      // This ensures code only goes to the subscription linked to this email
-      const key = email.toLowerCase();
-      latestCodes[key] = { code, timestamp: Date.now(), source: 'outlook', email: email };
-      console.log(`📧 Netflix code found for ${email}: ${code}`);
-      await sendTG(TG_ADMIN, `✅ <b>Auto-Code Captured</b>\n📧 Email: ${email}\n🔑 Code: <b>${code}</b>\n📱 Will auto-deliver to this account's subscription`, 'HTML');
-    }
-  }
-  // Also poll Gmail accounts
-  for (const [email, data] of Object.entries(gmailAccounts)) {
-    const code = await checkGmailEmails(email, data.password);
-    if (code) {
-      const key = email.toLowerCase();
-      latestCodes[key] = { code, timestamp: Date.now(), source: 'gmail', email: email };
-      console.log(`📧 Netflix code found for ${email}: ${code}`);
-      await sendTG(TG_ADMIN, `✅ <b>Auto-Code Captured (Gmail)</b>\n📧 Email: ${email}\n🔑 Code: <b>${code}</b>\n📱 Will auto-deliver to this account's subscription`, 'HTML');
-    }
+  if (!gmailAccount) return;
+  
+  const code = await checkGmailEmails(gmailAccount.email, gmailAccount.password);
+  if (code) {
+    latestCodes['default'] = { code, timestamp: Date.now(), source: 'gmail' };
+    await sendTG(TG_ADMIN, `✅ <b>Netflix Code Detected</b>\n🔑 Code: <b>${code}</b>`, 'HTML');
   }
 }, 10000);
 
@@ -350,52 +191,36 @@ app.post('/db/write', async (req, res) => {
   }
 });
 
-// ── GMAIL EMAIL SYNC ────────────────────────────────────────────────────────
-app.post('/sync-gmail', async (req, res) => {
+// ── GMAIL SETUP (single Gmail account for receiving codes) ─────────────────
+app.post('/setup-gmail', async (req, res) => {
   const { secret, email, password } = req.body;
   if (secret !== API_SECRET) return res.status(401).json({ error: 'Unauthorized' });
   
   if (email && password) {
-    gmailAccounts[email.toLowerCase()] = {
-      password,
-      lastCheck: Date.now(),
-      lastUid: 0
-    };
-    console.log(`📧 Added Gmail account for monitoring: ${email}`);
+    gmailAccount = { email, password, lastUid: 0 };
+    console.log(`📧 Gmail configured: ${email}`);
     
-    // Immediately check for codes
     const code = await checkGmailEmails(email, password);
     if (code) {
-      latestCodes[email.toLowerCase()] = { code, timestamp: Date.now(), source: 'gmail' };
-      await sendTG(TG_ADMIN, `✅ <b>First Code Captured (Gmail)!</b>\n📧 ${email}\n🔑 Code: <b>${code}</b>`, 'HTML');
+      latestCodes['default'] = { code, timestamp: Date.now(), source: 'gmail' };
+      await sendTG(TG_ADMIN, `✅ <b>Code Captured!</b>\n🔑 Code: <b>${code}</b>`, 'HTML');
     }
   }
   
-  res.json({ success: true, monitoredAccounts: Object.keys(gmailAccounts) });
+  res.json({ success: true, gmailConfigured: !!gmailAccount, email: gmailAccount?.email });
 });
 
-// ── OUTLOOK EMAIL SYNC ──────────────────────────────────────────────────
-app.post('/sync-outlook', async (req, res) => {
-  const { secret, email, password } = req.body;
-  if (secret !== API_SECRET) return res.status(401).json({ error: 'Unauthorized' });
-  
-  if (email && password) {
-    outlookAccounts[email.toLowerCase()] = {
-      password,
-      lastCheck: Date.now(),
-      lastUid: 0
-    };
-    console.log(`📧 Added outlook account for monitoring: ${email}`);
-    
-    // Immediately check for codes
-    const code = await checkOutlookEmails(email, password);
-    if (code) {
-      latestCodes[email.toLowerCase()] = { code, timestamp: Date.now(), source: 'outlook' };
-      await sendTG(TG_ADMIN, `✅ <b>First Code Captured!</b>\n📧 ${email}\n🔑 Code: <b>${code}</b>`, 'HTML');
-    }
-  }
-  
-  res.json({ success: true, monitoredAccounts: Object.keys(outlookAccounts) });
+// ── GET / DELETE CODE ──────────────────────────────────────────────────────
+app.get('/code', (req, res) => {
+  const codes = Object.values(latestCodes);
+  if (codes.length === 0) return res.json({ code: null });
+  const latest = codes.reduce((a, b) => a.timestamp > b.timestamp ? a : b);
+  res.json({ code: latest.code, timestamp: latest.timestamp });
+});
+
+app.delete('/code', (req, res) => {
+  latestCodes = {};
+  res.json({ success: true });
 });
 
 // ── TELEGRAM PROXY ──────────────────────────────────────────────────────
@@ -497,7 +322,7 @@ app.post('/get-code', async (req, res) => {
     const name = profileName || accountEmail || 'Unknown';
     if (!notifiedCustomers[key] || Date.now() - notifiedCustomers[key] > 5*60*1000) {
       notifiedCustomers[key] = Date.now();
-      await sendTG(TG_ADMIN, `🔔 <b>${name}</b> requested sign-in code but no code received yet.\n📧 Check the Outlook inbox for Netflix verification code.`, 'HTML');
+      await sendTG(TG_ADMIN, `🔔 <b>${name}</b> requested sign-in code but no code received yet.\n📧 Check the Gmail inbox for Netflix verification code.`, 'HTML');
     }
     return res.json({ success: false, message: 'No code available yet. Please wait for Netflix email.' });
   }
@@ -532,9 +357,8 @@ app.post('/clear-all', async (req, res) => {
     latestCodes = {};
     notifiedCustomers = {};
     
-    // Clear email accounts
-    outlookAccounts = {};
-    gmailAccounts = {};
+    // Clear Gmail account
+    gmailAccount = null;
     
     // Reset database
     if (JB_KEY && JB_BIN) {
@@ -565,13 +389,8 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, async () => {
   console.log('rashadtech server running on port ' + PORT);
   
-  // Add default Gmail account for monitoring
-  gmailAccounts['techtrassh@gmail.com'] = {
-    password: 'fhbnjzgx cdejkuki'.replace(/\s/g, ''),
-    lastCheck: Date.now(),
-    lastUid: 0
-  };
-  console.log('📧 Gmail account added for monitoring: techtrassh@gmail.com');
+  // Gmail will be configured via /setup-gmail endpoint
+  // For now, leave gmailAccount as null until admin sets it up
   
   try {
     const webhookUrl = process.env.RENDER_EXTERNAL_URL + '/telegram';
