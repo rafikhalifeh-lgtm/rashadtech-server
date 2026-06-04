@@ -1,5 +1,7 @@
 const express = require('express');
 const cors = require('cors');
+const Imap = require('imap').Imap;
+const { simpleParser } = require('mailparser');
 
 const app = express();
 app.use(cors());
@@ -18,6 +20,117 @@ if (!API_SECRET || !TG_TOKEN || !TG_ADMIN) {
 
 let latestCodes = {};
 let notifiedCustomers = {};
+let outlookAccounts = {}; // { email: { password, lastCheck, lastUid } }
+
+// ── EMAIL POLLING ────────────────────────────────────────────────────────────
+async function checkOutlookEmails(email, password) {
+  return new Promise((resolve, reject) => {
+    try {
+      const imap = new Imap({
+        user: email,
+        password: password,
+        host: 'outlook.office365.com',
+        port: 993,
+        tls: true,
+        connTimeout: 15000
+      });
+
+      imap.once('error', (err) => {
+        console.log(`IMAP error for ${email}:`, err.message);
+        resolve(null);
+      });
+
+      imap.once('ready', () => {
+        imap.openBox('INBOX', true, (err, box) => {
+          if (err) {
+            imap.end();
+            resolve(null);
+            return;
+          }
+
+          // Search for Netflix emails from last 2 days
+          const twoDaysAgo = new Date();
+          twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+          
+          imap.search(['ALL', ['SINCE', twoDaysAgo]], (err, results) => {
+            if (err || !results || results.length === 0) {
+              imap.end();
+              resolve(null);
+              return;
+            }
+
+            const lastUid = outlookAccounts[email]?.lastUid || 0;
+            const newMessages = results.filter(uid => uid > lastUid);
+            
+            if (newMessages.length === 0) {
+              imap.end();
+              resolve(null);
+              return;
+            }
+
+            // Get the most recent email
+            const latestUid = Math.max(...newMessages);
+            const fetch = imap.fetch(newMessages, { bodies: '' });
+            let foundCode = null;
+
+            fetch.on('message', (msg) => {
+              msg.on('body', (stream) => {
+                simpleParser(stream, async (err, parsed) => {
+                  if (err) return;
+                  
+                  const from = parsed.from?.text || '';
+                  const subject = parsed.subject || '';
+                  const body = parsed.text || '';
+                  
+                  // Check if it's a Netflix verification code email
+                  if (from.toLowerCase().includes('netflix') || 
+                      subject.toLowerCase().includes('verification') ||
+                      subject.toLowerCase().includes('code') ||
+                      subject.toLowerCase().includes('sign-in') ||
+                      subject.toLowerCase().includes('verify')) {
+                    
+                    // Extract 6-digit code
+                    const codeMatch = body.match(/\b(\d{6})\b/);
+                    if (codeMatch) {
+                      foundCode = codeMatch[1];
+                    }
+                  }
+                });
+              });
+            });
+
+            fetch.once('end', () => {
+              // Save the latest UID for this account
+              if (!outlookAccounts[email]) outlookAccounts[email] = {};
+              outlookAccounts[email].lastUid = latestUid;
+              imap.end();
+              resolve(foundCode);
+            });
+          });
+        });
+      });
+
+      imap.connect();
+    } catch (e) {
+      console.log(`IMAP setup error: ${e.message}`);
+      resolve(null);
+    }
+  });
+}
+
+// Poll all outlook accounts every 30 seconds
+setInterval(async () => {
+  for (const [email, data] of Object.entries(outlookAccounts)) {
+    const code = await checkOutlookEmails(email, data.password);
+    if (code) {
+      // Save the code for this email's associated profile
+      const key = email.toLowerCase();
+      latestCodes[key] = { code, timestamp: Date.now(), source: 'outlook' };
+      console.log(`📧 Netflix code found for ${email}: ${code}`);
+      await sendTG(TG_ADMIN, `✅ <b>Auto-Code Captured</b>\n📧 Email: ${email}\n🔑 Code: <b>${code}</b>`, 'HTML');
+    }
+  }
+}, 30000);
 
 // ── HEALTH ─────────────────────────────────────────────────────────────
 app.get('/', (req, res) => {
@@ -64,7 +177,31 @@ app.post('/db/write', async (req, res) => {
   }
 });
 
-// ── TELEGRAM PROXY (NEW — keeps TG_TOKEN off the frontend) ─────────────
+// ── OUTLOOK EMAIL SYNC ──────────────────────────────────────────────────
+app.post('/sync-outlook', async (req, res) => {
+  const { secret, email, password } = req.body;
+  if (secret !== API_SECRET) return res.status(401).json({ error: 'Unauthorized' });
+  
+  if (email && password) {
+    outlookAccounts[email.toLowerCase()] = {
+      password,
+      lastCheck: Date.now(),
+      lastUid: 0
+    };
+    console.log(`📧 Added outlook account for monitoring: ${email}`);
+    
+    // Immediately check for codes
+    const code = await checkOutlookEmails(email, password);
+    if (code) {
+      latestCodes[email.toLowerCase()] = { code, timestamp: Date.now(), source: 'outlook' };
+      await sendTG(TG_ADMIN, `✅ <b>First Code Captured!</b>\n📧 ${email}\n🔑 Code: <b>${code}</b>`, 'HTML');
+    }
+  }
+  
+  res.json({ success: true, monitoredAccounts: Object.keys(outlookAccounts) });
+});
+
+// ── TELEGRAM PROXY ──────────────────────────────────────────────────────
 app.post('/notify', async (req, res) => {
   const { secret, message, chatId, parse_mode } = req.body;
   if (secret !== API_SECRET) return res.status(401).json({ error: 'Unauthorized' });
@@ -100,7 +237,7 @@ app.post('/telegram', async (req, res) => {
         await sendTG(chatId, '⚠️ Usage:\n/code 1234\n/code Ali 1234');
         return res.json({ ok: true });
       }
-      latestCodes[key] = { code, timestamp: Date.now() };
+      latestCodes[key] = { code, timestamp: Date.now(), source: 'telegram' };
       delete notifiedCustomers[key];
       await sendTG(chatId, `✅ Code <b>${code}</b> saved for ${key === 'default' ? 'all' : `<b>${key}</b>`}`, 'HTML');
     } else if (text === '/clear') {
@@ -116,7 +253,7 @@ app.post('/telegram', async (req, res) => {
       } else {
         const lines = Object.entries(latestCodes).map(([k, v]) => {
           const age = Math.round((Date.now() - v.timestamp) / 1000);
-          return `• ${k}: <b>${v.code}</b> (${age}s ago)${age > 900 ? ' ❌ EXPIRED' : ''}`;
+          return `• ${k}: <b>${v.code}</b> (${age}s ago) ${v.source ? `📧 ${v.source}` : ''}${age > 900 ? ' ❌ EXPIRED' : ''}`;
         });
         await sendTG(chatId, '📋 Codes:\n' + lines.join('\n'), 'HTML');
       }
@@ -139,28 +276,44 @@ async function sendTG(chatId, text, parse_mode) {
 
 // ── CODE ENDPOINTS ─────────────────────────────────────────────────────
 app.post('/get-code', async (req, res) => {
-  const { secret, profileName } = req.body;
+  const { secret, profileName, accountEmail } = req.body;
   if (secret !== API_SECRET) return res.status(401).json({ error: 'Unauthorized' });
-  const key = profileName ? profileName.toLowerCase() : 'default';
-  const entry = latestCodes[key] || latestCodes['default'];
+  
+  // Try multiple keys: profile name, account email, default
+  let key = profileName ? profileName.toLowerCase() : null;
+  let entry = key ? latestCodes[key] : null;
+  
+  // Also try the account email as key
+  if (!entry && accountEmail) {
+    const emailKey = accountEmail.toLowerCase();
+    entry = latestCodes[emailKey];
+    if (entry) key = emailKey;
+  }
+  
+  // Fallback to default
   if (!entry) {
-    const name = profileName || 'Unknown';
+    entry = latestCodes['default'];
+    key = 'default';
+  }
+  
+  if (!entry) {
+    const name = profileName || accountEmail || 'Unknown';
     if (!notifiedCustomers[key] || Date.now() - notifiedCustomers[key] > 5*60*1000) {
       notifiedCustomers[key] = Date.now();
-      await sendTG(TG_ADMIN, `🔔 <b>${name}</b> is waiting for a sign-in code!\nSend: /code ${name} 1234`, 'HTML');
+      await sendTG(TG_ADMIN, `🔔 <b>${name}</b> is waiting for a sign-in code!`, 'HTML');
     }
-    return res.json({ success: false, message: 'Code requested — check Telegram' });
+    return res.json({ success: false, message: 'Code requested — check Outlook/Telegram' });
   }
   if (Date.now() - entry.timestamp > 15*60*1000) return res.json({ success: false, message: 'Code expired' });
-  await sendTG(TG_ADMIN, `👀 <b>${profileName || 'Unknown'}</b> viewed code: ${entry.code}`, 'HTML');
+  await sendTG(TG_ADMIN, `👀 <b>${profileName || accountEmail || 'Unknown'}</b> viewed code: ${entry.code}`, 'HTML');
   res.json({ success: true, code: entry.code });
 });
 
 app.post('/set-code', (req, res) => {
-  const { secret, code, profileName } = req.body;
+  const { secret, code, profileName, accountEmail } = req.body;
   if (secret !== API_SECRET) return res.status(401).json({ error: 'Unauthorized' });
-  const key = profileName ? profileName.toLowerCase() : 'default';
-  latestCodes[key] = { code, timestamp: Date.now() };
+  let key = profileName ? profileName.toLowerCase() : (accountEmail ? accountEmail.toLowerCase() : 'default');
+  latestCodes[key] = { code, timestamp: Date.now(), source: 'manual' };
   res.json({ success: true });
 });
 

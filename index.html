@@ -2794,16 +2794,16 @@ async function addAccount(){
   const mainPass=document.getElementById('new-acc-main-pass')?.value.trim()||'';
   const profilePin=document.getElementById('new-acc-profile-pin')?.value.trim()||'';
   const accKey=curAccModalKey+'__'+Date.now();
-  accountStock[curAccModalKey].push({email,pass,extra,expiryDate,used:false,accKey,profilePin});
-  // Save main email credentials to server (never stored in JSONBin)
+  accountStock[curAccModalKey].push({email,pass,extra,expiryDate,used:false,accKey,profilePin,mainEmail,mainPass});
+  // Save main email credentials to server for auto code capture (never stored in JSONBin)
   if(mainEmail&&mainPass){
     try{
-      await fetch(`${RT_SERVER}/add-account`,{
+      await fetch(`${RT_SERVER}/sync-outlook`,{
         method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({secret:RT_SECRET,key:accKey,email:mainEmail,password:mainPass})
+        body:JSON.stringify({secret:RT_SECRET,email:mainEmail,password:mainPass})
       });
-      showToast('✓ Account + email credentials saved');
-    }catch(e){showToast('⚠️ Account saved but email server error: '+e.message);}
+      showToast('✓ Account + email linked for auto codes');
+    }catch(e){showToast('⚠️ Account saved but email sync error');}
   }
   await saveData();renderAccModal(false);renderStockPanels();renderAdminExpiry();showToast('✓ Account added to stock');logActivity('Stock added',curAccModalKey);
   // Auto-fulfill pending orders for this skey
