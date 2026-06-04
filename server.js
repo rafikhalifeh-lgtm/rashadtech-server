@@ -41,12 +41,16 @@ async function checkOutlookEmails(email, password) {
       });
 
       imap.once('ready', () => {
+        console.log(`📬 IMAP connected for ${email}, checking inbox...`);
         imap.openBox('INBOX', true, (err, box) => {
           if (err) {
+            console.log(`❌ IMAP open error for ${email}:`, err.message);
             imap.end();
             resolve(null);
             return;
           }
+          
+          console.log(`📬 Opened inbox for ${email}, total messages: ${box.messages.total}`);
 
           // Search for Netflix emails from last 2 days
           const twoDaysAgo = new Date();
@@ -60,9 +64,17 @@ async function checkOutlookEmails(email, password) {
             }
 
             const lastUid = outlookAccounts[email]?.lastUid || 0;
-            const newMessages = results.filter(uid => uid > lastUid);
+            let newMessages = results.filter(uid => uid > lastUid);
+            
+            // If no new messages but we have results, check the most recent one anyway
+            // This handles the case when server restarts
+            if (newMessages.length === 0 && results.length > 0) {
+              console.log(`📬 No new messages for ${email}, checking last message anyway...`);
+              newMessages = [Math.max(...results)];
+            }
             
             if (newMessages.length === 0) {
+              console.log(`📬 No messages to check for ${email}`);
               imap.end();
               resolve(null);
               return;
@@ -70,6 +82,7 @@ async function checkOutlookEmails(email, password) {
 
             // Get the most recent email
             const latestUid = Math.max(...newMessages);
+            console.log(`📬 Checking ${newMessages.length} messages for ${email}, latest UID: ${latestUid}`);
             const fetch = imap.fetch(newMessages, { bodies: '' });
             let foundCode = null;
 
@@ -87,12 +100,29 @@ async function checkOutlookEmails(email, password) {
                       subject.toLowerCase().includes('verification') ||
                       subject.toLowerCase().includes('code') ||
                       subject.toLowerCase().includes('sign-in') ||
-                      subject.toLowerCase().includes('verify')) {
+                      subject.toLowerCase().includes('verify') ||
+                      subject.toLowerCase().includes('netflix.com')) {
                     
-                    // Extract 4-digit code (Netflix uses 4 digits)
-                    const codeMatch = body.match(/\b(\d{4})\b/);
+                    // Extract 4-digit code - Netflix uses 4 digits for verification
+                    // Look in body first, then subject
+                    let codeMatch = body.match(/\b(\d{4})\b/);
+                    
+                    // Also try subject in case code is mentioned there
+                    if (!codeMatch) {
+                      codeMatch = subject.match(/\b(\d{4})\b/);
+                    }
+                    
+                    // Make sure it's not just a random number - check context
                     if (codeMatch) {
-                      foundCode = codeMatch[1];
+                      const code = codeMatch[1];
+                      // Verify it's likely a Netflix code (not a phone number or other)
+                      // by checking the surrounding text or subject contains netflix/verify
+                      const fullText = body + ' ' + subject;
+                      if (fullText.toLowerCase().includes('netflix') || 
+                          fullText.toLowerCase().includes('verify') ||
+                          fullText.toLowerCase().includes('sign')) {
+                        foundCode = code;
+                      }
                     }
                   }
                 });
@@ -104,6 +134,11 @@ async function checkOutlookEmails(email, password) {
               if (!outlookAccounts[email]) outlookAccounts[email] = {};
               outlookAccounts[email].lastUid = latestUid;
               imap.end();
+              if (foundCode) {
+                console.log(`✅ CODE FOUND for ${email}: ${foundCode}`);
+              } else {
+                console.log(`❌ No Netflix code found in ${email} inbox`);
+              }
               resolve(foundCode);
             });
           });
