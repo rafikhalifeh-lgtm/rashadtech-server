@@ -172,8 +172,8 @@ input,button,select,textarea{font-family:var(--font)}
 .cust-sub-name{font-size:12px;font-weight:600}
 .cust-sub-cred{font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:2px;word-break:break-all}
 /* MODAL */
-.modal-wrap{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:500;align-items:flex-start;justify-content:center;padding:40px 16px;overflow-y:auto}
-.modal-wrap.open{display:flex}
+.modal-wrap,.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:500;align-items:flex-start;justify-content:center;padding:40px 16px;overflow-y:auto}
+.modal-wrap.open,.modal-overlay.open{display:flex}
 .modal{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);width:440px;max-width:100%;margin:auto}
 .modal-head{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
 .modal-head h3{font-size:15px;font-weight:600}
