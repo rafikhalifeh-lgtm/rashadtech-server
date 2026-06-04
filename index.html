@@ -668,16 +668,16 @@ So your EmailJS template will receive the user email correctly.
   </div>
   <div class="app-layout">
     <div class="sidenav">
-      <div class="snav-section">Menu</div>
-      <button class="snav active" onclick="switchTab('store',this)"><i class="ti ti-layout-grid"></i>Store</button>
-      <button class="snav" onclick="switchTab('subscriptions',this)"><i class="ti ti-device-tv"></i>Subscriptions</button>
-      <button class="snav" onclick="switchTab('netflix',this)"><i class="ti ti-brand-netflix"></i>Netflix</button>
-      <button class="snav" onclick="switchTab('expiry',this)"><i class="ti ti-clock-exclamation"></i>Expiry Tracker</button>
-      <button class="snav" onclick="switchTab('customers',this)"><i class="ti ti-users"></i>Customers</button>
-      <button class="snav" onclick="switchTab('transactions',this)"><i class="ti ti-receipt"></i>Transactions</button>
-      <button class="snav" onclick="switchTab('requests',this)"><i class="ti ti-bulb"></i>Requests</button>
-      <div class="snav-section">Account</div>
-      <button class="snav" onclick="switchTab('wallet',this)"><i class="ti ti-wallet"></i>Wallet</button>
+      <div class="snav-section" data-t="menu">Menu</div>
+      <button class="snav active" onclick="switchTab('store',this)"><i class="ti ti-layout-grid"></i><span data-t="store">Store</span></button>
+      <button class="snav" onclick="switchTab('subscriptions',this)"><i class="ti ti-device-tv"></i><span data-t="subscriptions">Subscriptions</span></button>
+      <button class="snav" onclick="switchTab('netflix',this)"><i class="ti ti-brand-netflix"></i><span data-t="netflix">Netflix</span></button>
+      <button class="snav" onclick="switchTab('expiry',this)"><i class="ti ti-clock-exclamation"></i><span data-t="expiryTracker">Expiry Tracker</span></button>
+      <button class="snav" onclick="switchTab('customers',this)"><i class="ti ti-users"></i><span data-t="customers">Customers</span></button>
+      <button class="snav" onclick="switchTab('transactions',this)"><i class="ti ti-receipt"></i><span data-t="transactions">Transactions</span></button>
+      <button class="snav" onclick="switchTab('requests',this)"><i class="ti ti-bulb"></i><span data-t="requests">Requests</span></button>
+      <div class="snav-section" data-t="account">Account</div>
+      <button class="snav" onclick="switchTab('wallet',this)"><i class="ti ti-wallet"></i><span data-t="wallet">Wallet</span></button>
     </div>
     <div class="main-content">
       <div id="tab-store" class="tab-pane active">
@@ -816,8 +816,8 @@ So your EmailJS template will receive the user email correctly.
       <button class="snav" onclick="switchAdminTab('dashboard',this)"><i class="ti ti-chart-bar"></i>Dashboard</button>
             <button class="snav active" onclick="switchAdminTab('stock',this)"><i class="ti ti-package"></i>Stock</button>
       <button class="snav" onclick="switchAdminTab('customers',this)"><i class="ti ti-users"></i>All Customers</button>
-      <button class="snav" onclick="switchAdminTab('wallets',this)"><i class="ti ti-wallet"></i>Wallets</button>
-      <button class="snav" onclick="switchAdminTab('requests',this)"><i class="ti ti-bulb"></i>Requests</button>
+      <button class="snav" onclick="switchAdminTab('wallets',this)"><i class="ti ti-wallet"></i><span data-t="wallet">Wallet</span>s</button>
+      <button class="snav" onclick="switchAdminTab('requests',this)"><i class="ti ti-bulb"></i><span data-t="requests">Requests</span></button>
       <button class="snav" onclick="switchAdminTab('topupreqs',this)"><i class="ti ti-cash"></i>Topup Requests</button>
       <button class="snav" onclick="switchAdminTab('pending',this)">⏳ Pending Orders</button>
       <button class="snav" onclick="switchAdminTab('gameorders',this)"><i class="ti ti-device-gamepad"></i>Game Orders</button>
@@ -2290,12 +2290,12 @@ function renderExpiryTracker(){
 
 // ADMIN EXPIRY ALERTS
 const LANG={
-  en:{more:'More',
-    store:'Store',subscriptions:'My Subscriptions',wallet:'Wallet',profile:'Profile',expiry:'Expiry',
+  en:{more:'More',netflix:'Netflix',expiryTracker:'Expiry Tracker',menu:'Menu',account:'Account',mySubs:'My Subs',
+    store:'Store',subscriptions:'Subscriptions',wallet:'Wallet',profile:'Profile',expiry:'Expiry',
     transactions:'Transactions',requests:'Requests',customers:'Customers',
     logout:'Logout',verify:'Verify email',settings:'Settings'
   },
-  ar:{more:'المزيد',
+  ar:{more:'المزيد',netflix:'نتفلكس',expiryTracker:'متابعة الانتهاء',menu:'القائمة',account:'الحساب',mySubs:'اشتراكاتي',
     store:'المتجر',subscriptions:'اشتراكاتي',wallet:'المحفظة',profile:'الملف',expiry:'الانتهاء',
     transactions:'المعاملات',requests:'الطلبات',customers:'العملاء',
     logout:'تسجيل الخروج',verify:'تأكيد البريد',settings:'الإعدادات'
@@ -3410,7 +3410,7 @@ if(document.readyState==='loading'){
 <div id="page-profile" class="page">
   <div class="topbar">
     <button onclick="switchTab('store',null)" style="background:none;border:none;cursor:pointer;color:var(--text2);font-size:20px;padding:0 8px 0 0">←</button>
-    <div class="topbar-title">My Profile</div>
+    <div class="topbar-title" data-t="profile">My Profile</div>
   </div>
   <div class="main-content">
     <div class="card" style="padding:20px;margin-bottom:16px">
