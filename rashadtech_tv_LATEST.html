@@ -306,7 +306,17 @@ input,button,select,textarea{font-family:var(--font)}
 /* EXPIRY ADMIN */
 .exp-warning-row{background:var(--red-bg);border:1px solid var(--red-border)}
 /* toast */
-.toast{position:fixed;bottom:24px;right:24px;background:var(--bg4);border:1px solid var(--border2);color:var(--text);padding:11px 18px;border-radius:var(--radius-sm);font-size:13px;font-weight:500;z-index:9999;display:none;box-shadow:0 4px 20px rgba(0,0,0,0.4)}
+:root {
+  --toast-bg: #ffffff;
+  --toast-text: #1a1a1a;
+  --toast-border: #e0e0e0;
+}
+[data-theme="dark"] {
+  --toast-bg: #222228;
+  --toast-text: #f0f0f8;
+  --toast-border: #3a3a4a;
+}
+.toast{position:fixed;bottom:24px;right:24px;background:var(--toast-bg);border:1px solid var(--toast-border);color:var(--toast-text);padding:11px 18px;border-radius:var(--radius-sm);font-size:13px;font-weight:500;z-index:9999;display:none;box-shadow:0 4px 20px rgba(0,0,0,0.4)}
 .toast.show{display:block}
 .sub-option-btn{width:100%;background:none;border:none;border-radius:var(--radius-sm);padding:12px 14px;font-size:14px;color:var(--text);cursor:pointer;text-align:left;font-family:var(--font)}
 .sub-option-btn:hover{background:var(--bg3)}
@@ -561,15 +571,13 @@ So your EmailJS template will receive the user email correctly.
       <div class="auth-switch">Have an account? <a onclick="showView('login')">Sign in</a></div>
     </div>
     <div id="view-verify" style="display:none">
-      <div class="auth-title">Verify your email</div><div class="auth-desc" id="verify-desc">Enter the 6-digit code we sent.</div>
+      <div class="auth-title">Verify your email</div><div class="auth-desc" id="verify-desc">Enter the 4-digit code we sent.</div>
       <div class="err-msg" id="verify-err">Wrong code.</div><div class="ok-msg" id="verify-ok">Code resent!</div>
       <div class="otp-row">
         <input class="otp-input" maxlength="1" id="otp0" oninput="otpMove('otp',0)" onkeydown="otpBack(event,'otp',0)">
         <input class="otp-input" maxlength="1" id="otp1" oninput="otpMove('otp',1)" onkeydown="otpBack(event,'otp',1)">
         <input class="otp-input" maxlength="1" id="otp2" oninput="otpMove('otp',2)" onkeydown="otpBack(event,'otp',2)">
         <input class="otp-input" maxlength="1" id="otp3" oninput="otpMove('otp',3)" onkeydown="otpBack(event,'otp',3)">
-        <input class="otp-input" maxlength="1" id="otp4" oninput="otpMove('otp',4)" onkeydown="otpBack(event,'otp',4)">
-        <input class="otp-input" maxlength="1" id="otp5" oninput="otpMove('otp',5)" onkeydown="otpBack(event,'otp',5)">
       </div>
       <button class="btn-primary" onclick="verifyOTP()">Verify email</button>
       <div class="auth-switch">Didn't get it? <a onclick="resendOTP()">Resend</a></div>
@@ -629,20 +637,20 @@ So your EmailJS template will receive the user email correctly.
   <div class="bottom-nav" id="app-bottom-nav">
     <div class="bottom-nav-inner">
       <button class="bnav-btn active" id="bn-store" onclick="switchTab('store',null);setActiveBottomNav('bn-store')">
-        <span class="bico">🛍</span><span>Store</span>
+        <span class="bico">🛍</span><span data-t="store">Store</span>
       </button>
       <button class="bnav-btn" id="bn-subscriptions" onclick="switchTab('subscriptions',null);setActiveBottomNav('bn-subscriptions')">
-        <span class="bico">📺</span><span>My Subs</span>
+        <span class="bico">📺</span><span data-t="subscriptions">My Subs</span>
       </button>
       <button class="bnav-btn" id="bn-expiry" onclick="switchTab('expiry',null);setActiveBottomNav('bn-expiry')">
-        <span class="bico">⏰</span><span>Expiry</span>
+        <span class="bico">⏰</span><span data-t="expiry">Expiry</span>
       </button>
       <button class="bnav-btn" id="bn-wallet" onclick="switchTab('wallet',null);setActiveBottomNav('bn-wallet')">
-        <span class="bico">💳</span><span>Wallet</span>
+        <span class="bico">💳</span><span data-t="wallet">Wallet</span>
       </button>
 
       <button class="bnav-btn" id="bn-more" onclick="toggleAppMore()">
-        <span class="bico">☰</span><span>More</span>
+        <span class="bico">☰</span><span data-t="more">More</span>
       </button>
     </div>
   </div>
@@ -785,7 +793,7 @@ So your EmailJS template will receive the user email correctly.
         <span class="bico">💳</span><span>Top-ups</span>
       </button>
       <button class="bnav-btn" id="abn-more" onclick="toggleAdminMore()">
-        <span class="bico">☰</span><span>More</span>
+        <span class="bico">☰</span><span data-t="more">More</span>
       </button>
     </div>
   </div>
@@ -1579,6 +1587,9 @@ async function checkSubLink(){
   if(!encoded && !subId)return false;
 
   const el=document.getElementById('sublink-loading');
+  // Hide admin elements on subscription page
+  const chatBubble=document.getElementById('rt-chat-bubble');
+  if(chatBubble)chatBubble.style.display='none';
 
   let found=null;
   if(encoded){
@@ -1743,7 +1754,7 @@ function doSignup(){
   const tgid=document.getElementById('su-tgid')?.value.trim()||'';
   pendingSignupData={name:n,email:e,pass:p,tgChatId:tgid};
   const code=generateOTP();pendingOTPs[e]=code;pendingOTPs[e+'_ts']=Date.now();simulateSendOTP(e,code,n);
-  document.getElementById('verify-desc').textContent=`We sent a 6-digit code to ${e}.`;
+  document.getElementById('verify-desc').textContent=`We sent a 4-digit code to ${e}.`;
   clearOTP('otp');document.getElementById('verify-err').style.display='none';document.getElementById('verify-ok').style.display='none';
   showView('verify');
 }
@@ -1815,7 +1826,7 @@ function doLogout(){
 function showVerifyModal(){
   if(!currentUser||currentUser.verified)return;
   const code=generateOTP();pendingOTPs[currentUser.email]=code;simulateSendOTP(currentUser.email,code,currentUser.name);
-  document.getElementById('vm-desc').textContent=`A 6-digit code was sent to ${currentUser.email}.`;
+  document.getElementById('vm-desc').textContent=`A 4-digit code was sent to ${currentUser.email}.`;
   document.getElementById('vm-err').style.display='none';clearOTP('votp');openModal('verify-modal');
 }
 async function verifyOTPModal(){
@@ -2279,8 +2290,16 @@ function renderExpiryTracker(){
 
 // ADMIN EXPIRY ALERTS
 const LANG={
-  en:{store:'Store',subscriptions:'My Subscriptions',wallet:'Wallet',profile:'Profile',expiry:'Expiry'},
-  ar:{store:'المتجر',subscriptions:'اشتراكاتي',wallet:'المحفظة',profile:'الملف',expiry:'الانتهاء'}
+  en:{more:'More',
+    store:'Store',subscriptions:'My Subscriptions',wallet:'Wallet',profile:'Profile',expiry:'Expiry',
+    transactions:'Transactions',requests:'Requests',customers:'Customers',
+    logout:'Logout',verify:'Verify email',settings:'Settings'
+  },
+  ar:{more:'المزيد',
+    store:'المتجر',subscriptions:'اشتراكاتي',wallet:'المحفظة',profile:'الملف',expiry:'الانتهاء',
+    transactions:'المعاملات',requests:'الطلبات',customers:'العملاء',
+    logout:'تسجيل الخروج',verify:'تأكيد البريد',settings:'الإعدادات'
+  }
 };
 let currentLang='en';
 
@@ -2296,8 +2315,19 @@ function setLang(lang){
   localStorage.setItem('rt_lang',lang);
   document.documentElement.setAttribute('dir',lang==='ar'?'rtl':'ltr');
   document.documentElement.setAttribute('lang',lang);
+  
+  // Apply translations to all elements with data-t attribute
+  document.querySelectorAll('[data-t]').forEach(el=>{
+    const key=el.getAttribute('data-t');
+    if(LANG[lang]?.[key])el.textContent=LANG[lang][key];
+  });
+  
   // Update bottom nav labels
   const labels=LANG[lang];
+  document.querySelectorAll('.bnav-btn span:last-child').forEach(el=>{
+    // Map buttons to translation keys
+  });
+  
   const lb=document.getElementById('lang-toggle');
   if(lb)lb.textContent=lang==='en'?'EN':'AR';
   showToast(lang==='ar'?'تم تغيير اللغة':'Language changed');
