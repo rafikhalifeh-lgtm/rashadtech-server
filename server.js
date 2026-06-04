@@ -522,6 +522,44 @@ app.post('/set-code', (req, res) => {
 
 app.post('/add-account', (req, res) => res.json({ success: true }));
 
+// ── CLEANUP ENDPOINT ────────────────────────────────────────────────────
+app.post('/clear-all', async (req, res) => {
+  const { secret } = req.body;
+  if (secret !== API_SECRET) return res.status(401).json({ error: 'Unauthorized' });
+  
+  try {
+    // Clear server memory
+    latestCodes = {};
+    notifiedCustomers = {};
+    
+    // Clear email accounts
+    outlookAccounts = {};
+    gmailAccounts = {};
+    
+    // Reset database
+    if (JB_KEY && JB_BIN) {
+      const emptyData = {
+        stock: [],
+        customers: [],
+        transactions: [],
+        wallets: {},
+        updatedAt: new Date().toISOString()
+      };
+      
+      await fetch(`https://api.jsonbin.io/v3/b/${JB_BIN}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'X-Master-Key': JB_KEY, 'X-Bin-Meta': 'false' },
+        body: JSON.stringify(emptyData)
+      });
+    }
+    
+    console.log('🧹 All data cleared!');
+    res.json({ success: true, message: 'All data cleared successfully' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── START ──────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, async () => {
