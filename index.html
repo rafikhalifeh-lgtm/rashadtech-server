@@ -2760,12 +2760,7 @@ function renderAccModal(showForm=false){
       <input type="text" id="new-acc-profile-pin" placeholder="e.g. 1234" maxlength="6">
       <div style="font-size:11px;color:var(--text3);margin-top:4px">Fixed PIN you set for this profile. Customer will see it on their subscription link.</div>
     </div>
-  <div class="field" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px">
-      <label style="color:var(--orange)">🔒 Main Email (for sign-in codes — never shown to customers)</label>
-      <input type="text" id="new-acc-main-email" placeholder="Gmail email for receiving Netflix codes">
-      <input type="password" id="new-acc-main-pass" placeholder="Email password" style="margin-top:6px">
-      <div style="font-size:11px;color:var(--text3);margin-top:4px">Stored securely on server. Customers only see Netflix credentials.</div>
-    </div>
+  </div>
     <button class="inline-btn" onclick="addAccount()"><i class="ti ti-plus" style="font-size:13px;vertical-align:-2px;margin-right:4px"></i>Add to stock</button>
   </div>`;
   document.getElementById('acc-modal-body').innerHTML=html;
@@ -2790,23 +2785,10 @@ async function addAccount(){
   const expiryDate=document.getElementById('new-acc-expiry').value.trim();
   if(!email||!pass){showToast('Email and password are required');return;}
   if(!accountStock[curAccModalKey])accountStock[curAccModalKey]=[];
-  const mainEmail=document.getElementById('new-acc-main-email')?.value.trim()||'';
-  const mainPass=document.getElementById('new-acc-main-pass')?.value.trim()||'';
   const profilePin=document.getElementById('new-acc-profile-pin')?.value.trim()||'';
   const accKey=curAccModalKey+'__'+Date.now();
   accountStock[curAccModalKey].push({email,pass,extra,expiryDate,used:false,accKey,profilePin});
-  // Save main email credentials to server (never stored in JSONBin)
-  if(mainEmail&&mainPass){
-    try{
-      await fetch(`${RT_SERVER}/add-account`,{
-        method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({secret:RT_SECRET,key:accKey,email:mainEmail,password:mainPass})
-      });
-      showToast('✓ Account + email credentials saved');
-    }catch(e){showToast('⚠️ Account saved but email server error: '+e.message);}
-  }
   await saveData();renderAccModal(false);renderStockPanels();renderAdminExpiry();showToast('✓ Account added to stock');logActivity('Stock added',curAccModalKey);
-  // Auto-fulfill pending orders for this skey
   await autoFulfillPending(curAccModalKey);
 }
 

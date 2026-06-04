@@ -11,5 +11,8 @@
     "imap": "^0.8.19",
     "mailparser": "^3.9.9",
     "nodemailer": "^8.0.10"
+  },
+  "devDependencies": {
+    "netlify-cli": "^26.1.0"
   }
 }
