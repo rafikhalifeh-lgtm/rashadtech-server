@@ -20,6 +20,7 @@ if (!API_SECRET || !TG_TOKEN || !TG_ADMIN) {
 
 // Code detection state
 let latestCodes = {};
+let notifiedCustomers = {};
 let gmailAccount = null; // { email, password, lastUid }
 
 // ── GMAIL EMAIL POLLING ─────────────────────────────────────────────────────
