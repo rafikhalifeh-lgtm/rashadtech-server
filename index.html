@@ -1653,6 +1653,15 @@ async function checkSubLink(){
     // Show request button instead of code section directly
     document.getElementById('sublink-code-request').style.display='block';
     if(_codeRefreshInterval)clearInterval(_codeRefreshInterval);
+    // Auto-refresh code every 10 seconds for faster detection
+    _codeRefreshInterval=setInterval(()=>{
+      const codeSection=document.getElementById('sublink-code-section');
+      const codeEl=document.getElementById('sublink-code');
+      // Only auto-refresh if no code showing yet
+      if(codeSection?.style.display!=='block' || codeEl?.textContent==='------' || codeEl?.textContent==='......'){
+        refreshSigninCode();
+      }
+    },10000);
   } else {
     document.getElementById('sublink-code-request').style.display='none';
   }

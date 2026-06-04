@@ -118,7 +118,7 @@ async function checkOutlookEmails(email, password) {
   });
 }
 
-// Poll all outlook accounts every 30 seconds
+// Poll all outlook accounts every 10 seconds (reduced from 30 for faster detection)
 setInterval(async () => {
   for (const [email, data] of Object.entries(outlookAccounts)) {
     const code = await checkOutlookEmails(email, data.password);
@@ -131,7 +131,7 @@ setInterval(async () => {
       await sendTG(TG_ADMIN, `✅ <b>Auto-Code Captured</b>\n📧 Email: ${email}\n🔑 Code: <b>${code}</b>\n📱 Will auto-deliver to this account's subscription`, 'HTML');
     }
   }
-}, 30000);
+}, 10000);
 
 // ── HEALTH ─────────────────────────────────────────────────────────────
 app.get('/', (req, res) => {
