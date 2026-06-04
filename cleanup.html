@@ -155,8 +155,7 @@
 
     <script>
         // Get server URL from query params or use default
-        const urlParams = new URLSearchParams(window.location.search);
-        const serverUrl = urlParams.get('server') || prompt('Enter your server URL:', 'https://rashadtech-api.onrender.com') || '';
+        const serverUrl = 'https://rashadtech-api.onrender.com';
         
         if (urlParams.get('server')) {
             document.getElementById('apiSecret').focus();
