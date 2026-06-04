@@ -172,8 +172,8 @@ input,button,select,textarea{font-family:var(--font)}
 .cust-sub-name{font-size:12px;font-weight:600}
 .cust-sub-cred{font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:2px;word-break:break-all}
 /* MODAL */
-.modal-wrap,.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:500;align-items:flex-start;justify-content:center;padding:40px 16px;overflow-y:auto}
-.modal-wrap.open,.modal-overlay.open{display:flex}
+.modal-wrap{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:500;align-items:flex-start;justify-content:center;padding:40px 16px;overflow-y:auto}
+.modal-wrap.open{display:flex}
 .modal{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);width:440px;max-width:100%;margin:auto}
 .modal-head{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
 .modal-head h3{font-size:15px;font-weight:600}
@@ -491,10 +491,10 @@ input,button,select,textarea{font-family:var(--font)}
 .rt-chat-input-row input{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:8px;
   padding:8px 11px;font-size:12px;color:var(--text);font-family:var(--font);outline:none;}
 .rt-chat-input-row input:focus{border-color:var(--blue);}
-.rt-chat-send{background:var(--red);border:none;border-radius:8px;padding:8px 12px;cursor:pointer;
+.rt-chat-send{background:var(--red);border:none;border-radius:8px;padding:8px 14px;cursor:pointer;min-width:42px;;
   display:flex;align-items:center;justify-content:center;transition:background 0.15s;}
 .rt-chat-send:hover{background:var(--red2);}
-.rt-chat-send svg{width:14px;height:14px;stroke:#fff;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+.rt-chat-send svg{width:16px;height:16px;stroke:#fff;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
 @media(max-width:400px){#rt-chat-win{width:calc(100vw - 24px);right:12px;bottom:80px;}}
 
 </style>
@@ -1273,7 +1273,6 @@ let _sublinkAccKey=null;
 let _sublinkEmail=null;
 let _sublinkPass=null;
 let _sublinkProfileName=null;
-let _sublinkMainEmail=null; // The Outlook email for code matching
 
 async function activateTV(){
   const code=document.getElementById('tv-code-input').value.trim().toUpperCase();
@@ -1298,10 +1297,9 @@ async function requestSigninCode(){
   try{
     const controller=new AbortController();
     const timeout=setTimeout(()=>controller.abort(),30000);
-    // Send the Outlook email as accountEmail so server matches code to correct subscription
     const r=await fetch(`${RT_SERVER}/get-code`,{
       method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({secret:RT_SECRET,profileName:_sublinkProfileName||'Customer',accountEmail:_sublinkMainEmail||null,accountKey:'default'}),
+      body:JSON.stringify({secret:RT_SECRET,profileName:_sublinkProfileName||'Customer',accountKey:'default'}),
       signal:controller.signal
     });
     clearTimeout(timeout);
@@ -1336,10 +1334,9 @@ async function refreshSigninCode(){
   try{
     const controller=new AbortController();
     const timeout=setTimeout(()=>controller.abort(),60000);
-    // Send the Outlook email as accountEmail for correct code matching
     const r=await fetch(`${RT_SERVER}/get-code`,{
       method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({secret:RT_SECRET,accountKey:'default',profileName:_sublinkProfileName||'unknown',accountEmail:_sublinkMainEmail||null,codeType:'netflix'}),
+      body:JSON.stringify({secret:RT_SECRET,accountKey:'default',profileName:_sublinkProfileName||'unknown',codeType:'netflix'}),
       signal:controller.signal
     });
     clearTimeout(timeout);
@@ -1638,7 +1635,6 @@ async function checkSubLink(){
   _sublinkEmail=found.email||'';
   _sublinkPass=found.pass||'';
   _sublinkProfileName=found.profileName||found.product||'Customer';
-  _sublinkMainEmail=found.mainEmail||null; // Store Outlook email for code matching
   if(found.extra){document.getElementById('sublink-extra-row').style.display='flex';document.getElementById('sublink-extra').textContent=found.extra;}
   if(found.expiryDate){document.getElementById('sublink-expiry-row').style.display='flex';document.getElementById('sublink-expiry').textContent=found.expiryDate;}
   if(found.profileName){document.getElementById('sublink-profile-row').style.display='flex';document.getElementById('sublink-profile-name').textContent=found.profileName;}
@@ -1653,15 +1649,6 @@ async function checkSubLink(){
     // Show request button instead of code section directly
     document.getElementById('sublink-code-request').style.display='block';
     if(_codeRefreshInterval)clearInterval(_codeRefreshInterval);
-    // Auto-refresh code every 10 seconds for faster detection
-    _codeRefreshInterval=setInterval(()=>{
-      const codeSection=document.getElementById('sublink-code-section');
-      const codeEl=document.getElementById('sublink-code');
-      // Only auto-refresh if no code showing yet
-      if(codeSection?.style.display!=='block' || codeEl?.textContent==='------' || codeEl?.textContent==='......'){
-        refreshSigninCode();
-      }
-    },10000);
   } else {
     document.getElementById('sublink-code-request').style.display='none';
   }
@@ -2775,7 +2762,7 @@ function renderAccModal(showForm=false){
     </div>
   <div class="field" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px">
       <label style="color:var(--orange)">🔒 Main Email (for sign-in codes — never shown to customers)</label>
-      <input type="text" id="new-acc-main-email" placeholder="Outlook email you created Netflix on">
+      <input type="text" id="new-acc-main-email" placeholder="Gmail email for receiving Netflix codes">
       <input type="password" id="new-acc-main-pass" placeholder="Email password" style="margin-top:6px">
       <div style="font-size:11px;color:var(--text3);margin-top:4px">Stored securely on server. Customers only see Netflix credentials.</div>
     </div>
@@ -2807,16 +2794,16 @@ async function addAccount(){
   const mainPass=document.getElementById('new-acc-main-pass')?.value.trim()||'';
   const profilePin=document.getElementById('new-acc-profile-pin')?.value.trim()||'';
   const accKey=curAccModalKey+'__'+Date.now();
-  accountStock[curAccModalKey].push({email,pass,extra,expiryDate,used:false,accKey,profilePin,mainEmail,mainPass});
-  // Save main email credentials to server for auto code capture (never stored in JSONBin)
+  accountStock[curAccModalKey].push({email,pass,extra,expiryDate,used:false,accKey,profilePin});
+  // Save main email credentials to server (never stored in JSONBin)
   if(mainEmail&&mainPass){
     try{
-      await fetch(`${RT_SERVER}/sync-outlook`,{
+      await fetch(`${RT_SERVER}/add-account`,{
         method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({secret:RT_SECRET,email:mainEmail,password:mainPass})
+        body:JSON.stringify({secret:RT_SECRET,key:accKey,email:mainEmail,password:mainPass})
       });
-      showToast('✓ Account + email linked for auto codes');
-    }catch(e){showToast('⚠️ Account saved but email sync error');}
+      showToast('✓ Account + email credentials saved');
+    }catch(e){showToast('⚠️ Account saved but email server error: '+e.message);}
   }
   await saveData();renderAccModal(false);renderStockPanels();renderAdminExpiry();showToast('✓ Account added to stock');logActivity('Stock added',curAccModalKey);
   // Auto-fulfill pending orders for this skey
