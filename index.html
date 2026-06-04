@@ -1273,6 +1273,7 @@ let _sublinkAccKey=null;
 let _sublinkEmail=null;
 let _sublinkPass=null;
 let _sublinkProfileName=null;
+let _sublinkMainEmail=null; // The Outlook email for code matching
 
 async function activateTV(){
   const code=document.getElementById('tv-code-input').value.trim().toUpperCase();
@@ -1297,9 +1298,10 @@ async function requestSigninCode(){
   try{
     const controller=new AbortController();
     const timeout=setTimeout(()=>controller.abort(),30000);
+    // Send the Outlook email as accountEmail so server matches code to correct subscription
     const r=await fetch(`${RT_SERVER}/get-code`,{
       method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({secret:RT_SECRET,profileName:_sublinkProfileName||'Customer',accountKey:'default'}),
+      body:JSON.stringify({secret:RT_SECRET,profileName:_sublinkProfileName||'Customer',accountEmail:_sublinkMainEmail||null,accountKey:'default'}),
       signal:controller.signal
     });
     clearTimeout(timeout);
@@ -1334,9 +1336,10 @@ async function refreshSigninCode(){
   try{
     const controller=new AbortController();
     const timeout=setTimeout(()=>controller.abort(),60000);
+    // Send the Outlook email as accountEmail for correct code matching
     const r=await fetch(`${RT_SERVER}/get-code`,{
       method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({secret:RT_SECRET,accountKey:'default',profileName:_sublinkProfileName||'unknown',codeType:'netflix'}),
+      body:JSON.stringify({secret:RT_SECRET,accountKey:'default',profileName:_sublinkProfileName||'unknown',accountEmail:_sublinkMainEmail||null,codeType:'netflix'}),
       signal:controller.signal
     });
     clearTimeout(timeout);
@@ -1635,6 +1638,7 @@ async function checkSubLink(){
   _sublinkEmail=found.email||'';
   _sublinkPass=found.pass||'';
   _sublinkProfileName=found.profileName||found.product||'Customer';
+  _sublinkMainEmail=found.mainEmail||null; // Store Outlook email for code matching
   if(found.extra){document.getElementById('sublink-extra-row').style.display='flex';document.getElementById('sublink-extra').textContent=found.extra;}
   if(found.expiryDate){document.getElementById('sublink-expiry-row').style.display='flex';document.getElementById('sublink-expiry').textContent=found.expiryDate;}
   if(found.profileName){document.getElementById('sublink-profile-row').style.display='flex';document.getElementById('sublink-profile-name').textContent=found.profileName;}

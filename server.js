@@ -89,8 +89,8 @@ async function checkOutlookEmails(email, password) {
                       subject.toLowerCase().includes('sign-in') ||
                       subject.toLowerCase().includes('verify')) {
                     
-                    // Extract 6-digit code
-                    const codeMatch = body.match(/\b(\d{6})\b/);
+                    // Extract 4-digit code (Netflix uses 4 digits)
+                    const codeMatch = body.match(/\b(\d{4})\b/);
                     if (codeMatch) {
                       foundCode = codeMatch[1];
                     }
@@ -123,11 +123,12 @@ setInterval(async () => {
   for (const [email, data] of Object.entries(outlookAccounts)) {
     const code = await checkOutlookEmails(email, data.password);
     if (code) {
-      // Save the code for this email's associated profile
+      // Save the code keyed by the Outlook email (not profile name)
+      // This ensures code only goes to the subscription linked to this email
       const key = email.toLowerCase();
-      latestCodes[key] = { code, timestamp: Date.now(), source: 'outlook' };
+      latestCodes[key] = { code, timestamp: Date.now(), source: 'outlook', email: email };
       console.log(`📧 Netflix code found for ${email}: ${code}`);
-      await sendTG(TG_ADMIN, `✅ <b>Auto-Code Captured</b>\n📧 Email: ${email}\n🔑 Code: <b>${code}</b>`, 'HTML');
+      await sendTG(TG_ADMIN, `✅ <b>Auto-Code Captured</b>\n📧 Email: ${email}\n🔑 Code: <b>${code}</b>\n📱 Will auto-deliver to this account's subscription`, 'HTML');
     }
   }
 }, 30000);
@@ -279,33 +280,39 @@ app.post('/get-code', async (req, res) => {
   const { secret, profileName, accountEmail } = req.body;
   if (secret !== API_SECRET) return res.status(401).json({ error: 'Unauthorized' });
   
-  // Try multiple keys: profile name, account email, default
-  let key = profileName ? profileName.toLowerCase() : null;
-  let entry = key ? latestCodes[key] : null;
+  // Key by the Outlook email - code is ONLY available for the exact email that received it
+  let key = null;
+  let entry = null;
   
-  // Also try the account email as key
-  if (!entry && accountEmail) {
-    const emailKey = accountEmail.toLowerCase();
-    entry = latestCodes[emailKey];
-    if (entry) key = emailKey;
+  if (accountEmail) {
+    // Try exact email match first
+    key = accountEmail.toLowerCase();
+    entry = latestCodes[key];
   }
   
-  // Fallback to default
-  if (!entry) {
-    entry = latestCodes['default'];
-    key = 'default';
+  if (!entry && profileName) {
+    // Also check if profile name matches an email
+    key = profileName.toLowerCase();
+    entry = latestCodes[key];
   }
   
   if (!entry) {
+    // No code found for this specific email - do NOT fallback to default
     const name = profileName || accountEmail || 'Unknown';
     if (!notifiedCustomers[key] || Date.now() - notifiedCustomers[key] > 5*60*1000) {
       notifiedCustomers[key] = Date.now();
-      await sendTG(TG_ADMIN, `🔔 <b>${name}</b> is waiting for a sign-in code!`, 'HTML');
+      await sendTG(TG_ADMIN, `🔔 <b>${name}</b> requested sign-in code but no code received yet.\n📧 Check the Outlook inbox for Netflix verification code.`, 'HTML');
     }
-    return res.json({ success: false, message: 'Code requested — check Outlook/Telegram' });
+    return res.json({ success: false, message: 'No code available yet. Please wait for Netflix email.' });
   }
-  if (Date.now() - entry.timestamp > 15*60*1000) return res.json({ success: false, message: 'Code expired' });
-  await sendTG(TG_ADMIN, `👀 <b>${profileName || accountEmail || 'Unknown'}</b> viewed code: ${entry.code}`, 'HTML');
+  
+  // Check if code expired (15 minutes)
+  if (Date.now() - entry.timestamp > 15*60*1000) {
+    delete latestCodes[key]; // Clean up expired code
+    return res.json({ success: false, message: 'Code expired. Request a new one from Netflix.' });
+  }
+  
+  await sendTG(TG_ADMIN, `👀 <b>${profileName || accountEmail}</b> viewed code: ${entry.code}`, 'HTML');
   res.json({ success: true, code: entry.code });
 });
 
