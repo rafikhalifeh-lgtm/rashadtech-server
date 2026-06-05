@@ -984,12 +984,13 @@ So your EmailJS template will receive the user email correctly.
 // ── JSONBIN.IO STORAGE ──
 // JB_BIN moved to server
 const RT_SERVER='https://rashadtech-server.onrender.com';
-const RT_SECRET=atob('cmFzaGFkdGVjaDIwMjZzZWNyZXQ=');
 // JB_KEY moved to server
 // JB_URL removed
 let _db=true;
 let dataLoaded=false;
 let _lastActivity=Date.now();
+let authToken=localStorage.getItem('rt_auth_token')||'';
+let authRole=localStorage.getItem('rt_auth_role')||'';
 const INACTIVITY_MS=30*60*1000; // 30 minutes
 // Manage inert on page transitions (accessibility fix)
 function setPageActive(pageId){
@@ -1045,13 +1046,28 @@ let _jbCache=null; // local cache of full bin
 
 function initFirebase(){} // no-op, kept for compatibility
 
+function authHeaders(){
+  const headers={'Content-Type':'application/json'};
+  if(authToken)headers.Authorization='Bearer '+authToken;
+  return headers;
+}
+
+function applyDataSnapshot(data){
+  _jbCache=data||{};
+  users=Array.isArray(_jbCache.users)?_jbCache.users:[];
+  accountStock=_jbCache.stock||{};
+  globalRequests=_jbCache.requests||[];
+  topupRequests=_jbCache.topupreqs||[];
+  dataLoaded=true;
+}
+
 async function jbRead(){
   const controller=new AbortController();
   const timeout=setTimeout(()=>controller.abort(),12000);
   try{
     const r=await fetch(RT_SERVER+'/db/read',{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({secret:RT_SECRET}),signal:controller.signal
+      method:'POST',headers:authHeaders(),
+      body:JSON.stringify({}),signal:controller.signal
     });
     clearTimeout(timeout);
     if(!r.ok)throw new Error('HTTP '+r.status);
@@ -1065,8 +1081,8 @@ async function jbRead(){
 
 async function jbWrite(data){
   const r=await fetch(RT_SERVER+'/db/write',{
-    method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({secret:RT_SECRET,data})
+    method:'POST',headers:authHeaders(),
+    body:JSON.stringify({data})
   });
   if(!r.ok)throw new Error('Write failed: '+r.status);
   return await r.json();
@@ -1241,8 +1257,8 @@ let topupRequests=[];
 async function sendTelegramMessage(message){
   try{
     await fetch(RT_SERVER+'/notify',{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({secret:RT_SECRET,message})
+      method:'POST',headers:authHeaders(),
+      body:JSON.stringify({message})
     });
   }catch(err){console.error('Telegram send error:',err);}
 }
@@ -1254,16 +1270,16 @@ async function sendTelegramToUser(chatId,msg){
   if(!chatId)return;
   try{
     await fetch(RT_SERVER+'/notify',{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({secret:RT_SECRET,message:msg,chatId,parse_mode:'HTML'})
+      method:'POST',headers:authHeaders(),
+      body:JSON.stringify({message:msg,chatId,parse_mode:'HTML'})
     });
   }catch(e){console.error('TG user fetch error:',e);}
 }
 async function sendTelegram(msg){
   try{
     const res=await fetch(RT_SERVER+'/notify',{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({secret:RT_SECRET,message:msg,parse_mode:'HTML'})
+      method:'POST',headers:authHeaders(),
+      body:JSON.stringify({message:msg,parse_mode:'HTML'})
     });
     const j=await res.json();
     if(!j.success)console.error('Telegram error:',j);
@@ -1302,7 +1318,7 @@ async function requestSigninCode(){
     const timeout=setTimeout(()=>controller.abort(),30000);
     const r=await fetch(`${RT_SERVER}/get-code`,{
       method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({secret:RT_SECRET,profileName:_sublinkProfileName||'Customer',accountKey:'default',mainEmail:_sublinkMainEmail,codeEmail:_sublinkCodeEmail,inboxEmail:_sublinkInboxEmail}),
+      body:JSON.stringify({profileName:_sublinkProfileName||'Customer',accountKey:'default',mainEmail:_sublinkMainEmail,codeEmail:_sublinkCodeEmail,inboxEmail:_sublinkInboxEmail}),
       signal:controller.signal
     });
     clearTimeout(timeout);
@@ -1339,7 +1355,7 @@ async function refreshSigninCode(){
     const timeout=setTimeout(()=>controller.abort(),60000);
     const r=await fetch(`${RT_SERVER}/get-code`,{
       method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({secret:RT_SECRET,accountKey:'default',profileName:_sublinkProfileName||'unknown',codeType:'netflix',mainEmail:_sublinkMainEmail,codeEmail:_sublinkCodeEmail,inboxEmail:_sublinkInboxEmail}),
+      body:JSON.stringify({accountKey:'default',profileName:_sublinkProfileName||'unknown',codeType:'netflix',mainEmail:_sublinkMainEmail,codeEmail:_sublinkCodeEmail,inboxEmail:_sublinkInboxEmail}),
       signal:controller.signal
     });
     clearTimeout(timeout);
@@ -1604,7 +1620,7 @@ async function checkSubLink(){
       const r=await Promise.race([
         fetch(RT_SERVER+'/db/read',{
           method:'POST',headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({secret:RT_SECRET})
+          body:JSON.stringify({})
         }).then(res=>res.json()).then(res=>{if(!res.success)throw new Error('proxy error');return res;}),
         new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),8000))
       ]);
@@ -1730,13 +1746,22 @@ function getOTP(pfx){return[0,1,2,3,4,5].map(i=>document.getElementById(pfx+i)?.
 function clearOTP(pfx){[0,1,2,3,4,5].forEach(i=>{const el=document.getElementById(pfx+i);if(el)el.value='';});}
 
 function showView(v){['login','signup','verify','forgot','reset','admin'].forEach(x=>{const el=document.getElementById('view-'+x);if(el)el.style.display=x===v?'block':'none';});}
-function doLogin(){
+async function doLogin(){
   const e=document.getElementById('login-email').value.trim();
   const p=document.getElementById('login-pass').value;
-  const u=users.find(x=>x.email===e&&x.pass===p);
-  if(!u){document.getElementById('login-err').textContent='Invalid email or password.';document.getElementById('login-err').style.display='block';return;}
-  if(u.banned){document.getElementById('login-err').textContent='Your account has been suspended. Please contact support.';document.getElementById('login-err').style.display='block';return;}
-  document.getElementById('login-err').style.display='none';currentUser=u;logActivity('Customer login',u.email);enterApp();
+  const err=document.getElementById('login-err');
+  try{
+    const r=await fetch(RT_SERVER+'/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:e,password:p})});
+    const j=await r.json();
+    if(!r.ok||!j.success)throw new Error(j.error||'Invalid email or password.');
+    authToken=j.token;authRole='user';
+    localStorage.setItem('rt_auth_token',authToken);localStorage.setItem('rt_auth_role',authRole);
+    applyDataSnapshot(j.data||{users:[j.user]});
+    currentUser=j.user||users[0];
+    err.style.display='none';logActivity('Customer login',currentUser.email);enterApp();
+  }catch(ex){
+    err.textContent=ex.message||'Invalid email or password.';err.style.display='block';
+  }
 }
 function doSignup(){
   const n=document.getElementById('su-name').value.trim();
@@ -1758,49 +1783,75 @@ async function verifyOTP(){
   cleanExpiredOTPs();
   if(!e||pendingOTPs[e]!==code){document.getElementById('verify-err').style.display='block';return;}
   document.getElementById('verify-err').style.display='none';
-  const u={name:pendingSignupData.name,email:pendingSignupData.email,pass:pendingSignupData.pass,tgChatId:pendingSignupData.tgChatId||'',balance:0,transactions:[],orders:[],myCustomers:[],verified:true,joinedDate:new Date().toLocaleString('en-GB',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})};
-  users.push(u);currentUser=u;pendingSignupData=null;delete pendingOTPs[e];
-  await saveData();showToast('✓ Email verified! Welcome!');
-  sendTelegram(`✅ <b>New Customer Registered!</b>\n👤 ${u.name}\n📧 ${u.email}${u.tgChatId?'\n💬 TG: '+u.tgChatId:''}\n📅 ${u.joinedDate}`);
-  enterApp();
+  try{
+    const r=await fetch(RT_SERVER+'/auth/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:pendingSignupData.name,email:pendingSignupData.email,password:pendingSignupData.pass,tgChatId:pendingSignupData.tgChatId||''})});
+    const j=await r.json();
+    if(!r.ok||!j.success)throw new Error(j.error||'Signup failed');
+    authToken=j.token;authRole='user';
+    localStorage.setItem('rt_auth_token',authToken);localStorage.setItem('rt_auth_role',authRole);
+    applyDataSnapshot(j.data||{users:[j.user]});
+    currentUser=j.user||users[0];pendingSignupData=null;delete pendingOTPs[e];
+    showToast('✓ Email verified! Welcome!');
+    sendTelegram(`✅ <b>New Customer Registered!</b>\n👤 ${currentUser.name}\n📧 ${currentUser.email}${currentUser.tgChatId?'\n💬 TG: '+currentUser.tgChatId:''}\n📅 ${currentUser.joinedDate}`);
+    enterApp();
+  }catch(ex){
+    document.getElementById('verify-err').textContent=ex.message;document.getElementById('verify-err').style.display='block';
+  }
 }
 function resendOTP(){
   if(!pendingSignupData)return;
   const code=generateOTP();pendingOTPs[pendingSignupData.email]=code;simulateSendOTP(pendingSignupData.email,code,pendingSignupData.name);
   document.getElementById('verify-ok').style.display='block';
 }
-function sendResetCode(){
+async function sendResetCode(){
   const e=document.getElementById('forgot-email').value.trim();
-  const u=users.find(x=>x.email===e);
-  if(!u){document.getElementById('forgot-err').style.display='block';document.getElementById('forgot-ok').style.display='none';return;}
-  document.getElementById('forgot-err').style.display='none';
-  const code=generateOTP();pendingResetOTPs[e]=code;simulateSendOTP(e,code,u.name);
-  document.getElementById('forgot-ok').style.display='block';
-  setTimeout(()=>showView('reset'),1500);
+  try{
+    const r=await fetch(RT_SERVER+'/auth/user-lookup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:e})});
+    const j=await r.json();
+    if(!r.ok||!j.exists)throw new Error('Email not found.');
+    document.getElementById('forgot-err').style.display='none';
+    const code=generateOTP();pendingResetOTPs[e]=code;simulateSendOTP(e,code,j.name||e);
+    document.getElementById('forgot-ok').style.display='block';
+    setTimeout(()=>showView('reset'),1500);
+  }catch(ex){
+    document.getElementById('forgot-err').textContent=ex.message||'Email not found.';
+    document.getElementById('forgot-err').style.display='block';document.getElementById('forgot-ok').style.display='none';
+  }
 }
 async function doResetPass(){
   const code=getOTP('rotp');const np=document.getElementById('new-pass').value;const cp=document.getElementById('confirm-pass').value;
   const email=document.getElementById('forgot-email').value.trim();
-  const u=users.find(x=>x.email===email);
-  if(!u||pendingResetOTPs[email]!==code||np.length<6||np!==cp){document.getElementById('reset-err').style.display='block';return;}
-  document.getElementById('reset-err').style.display='none';u.pass=np;delete pendingResetOTPs[email];
-  await saveData();showToast('✓ Password reset! Please sign in.');showView('login');
+  if(pendingResetOTPs[email]!==code||np.length<6||np!==cp){document.getElementById('reset-err').style.display='block';return;}
+  try{
+    const r=await fetch(RT_SERVER+'/auth/reset-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:np})});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok||j.success===false)throw new Error(j.error||'Password reset failed');
+    document.getElementById('reset-err').style.display='none';delete pendingResetOTPs[email];
+    showToast('✓ Password reset! Please sign in.');showView('login');
+  }catch(ex){
+    document.getElementById('reset-err').textContent=ex.message;document.getElementById('reset-err').style.display='block';
+  }
 }
 async function doAdminLogin(){
   const p=document.getElementById('admin-pass').value;
-  if(p!=='RkhRkh7979@'){document.getElementById('admin-err').style.display='block';return;}
   // 2FA PIN
   const pin=prompt('🔐 Enter admin PIN:');
-  if(pin!=='7979'){document.getElementById('admin-err').style.display='block';document.getElementById('admin-err').textContent='Wrong PIN';return;}
-  document.getElementById('admin-err').style.display='none';isAdmin=true;
-  logActivity('Admin login');
-  // Save admin session — 8 hours
-  try{localStorage.setItem('rt_admin_session',JSON.stringify({ts:Date.now()}));}catch(e){}
-  await loadData();
-  document.getElementById('page-auth').classList.remove('active');
-  document.getElementById('page-admin').classList.add('active');
-  renderStockPanels();renderAdminCustomers();renderWallets();renderAdminRequests();renderAdminExpiry();renderTopupRequests();renderGameOrders();renderAdminPending();
-  startRealtimeSync();
+  try{
+    const r=await fetch(RT_SERVER+'/auth/admin-login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:p,pin})});
+    const j=await r.json();
+    if(!r.ok||!j.success)throw new Error(j.error||'Wrong password or PIN');
+    authToken=j.token;authRole='admin';isAdmin=true;
+    localStorage.setItem('rt_auth_token',authToken);localStorage.setItem('rt_auth_role',authRole);
+    try{localStorage.setItem('rt_admin_session',JSON.stringify({ts:Date.now()}));}catch(e){}
+    applyDataSnapshot(j.data||{});
+    document.getElementById('admin-err').style.display='none';logActivity('Admin login');
+    document.getElementById('page-auth').classList.remove('active');
+    document.getElementById('page-admin').classList.add('active');
+    renderStockPanels();renderAdminCustomers();renderWallets();renderAdminRequests();renderAdminExpiry();renderTopupRequests();renderGameOrders();renderAdminPending();
+    startRealtimeSync();
+  }catch(ex){
+    document.getElementById('admin-err').textContent=ex.message;document.getElementById('admin-err').style.display='block';
+  }
 }
 function enterApp(){
   document.getElementById('page-auth').classList.remove('active');
@@ -1808,13 +1859,15 @@ function enterApp(){
   document.getElementById('topbar-av').textContent=currentUser.name.charAt(0).toUpperCase();
   document.getElementById('unverified-chip').style.display=currentUser.verified?'none':'inline-flex';
   // Save session — expires in 8 hours
-  const session={email:currentUser.email,pass:currentUser.pass,ts:Date.now()};
+  const session={email:currentUser.email,ts:Date.now()};
   try{localStorage.setItem('rt_session',JSON.stringify(session));}catch(e){}
   updateBal();renderProducts('all');renderAmounts();renderSubs();renderTx();renderMyCustomers();renderReqChips();renderMyRequests();renderExpiryTracker();
 }
 function doLogout(){
   currentUser=null;isAdmin=false;
-  try{localStorage.removeItem('rt_session');localStorage.removeItem('rt_admin_session');}catch(e){}
+  try{fetch(RT_SERVER+'/auth/logout',{method:'POST',headers:authHeaders()});}catch(e){}
+  authToken='';authRole='';
+  try{localStorage.removeItem('rt_session');localStorage.removeItem('rt_admin_session');localStorage.removeItem('rt_auth_token');localStorage.removeItem('rt_auth_role');}catch(e){}
   ['page-app','page-admin'].forEach(id=>document.getElementById(id).classList.remove('active'));
   document.getElementById('page-auth').classList.add('active');showView('login');
 }
@@ -2121,6 +2174,41 @@ async function confirmPurchase(){
   if(currentUser.balance<price){showToast('⚠️ Insufficient balance. Please top up your wallet.');return;}
   const freshUser=users.find(x=>x.email===currentUser.email);
   if(freshUser?.banned){showToast('⚠️ Your account has been suspended. Contact support.');return;}
+  if(!isAdmin){
+    try{
+      const r=await fetch(RT_SERVER+'/purchase',{
+        method:'POST',headers:authHeaders(),
+        body:JSON.stringify({product:{id:p.id,name:p.name,short:p.short,color:p.color,tc:p.tc},planLabel,price,skey,extraFields,assignCustId})
+      });
+      const j=await r.json();
+      if(!r.ok||!j.success)throw new Error(j.error||'Purchase failed');
+      applyDataSnapshot(j.data||{users:[j.user]});
+      currentUser=j.user||users.find(x=>x.email===currentUser.email)||currentUser;
+      closeModal('buy-modal');closeModal('assign-modal');updateBal();renderSubs();renderTx();renderMyCustomers();renderExpiryTracker();renderProducts('all');
+      showToast('✓ Purchase successful!');
+      if(j.pending){
+        if(currentUser.tgChatId)await sendTelegramToUser(currentUser.tgChatId,`✅ <b>Purchase Confirmed!</b>\n\n📦 ${p.name} · ${planLabel}\n💵 ${fmt(price)}\n💰 New balance: ${fmt(currentUser.balance)}\n\n⏳ Your account credentials will be delivered to you here shortly. Thank you for your patience!`);
+        await sendTelegram(`⏳ <b>Pending Order</b>\n👤 ${currentUser.name} (${currentUser.email})\n📦 ${p.name} · ${planLabel}\n💵 ${fmt(price)}\n⚠️ No stock — add accounts in Stock tab to fulfill.`);
+      } else if(j.order){
+        const order=j.order;
+        let tgMsg=`🎉 <b>New Purchase</b>\n\n📦 <b>Product:</b> ${p.name}\n📋 <b>Plan:</b> ${planLabel}\n💵 <b>Price:</b> ${fmt(price)}\n👤 <b>Buyer:</b> ${currentUser.name} (${currentUser.email})\n\n🔐 <b>Credentials:</b>\n📧 Email: <code>${order.email}</code>\n🔑 Password: <code>${order.pass}</code>`;
+        if(order.extra)tgMsg+=`\nℹ️ Extra: <code>${order.extra}</code>`;
+        if(order.expiryDate)tgMsg+=`\n📅 Expires: ${order.expiryDate}`;
+        await sendTelegram(tgMsg);
+        if(assignCustId===null&&currentUser.tgChatId){
+          const data2={id:order.id,product:p.name,short:p.short,color:p.color,tc:p.tc,productId:p.id,plan:planLabel,email:order.email,pass:order.pass,expiryDate:order.expiryDate||'',profileName:order.profileName||'',profilePin:order.profilePin||'',accKey:order.accKey||'',mainEmail:order.mainEmail||'',codeEmail:order.email,inboxEmail:order.mainEmail||order.email};
+          const subLink=`${location.origin}${location.pathname}?s=${btoa(unescape(encodeURIComponent(JSON.stringify(data2))))}`;
+          let custCred=`✅ <b>Your ${p.name} is ready!</b>\n\n📋 ${planLabel}\n\n🔐 <b>Your credentials:</b>\n📧 Email: <code>${order.email}</code>\n🔑 Password: <code>${order.pass}</code>`;
+          if(order.extra)custCred+=`\nℹ️ Extra: <code>${order.extra}</code>`;
+          if(order.expiryDate)custCred+=`\n⏰ Expires: ${order.expiryDate}`;
+          if(order.profilePin)custCred+=`\n🔢 PIN: <code>${order.profilePin}</code>`;
+          custCred+=`\n\n🔗 <b>Your subscription link:</b>\n${subLink}\n\nEnjoy! 🌟`;
+          await sendTelegramToUser(currentUser.tgChatId,custCred);
+        }
+      }
+    }catch(e){showToast('⚠️ '+e.message);}
+    return;
+  }
   const acc=getNextAcc(skey);
   const dateStr=new Date().toLocaleString('en-GB',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
   if(!acc){
@@ -2841,8 +2929,8 @@ async function addAccount(){
   if(mainEmail&&mainPass){
     try{
       const setupRes=await fetch(`${RT_SERVER}/setup-gmail`,{
-        method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({secret:RT_SECRET,email:mainEmail,password:mainPass})
+        method:'POST',headers:authHeaders(),
+        body:JSON.stringify({email:mainEmail,password:mainPass})
       });
       const setupJson=await setupRes.json().catch(()=>({}));
       if(!setupRes.ok||setupJson.success===false)throw new Error(setupJson.error||'Gmail setup failed');
@@ -3222,18 +3310,10 @@ async function saveData(){
 }
 
 async function loadData(){
+  if(!authToken){dataLoaded=true;return;}
   // Load from JSONBin (authoritative)
   try{
-    _jbCache=await jbRead();
-    if(_jbCache.users&&_jbCache.users.length>0){
-      users=_jbCache.users;
-    }
-    if(_jbCache.stock&&Object.keys(_jbCache.stock).length>0){
-      accountStock=_jbCache.stock;
-    }
-    if(_jbCache.requests)globalRequests=_jbCache.requests;
-    if(_jbCache.topupreqs)topupRequests=_jbCache.topupreqs;
-    dataLoaded=true;
+    applyDataSnapshot(await jbRead());
     console.log('JSONBin loaded — users:',users.length,'stock keys:',Object.keys(accountStock).length);
   }catch(e){
     console.warn('load error:',e.message);
@@ -3382,13 +3462,14 @@ async function init(){
   // Restore customer session
   try{
     const s=localStorage.getItem('rt_session');
-    if(s){
+    if(s&&authToken&&authRole==='user'){
       const sess=JSON.parse(s);
       if(Date.now()-sess.ts < SESSION_MS){
-        const u=users.find(x=>x.email===sess.email&&x.pass===sess.pass);
+        if(!users.length)await loadData();
+        const u=users.find(x=>x.email===sess.email);
         if(u){currentUser=u;enterApp();return;}
       } else {
-        localStorage.removeItem('rt_session');
+        localStorage.removeItem('rt_session');localStorage.removeItem('rt_auth_token');localStorage.removeItem('rt_auth_role');
       }
     }
   }catch(e){}
@@ -3396,16 +3477,17 @@ async function init(){
   // Restore admin session
   try{
     const a=localStorage.getItem('rt_admin_session');
-    if(a){
+    if(a&&authToken&&authRole==='admin'){
       const sess=JSON.parse(a);
       if(Date.now()-sess.ts < SESSION_MS){
+        if(!users.length&&!Object.keys(accountStock).length)await loadData();
         isAdmin=true;
         document.getElementById('page-auth').classList.remove('active');
         document.getElementById('page-admin').classList.add('active');
         renderStockPanels();renderAdminCustomers();renderWallets();renderAdminRequests();renderAdminExpiry();renderTopupRequests();renderGameOrders();renderAdminPending();
         return;
       } else {
-        localStorage.removeItem('rt_admin_session');
+        localStorage.removeItem('rt_admin_session');localStorage.removeItem('rt_auth_token');localStorage.removeItem('rt_auth_role');
       }
     }
   }catch(e){}

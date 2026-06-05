@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const crypto = require('crypto');
 const { ImapFlow } = require('imapflow');
 const { simpleParser } = require('mailparser');
 
@@ -13,9 +14,12 @@ const TG_TOKEN   = process.env.TG_TOKEN;
 const TG_ADMIN   = process.env.TG_ADMIN;
 const JB_KEY     = process.env.JB_KEY;
 const JB_BIN     = process.env.JB_BIN;
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'RkhRkh7979@';
+const ADMIN_PIN = process.env.ADMIN_PIN || '7979';
 const GMAIL_MONITORS_KEY = 'gmailMonitors';
 const CODE_TTL_MS = 15 * 60 * 1000;
 const EMAIL_LOOKBACK_MS = 24 * 60 * 60 * 1000;
+const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 
 if (!API_SECRET || !TG_TOKEN || !TG_ADMIN) {
   console.error('❌ Missing required env vars: API_SECRET, TG_TOKEN, TG_ADMIN');
@@ -25,6 +29,7 @@ let latestCodes = {};
 let notifiedCustomers = {};
 let monitoredEmails = {}; // { gmailEmail: { user, pass, lastUid, lastCheckedAt } }
 let gmailMonitorsLoaded = false;
+let sessions = new Map();
 
 function normalizeEmail(email) {
   return String(email || '').trim().toLowerCase();
@@ -37,6 +42,35 @@ function uniqueNormalizedEmails(values) {
 function normalizeGmailPassword(password) {
   // Google displays app passwords in groups; IMAP auth expects the raw 16 chars.
   return String(password || '').replace(/\s+/g, '');
+}
+
+function createSession(role, email) {
+  const token = crypto.randomBytes(32).toString('hex');
+  sessions.set(token, { role, email: normalizeEmail(email), expiresAt: Date.now() + SESSION_TTL_MS });
+  return token;
+}
+
+function getSession(req) {
+  const header = req.get('authorization') || '';
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  if (!match) return null;
+  const session = sessions.get(match[1]);
+  if (!session) return null;
+  if (Date.now() > session.expiresAt) {
+    sessions.delete(match[1]);
+    return null;
+  }
+  session.expiresAt = Date.now() + SESSION_TTL_MS;
+  return session;
+}
+
+function requireSession(req, res, roles) {
+  const session = getSession(req);
+  if (!session || (roles && !roles.includes(session.role))) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return null;
+  }
+  return session;
 }
 
 function describeGmailError(error) {
@@ -86,6 +120,64 @@ function stripPrivateData(data) {
   return publicData;
 }
 
+function sanitizeStock(stock) {
+  const safe = {};
+  for (const [key, accounts] of Object.entries(stock || {})) {
+    safe[key] = (accounts || []).map(account => ({ used: Boolean(account.used) }));
+  }
+  return safe;
+}
+
+function sanitizeUser(user) {
+  if (!user) return null;
+  return JSON.parse(JSON.stringify(user));
+}
+
+function dataForSession(data, session) {
+  const publicData = stripPrivateData(data || {});
+  if (session.role === 'admin') return publicData;
+  const user = (publicData.users || []).find(u => normalizeEmail(u.email) === session.email);
+  return {
+    users: user ? [sanitizeUser(user)] : [],
+    stock: sanitizeStock(publicData.stock || {}),
+    requests: publicData.requests || [],
+    topupreqs: (publicData.topupreqs || []).filter(r => normalizeEmail(r.email) === session.email),
+    pending: [],
+    gameorders: []
+  };
+}
+
+function mergeUserWrite(existing, incoming, session) {
+  const next = { ...(existing || {}) };
+  const email = session.email;
+  const users = Array.isArray(next.users) ? next.users : [];
+  const incomingUser = (incoming.users || []).find(u => normalizeEmail(u.email) === email);
+  if (incomingUser) {
+    const idx = users.findIndex(u => normalizeEmail(u.email) === email);
+    if (idx >= 0) {
+      users[idx] = {
+        ...users[idx],
+        name: incomingUser.name,
+        tgChatId: incomingUser.tgChatId || '',
+        verified: Boolean(incomingUser.verified),
+        orders: Array.isArray(incomingUser.orders) ? incomingUser.orders : users[idx].orders,
+        myCustomers: Array.isArray(incomingUser.myCustomers) ? incomingUser.myCustomers : users[idx].myCustomers
+      };
+    }
+  }
+  next.users = users;
+
+  if (Array.isArray(incoming.requests)) next.requests = incoming.requests;
+
+  const existingTopups = Array.isArray(next.topupreqs) ? next.topupreqs : [];
+  const otherTopups = existingTopups.filter(r => normalizeEmail(r.email) !== email);
+  const ownTopups = (incoming.topupreqs || []).filter(r => normalizeEmail(r.email) === email);
+  next.topupreqs = [...otherTopups, ...ownTopups];
+
+  if (existing && existing[GMAIL_MONITORS_KEY]) next[GMAIL_MONITORS_KEY] = existing[GMAIL_MONITORS_KEY];
+  return next;
+}
+
 // ── HEALTH ─────────────────────────────────────────────────────────────
 app.get('/', (req, res) => {
   res.json({ status: 'rashadtech server running', codes: Object.keys(latestCodes) });
@@ -96,12 +188,12 @@ app.get('/ping', (req, res) => {
 
 // ── JSONBIN PROXY ──────────────────────────────────────────────────────
 app.post('/db/read', async (req, res) => {
-  const { secret } = req.body;
-  if (secret !== API_SECRET) return res.status(401).json({ error: 'Unauthorized' });
+  const session = requireSession(req, res, ['admin', 'user']);
+  if (!session) return;
   if (!JB_KEY || !JB_BIN) return res.status(500).json({ error: 'DB not configured' });
   try {
     const data = await readJsonBinRaw();
-    res.json({ success: true, data: stripPrivateData(data) });
+    res.json({ success: true, data: dataForSession(data, session) });
   } catch(e) {
     console.error('DB read error:', e.message);
     res.status(500).json({ error: e.message });
@@ -109,14 +201,20 @@ app.post('/db/read', async (req, res) => {
 });
 
 app.post('/db/write', async (req, res) => {
-  const { secret, data } = req.body;
-  if (secret !== API_SECRET) return res.status(401).json({ error: 'Unauthorized' });
+  const session = requireSession(req, res, ['admin', 'user']);
+  if (!session) return;
+  const { data } = req.body;
   if (!JB_KEY || !JB_BIN) return res.status(500).json({ error: 'DB not configured' });
   try {
     const existing = await readJsonBinRaw().catch(() => ({}));
-    const nextData = { ...(data || {}) };
-    if (existing && existing[GMAIL_MONITORS_KEY]) {
-      nextData[GMAIL_MONITORS_KEY] = existing[GMAIL_MONITORS_KEY];
+    let nextData;
+    if (session.role === 'admin') {
+      nextData = { ...(data || {}) };
+      if (existing && existing[GMAIL_MONITORS_KEY]) {
+        nextData[GMAIL_MONITORS_KEY] = existing[GMAIL_MONITORS_KEY];
+      }
+    } else {
+      nextData = mergeUserWrite(existing, data || {}, session);
     }
     const result = await writeJsonBinRaw(nextData);
     res.json({ success: true, result });
@@ -126,10 +224,174 @@ app.post('/db/write', async (req, res) => {
   }
 });
 
+app.post('/auth/login', async (req, res) => {
+  const { email, password } = req.body;
+  try {
+    const data = await readJsonBinRaw();
+    const user = (data.users || []).find(u => normalizeEmail(u.email) === normalizeEmail(email) && u.pass === password);
+    if (!user) return res.status(401).json({ error: 'Invalid email or password' });
+    if (user.banned) return res.status(403).json({ error: 'Your account has been suspended. Please contact support.' });
+    const token = createSession('user', user.email);
+    res.json({ success: true, token, user: sanitizeUser(user), data: dataForSession(data, { role: 'user', email: normalizeEmail(user.email) }) });
+  } catch(e) {
+    console.error('Login error:', e.message);
+    res.status(500).json({ error: 'Login failed' });
+  }
+});
+
+app.post('/auth/admin-login', async (req, res) => {
+  const { password, pin } = req.body;
+  if (password !== ADMIN_PASSWORD || pin !== ADMIN_PIN) return res.status(401).json({ error: 'Wrong password or PIN' });
+  try {
+    const data = await readJsonBinRaw();
+    const token = createSession('admin', 'admin');
+    res.json({ success: true, token, data: dataForSession(data, { role: 'admin' }) });
+  } catch(e) {
+    console.error('Admin login error:', e.message);
+    res.status(500).json({ error: 'Admin login failed' });
+  }
+});
+
+app.post('/auth/signup', async (req, res) => {
+  const { name, email, password, tgChatId } = req.body;
+  const cleanEmail = normalizeEmail(email);
+  if (!name || !cleanEmail || !password || password.length < 6) return res.status(400).json({ error: 'Invalid signup data' });
+  try {
+    const data = await readJsonBinRaw();
+    data.users = Array.isArray(data.users) ? data.users : [];
+    if (data.users.some(u => normalizeEmail(u.email) === cleanEmail)) return res.status(409).json({ error: 'Email already registered' });
+    const user = {
+      name: String(name).trim(),
+      email: cleanEmail,
+      pass: password,
+      tgChatId: String(tgChatId || '').trim(),
+      balance: 0,
+      transactions: [],
+      orders: [],
+      myCustomers: [],
+      verified: true,
+      joinedDate: new Date().toLocaleString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' })
+    };
+    data.users.push(user);
+    await writeJsonBinRaw(data);
+    const token = createSession('user', user.email);
+    res.json({ success: true, token, user: sanitizeUser(user), data: dataForSession(data, { role: 'user', email: cleanEmail }) });
+  } catch(e) {
+    console.error('Signup error:', e.message);
+    res.status(500).json({ error: 'Signup failed' });
+  }
+});
+
+app.post('/auth/user-lookup', async (req, res) => {
+  const { email } = req.body;
+  try {
+    const data = await readJsonBinRaw();
+    const user = (data.users || []).find(u => normalizeEmail(u.email) === normalizeEmail(email));
+    if (!user) return res.json({ success: true, exists: false });
+    res.json({ success: true, exists: true, name: user.name || normalizeEmail(email) });
+  } catch(e) {
+    console.error('User lookup error:', e.message);
+    res.status(500).json({ error: 'Lookup failed' });
+  }
+});
+
+app.post('/auth/reset-password', async (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password || password.length < 6) return res.status(400).json({ error: 'Invalid password' });
+  try {
+    const data = await readJsonBinRaw();
+    const user = (data.users || []).find(u => normalizeEmail(u.email) === normalizeEmail(email));
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    user.pass = password;
+    await writeJsonBinRaw(data);
+    res.json({ success: true });
+  } catch(e) {
+    console.error('Reset password error:', e.message);
+    res.status(500).json({ error: 'Password reset failed' });
+  }
+});
+
+app.post('/auth/logout', (req, res) => {
+  const header = req.get('authorization') || '';
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  if (match) sessions.delete(match[1]);
+  res.json({ success: true });
+});
+
+app.post('/purchase', async (req, res) => {
+  const session = requireSession(req, res, ['user']);
+  if (!session) return;
+  const { product, planLabel, price, skey, extraFields, assignCustId } = req.body;
+  if (!product || !planLabel || !skey || !Number(price)) return res.status(400).json({ error: 'Invalid purchase' });
+  try {
+    const data = await readJsonBinRaw();
+    data.users = Array.isArray(data.users) ? data.users : [];
+    data.stock = data.stock || {};
+    data.pending = Array.isArray(data.pending) ? data.pending : [];
+    const user = data.users.find(u => normalizeEmail(u.email) === session.email);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (user.banned) return res.status(403).json({ error: 'Your account has been suspended. Contact support.' });
+    if (Number(user.balance || 0) < Number(price)) return res.status(400).json({ error: 'Insufficient balance' });
+
+    const dateStr = new Date().toLocaleString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
+    const accounts = data.stock[skey] || [];
+    const acc = accounts.find(a => !a.used);
+    user.balance = Number(user.balance || 0) - Number(price);
+    user.transactions = Array.isArray(user.transactions) ? user.transactions : [];
+
+    if (!acc) {
+      const pendingOrder = {
+        id:'#'+(Math.floor(Math.random()*90000+10000)),
+        userEmail:user.email,userName:user.name,userTgChatId:user.tgChatId||'',
+        product:product.name,short:product.short,color:product.color,tc:product.tc,
+        productId:product.id,plan:planLabel,price:Number(price),skey,date:dateStr,
+        ...(extraFields||{})
+      };
+      data.pending.unshift(pendingOrder);
+      user.transactions.unshift({type:'purchase',label:'Bought '+product.name+' · '+planLabel,amount:Number(price),balance:user.balance,date:dateStr});
+      await writeJsonBinRaw(data);
+      return res.json({ success:true, pending:true, user:sanitizeUser(user), order:pendingOrder, data:dataForSession(data, session) });
+    }
+
+    acc.used = true;
+    const order = {
+      id:'#'+(Math.floor(Math.random()*90000+10000)),
+      product:product.name,short:product.short,color:product.color,tc:product.tc,
+      productId:product.id,plan:planLabel,price:Number(price),
+      email:acc.email,pass:acc.pass,date:dateStr,expiryDate:acc.expiryDate||null,
+      ...(extraFields||{}),
+      ...(acc.extra?{extra:acc.extra}:{}),
+      ...(acc.profilePin?{profilePin:acc.profilePin}:{}),
+      accKey:acc.accKey||'',mainEmail:acc.mainEmail||''
+    };
+    if (assignCustId !== null && assignCustId !== undefined) {
+      const customer = (user.myCustomers||[]).find(c => c.id === assignCustId);
+      if (customer) {
+        order.profileName = order.profileName || customer.fname;
+        customer.subs = Array.isArray(customer.subs) ? customer.subs : [];
+        customer.subs.push(order);
+      } else {
+        user.orders = Array.isArray(user.orders) ? user.orders : [];
+        user.orders.unshift(order);
+      }
+    } else {
+      user.orders = Array.isArray(user.orders) ? user.orders : [];
+      user.orders.unshift(order);
+      user.transactions.unshift({type:'purchase',label:'Bought '+product.name+' · '+planLabel,amount:Number(price),balance:user.balance,date:dateStr});
+    }
+    await writeJsonBinRaw(data);
+    res.json({ success:true, pending:false, user:sanitizeUser(user), order, data:dataForSession(data, session) });
+  } catch(e) {
+    console.error('Purchase error:', e.message);
+    res.status(500).json({ error: 'Purchase failed' });
+  }
+});
+
 // ── TELEGRAM PROXY (NEW — keeps TG_TOKEN off the frontend) ─────────────
 app.post('/notify', async (req, res) => {
-  const { secret, message, chatId, parse_mode } = req.body;
-  if (secret !== API_SECRET) return res.status(401).json({ error: 'Unauthorized' });
+  const session = requireSession(req, res, ['admin', 'user']);
+  if (!session) return;
+  const { message, chatId, parse_mode } = req.body;
   try {
     await sendTG(chatId || TG_ADMIN, message, parse_mode);
     res.json({ success: true });
@@ -258,8 +520,7 @@ async function getInboxMaxUid(email, password) {
 
 // ── CODE ENDPOINTS ─────────────────────────────────────────────────────
 app.post('/get-code', async (req, res) => {
-  const { secret, profileName, mainEmail, codeEmail, inboxEmail } = req.body;
-  if (secret !== API_SECRET) return res.status(401).json({ error: 'Unauthorized' });
+  const { profileName, mainEmail, codeEmail, inboxEmail } = req.body;
   
   // codeEmail is the Netflix recipient alias; inboxEmail/mainEmail is the Gmail login inbox.
   const codeKey = normalizeEmail(codeEmail || mainEmail);
@@ -441,8 +702,9 @@ async function fetchNetflixCodes(targetEmail) {
 setInterval(fetchNetflixCodes, 30000); // Poll every 30 seconds
 
 app.post('/setup-gmail', async (req, res) => {
-  const { secret, email, password } = req.body;
-  if (secret !== API_SECRET) return res.status(401).json({ error: 'Unauthorized' });
+  const session = requireSession(req, res, ['admin']);
+  if (!session) return;
+  const { email, password } = req.body;
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
   const key = normalizeEmail(email);
   const appPassword = normalizeGmailPassword(password);
@@ -470,8 +732,8 @@ app.post('/setup-gmail', async (req, res) => {
 });
 
 app.get('/monitored-emails', (req, res) => {
-  const secret = req.query.secret;
-  if (secret !== API_SECRET) return res.status(401).json({ error: 'Unauthorized' });
+  const session = requireSession(req, res, ['admin']);
+  if (!session) return;
   res.json({
     success: true,
     emails: Object.entries(monitoredEmails).map(([email, creds]) => ({
