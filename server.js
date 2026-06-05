@@ -183,7 +183,8 @@ async function fetchNetflixCodes() {
         host: 'imap.gmail.com',
         port: 993,
         tls: true,
-        connTimeout: 10000
+        tlsOptions: { rejectUnauthorized: false },
+        connTimeout: 15000
       });
 
       await new Promise((resolve, reject) => {
