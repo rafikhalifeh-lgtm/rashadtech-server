@@ -30,6 +30,32 @@ function normalizeEmail(email) {
   return String(email || '').trim().toLowerCase();
 }
 
+function normalizeGmailPassword(password) {
+  // Google displays app passwords in groups; IMAP auth expects the raw 16 chars.
+  return String(password || '').replace(/\s+/g, '');
+}
+
+function describeGmailError(error) {
+  const raw = [
+    error && error.message,
+    error && error.response,
+    error && error.responseText,
+    error && error.serverResponse
+  ].filter(Boolean).join(' ');
+  const lower = raw.toLowerCase();
+
+  if (lower.includes('invalid credentials') || lower.includes('authentication') || lower.includes('auth') || lower.includes('command failed')) {
+    return 'Gmail rejected the login. Use the Gmail address and a 16-character Gmail App Password (not the normal Gmail password). Make sure 2-Step Verification is enabled and IMAP is enabled in Gmail settings.';
+  }
+  if (lower.includes('timeout') || lower.includes('timed out') || lower.includes('etimedout')) {
+    return 'Gmail connection timed out. Try again and make sure IMAP is enabled for this Gmail account.';
+  }
+  if (lower.includes('certificate') || lower.includes('tls')) {
+    return 'Could not make a secure IMAP connection to Gmail. Try again in a moment.';
+  }
+  return raw || 'Gmail setup failed. Use a Gmail App Password with IMAP enabled.';
+}
+
 async function readJsonBinRaw() {
   if (!JB_KEY || !JB_BIN) throw new Error('DB not configured');
   const r = await fetch(`https://api.jsonbin.io/v3/b/${JB_BIN}/latest`, {
@@ -181,7 +207,7 @@ async function loadGmailMonitors(force = false) {
     const loaded = {};
     for (const [email, creds] of Object.entries(stored)) {
       const key = normalizeEmail(email);
-      const pass = creds && (creds.pass || creds.password);
+      const pass = normalizeGmailPassword(creds && (creds.pass || creds.password));
       if (!key || !pass) continue;
       loaded[key] = {
         user: normalizeEmail(creds.user || key),
@@ -371,17 +397,25 @@ app.post('/setup-gmail', async (req, res) => {
   if (secret !== API_SECRET) return res.status(401).json({ error: 'Unauthorized' });
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
   const key = normalizeEmail(email);
+  const appPassword = normalizeGmailPassword(password);
+  if (appPassword.length < 16) {
+    return res.status(400).json({
+      success: false,
+      error: 'Gmail App Password looks too short. Paste the 16-character app password from Google, not your normal Gmail password.'
+    });
+  }
   try {
     await loadGmailMonitors();
-    const lastUid = await getInboxMaxUid(key, password);
-    monitoredEmails[key] = { user: key, pass: password, lastUid, lastCheckedAt: Date.now() };
+    const lastUid = await getInboxMaxUid(key, appPassword);
+    monitoredEmails[key] = { user: key, pass: appPassword, lastUid, lastCheckedAt: Date.now() };
     await persistGmailMonitors();
     await sendTG(TG_ADMIN, `📧 Added Gmail monitoring: <code>${key}</code>\nWill capture new Netflix codes automatically.`, 'HTML').catch(() => {});
     res.json({ success: true, message: 'Gmail added for Netflix code monitoring', gmailConfigured: true, email: key });
   } catch(e) {
-    console.log('Gmail setup error for', key, e.message);
-    await sendTG(TG_ADMIN, `⚠️ Gmail monitoring setup failed for <code>${key}</code>\n${e.message}`, 'HTML').catch(() => {});
-    res.status(400).json({ success: false, error: 'Could not connect to Gmail. Use the Gmail address and an app password with IMAP enabled.' });
+    const friendlyError = describeGmailError(e);
+    console.log('Gmail setup error for', key, e && (e.message || e));
+    await sendTG(TG_ADMIN, `⚠️ Gmail monitoring setup failed for <code>${key}</code>\n${friendlyError}`, 'HTML').catch(() => {});
+    res.status(400).json({ success: false, error: friendlyError });
   }
 });
 

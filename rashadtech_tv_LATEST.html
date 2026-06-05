@@ -2798,7 +2798,7 @@ function renderAccModal(showForm=false){
       <label style="color:var(--orange)">🔒 Main Gmail (for Netflix sign-in codes — never shown to customers)</label>
       <input type="email" id="new-acc-main-email" placeholder="Gmail address that receives Netflix codes">
       <input type="password" id="new-acc-main-pass" placeholder="Gmail app password" style="margin-top:6px">
-      <div style="font-size:11px;color:var(--text3);margin-top:4px">Use a Gmail app password with IMAP enabled. Customers only see Netflix credentials.</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:4px">Use a 16-character Gmail app password with IMAP enabled. Spaces are okay; they will be removed automatically.</div>
     </div>
     <button class="inline-btn" onclick="addAccount()"><i class="ti ti-plus" style="font-size:13px;vertical-align:-2px;margin-right:4px"></i>Add to stock</button>
   </div>`;
@@ -2825,7 +2825,7 @@ async function addAccount(){
   if(!email||!pass){showToast('Email and password are required');return;}
   if(!accountStock[curAccModalKey])accountStock[curAccModalKey]=[];
   const mainEmail=document.getElementById('new-acc-main-email')?.value.trim()||'';
-  const mainPass=document.getElementById('new-acc-main-pass')?.value.trim()||'';
+  const mainPass=(document.getElementById('new-acc-main-pass')?.value||'').replace(/\s+/g,'');
   const profilePin=document.getElementById('new-acc-profile-pin')?.value.trim()||'';
   const accKey=curAccModalKey+'__'+Date.now();
   accountStock[curAccModalKey].push({email,pass,extra,expiryDate,used:false,accKey,profilePin,mainEmail:mainEmail||''});
