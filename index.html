@@ -824,10 +824,14 @@ So your EmailJS template will receive the user email correctly.
           <div style="font-size:13px;font-weight:600;margin-bottom:10px">📈 Revenue (Last 6 Months)</div>
           <canvas id="revenue-chart" height="120" style="width:100%;display:block"></canvas>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">
           <div class="card" style="padding:16px">
             <div style="font-size:13px;font-weight:600;margin-bottom:10px">⚠️ Low Stock</div>
             <div id="dashboard-lowstock"></div>
+          </div>
+          <div class="card" style="padding:16px">
+            <div style="font-size:13px;font-weight:600;margin-bottom:10px">📧 Gmail Monitors</div>
+            <div id="dashboard-gmail-monitors"><div style="color:var(--text3)">Loading...</div></div>
           </div>
           <div class="card" style="padding:16px">
             <div style="font-size:13px;font-weight:600;margin-bottom:10px">📋 Recent Activity</div>
@@ -1007,9 +1011,13 @@ function setPageActive(pageId){
 function resetActivity(){_lastActivity=Date.now();}
 function checkInactivity(){
   if(!currentUser&&!isAdmin)return;
-  if(Date.now()-_lastActivity>INACTIVITY_MS){
+  const idle=Date.now()-_lastActivity;
+  if(idle>INACTIVITY_MS-60*1000&&idle<INACTIVITY_MS){
+    showToast('Session will expire soon due to inactivity');
+  }
+  if(idle>INACTIVITY_MS){
     showToast('Session expired due to inactivity');
-    setTimeout(logout,2000);
+    setTimeout(doLogout,2000);
   }
 }
 // Track user activity
@@ -1310,6 +1318,15 @@ let _codeRefreshInterval=null;
 async function requestSigninCode(){
   const btn=document.getElementById('request-code-btn');
   const status=document.getElementById('request-code-status');
+  const cooldownKey='rt_code_req_'+(_sublinkCodeEmail||_sublinkEmail||'default');
+  const lastReq=Number(localStorage.getItem(cooldownKey)||0);
+  const waitMs=60*1000-(Date.now()-lastReq);
+  if(waitMs>0){
+    status.textContent='Please wait '+Math.ceil(waitMs/1000)+'s before requesting again.';
+    status.style.color='var(--orange)';
+    return;
+  }
+  localStorage.setItem(cooldownKey,String(Date.now()));
   btn.disabled=true;
   btn.textContent='⏳ Requesting...';
   status.textContent='';
@@ -1538,14 +1555,25 @@ function subLinkDataFromOrder(o){
     linkExpiry:Date.now()+(90*24*60*60*1000)
   };
 }
+async function createSubLinkUrl(data){
+  try{
+    const r=await fetch(RT_SERVER+'/links/create',{method:'POST',headers:authHeaders(),body:JSON.stringify({subscription:data})});
+    const j=await r.json();
+    if(!r.ok||!j.success)throw new Error(j.error||'Could not create secure link');
+    return j.url;
+  }catch(e){
+    console.warn('secure link error:',e.message);
+    const encoded=btoa(unescape(encodeURIComponent(JSON.stringify(data))));
+    return `${location.origin}${location.pathname}?s=${encoded}`;
+  }
+}
 // Copy link for sub-customer subscription
-function copySubLinkForCust(cleanId, custId){
+async function copySubLinkForCust(cleanId, custId){
   const c=currentUser?.myCustomers.find(x=>x.id===custId);
   const o=c?.subs?.find(x=>(x.id||'').replace('#','')=== cleanId||x.id===cleanId||x.id==='#'+cleanId);
   if(!o){showToast('Order not found');return;}
   const data=subLinkDataFromOrder(o);
-  const encoded=btoa(unescape(encodeURIComponent(JSON.stringify(data))));
-  const url=`${location.origin}${location.pathname}?s=${encoded}`;
+  const url=await createSubLinkUrl(data);
   navigator.clipboard.writeText(url).then(()=>showToast('✓ Link copied!')).catch(()=>{});
 }
 
@@ -1579,28 +1607,38 @@ async function setProfileName(orderId){
     showToast('✓ Profile name saved');
   }
 }
-function copySubLink(orderId){
+async function copySubLink(orderId){
   // Find the order
   const o=currentUser?.orders.find(x=>x.id===orderId);
   if(!o){showToast('Order not found');return;}
   // Encode subscription data directly in URL — no server call needed to view
   const data=subLinkDataFromOrder(o);
-  const encoded=btoa(unescape(encodeURIComponent(JSON.stringify(data))));
-  const url=`${location.origin}${location.pathname}?s=${encoded}`;
+  const url=await createSubLinkUrl(data);
   navigator.clipboard.writeText(url).then(()=>showToast('✓ Link copied!')).catch(()=>{});
 }
 async function checkSubLink(){
   const params=new URLSearchParams(location.search);
+  const token=params.get('t');
   // New format: ?s=base64encodeddata
   const encoded=params.get('s');
   // Old format: ?sub=id (legacy)
   const subId=params.get('sub');
-  if(!encoded && !subId)return false;
+  if(!token && !encoded && !subId)return false;
 
   const el=document.getElementById('sublink-loading');
 
   let found=null;
-  if(encoded){
+  if(token){
+    try{
+      const r=await fetch(`${RT_SERVER}/links/${encodeURIComponent(token)}`);
+      const j=await r.json();
+      if(!r.ok||!j.success)throw new Error(j.error||'Subscription link not found');
+      found=j.subscription;
+    }catch(e){
+      el.textContent=e.message||'Subscription link not found or expired.';
+      return true;
+    }
+  } else if(encoded){
     // Decode data directly from URL — no server needed
     try{
       found=JSON.parse(decodeURIComponent(escape(atob(encoded))));
@@ -1870,6 +1908,14 @@ function doLogout(){
   try{localStorage.removeItem('rt_session');localStorage.removeItem('rt_admin_session');localStorage.removeItem('rt_auth_token');localStorage.removeItem('rt_auth_role');}catch(e){}
   ['page-app','page-admin'].forEach(id=>document.getElementById(id).classList.remove('active'));
   document.getElementById('page-auth').classList.add('active');showView('login');
+}
+async function logoutAllDevices(){
+  if(!confirm('Log out all sessions for this account?'))return;
+  try{
+    await fetch(RT_SERVER+'/auth/logout-all',{method:'POST',headers:authHeaders()});
+    showToast('✓ All sessions logged out');
+  }catch(e){}
+  doLogout();
 }
 function showVerifyModal(){
   if(!currentUser||currentUser.verified)return;
@@ -2197,7 +2243,7 @@ async function confirmPurchase(){
         await sendTelegram(tgMsg);
         if(assignCustId===null&&currentUser.tgChatId){
           const data2={id:order.id,product:p.name,short:p.short,color:p.color,tc:p.tc,productId:p.id,plan:planLabel,email:order.email,pass:order.pass,expiryDate:order.expiryDate||'',profileName:order.profileName||'',profilePin:order.profilePin||'',accKey:order.accKey||'',mainEmail:order.mainEmail||'',codeEmail:order.email,inboxEmail:order.mainEmail||order.email};
-          const subLink=`${location.origin}${location.pathname}?s=${btoa(unescape(encodeURIComponent(JSON.stringify(data2))))}`;
+          const subLink=await createSubLinkUrl(data2);
           let custCred=`✅ <b>Your ${p.name} is ready!</b>\n\n📋 ${planLabel}\n\n🔐 <b>Your credentials:</b>\n📧 Email: <code>${order.email}</code>\n🔑 Password: <code>${order.pass}</code>`;
           if(order.extra)custCred+=`\nℹ️ Extra: <code>${order.extra}</code>`;
           if(order.expiryDate)custCred+=`\n⏰ Expires: ${order.expiryDate}`;
@@ -2249,7 +2295,7 @@ async function confirmPurchase(){
     const cleanId=(order.id||'').replace('#','');
     const cleanId2=(order.id||'').replace('#','');
     const data2={id:order.id,product:p.name,short:p.short,color:p.color,tc:p.tc,productId:p.id,plan:planLabel,email:acc.email,pass:acc.pass,expiryDate:acc.expiryDate||'',profileName:order.profileName||'',profilePin:order.profilePin||'',accKey:order.accKey||'',mainEmail:acc.mainEmail||'',codeEmail:acc.email,inboxEmail:acc.mainEmail||acc.email};
-    const subLink=`${location.origin}${location.pathname}?s=${btoa(unescape(encodeURIComponent(JSON.stringify(data2))))}`;
+    const subLink=await createSubLinkUrl(data2);
     const custName=c?`${c.fname} ${c.lname}`:'Customer';
     if(currentUser.tgChatId){
       let tgMsg=`✅ <b>${p.name} Subscription for ${custName}</b>\n\n`;
@@ -2279,7 +2325,7 @@ async function confirmPurchase(){
     const cleanId=(order.id||'').replace('#','');
     const cleanId2=(order.id||'').replace('#','');
     const data2={id:order.id,product:p.name,short:p.short,color:p.color,tc:p.tc,productId:p.id,plan:planLabel,email:acc.email,pass:acc.pass,expiryDate:acc.expiryDate||'',profileName:order.profileName||'',profilePin:order.profilePin||'',accKey:order.accKey||'',mainEmail:acc.mainEmail||'',codeEmail:acc.email,inboxEmail:acc.mainEmail||acc.email};
-    const subLink=`${location.origin}${location.pathname}?s=${btoa(unescape(encodeURIComponent(JSON.stringify(data2))))}`;
+    const subLink=await createSubLinkUrl(data2);
     let custCred=`✅ <b>Your ${p.name} is ready!</b>\n\n📋 ${planLabel}\n\n🔐 <b>Your credentials:</b>\n📧 Email: <code>${acc.email}</code>\n🔑 Password: <code>${acc.pass}</code>`;
     if(acc.extra)custCred+=`\nℹ️ Extra: <code>${acc.extra}</code>`;
     if(acc.expiryDate)custCred+=`\n⏰ Expires: ${acc.expiryDate}`;
@@ -2540,6 +2586,23 @@ async function renderDashboard(){
         <span>${i.key.replace(/__/g,' · ')}</span>
         <span style="color:${i.empty?'var(--red)':'var(--orange)'};font-weight:600">${i.empty?'❌ Empty':i.available+' left'}</span>
       </div>`).join('');
+  }
+
+  const gm=document.getElementById('dashboard-gmail-monitors');
+  if(gm){
+    try{
+      const r=await fetch(RT_SERVER+'/monitored-emails',{headers:authHeaders()});
+      const j=await r.json();
+      const emails=j.emails||[];
+      if(!emails.length){
+        gm.innerHTML='<div style="color:var(--orange);font-size:12px">No Gmail monitors configured.</div>';
+      }else{
+        gm.innerHTML=emails.slice(0,8).map(m=>`<div style="display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px solid var(--border);font-size:12px">
+          <span style="font-family:var(--mono);overflow:hidden;text-overflow:ellipsis">${m.email}</span>
+          <span style="color:var(--text3);white-space:nowrap">${m.lastCheckedAt?new Date(m.lastCheckedAt).toLocaleTimeString():'not checked'}</span>
+        </div>`).join('');
+      }
+    }catch(e){gm.innerHTML='<div style="color:var(--red);font-size:12px">Could not load monitor status.</div>';}
   }
 
   // Activity log
@@ -2965,7 +3028,7 @@ async function autoFulfillPending(skey){
     const tgId=fu?.tgChatId||u?.tgChatId||po.userTgChatId||'';
     if(tgId){
       const linkData={id:po.id,product:po.product,short:po.short,color:po.color,tc:po.tc,productId:po.productId,plan:po.plan,email:acc.email,pass:acc.pass,expiryDate:acc.expiryDate||'',profileName:po.profileName||'',profilePin:acc.profilePin||'',accKey:acc.accKey||'',mainEmail:acc.mainEmail||'',codeEmail:acc.email,inboxEmail:acc.mainEmail||acc.email,linkExpiry:Date.now()+(90*24*60*60*1000)};
-      const subLink=`https://rashadtech.tv?s=${btoa(unescape(encodeURIComponent(JSON.stringify(linkData))))}`;
+      const subLink=await createSubLinkUrl(linkData);
       let msg=`✅ <b>Your ${po.product} is ready!</b>\n\n📋 ${po.plan}\n\n🔐 <b>Credentials:</b>\n📧 Email: <code>${acc.email}</code>\n🔑 Password: <code>${acc.pass}</code>`;
       if(acc.extra)msg+=`\nℹ️ <code>${acc.extra}</code>`;
       if(acc.expiryDate)msg+=`\n⏰ Expires: ${acc.expiryDate}`;
@@ -3168,7 +3231,7 @@ async function manualFulfillPending(i){
   const tgId=u?.tgChatId||po.userTgChatId||'';
   if(tgId){
     const linkDataM={id:po.id,product:po.product,short:po.short,color:po.color,tc:po.tc,productId:po.productId,plan:po.plan,email:acc.email,pass:acc.pass,expiryDate:acc.expiryDate||'',profileName:po.profileName||'',profilePin:acc.profilePin||'',accKey:acc.accKey||'',mainEmail:acc.mainEmail||'',codeEmail:acc.email,inboxEmail:acc.mainEmail||acc.email,linkExpiry:Date.now()+(90*24*60*60*1000)};
-    const subLinkM=`https://rashadtech.tv?s=${btoa(unescape(encodeURIComponent(JSON.stringify(linkDataM))))}`;
+    const subLinkM=await createSubLinkUrl(linkDataM);
     let msg=`✅ <b>Your ${po.product} is ready!</b>\n\n📋 ${po.plan}\n\n🔐 <b>Credentials:</b>\n📧 Email: <code>${acc.email}</code>\n🔑 Password: <code>${acc.pass}</code>`;
     if(acc.extra)msg+=`\nℹ️ <code>${acc.extra}</code>`;
     if(acc.expiryDate)msg+=`\n⏰ Expires: ${acc.expiryDate}`;
@@ -3445,7 +3508,7 @@ async function init(){
   initLang();
   // Check for subscription link FIRST — hide all pages immediately
   const params=new URLSearchParams(location.search);
-  if(params.get('sub')||params.get('s')){
+  if(params.get('sub')||params.get('s')||params.get('t')){
     // Hide everything, show only sublink page
     document.querySelectorAll('.page').forEach(p=>{p.classList.remove('active');p.style.display='none';});
     document.getElementById('page-sublink').style.display='flex';
@@ -3558,6 +3621,7 @@ if(document.readyState==='loading'){
     <div class="card" style="padding:20px">
       <div style="font-size:14px;font-weight:600;margin-bottom:4px">🔐 Account</div>
       <div style="font-size:12px;color:var(--text3);margin-bottom:12px">Member since <span id="profile-joined"></span></div>
+      <button onclick="logoutAllDevices()" style="width:100%;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:8px">🔐 Logout all devices</button>
       <button onclick="doLogout()" style="width:100%;background:var(--red-bg);color:var(--red);border:1px solid var(--red-border);border-radius:var(--radius-sm);padding:10px;font-size:13px;font-weight:600;cursor:pointer">🚪 Logout</button>
     </div>
   </div>
@@ -3653,7 +3717,7 @@ if(document.readyState==='loading'){
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
     </div>
     <div class="rt-chat-hdr-info">
-      <div class="rt-chat-hdr-name">rashadtech Support</div>
+      <div class="rt-chat-hdr-name">Netflix Support</div>
       <div class="rt-chat-hdr-status">Online — instant replies</div>
     </div>
     <button class="rt-chat-close" onclick="rtToggleChat()">
@@ -3661,14 +3725,15 @@ if(document.readyState==='loading'){
     </button>
   </div>
   <div class="rt-chat-msgs" id="rt-msgs">
-    <div class="rt-msg bot">Hi! I'm the rashadtech.tv support assistant. How can I help you today? 👋</div>
+    <div class="rt-msg bot">Hi! I can help with Netflix login, sign-in codes, TV activation, renewal, wallet top-up, and subscription issues. 👋</div>
   </div>
   <div class="rt-typing" id="rt-typing"><span></span><span></span><span></span></div>
   <div class="rt-quick-replies" id="rt-qrs">
-    <button class="rt-qr" onclick="rtAsk('How do I top up my wallet?')">Top up wallet</button>
-    <button class="rt-qr" onclick="rtAsk('How do I get my subscription?')">Get subscription</button>
-    <button class="rt-qr" onclick="rtAsk('How to watch on TV?')">Watch on TV</button>
+    <button class="rt-qr" onclick="rtAsk('How do I log in to Netflix?')">Netflix login</button>
     <button class="rt-qr" onclick="rtAsk('I need a sign-in code')">Sign-in code</button>
+    <button class="rt-qr" onclick="rtAsk('My code is not working')">Code not working</button>
+    <button class="rt-qr" onclick="rtAsk('How to watch on TV?')">Watch on TV</button>
+    <button class="rt-qr" onclick="rtAsk('Report issue')">Report issue</button>
     <button class="rt-qr" onclick="rtAsk('How do I renew?')">Renew</button>
   </div>
   <div class="rt-chat-input-row">
@@ -3682,21 +3747,25 @@ if(document.readyState==='loading'){
 // ── RASHADTECH SUPPORT CHATBOT ──
 const RT_FAQ=[
   {q:['top up','wallet','balance','credit','pay','topup'],
-   a:'To top up your wallet, contact us on <b>WhatsApp: <a href="https://wa.me/96179306701" target="_blank">+96179306701</a></b>. Once topped up, your balance appears immediately in your account.'},
+   a:'To top up your wallet, contact support on <b>WhatsApp: <a href="https://wa.me/96179306701" target="_blank">+96179306701</a></b>. After confirmation, your wallet balance will update in your account.'},
   {q:['subscription','buy','purchase','get','order','plan'],
-   a:'Go to the <b>Store</b> tab, select your plan and click Buy. Your balance is deducted and credentials are delivered <b>instantly</b>. If stock is temporarily out, your order goes to Pending and is auto-fulfilled when we restock.'},
+   a:'Go to the <b>Store</b>, choose your Netflix plan, and tap Buy. If delivery is not instant, you will see it as pending and support will finish it for you.'},
+  {q:['login','log in','password','credentials','netflix login'],
+   a:'Open your subscription link, copy the Netflix email and password, then log in on Netflix. If Netflix asks for a sign-in code, come back to the same subscription link and tap <b>Request Sign-in Code</b>.'},
   {q:['tv','television','activate','smart tv','setup','install'],
-   a:'Open your subscription link and find the <b>TV Activation</b> section. Follow the steps shown — it only takes a minute to get streaming on your TV.'},
+   a:'Open your subscription link and use the <b>Activate on TV</b> section. Log in to Netflix first, then enter the code shown on your TV.'},
   {q:['sign in','signin','code','verify','verification','2fa','login code','netflix code'],
-   a:'Open your subscription link and click <b>"Request Sign-in Code"</b>. Your code will appear within a few minutes. You can also tap the button from your Subscriptions page.'},
+   a:'Open your subscription link and tap <b>Request Sign-in Code</b>. Wait a moment, then tap Refresh if needed. Please avoid pressing many times quickly.'},
+  {q:['code not working','wrong code','expired code','invalid code'],
+   a:'If the Netflix code does not work, wait for a fresh code and tap Refresh on your subscription link. Codes expire quickly, so use the newest one shown.'},
   {q:['renew','renewal','expire','expired','extend','extension'],
-   a:'To renew your subscription, contact us on <b>Telegram: <a href="https://t.me/Rashadtech" target="_blank">@Rashadtech</a></b> or top up your wallet and repurchase from the Store.'},
-  {q:['issue','problem','not working','broken','error','bug','help','stuck','slow','buffering','freeze'],
-   a:'Please tap the <b>Report Issue</b> button in your Subscription Options, or contact us on <b>WhatsApp: <a href="https://wa.me/96179306701" target="_blank">+96179306701</a></b> and we will sort it out quickly.'},
-  {q:['pending','waiting','stock','out of stock'],
-   a:'Your order is in <b>Pending</b> status, which means we are temporarily out of stock for that plan. It will be <b>auto-fulfilled automatically</b> as soon as we add new stock — usually within a few hours.'},
+   a:'To renew, top up your wallet and repurchase from the Store, or contact <b>Telegram: <a href="https://t.me/Rashadtech" target="_blank">@Rashadtech</a></b> for help.'},
+  {q:['issue','problem','not working','broken','error','bug','help','stuck','slow','buffering','freeze','report'],
+   a:'To report a Netflix issue, open your subscription options and tap <b>Report Issue</b>. Include what happened: password not working, code not received, profile locked, expired, TV activation, or playback problem.'},
+  {q:['pending','waiting'],
+   a:'If your order is pending, support is preparing it. You will receive your subscription details as soon as it is ready.'},
   {q:['profile','name','pin','change'],
-   a:'You can change your Profile Name or PIN Code from the <b>Subscription Options</b> — click the buttons directly on your subscription card.'},
+   a:'You can change your Netflix profile name or PIN from <b>Subscription Options</b> on your subscription card.'},
   {q:['contact','reach','support','human','agent','talk'],
    a:`You can reach us on:<br>
 • <b>WhatsApp: <a href="https://wa.me/96179306701" target="_blank">+96179306701</a></b><br>

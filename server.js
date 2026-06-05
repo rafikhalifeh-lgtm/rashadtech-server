@@ -5,7 +5,19 @@ const { ImapFlow } = require('imapflow');
 const { simpleParser } = require('mailparser');
 
 const app = express();
-app.use(cors());
+const ALLOWED_ORIGINS = new Set([
+  'https://rashadtech.tv',
+  'https://www.rashadtech.tv',
+  'https://rashadtechtv.netlify.app'
+]);
+app.use(cors({
+  origin(origin, cb) {
+    try {
+      if (!origin || ALLOWED_ORIGINS.has(origin) || /\.netlify\.app$/.test(new URL(origin).hostname)) return cb(null, true);
+    } catch(e) {}
+    cb(new Error('Not allowed by CORS'));
+  }
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -17,9 +29,13 @@ const JB_BIN     = process.env.JB_BIN;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'RkhRkh7979@';
 const ADMIN_PIN = process.env.ADMIN_PIN || '7979';
 const GMAIL_MONITORS_KEY = 'gmailMonitors';
+const BACKUPS_KEY = 'backups';
+const LINK_TOKENS_KEY = 'linkTokens';
 const CODE_TTL_MS = 15 * 60 * 1000;
 const EMAIL_LOOKBACK_MS = 24 * 60 * 60 * 1000;
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
+const LINK_TTL_MS = 90 * 24 * 60 * 60 * 1000;
+const PASSWORD_HASH_PREFIX = 'pbkdf2$';
 
 if (!API_SECRET || !TG_TOKEN || !TG_ADMIN) {
   console.error('❌ Missing required env vars: API_SECRET, TG_TOKEN, TG_ADMIN');
@@ -30,6 +46,24 @@ let notifiedCustomers = {};
 let monitoredEmails = {}; // { gmailEmail: { user, pass, lastUid, lastCheckedAt } }
 let gmailMonitorsLoaded = false;
 let sessions = new Map();
+let rateBuckets = new Map();
+
+function rateLimit(name, limit, windowMs) {
+  return (req, res, next) => {
+    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+    const key = `${name}:${ip}`;
+    const now = Date.now();
+    const bucket = rateBuckets.get(key) || { count: 0, resetAt: now + windowMs };
+    if (now > bucket.resetAt) {
+      bucket.count = 0;
+      bucket.resetAt = now + windowMs;
+    }
+    bucket.count += 1;
+    rateBuckets.set(key, bucket);
+    if (bucket.count > limit) return res.status(429).json({ error: 'Too many requests. Please wait a moment.' });
+    next();
+  };
+}
 
 function normalizeEmail(email) {
   return String(email || '').trim().toLowerCase();
@@ -42,6 +76,20 @@ function uniqueNormalizedEmails(values) {
 function normalizeGmailPassword(password) {
   // Google displays app passwords in groups; IMAP auth expects the raw 16 chars.
   return String(password || '').replace(/\s+/g, '');
+}
+
+function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
+  const hash = crypto.pbkdf2Sync(String(password), salt, 120000, 32, 'sha256').toString('hex');
+  return `${PASSWORD_HASH_PREFIX}${salt}$${hash}`;
+}
+
+function verifyPassword(password, stored) {
+  if (!stored) return false;
+  if (!String(stored).startsWith(PASSWORD_HASH_PREFIX)) return String(password) === String(stored);
+  const [, salt, expected] = String(stored).split('$');
+  if (!salt || !expected) return false;
+  const actual = crypto.pbkdf2Sync(String(password), salt, 120000, 32, 'sha256').toString('hex');
+  return crypto.timingSafeEqual(Buffer.from(actual, 'hex'), Buffer.from(expected, 'hex'));
 }
 
 function createSession(role, email) {
@@ -105,10 +153,18 @@ async function readJsonBinRaw() {
 
 async function writeJsonBinRaw(data) {
   if (!JB_KEY || !JB_BIN) throw new Error('DB not configured');
+  const nextData = { ...(data || {}) };
+  const backupSource = { ...nextData };
+  delete backupSource[BACKUPS_KEY];
+  delete backupSource[GMAIL_MONITORS_KEY];
+  nextData[BACKUPS_KEY] = [
+    { ts: Date.now(), data: backupSource },
+    ...((nextData[BACKUPS_KEY] || []).slice(0, 9))
+  ];
   const r = await fetch(`https://api.jsonbin.io/v3/b/${JB_BIN}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', 'X-Master-Key': JB_KEY, 'X-Bin-Meta': 'false' },
-    body: JSON.stringify(data)
+    body: JSON.stringify(nextData)
   });
   if (!r.ok) throw new Error('JSONBin write failed: ' + r.status);
   return await r.json();
@@ -117,6 +173,12 @@ async function writeJsonBinRaw(data) {
 function stripPrivateData(data) {
   const publicData = { ...(data || {}) };
   delete publicData[GMAIL_MONITORS_KEY];
+  if (Array.isArray(publicData.users)) {
+    publicData.users = publicData.users.map(sanitizeUser);
+  }
+  if (Array.isArray(publicData[BACKUPS_KEY])) {
+    publicData[BACKUPS_KEY] = publicData[BACKUPS_KEY].map(b => ({ ts: b.ts }));
+  }
   return publicData;
 }
 
@@ -130,7 +192,9 @@ function sanitizeStock(stock) {
 
 function sanitizeUser(user) {
   if (!user) return null;
-  return JSON.parse(JSON.stringify(user));
+  const safeUser = JSON.parse(JSON.stringify(user));
+  delete safeUser.pass;
+  return safeUser;
 }
 
 function dataForSession(data, session) {
@@ -186,6 +250,11 @@ app.get('/ping', (req, res) => {
   res.json({ ok: true, ts: Date.now() });
 });
 
+app.use('/auth', rateLimit('auth', 40, 15 * 60 * 1000));
+app.use('/get-code', rateLimit('get-code', 30, 5 * 60 * 1000));
+app.use('/notify', rateLimit('notify', 60, 5 * 60 * 1000));
+app.use('/links', rateLimit('links', 80, 5 * 60 * 1000));
+
 // ── JSONBIN PROXY ──────────────────────────────────────────────────────
 app.post('/db/read', async (req, res) => {
   const session = requireSession(req, res, ['admin', 'user']);
@@ -228,9 +297,13 @@ app.post('/auth/login', async (req, res) => {
   const { email, password } = req.body;
   try {
     const data = await readJsonBinRaw();
-    const user = (data.users || []).find(u => normalizeEmail(u.email) === normalizeEmail(email) && u.pass === password);
+    const user = (data.users || []).find(u => normalizeEmail(u.email) === normalizeEmail(email) && verifyPassword(password, u.pass));
     if (!user) return res.status(401).json({ error: 'Invalid email or password' });
     if (user.banned) return res.status(403).json({ error: 'Your account has been suspended. Please contact support.' });
+    if (!String(user.pass || '').startsWith(PASSWORD_HASH_PREFIX)) {
+      user.pass = hashPassword(password);
+      await writeJsonBinRaw(data);
+    }
     const token = createSession('user', user.email);
     res.json({ success: true, token, user: sanitizeUser(user), data: dataForSession(data, { role: 'user', email: normalizeEmail(user.email) }) });
   } catch(e) {
@@ -263,7 +336,7 @@ app.post('/auth/signup', async (req, res) => {
     const user = {
       name: String(name).trim(),
       email: cleanEmail,
-      pass: password,
+      pass: hashPassword(password),
       tgChatId: String(tgChatId || '').trim(),
       balance: 0,
       transactions: [],
@@ -302,7 +375,7 @@ app.post('/auth/reset-password', async (req, res) => {
     const data = await readJsonBinRaw();
     const user = (data.users || []).find(u => normalizeEmail(u.email) === normalizeEmail(email));
     if (!user) return res.status(404).json({ error: 'User not found' });
-    user.pass = password;
+    user.pass = hashPassword(password);
     await writeJsonBinRaw(data);
     res.json({ success: true });
   } catch(e) {
@@ -316,6 +389,50 @@ app.post('/auth/logout', (req, res) => {
   const match = header.match(/^Bearer\s+(.+)$/i);
   if (match) sessions.delete(match[1]);
   res.json({ success: true });
+});
+
+app.post('/auth/logout-all', (req, res) => {
+  const session = requireSession(req, res, ['admin', 'user']);
+  if (!session) return;
+  for (const [token, item] of sessions.entries()) {
+    if (session.role === 'admin' || (item.role === 'user' && item.email === session.email)) sessions.delete(token);
+  }
+  res.json({ success: true });
+});
+
+app.post('/links/create', async (req, res) => {
+  const session = requireSession(req, res, ['admin', 'user']);
+  if (!session) return;
+  const { subscription } = req.body;
+  if (!subscription || !subscription.email || !subscription.pass) return res.status(400).json({ error: 'Invalid subscription link data' });
+  try {
+    const data = await readJsonBinRaw();
+    data[LINK_TOKENS_KEY] = data[LINK_TOKENS_KEY] || {};
+    const token = crypto.randomBytes(24).toString('hex');
+    data[LINK_TOKENS_KEY][token] = {
+      subscription,
+      owner: session.email,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + LINK_TTL_MS
+    };
+    await writeJsonBinRaw(data);
+    res.json({ success: true, token, url: `https://rashadtech.tv?t=${token}` });
+  } catch(e) {
+    console.error('Create link error:', e.message);
+    res.status(500).json({ error: 'Could not create subscription link' });
+  }
+});
+
+app.get('/links/:token', async (req, res) => {
+  try {
+    const data = await readJsonBinRaw();
+    const entry = data[LINK_TOKENS_KEY] && data[LINK_TOKENS_KEY][req.params.token];
+    if (!entry || Date.now() > Number(entry.expiresAt || 0)) return res.status(404).json({ error: 'Subscription link not found or expired' });
+    res.json({ success: true, subscription: entry.subscription });
+  } catch(e) {
+    console.error('Read link error:', e.message);
+    res.status(500).json({ error: 'Could not load subscription link' });
+  }
 });
 
 app.post('/purchase', async (req, res) => {
