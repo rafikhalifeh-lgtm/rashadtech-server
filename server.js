@@ -30,6 +30,10 @@ function normalizeEmail(email) {
   return String(email || '').trim().toLowerCase();
 }
 
+function uniqueNormalizedEmails(values) {
+  return [...new Set((values || []).map(normalizeEmail).filter(Boolean))];
+}
+
 function normalizeGmailPassword(password) {
   // Google displays app passwords in groups; IMAP auth expects the raw 16 chars.
   return String(password || '').replace(/\s+/g, '');
@@ -254,27 +258,29 @@ async function getInboxMaxUid(email, password) {
 
 // ── CODE ENDPOINTS ─────────────────────────────────────────────────────
 app.post('/get-code', async (req, res) => {
-  const { secret, profileName, mainEmail } = req.body;
+  const { secret, profileName, mainEmail, codeEmail, inboxEmail } = req.body;
   if (secret !== API_SECRET) return res.status(401).json({ error: 'Unauthorized' });
   
-  // Priority: mainEmail > profileName > default
-  const key = mainEmail ? normalizeEmail(mainEmail) : (profileName ? profileName.toLowerCase() : 'default');
-  if (mainEmail) {
+  // codeEmail is the Netflix recipient alias; inboxEmail/mainEmail is the Gmail login inbox.
+  const codeKey = normalizeEmail(codeEmail || mainEmail);
+  const inboxKey = normalizeEmail(inboxEmail || mainEmail || codeEmail);
+  const key = codeKey || (profileName ? profileName.toLowerCase() : 'default');
+  if (inboxKey) {
     await loadGmailMonitors();
-    if (monitoredEmails[key]) {
-      await fetchNetflixCodes(key);
+    if (monitoredEmails[inboxKey]) {
+      await fetchNetflixCodes(inboxKey);
     }
   }
-  const entry = latestCodes[key] || (mainEmail ? null : latestCodes['default']);
+  const entry = latestCodes[key] || (!codeEmail && inboxKey ? latestCodes[inboxKey] : null) || (codeKey ? null : latestCodes['default']);
   
   if (!entry) {
     const name = profileName || 'Unknown';
     if (!notifiedCustomers[key] || Date.now() - notifiedCustomers[key] > 5*60*1000) {
       notifiedCustomers[key] = Date.now();
-      const monitorHint = mainEmail && !monitoredEmails[key]
-        ? `\n⚠️ Gmail monitoring is not configured for <code>${key}</code>. Add this Gmail in Admin stock with an app password.`
+      const monitorHint = inboxKey && !monitoredEmails[inboxKey]
+        ? `\n⚠️ Gmail monitoring is not configured for inbox <code>${inboxKey}</code>. Add this Gmail in Admin stock with an app password.`
         : '';
-      await sendTG(TG_ADMIN, `🔔 <b>${name}</b> is waiting for a sign-in code!${mainEmail ? `\n📧 Main email: <code>${key}</code>` : ''}${monitorHint}\nManual fallback: /code ${mainEmail ? key : name} 1234`, 'HTML').catch(() => {});
+      await sendTG(TG_ADMIN, `🔔 <b>${name}</b> is waiting for a sign-in code!${codeKey ? `\n📧 Netflix email: <code>${codeKey}</code>` : ''}${inboxKey && inboxKey !== codeKey ? `\n📥 Gmail inbox: <code>${inboxKey}</code>` : ''}${monitorHint}\nManual fallback: /code ${codeKey || name} 1234`, 'HTML').catch(() => {});
     }
     return res.json({ success: false, message: 'No code found yet — check back in a moment' });
   }
@@ -325,6 +331,41 @@ function extractNetflixCode(parsedEmail) {
   return fallback ? { code: fallback[1], customerSafe: fallback[1].length === 4 } : null;
 }
 
+function collectEmailRecipients(parsedEmail, fallbackEmail) {
+  const values = [];
+  const addAddressObject = addressObject => {
+    if (!addressObject) return;
+    if (Array.isArray(addressObject.value)) {
+      addressObject.value.forEach(item => values.push(item && item.address));
+    }
+    if (addressObject.text) {
+      const matches = String(addressObject.text).match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) || [];
+      values.push(...matches);
+    }
+  };
+
+  addAddressObject(parsedEmail.to);
+  addAddressObject(parsedEmail.cc);
+  addAddressObject(parsedEmail.bcc);
+
+  const headers = parsedEmail.headers;
+  if (headers && typeof headers.get === 'function') {
+    ['delivered-to', 'x-original-to', 'envelope-to', 'to'].forEach(header => {
+      const value = headers.get(header);
+      if (!value) return;
+      if (typeof value === 'string') {
+        const matches = value.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) || [];
+        values.push(...matches);
+      } else if (value.text || value.value) {
+        addAddressObject(value);
+      }
+    });
+  }
+
+  const recipients = uniqueNormalizedEmails(values);
+  return recipients.length ? recipients : uniqueNormalizedEmails([fallbackEmail]);
+}
+
 async function fetchNetflixCodes(targetEmail) {
   await loadGmailMonitors();
   const targetKey = targetEmail ? normalizeEmail(targetEmail) : null;
@@ -365,15 +406,17 @@ async function fetchNetflixCodes(targetEmail) {
       for (const e of emails) {
         const result = extractNetflixCode(e);
         if (result) {
-          const key = normalizeEmail(email);
+          const recipientKeys = collectEmailRecipients(e, email);
           if (result.customerSafe) {
-            latestCodes[key] = { code: result.code, timestamp: Date.now() };
-            delete notifiedCustomers[key];
-            console.log(`📧 Netflix sign-in code ${result.code} captured for ${email}`);
-            await sendTG(TG_ADMIN, `✅ <b>Netflix Sign-in Code Captured</b>\n📧 Email: ${email}\n🔢 Code: <b>${result.code}</b>`, 'HTML').catch(() => {});
+            recipientKeys.forEach(key => {
+              latestCodes[key] = { code: result.code, timestamp: Date.now() };
+              delete notifiedCustomers[key];
+            });
+            console.log(`📧 Netflix sign-in code ${result.code} captured for ${email} recipients: ${recipientKeys.join(', ')}`);
+            await sendTG(TG_ADMIN, `✅ <b>Netflix Sign-in Code Captured</b>\n📥 Gmail inbox: ${email}\n📧 Recipient: ${recipientKeys.join(', ')}\n🔢 Code: <b>${result.code}</b>`, 'HTML').catch(() => {});
           } else {
-            console.log(`🔐 Admin-only Netflix security code ${result.code} captured for ${email}`);
-            await sendTG(TG_ADMIN, `🔐 <b>Netflix Security Code Captured — ADMIN ONLY</b>\n📧 Email: ${email}\n🔢 Code: <b>${result.code}</b>\n\nNot shown on customer subscription links.`, 'HTML').catch(() => {});
+            console.log(`🔐 Admin-only Netflix security code ${result.code} captured for ${email} recipients: ${recipientKeys.join(', ')}`);
+            await sendTG(TG_ADMIN, `🔐 <b>Netflix Security Code Captured — ADMIN ONLY</b>\n📥 Gmail inbox: ${email}\n📧 Recipient: ${recipientKeys.join(', ')}\n🔢 Code: <b>${result.code}</b>\n\nNot shown on customer subscription links.`, 'HTML').catch(() => {});
           }
         }
       }
@@ -411,7 +454,9 @@ app.post('/setup-gmail', async (req, res) => {
   }
   try {
     await loadGmailMonitors();
-    const lastUid = await getInboxMaxUid(key, appPassword);
+    const previous = monitoredEmails[key];
+    const currentMaxUid = await getInboxMaxUid(key, appPassword);
+    const lastUid = previous ? Number(previous.lastUid || 0) : currentMaxUid;
     monitoredEmails[key] = { user: key, pass: appPassword, lastUid, lastCheckedAt: Date.now() };
     await persistGmailMonitors();
     await sendTG(TG_ADMIN, `📧 Added Gmail monitoring: <code>${key}</code>\nWill capture new Netflix codes automatically.`, 'HTML').catch(() => {});

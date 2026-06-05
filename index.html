@@ -1274,6 +1274,8 @@ let _sublinkEmail=null;
 let _sublinkPass=null;
 let _sublinkProfileName=null;
 let _sublinkMainEmail=null;
+let _sublinkCodeEmail=null;
+let _sublinkInboxEmail=null;
 
 async function activateTV(){
   const code=document.getElementById('tv-code-input').value.trim().toUpperCase();
@@ -1300,7 +1302,7 @@ async function requestSigninCode(){
     const timeout=setTimeout(()=>controller.abort(),30000);
     const r=await fetch(`${RT_SERVER}/get-code`,{
       method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({secret:RT_SECRET,profileName:_sublinkProfileName||'Customer',accountKey:'default',mainEmail:_sublinkMainEmail}),
+      body:JSON.stringify({secret:RT_SECRET,profileName:_sublinkProfileName||'Customer',accountKey:'default',mainEmail:_sublinkMainEmail,codeEmail:_sublinkCodeEmail,inboxEmail:_sublinkInboxEmail}),
       signal:controller.signal
     });
     clearTimeout(timeout);
@@ -1337,7 +1339,7 @@ async function refreshSigninCode(){
     const timeout=setTimeout(()=>controller.abort(),60000);
     const r=await fetch(`${RT_SERVER}/get-code`,{
       method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({secret:RT_SECRET,accountKey:'default',profileName:_sublinkProfileName||'unknown',codeType:'netflix',mainEmail:_sublinkMainEmail}),
+      body:JSON.stringify({secret:RT_SECRET,accountKey:'default',profileName:_sublinkProfileName||'unknown',codeType:'netflix',mainEmail:_sublinkMainEmail,codeEmail:_sublinkCodeEmail,inboxEmail:_sublinkInboxEmail}),
       signal:controller.signal
     });
     clearTimeout(timeout);
@@ -1508,18 +1510,24 @@ async function saveProfile(){
 function copyText(el){
   navigator.clipboard.writeText(el.textContent).then(()=>showToast('✓ Copied!')).catch(()=>{});
 }
+function subLinkDataFromOrder(o){
+  const inboxEmail=o.mainEmail||o.inboxEmail||'';
+  const codeEmail=o.codeEmail||o.email||inboxEmail;
+  return {
+    id:o.id,product:o.product,short:o.short,color:o.color,tc:o.tc,
+    productId:o.productId,plan:o.plan,email:o.email,pass:o.pass,
+    expiryDate:o.expiryDate||'',profileName:o.profileName||'',
+    profilePin:o.profilePin||'',accKey:o.accKey||'',mainEmail:inboxEmail,
+    codeEmail,inboxEmail,
+    linkExpiry:Date.now()+(90*24*60*60*1000)
+  };
+}
 // Copy link for sub-customer subscription
 function copySubLinkForCust(cleanId, custId){
   const c=currentUser?.myCustomers.find(x=>x.id===custId);
   const o=c?.subs?.find(x=>(x.id||'').replace('#','')=== cleanId||x.id===cleanId||x.id==='#'+cleanId);
   if(!o){showToast('Order not found');return;}
-  const data={
-    id:o.id,product:o.product,short:o.short,color:o.color,tc:o.tc,
-    productId:o.productId,plan:o.plan,email:o.email,pass:o.pass,
-    expiryDate:o.expiryDate||'',profileName:o.profileName||'',
-    profilePin:o.profilePin||'',accKey:o.accKey||'',mainEmail:o.mainEmail||'',
-    linkExpiry:Date.now()+(90*24*60*60*1000) // link valid 90 days
-  };
+  const data=subLinkDataFromOrder(o);
   const encoded=btoa(unescape(encodeURIComponent(JSON.stringify(data))));
   const url=`${location.origin}${location.pathname}?s=${encoded}`;
   navigator.clipboard.writeText(url).then(()=>showToast('✓ Link copied!')).catch(()=>{});
@@ -1560,13 +1568,7 @@ function copySubLink(orderId){
   const o=currentUser?.orders.find(x=>x.id===orderId);
   if(!o){showToast('Order not found');return;}
   // Encode subscription data directly in URL — no server call needed to view
-  const data={
-    id:o.id,product:o.product,short:o.short,color:o.color,tc:o.tc,
-    productId:o.productId,plan:o.plan,email:o.email,pass:o.pass,
-    expiryDate:o.expiryDate||'',profileName:o.profileName||'',
-    profilePin:o.profilePin||'',accKey:o.accKey||'',mainEmail:o.mainEmail||'',
-    linkExpiry:Date.now()+(90*24*60*60*1000) // link valid 90 days
-  };
+  const data=subLinkDataFromOrder(o);
   const encoded=btoa(unescape(encodeURIComponent(JSON.stringify(data))));
   const url=`${location.origin}${location.pathname}?s=${encoded}`;
   navigator.clipboard.writeText(url).then(()=>showToast('✓ Link copied!')).catch(()=>{});
@@ -1636,7 +1638,9 @@ async function checkSubLink(){
   _sublinkEmail=found.email||'';
   _sublinkPass=found.pass||'';
   _sublinkProfileName=found.profileName||found.product||'Customer';
-  _sublinkMainEmail=found.mainEmail||null;
+  _sublinkMainEmail=found.mainEmail||found.inboxEmail||null;
+  _sublinkCodeEmail=found.codeEmail||found.email||found.mainEmail||null;
+  _sublinkInboxEmail=found.inboxEmail||found.mainEmail||found.codeEmail||null;
   if(found.extra){document.getElementById('sublink-extra-row').style.display='flex';document.getElementById('sublink-extra').textContent=found.extra;}
   if(found.expiryDate){document.getElementById('sublink-expiry-row').style.display='flex';document.getElementById('sublink-expiry').textContent=found.expiryDate;}
   if(found.profileName){document.getElementById('sublink-profile-row').style.display='flex';document.getElementById('sublink-profile-name').textContent=found.profileName;}
@@ -2156,7 +2160,7 @@ async function confirmPurchase(){
     // Send credentials + link to Customer1 only
     const cleanId=(order.id||'').replace('#','');
     const cleanId2=(order.id||'').replace('#','');
-    const data2={id:order.id,product:p.name,short:p.short,color:p.color,tc:p.tc,productId:p.id,plan:planLabel,email:acc.email,pass:acc.pass,expiryDate:acc.expiryDate||'',profileName:order.profileName||'',profilePin:order.profilePin||'',accKey:order.accKey||'',mainEmail:acc.mainEmail||''};
+    const data2={id:order.id,product:p.name,short:p.short,color:p.color,tc:p.tc,productId:p.id,plan:planLabel,email:acc.email,pass:acc.pass,expiryDate:acc.expiryDate||'',profileName:order.profileName||'',profilePin:order.profilePin||'',accKey:order.accKey||'',mainEmail:acc.mainEmail||'',codeEmail:acc.email,inboxEmail:acc.mainEmail||acc.email};
     const subLink=`${location.origin}${location.pathname}?s=${btoa(unescape(encodeURIComponent(JSON.stringify(data2))))}`;
     const custName=c?`${c.fname} ${c.lname}`:'Customer';
     if(currentUser.tgChatId){
@@ -2186,7 +2190,7 @@ async function confirmPurchase(){
   if(assignCustId===null&&currentUser.tgChatId){
     const cleanId=(order.id||'').replace('#','');
     const cleanId2=(order.id||'').replace('#','');
-    const data2={id:order.id,product:p.name,short:p.short,color:p.color,tc:p.tc,productId:p.id,plan:planLabel,email:acc.email,pass:acc.pass,expiryDate:acc.expiryDate||'',profileName:order.profileName||'',profilePin:order.profilePin||'',accKey:order.accKey||'',mainEmail:acc.mainEmail||''};
+    const data2={id:order.id,product:p.name,short:p.short,color:p.color,tc:p.tc,productId:p.id,plan:planLabel,email:acc.email,pass:acc.pass,expiryDate:acc.expiryDate||'',profileName:order.profileName||'',profilePin:order.profilePin||'',accKey:order.accKey||'',mainEmail:acc.mainEmail||'',codeEmail:acc.email,inboxEmail:acc.mainEmail||acc.email};
     const subLink=`${location.origin}${location.pathname}?s=${btoa(unescape(encodeURIComponent(JSON.stringify(data2))))}`;
     let custCred=`✅ <b>Your ${p.name} is ready!</b>\n\n📋 ${planLabel}\n\n🔐 <b>Your credentials:</b>\n📧 Email: <code>${acc.email}</code>\n🔑 Password: <code>${acc.pass}</code>`;
     if(acc.extra)custCred+=`\nℹ️ Extra: <code>${acc.extra}</code>`;
@@ -2872,7 +2876,7 @@ async function autoFulfillPending(skey){
     // Use freshest tgChatId
     const tgId=fu?.tgChatId||u?.tgChatId||po.userTgChatId||'';
     if(tgId){
-      const linkData={id:po.id,product:po.product,short:po.short,color:po.color,tc:po.tc,productId:po.productId,plan:po.plan,email:acc.email,pass:acc.pass,expiryDate:acc.expiryDate||'',profileName:po.profileName||'',profilePin:acc.profilePin||'',accKey:acc.accKey||'',mainEmail:acc.mainEmail||'',linkExpiry:Date.now()+(90*24*60*60*1000)};
+      const linkData={id:po.id,product:po.product,short:po.short,color:po.color,tc:po.tc,productId:po.productId,plan:po.plan,email:acc.email,pass:acc.pass,expiryDate:acc.expiryDate||'',profileName:po.profileName||'',profilePin:acc.profilePin||'',accKey:acc.accKey||'',mainEmail:acc.mainEmail||'',codeEmail:acc.email,inboxEmail:acc.mainEmail||acc.email,linkExpiry:Date.now()+(90*24*60*60*1000)};
       const subLink=`https://rashadtech.tv?s=${btoa(unescape(encodeURIComponent(JSON.stringify(linkData))))}`;
       let msg=`✅ <b>Your ${po.product} is ready!</b>\n\n📋 ${po.plan}\n\n🔐 <b>Credentials:</b>\n📧 Email: <code>${acc.email}</code>\n🔑 Password: <code>${acc.pass}</code>`;
       if(acc.extra)msg+=`\nℹ️ <code>${acc.extra}</code>`;
@@ -3075,7 +3079,7 @@ async function manualFulfillPending(i){
   // Notify customer
   const tgId=u?.tgChatId||po.userTgChatId||'';
   if(tgId){
-    const linkDataM={id:po.id,product:po.product,short:po.short,color:po.color,tc:po.tc,productId:po.productId,plan:po.plan,email:acc.email,pass:acc.pass,expiryDate:acc.expiryDate||'',profileName:po.profileName||'',profilePin:acc.profilePin||'',accKey:acc.accKey||'',mainEmail:acc.mainEmail||'',linkExpiry:Date.now()+(90*24*60*60*1000)};
+    const linkDataM={id:po.id,product:po.product,short:po.short,color:po.color,tc:po.tc,productId:po.productId,plan:po.plan,email:acc.email,pass:acc.pass,expiryDate:acc.expiryDate||'',profileName:po.profileName||'',profilePin:acc.profilePin||'',accKey:acc.accKey||'',mainEmail:acc.mainEmail||'',codeEmail:acc.email,inboxEmail:acc.mainEmail||acc.email,linkExpiry:Date.now()+(90*24*60*60*1000)};
     const subLinkM=`https://rashadtech.tv?s=${btoa(unescape(encodeURIComponent(JSON.stringify(linkDataM))))}`;
     let msg=`✅ <b>Your ${po.product} is ready!</b>\n\n📋 ${po.plan}\n\n🔐 <b>Credentials:</b>\n📧 Email: <code>${acc.email}</code>\n🔑 Password: <code>${acc.pass}</code>`;
     if(acc.extra)msg+=`\nℹ️ <code>${acc.extra}</code>`;
