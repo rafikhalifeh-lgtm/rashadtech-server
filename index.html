@@ -1517,7 +1517,7 @@ function copySubLinkForCust(cleanId, custId){
     id:o.id,product:o.product,short:o.short,color:o.color,tc:o.tc,
     productId:o.productId,plan:o.plan,email:o.email,pass:o.pass,
     expiryDate:o.expiryDate||'',profileName:o.profileName||'',
-    profilePin:o.profilePin||'',accKey:o.accKey||'',
+    profilePin:o.profilePin||'',accKey:o.accKey||'',mainEmail:o.mainEmail||'',
     linkExpiry:Date.now()+(90*24*60*60*1000) // link valid 90 days
   };
   const encoded=btoa(unescape(encodeURIComponent(JSON.stringify(data))));
@@ -1564,7 +1564,7 @@ function copySubLink(orderId){
     id:o.id,product:o.product,short:o.short,color:o.color,tc:o.tc,
     productId:o.productId,plan:o.plan,email:o.email,pass:o.pass,
     expiryDate:o.expiryDate||'',profileName:o.profileName||'',
-    profilePin:o.profilePin||'',accKey:o.accKey||'',
+    profilePin:o.profilePin||'',accKey:o.accKey||'',mainEmail:o.mainEmail||'',
     linkExpiry:Date.now()+(90*24*60*60*1000) // link valid 90 days
   };
   const encoded=btoa(unescape(encodeURIComponent(JSON.stringify(data))));
@@ -1606,8 +1606,8 @@ async function checkSubLink(){
         }).then(res=>res.json()).then(res=>{if(!res.success)throw new Error('proxy error');return res;}),
         new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),8000))
       ]);
-      if(r.ok){
-        const data=await r.json();
+      if(r.success){
+        const data=r.data||{};
         const allUsers=data.users||[];
         const subIdFull='#'+subId;
         for(const u of allUsers){
@@ -2797,10 +2797,10 @@ function renderAccModal(showForm=false){
       <div style="font-size:11px;color:var(--text3);margin-top:4px">Fixed PIN you set for this profile. Customer will see it on their subscription link.</div>
     </div>
   <div class="field" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px">
-      <label style="color:var(--orange)">🔒 Main Email (for sign-in codes — never shown to customers)</label>
-      <input type="text" id="new-acc-main-email" placeholder="Outlook email you created Netflix on">
-      <input type="password" id="new-acc-main-pass" placeholder="Email password" style="margin-top:6px">
-      <div style="font-size:11px;color:var(--text3);margin-top:4px">Stored securely on server. Customers only see Netflix credentials.</div>
+      <label style="color:var(--orange)">🔒 Main Gmail (for Netflix sign-in codes — never shown to customers)</label>
+      <input type="email" id="new-acc-main-email" placeholder="Gmail address that receives Netflix codes">
+      <input type="password" id="new-acc-main-pass" placeholder="Gmail app password" style="margin-top:6px">
+      <div style="font-size:11px;color:var(--text3);margin-top:4px">Use a Gmail app password with IMAP enabled. Customers only see Netflix credentials.</div>
     </div>
     <button class="inline-btn" onclick="addAccount()"><i class="ti ti-plus" style="font-size:13px;vertical-align:-2px;margin-right:4px"></i>Add to stock</button>
   </div>`;
@@ -2831,17 +2831,21 @@ async function addAccount(){
   const profilePin=document.getElementById('new-acc-profile-pin')?.value.trim()||'';
   const accKey=curAccModalKey+'__'+Date.now();
   accountStock[curAccModalKey].push({email,pass,extra,expiryDate,used:false,accKey,profilePin,mainEmail:mainEmail||''});
+  await saveData();
+  let gmailConfigured=false;
   // Save main email credentials to server for Netflix code monitoring
   if(mainEmail&&mainPass){
     try{
-      await fetch(`${RT_SERVER}/setup-gmail`,{
+      const setupRes=await fetch(`${RT_SERVER}/setup-gmail`,{
         method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({secret:RT_SECRET,email:mainEmail,password:mainPass})
       });
-      showToast('✓ Account + email monitoring started');
+      const setupJson=await setupRes.json().catch(()=>({}));
+      if(!setupRes.ok||setupJson.success===false)throw new Error(setupJson.error||'Gmail setup failed');
+      gmailConfigured=true;
     }catch(e){showToast('⚠️ Account saved but email server error: '+e.message);}
   }
-  await saveData();renderAccModal(false);renderStockPanels();renderAdminExpiry();showToast('✓ Account added to stock');logActivity('Stock added',curAccModalKey);
+  renderAccModal(false);renderStockPanels();renderAdminExpiry();showToast(gmailConfigured?'✓ Account added + Gmail monitoring started':'✓ Account added to stock');logActivity('Stock added',curAccModalKey);
   // Auto-fulfill pending orders for this skey
   await autoFulfillPending(curAccModalKey);
 }
@@ -2868,8 +2872,8 @@ async function autoFulfillPending(skey){
     // Use freshest tgChatId
     const tgId=fu?.tgChatId||u?.tgChatId||po.userTgChatId||'';
     if(tgId){
-      const cleanId=(po.id||'').replace('#','');
-      const subLink=`https://rashadtech.tv?sub=${cleanId}`;
+      const linkData={id:po.id,product:po.product,short:po.short,color:po.color,tc:po.tc,productId:po.productId,plan:po.plan,email:acc.email,pass:acc.pass,expiryDate:acc.expiryDate||'',profileName:po.profileName||'',profilePin:acc.profilePin||'',accKey:acc.accKey||'',mainEmail:acc.mainEmail||'',linkExpiry:Date.now()+(90*24*60*60*1000)};
+      const subLink=`https://rashadtech.tv?s=${btoa(unescape(encodeURIComponent(JSON.stringify(linkData))))}`;
       let msg=`✅ <b>Your ${po.product} is ready!</b>\n\n📋 ${po.plan}\n\n🔐 <b>Credentials:</b>\n📧 Email: <code>${acc.email}</code>\n🔑 Password: <code>${acc.pass}</code>`;
       if(acc.extra)msg+=`\nℹ️ <code>${acc.extra}</code>`;
       if(acc.expiryDate)msg+=`\n⏰ Expires: ${acc.expiryDate}`;
@@ -3071,8 +3075,8 @@ async function manualFulfillPending(i){
   // Notify customer
   const tgId=u?.tgChatId||po.userTgChatId||'';
   if(tgId){
-    const cleanIdM=(po.id||'').replace('#','');
-    const subLinkM=`https://rashadtech.tv?sub=${cleanIdM}`;
+    const linkDataM={id:po.id,product:po.product,short:po.short,color:po.color,tc:po.tc,productId:po.productId,plan:po.plan,email:acc.email,pass:acc.pass,expiryDate:acc.expiryDate||'',profileName:po.profileName||'',profilePin:acc.profilePin||'',accKey:acc.accKey||'',mainEmail:acc.mainEmail||'',linkExpiry:Date.now()+(90*24*60*60*1000)};
+    const subLinkM=`https://rashadtech.tv?s=${btoa(unescape(encodeURIComponent(JSON.stringify(linkDataM))))}`;
     let msg=`✅ <b>Your ${po.product} is ready!</b>\n\n📋 ${po.plan}\n\n🔐 <b>Credentials:</b>\n📧 Email: <code>${acc.email}</code>\n🔑 Password: <code>${acc.pass}</code>`;
     if(acc.extra)msg+=`\nℹ️ <code>${acc.extra}</code>`;
     if(acc.expiryDate)msg+=`\n⏰ Expires: ${acc.expiryDate}`;

@@ -13,6 +13,9 @@ const TG_TOKEN   = process.env.TG_TOKEN;
 const TG_ADMIN   = process.env.TG_ADMIN;
 const JB_KEY     = process.env.JB_KEY;
 const JB_BIN     = process.env.JB_BIN;
+const GMAIL_MONITORS_KEY = 'gmailMonitors';
+const CODE_TTL_MS = 15 * 60 * 1000;
+const EMAIL_LOOKBACK_MS = 24 * 60 * 60 * 1000;
 
 if (!API_SECRET || !TG_TOKEN || !TG_ADMIN) {
   console.error('❌ Missing required env vars: API_SECRET, TG_TOKEN, TG_ADMIN');
@@ -20,6 +23,38 @@ if (!API_SECRET || !TG_TOKEN || !TG_ADMIN) {
 
 let latestCodes = {};
 let notifiedCustomers = {};
+let monitoredEmails = {}; // { gmailEmail: { user, pass, lastUid, lastCheckedAt } }
+let gmailMonitorsLoaded = false;
+
+function normalizeEmail(email) {
+  return String(email || '').trim().toLowerCase();
+}
+
+async function readJsonBinRaw() {
+  if (!JB_KEY || !JB_BIN) throw new Error('DB not configured');
+  const r = await fetch(`https://api.jsonbin.io/v3/b/${JB_BIN}/latest`, {
+    headers: { 'X-Master-Key': JB_KEY, 'X-Bin-Meta': 'false' }
+  });
+  if (!r.ok) throw new Error('JSONBin read failed: ' + r.status);
+  return await r.json();
+}
+
+async function writeJsonBinRaw(data) {
+  if (!JB_KEY || !JB_BIN) throw new Error('DB not configured');
+  const r = await fetch(`https://api.jsonbin.io/v3/b/${JB_BIN}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'X-Master-Key': JB_KEY, 'X-Bin-Meta': 'false' },
+    body: JSON.stringify(data)
+  });
+  if (!r.ok) throw new Error('JSONBin write failed: ' + r.status);
+  return await r.json();
+}
+
+function stripPrivateData(data) {
+  const publicData = { ...(data || {}) };
+  delete publicData[GMAIL_MONITORS_KEY];
+  return publicData;
+}
 
 // ── HEALTH ─────────────────────────────────────────────────────────────
 app.get('/', (req, res) => {
@@ -35,12 +70,8 @@ app.post('/db/read', async (req, res) => {
   if (secret !== API_SECRET) return res.status(401).json({ error: 'Unauthorized' });
   if (!JB_KEY || !JB_BIN) return res.status(500).json({ error: 'DB not configured' });
   try {
-    const r = await fetch(`https://api.jsonbin.io/v3/b/${JB_BIN}/latest`, {
-      headers: { 'X-Master-Key': JB_KEY, 'X-Bin-Meta': 'false' }
-    });
-    if (!r.ok) throw new Error('JSONBin read failed: ' + r.status);
-    const data = await r.json();
-    res.json({ success: true, data });
+    const data = await readJsonBinRaw();
+    res.json({ success: true, data: stripPrivateData(data) });
   } catch(e) {
     console.error('DB read error:', e.message);
     res.status(500).json({ error: e.message });
@@ -52,13 +83,12 @@ app.post('/db/write', async (req, res) => {
   if (secret !== API_SECRET) return res.status(401).json({ error: 'Unauthorized' });
   if (!JB_KEY || !JB_BIN) return res.status(500).json({ error: 'DB not configured' });
   try {
-    const r = await fetch(`https://api.jsonbin.io/v3/b/${JB_BIN}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'X-Master-Key': JB_KEY, 'X-Bin-Meta': 'false' },
-      body: JSON.stringify(data)
-    });
-    if (!r.ok) throw new Error('JSONBin write failed: ' + r.status);
-    const result = await r.json();
+    const existing = await readJsonBinRaw().catch(() => ({}));
+    const nextData = { ...(data || {}) };
+    if (existing && existing[GMAIL_MONITORS_KEY]) {
+      nextData[GMAIL_MONITORS_KEY] = existing[GMAIL_MONITORS_KEY];
+    }
+    const result = await writeJsonBinRaw(nextData);
     res.json({ success: true, result });
   } catch(e) {
     console.error('DB write error:', e.message);
@@ -139,25 +169,91 @@ async function sendTG(chatId, text, parse_mode) {
   });
 }
 
+async function loadGmailMonitors(force = false) {
+  if (gmailMonitorsLoaded && !force) return monitoredEmails;
+  if (!JB_KEY || !JB_BIN) {
+    gmailMonitorsLoaded = true;
+    return monitoredEmails;
+  }
+  try {
+    const data = await readJsonBinRaw();
+    const stored = data[GMAIL_MONITORS_KEY] || {};
+    const loaded = {};
+    for (const [email, creds] of Object.entries(stored)) {
+      const key = normalizeEmail(email);
+      const pass = creds && (creds.pass || creds.password);
+      if (!key || !pass) continue;
+      loaded[key] = {
+        user: normalizeEmail(creds.user || key),
+        pass,
+        lastUid: Number(creds.lastUid || 0),
+        lastCheckedAt: Number(creds.lastCheckedAt || 0)
+      };
+    }
+    monitoredEmails = loaded;
+    gmailMonitorsLoaded = true;
+    console.log(`Loaded ${Object.keys(monitoredEmails).length} Gmail monitor(s)`);
+  } catch(e) {
+    console.log('Gmail monitor load error:', e.message);
+    gmailMonitorsLoaded = true;
+  }
+  return monitoredEmails;
+}
+
+async function persistGmailMonitors() {
+  if (!JB_KEY || !JB_BIN) return;
+  const data = await readJsonBinRaw();
+  data[GMAIL_MONITORS_KEY] = monitoredEmails;
+  await writeJsonBinRaw(data);
+}
+
+async function getInboxMaxUid(email, password) {
+  let client;
+  try {
+    client = createGmailClient(email, password);
+    await client.connect();
+    const lock = await client.getMailboxLock('INBOX');
+    try {
+      const uidNext = Number(client.mailbox && client.mailbox.uidNext);
+      return uidNext > 1 ? uidNext - 1 : 0;
+    } finally {
+      lock.release();
+    }
+  } finally {
+    if (client && client.usable) {
+      try { await client.logout(); } catch(e) {}
+    }
+  }
+}
+
 // ── CODE ENDPOINTS ─────────────────────────────────────────────────────
 app.post('/get-code', async (req, res) => {
   const { secret, profileName, mainEmail } = req.body;
   if (secret !== API_SECRET) return res.status(401).json({ error: 'Unauthorized' });
   
   // Priority: mainEmail > profileName > default
-  const key = mainEmail ? mainEmail.toLowerCase() : (profileName ? profileName.toLowerCase() : 'default');
+  const key = mainEmail ? normalizeEmail(mainEmail) : (profileName ? profileName.toLowerCase() : 'default');
+  if (mainEmail) {
+    await loadGmailMonitors();
+    if (monitoredEmails[key]) {
+      await fetchNetflixCodes(key);
+    }
+  }
   const entry = latestCodes[key] || (mainEmail ? null : latestCodes['default']);
   
   if (!entry) {
     const name = profileName || 'Unknown';
     if (!notifiedCustomers[key] || Date.now() - notifiedCustomers[key] > 5*60*1000) {
       notifiedCustomers[key] = Date.now();
-      await sendTG(TG_ADMIN, `🔔 <b>${name}</b> is waiting for a sign-in code!\nSend: /code ${name} 1234`, 'HTML');
+      const monitorHint = mainEmail && !monitoredEmails[key]
+        ? `\n⚠️ Gmail monitoring is not configured for <code>${key}</code>. Add this Gmail in Admin stock with an app password.`
+        : '';
+      await sendTG(TG_ADMIN, `🔔 <b>${name}</b> is waiting for a sign-in code!${mainEmail ? `\n📧 Main email: <code>${key}</code>` : ''}${monitorHint}\nManual fallback: /code ${mainEmail ? key : name} 1234`, 'HTML').catch(() => {});
     }
     return res.json({ success: false, message: 'No code found yet — check back in a moment' });
   }
-  if (Date.now() - entry.timestamp > 15*60*1000) return res.json({ success: false, message: 'Code expired' });
-  await sendTG(TG_ADMIN, `👀 <b>${profileName || 'Unknown'}</b> viewed code: ${entry.code}`, 'HTML');
+  if (Date.now() - entry.timestamp > CODE_TTL_MS) return res.json({ success: false, message: 'Code expired' });
+  await sendTG(TG_ADMIN, `👀 <b>${profileName || 'Unknown'}</b> viewed code: ${entry.code}`, 'HTML').catch(() => {});
   res.json({ success: true, code: entry.code });
 });
 
@@ -172,60 +268,89 @@ app.post('/set-code', (req, res) => {
 app.post('/add-account', (req, res) => res.json({ success: true }));
 
 // ── IMAP EMAIL POLLING FOR NETFLIX CODES ──────────────────────────────
-let monitoredEmails = {}; // { gmailEmail: { user, pass, lastUid } }
+function createGmailClient(email, password) {
+  return new ImapFlow({
+    host: 'imap.gmail.com',
+    port: 993,
+    secure: true,
+    auth: {
+      user: email,
+      pass: password
+    },
+    tls: { rejectUnauthorized: false },
+    connectionTimeout: 15000,
+    logger: false
+  });
+}
 
-async function fetchNetflixCodes() {
-  for (const [email, creds] of Object.entries(monitoredEmails)) {
+function extractNetflixCode(parsedEmail) {
+  const subject = parsedEmail.subject || '';
+  const text = parsedEmail.text || '';
+  const html = parsedEmail.html || '';
+  const from = (parsedEmail.from || '').toString().toLowerCase();
+  const combined = `${subject} ${text} ${html}`;
+  const lower = combined.toLowerCase();
+  if (!from.includes('netflix') && !lower.includes('netflix')) return null;
+
+  const preferred = combined.match(/(?:code|verification|sign[\s-]?in|temporary)[^\d]{0,120}(\d{4,8})/i);
+  if (preferred) return preferred[1];
+
+  const fallback = combined.match(/\b(\d{4,8})\b/);
+  return fallback ? fallback[1] : null;
+}
+
+async function fetchNetflixCodes(targetEmail) {
+  await loadGmailMonitors();
+  const targetKey = targetEmail ? normalizeEmail(targetEmail) : null;
+  const entries = targetKey
+    ? (monitoredEmails[targetKey] ? [[targetKey, monitoredEmails[targetKey]]] : [])
+    : Object.entries(monitoredEmails);
+  let changed = false;
+
+  for (const [email, creds] of entries) {
     let client;
     try {
-      client = new ImapFlow({
-        host: 'imap.gmail.com',
-        port: 993,
-        secure: true,
-        auth: {
-          user: creds.user,
-          pass: creds.pass
-        },
-        tls: { rejectUnauthorized: false },
-        connectionTimeout: 15000,
-        logger: false
-      });
+      client = createGmailClient(creds.user || email, creds.pass);
 
       await client.connect();
 
       const lock = await client.getMailboxLock('INBOX');
       const emails = [];
+      let maxUid = Number(creds.lastUid || 0);
       try {
-        const since = new Date(Date.now() - 86400000);
-        const messages = await client.search({ seen: false, since }, { uid: true });
-        for await (const message of client.fetch(messages, { source: true }, { uid: true })) {
-          if (!message.source) continue;
-          const parsed = await simpleParser(message.source);
-          emails.push(parsed);
+        const since = new Date(Date.now() - EMAIL_LOOKBACK_MS);
+        const seenUid = Number(creds.lastUid || 0);
+        const messages = (await client.search({ since }, { uid: true }) || [])
+          .filter(uid => Number(uid) > seenUid)
+          .sort((a, b) => Number(a) - Number(b));
+        if (messages.length) {
+          for await (const message of client.fetch(messages, { uid: true, source: true }, { uid: true })) {
+            maxUid = Math.max(maxUid, Number(message.uid || 0));
+            if (!message.source) continue;
+            const parsed = await simpleParser(message.source);
+            emails.push(parsed);
+          }
         }
       } finally {
         lock.release();
       }
 
-      // Extract 4-digit Netflix codes from emails
+      // Extract Netflix sign-in codes from emails
       for (const e of emails) {
-        const text = (e.subject || '') + ' ' + (e.text || '');
-        const from = (e.from || '').toString().toLowerCase();
-        
-        // Check if from Netflix
-        if (from.includes('netflix') || text.includes('netflix')) {
-          // Look for 4-digit code
-          const match = text.match(/\b(\d{4})\b/);
-          if (match) {
-            const code = match[1];
-            const key = email.toLowerCase();
-            latestCodes[key] = { code, timestamp: Date.now() };
-            delete notifiedCustomers[key];
-            console.log(`📧 Netflix code ${code} captured for ${email}`);
-            await sendTG(TG_ADMIN, `✅ <b>Netflix Code Captured!</b>\n📧 Email: ${email}\n🔢 Code: <b>${code}</b>`, 'HTML');
-          }
+        const code = extractNetflixCode(e);
+        if (code) {
+          const key = normalizeEmail(email);
+          latestCodes[key] = { code, timestamp: Date.now() };
+          delete notifiedCustomers[key];
+          console.log(`📧 Netflix code ${code} captured for ${email}`);
+          await sendTG(TG_ADMIN, `✅ <b>Netflix Code Captured!</b>\n📧 Email: ${email}\n🔢 Code: <b>${code}</b>`, 'HTML').catch(() => {});
         }
       }
+      if (maxUid !== Number(creds.lastUid || 0)) {
+        creds.lastUid = maxUid;
+        changed = true;
+      }
+      creds.lastCheckedAt = Date.now();
     } catch(e) {
       console.log('IMAP error for', email, e.message);
     } finally {
@@ -233,6 +358,9 @@ async function fetchNetflixCodes() {
         try { await client.logout(); } catch(e) {}
       }
     }
+  }
+  if (changed) {
+    try { await persistGmailMonitors(); } catch(e) { console.log('Gmail monitor persist error:', e.message); }
   }
 }
 
@@ -242,20 +370,39 @@ app.post('/setup-gmail', async (req, res) => {
   const { secret, email, password } = req.body;
   if (secret !== API_SECRET) return res.status(401).json({ error: 'Unauthorized' });
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
-  
-  monitoredEmails[email] = { user: email, pass: password, lastUid: 0 };
-  await sendTG(TG_ADMIN, `📧 Added Gmail monitoring: ${email}\nWill capture Netflix codes automatically.`, 'HTML');
-  res.json({ success: true, message: 'Gmail added for Netflix code monitoring', gmailConfigured: true, email });
+  const key = normalizeEmail(email);
+  try {
+    await loadGmailMonitors();
+    const lastUid = await getInboxMaxUid(key, password);
+    monitoredEmails[key] = { user: key, pass: password, lastUid, lastCheckedAt: Date.now() };
+    await persistGmailMonitors();
+    await sendTG(TG_ADMIN, `📧 Added Gmail monitoring: <code>${key}</code>\nWill capture new Netflix codes automatically.`, 'HTML').catch(() => {});
+    res.json({ success: true, message: 'Gmail added for Netflix code monitoring', gmailConfigured: true, email: key });
+  } catch(e) {
+    console.log('Gmail setup error for', key, e.message);
+    await sendTG(TG_ADMIN, `⚠️ Gmail monitoring setup failed for <code>${key}</code>\n${e.message}`, 'HTML').catch(() => {});
+    res.status(400).json({ success: false, error: 'Could not connect to Gmail. Use the Gmail address and an app password with IMAP enabled.' });
+  }
 });
 
 app.get('/monitored-emails', (req, res) => {
-  res.json({ success: true, emails: Object.keys(monitoredEmails) });
+  const secret = req.query.secret;
+  if (secret !== API_SECRET) return res.status(401).json({ error: 'Unauthorized' });
+  res.json({
+    success: true,
+    emails: Object.entries(monitoredEmails).map(([email, creds]) => ({
+      email,
+      lastUid: creds.lastUid || 0,
+      lastCheckedAt: creds.lastCheckedAt || null
+    }))
+  });
 });
 
 // ── START ──────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, async () => {
   console.log('rashadtech server running on port ' + PORT);
+  await loadGmailMonitors();
   try {
     const webhookUrl = process.env.RENDER_EXTERNAL_URL + '/telegram';
     const r = await fetch(`https://api.telegram.org/bot${TG_TOKEN}/setWebhook`, {
