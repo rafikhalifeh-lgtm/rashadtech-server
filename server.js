@@ -1,6 +1,6 @@
 const express = require('express');
 const cors = require('cors');
-const Imap = require('imap').Imap;
+const { ImapFlow } = require('imapflow');
 const { simpleParser } = require('mailparser');
 
 const app = express();
@@ -176,40 +176,36 @@ let monitoredEmails = {}; // { gmailEmail: { user, pass, lastUid } }
 
 async function fetchNetflixCodes() {
   for (const [email, creds] of Object.entries(monitoredEmails)) {
+    let client;
     try {
-      const imap = new Imap({
-        user: creds.user,
-        password: creds.pass,
+      client = new ImapFlow({
         host: 'imap.gmail.com',
         port: 993,
-        tls: true,
-        tlsOptions: { rejectUnauthorized: false },
-        connTimeout: 15000
+        secure: true,
+        auth: {
+          user: creds.user,
+          pass: creds.pass
+        },
+        tls: { rejectUnauthorized: false },
+        connectionTimeout: 15000,
+        logger: false
       });
 
-      await new Promise((resolve, reject) => {
-        imap.once('ready', resolve);
-        imap.once('error', reject);
-        imap.connect();
-      });
+      await client.connect();
 
-      const emails = await new Promise((resolve) => {
-        imap.openBox('INBOX', true, (err, box) => {
-          if (err) { imap.end(); resolve([]); return; }
-          imap.search(['UNSEEN', ['SINCE', new Date(Date.now() - 86400000).toISOString()]], (err, results) => {
-            if (err || !results || !results.length) { imap.end(); resolve([]); return; }
-            const fetch = imap.fetch(results, { bodies: '' });
-            const parsed = [];
-            fetch.on('message', (msg) => {
-              msg.on('body', (stream) => {
-                simpleParser(stream, (err, p) => { if (!err && p) parsed.push(p); });
-              });
-            });
-            fetch.once('end', () => { imap.end(); resolve(parsed); });
-            fetch.once('error', () => { imap.end(); resolve([]); });
-          });
-        });
-      });
+      const lock = await client.getMailboxLock('INBOX');
+      const emails = [];
+      try {
+        const since = new Date(Date.now() - 86400000);
+        const messages = await client.search({ seen: false, since }, { uid: true });
+        for await (const message of client.fetch(messages, { source: true }, { uid: true })) {
+          if (!message.source) continue;
+          const parsed = await simpleParser(message.source);
+          emails.push(parsed);
+        }
+      } finally {
+        lock.release();
+      }
 
       // Extract 4-digit Netflix codes from emails
       for (const e of emails) {
@@ -230,7 +226,13 @@ async function fetchNetflixCodes() {
           }
         }
       }
-    } catch(e) { console.log('IMAP error for', email, e.message); }
+    } catch(e) {
+      console.log('IMAP error for', email, e.message);
+    } finally {
+      if (client && client.usable) {
+        try { await client.logout(); } catch(e) {}
+      }
+    }
   }
 }
 

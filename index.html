@@ -2085,9 +2085,13 @@ async function submitCustomOrder(){
   currentUser.transactions.unshift({type:'purchase',label:`${p.name} · ${planLabel} · ID: ${customOrderId}`,amount:price,balance:currentUser.balance,date:dateStr,pending:true,orderId});
   // Save game order
   let go=[];
+  try{
+    if(!_jbCache)_jbCache=await jbRead();
+    if(Array.isArray(_jbCache.gameorders))go=_jbCache.gameorders;
+  }catch(e){}
+  if(!_jbCache)_jbCache={};
   go.unshift({id:orderId,type:p.customOrderType,product:p.name,short:p.short,color:p.color,playerId:customOrderId,plan:planLabel,price,userEmail:currentUser.email,userName:currentUser.name,userTgChatId:currentUser.tgChatId||'',date:dateStr,status:'pending'});
-  try{}catch(e){}
-  try{if(!_jbCache)_jbCache=await jbRead();_jbCache.gameorders=go;await jbWrite(_jbCache);}catch(e){}
+  try{_jbCache.gameorders=go;await jbWrite(_jbCache);}catch(e){console.warn('game order save error:',e);}
   await saveData();updateBal();renderTx();closeModal('buy-modal');showToast('✓ Order placed!');
   if(currentUser.tgChatId)await sendTelegramToUser(currentUser.tgChatId,`⏳ <b>Order Received!</b>\n\n🎮 <b>${p.name}</b>\n📋 ${planLabel}\n🆔 Player ID: <code>${customOrderId}</code>\n💵 ${fmt(price)}\n\nYour order is being processed. We will notify you here once it's done! 🙏`);
   await sendTelegram(`🎮 <b>New Game Order ${orderId}</b>\n\n📦 ${p.name}\n📋 ${planLabel}\n🆔 Player ID: <code>${customOrderId}</code>\n💵 ${fmt(price)}\n👤 ${currentUser.name} (${currentUser.email})\n📅 ${dateStr}\n\nGo to Admin → Game Orders to fulfill.`);
@@ -3045,7 +3049,7 @@ async function renderAdminPending(){
 }
 async function manualFulfillPending(i){
   await refreshFromFirebase();
-  let pending=[];
+  let pending=Array.isArray(_jbCache?.pending)?_jbCache.pending:[];
   
   if(!pending[i]){showToast('Order not found');return;}
   const po=pending[i];
@@ -3100,7 +3104,7 @@ function renderGameOrdersHtml(el,go){
 }
 async function fulfillGameOrder(i){
   await refreshFromFirebase();
-  let go=[];
+  let go=Array.isArray(_jbCache?.gameorders)?_jbCache.gameorders:[];
   if(!go[i]||go[i].status==='done'){showToast('Already fulfilled');return;}
   const o=go[i];
   go[i].status='done';
@@ -3604,9 +3608,9 @@ const RT_FAQ=[
   {q:['profile','name','pin','change'],
    a:'You can change your Profile Name or PIN Code from the <b>Subscription Options</b> — click the buttons directly on your subscription card.'},
   {q:['contact','reach','support','human','agent','talk'],
-   a:'You can reach us on:
-• <b>WhatsApp: <a href="https://wa.me/96179306701" target="_blank">+96179306701</a></b>
-• <b>Telegram: <a href="https://t.me/Rashadtech" target="_blank">@Rashadtech</a></b>'}
+   a:`You can reach us on:<br>
+• <b>WhatsApp: <a href="https://wa.me/96179306701" target="_blank">+96179306701</a></b><br>
+• <b>Telegram: <a href="https://t.me/Rashadtech" target="_blank">@Rashadtech</a></b>`}
 ];
 
 let rtOpen=false;
