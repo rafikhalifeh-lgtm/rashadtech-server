@@ -319,10 +319,10 @@ function extractNetflixCode(parsedEmail) {
   if (!from.includes('netflix') && !lower.includes('netflix')) return null;
 
   const preferred = combined.match(/(?:code|verification|sign[\s-]?in|temporary)[^\d]{0,120}(\d{4,8})/i);
-  if (preferred) return preferred[1];
+  if (preferred) return { code: preferred[1], customerSafe: preferred[1].length === 4 };
 
   const fallback = combined.match(/\b(\d{4,8})\b/);
-  return fallback ? fallback[1] : null;
+  return fallback ? { code: fallback[1], customerSafe: fallback[1].length === 4 } : null;
 }
 
 async function fetchNetflixCodes(targetEmail) {
@@ -363,13 +363,18 @@ async function fetchNetflixCodes(targetEmail) {
 
       // Extract Netflix sign-in codes from emails
       for (const e of emails) {
-        const code = extractNetflixCode(e);
-        if (code) {
+        const result = extractNetflixCode(e);
+        if (result) {
           const key = normalizeEmail(email);
-          latestCodes[key] = { code, timestamp: Date.now() };
-          delete notifiedCustomers[key];
-          console.log(`📧 Netflix code ${code} captured for ${email}`);
-          await sendTG(TG_ADMIN, `✅ <b>Netflix Code Captured!</b>\n📧 Email: ${email}\n🔢 Code: <b>${code}</b>`, 'HTML').catch(() => {});
+          if (result.customerSafe) {
+            latestCodes[key] = { code: result.code, timestamp: Date.now() };
+            delete notifiedCustomers[key];
+            console.log(`📧 Netflix sign-in code ${result.code} captured for ${email}`);
+            await sendTG(TG_ADMIN, `✅ <b>Netflix Sign-in Code Captured</b>\n📧 Email: ${email}\n🔢 Code: <b>${result.code}</b>`, 'HTML').catch(() => {});
+          } else {
+            console.log(`🔐 Admin-only Netflix security code ${result.code} captured for ${email}`);
+            await sendTG(TG_ADMIN, `🔐 <b>Netflix Security Code Captured — ADMIN ONLY</b>\n📧 Email: ${email}\n🔢 Code: <b>${result.code}</b>\n\nNot shown on customer subscription links.`, 'HTML').catch(() => {});
+          }
         }
       }
       if (maxUid !== Number(creds.lastUid || 0)) {
