@@ -242,6 +242,37 @@ function mergeUserWrite(existing, incoming, session) {
   return next;
 }
 
+function preserveSensitiveFields(existing, incoming) {
+  const next = { ...(incoming || {}) };
+  const existingUsers = Array.isArray(existing && existing.users) ? existing.users : [];
+  if (Array.isArray(next.users)) {
+    next.users = next.users.map(user => {
+      const current = existingUsers.find(existingUser => normalizeEmail(existingUser.email) === normalizeEmail(user.email));
+      return {
+        ...user,
+        pass: user.pass || (current && current.pass) || ''
+      };
+    });
+  }
+  if (existing && existing[GMAIL_MONITORS_KEY]) next[GMAIL_MONITORS_KEY] = existing[GMAIL_MONITORS_KEY];
+  if (existing && existing[LINK_TOKENS_KEY] && !next[LINK_TOKENS_KEY]) next[LINK_TOKENS_KEY] = existing[LINK_TOKENS_KEY];
+  return next;
+}
+
+function recoverMissingPasswordFromBackups(data, user) {
+  if (!user || user.pass) return false;
+  const backups = Array.isArray(data && data[BACKUPS_KEY]) ? data[BACKUPS_KEY] : [];
+  for (const backup of backups) {
+    const users = backup && backup.data && Array.isArray(backup.data.users) ? backup.data.users : [];
+    const previous = users.find(item => normalizeEmail(item.email) === normalizeEmail(user.email) && item.pass);
+    if (previous) {
+      user.pass = previous.pass;
+      return true;
+    }
+  }
+  return false;
+}
+
 // ── HEALTH ─────────────────────────────────────────────────────────────
 app.get('/', (req, res) => {
   res.json({ status: 'rashadtech server running', codes: Object.keys(latestCodes) });
@@ -278,10 +309,7 @@ app.post('/db/write', async (req, res) => {
     const existing = await readJsonBinRaw().catch(() => ({}));
     let nextData;
     if (session.role === 'admin') {
-      nextData = { ...(data || {}) };
-      if (existing && existing[GMAIL_MONITORS_KEY]) {
-        nextData[GMAIL_MONITORS_KEY] = existing[GMAIL_MONITORS_KEY];
-      }
+      nextData = preserveSensitiveFields(existing, data || {});
     } else {
       nextData = mergeUserWrite(existing, data || {}, session);
     }
@@ -297,10 +325,13 @@ app.post('/auth/login', async (req, res) => {
   const { email, password } = req.body;
   try {
     const data = await readJsonBinRaw();
-    const user = (data.users || []).find(u => normalizeEmail(u.email) === normalizeEmail(email) && verifyPassword(password, u.pass));
+    const user = (data.users || []).find(u => normalizeEmail(u.email) === normalizeEmail(email));
     if (!user) return res.status(401).json({ error: 'Invalid email or password' });
+    const recoveredPassword = recoverMissingPasswordFromBackups(data, user);
+    if (!user.pass) return res.status(401).json({ error: 'This account needs a password reset. Please use Forgot password.' });
+    if (!verifyPassword(password, user.pass)) return res.status(401).json({ error: 'Invalid email or password' });
     if (user.banned) return res.status(403).json({ error: 'Your account has been suspended. Please contact support.' });
-    if (!String(user.pass || '').startsWith(PASSWORD_HASH_PREFIX)) {
+    if (recoveredPassword || !String(user.pass || '').startsWith(PASSWORD_HASH_PREFIX)) {
       user.pass = hashPassword(password);
       await writeJsonBinRaw(data);
     }
