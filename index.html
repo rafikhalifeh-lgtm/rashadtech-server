@@ -1,6 +1,30 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<script>
+// IMMEDIATE: Hide all pages if sublink mode (runs before rendering)
+(function(){
+  var params = new URLSearchParams(location.search);
+  if(params.get('sub') || params.get('s')) {
+    document.body.classList.add('sublink-mode');
+    // Remove active class from all pages immediately
+    document.querySelectorAll('.page').forEach(function(p) {
+      p.classList.remove('active');
+      p.style.display = 'none';
+    });
+    // Show page-sublink
+    var ps = document.getElementById('page-sublink');
+    if(ps) {
+      ps.style.display = 'flex';
+      ps.style.visibility = 'visible';
+    }
+    // Hide chat bubble
+    var cb = document.getElementById('rt-chat-bubble');
+    if(cb) cb.style.display = 'none';
+  }
+})();
+</script>
+
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>rashadtech.tv — Streaming Store</title>
@@ -9,6 +33,13 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <style>
+/* SUBLINK MODE: Hide all pages except sublink page */
+body.sublink-mode .page, body.sublink-mode .page.active { display: none !important; visibility: hidden !important; opacity: 0 !important; position: absolute !important; pointer-events: none !important; }
+body.sublink-mode #page-app { display: none !important; visibility: hidden !important; opacity: 0 !important; position: absolute !important; pointer-events: none !important; }
+body.sublink-mode #page-admin { display: none !important; visibility: hidden !important; opacity: 0 !important; position: absolute !important; pointer-events: none !important; }
+body.sublink-mode #page-profile { display: none !important; visibility: hidden !important; opacity: 0 !important; position: absolute !important; pointer-events: none !important; }
+body.sublink-mode #rt-chat-bubble { display: none !important; }
+body.sublink-mode #rt-chat-win { display: none !important; }
 :root[data-theme="light"]{
   --bg:#f5f5f7;
   --bg2:#ffffff;
@@ -44,7 +75,35 @@
 }
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden}
-.page{display:none}.page.active{display:block}
+/* Default: pages hidden except auth which shows by default */
+.page{display:none}
+.page.active{display:block}
+/* SUBLINK MODE: Hide everything except page-sublink */
+body.sublink-mode #page-auth,
+body.sublink-mode #page-app,
+body.sublink-mode #page-admin,
+body.sublink-mode #page-profile {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  position: absolute !important;
+  pointer-events: none !important;
+  z-index: -1 !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  width: 0 !important;
+  height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+}
+body.sublink-mode .topbar,
+body.sublink-mode .bottom-nav,
+body.sublink-mode #rt-chat-bubble,
+body.sublink-mode #rt-chat-win,
+body.sublink-mode .modal-overlay { display: none !important; }
+/* EXCEPT: page-sublink MUST show */
+body.sublink-mode #page-sublink { display: flex !important; visibility: visible !important; opacity: 1 !important; position: fixed !important; top: 0; left: 0; width: 100%; height: 100%; z-index: 99999; }
 input,button,select,textarea{font-family:var(--font)}
 .auth-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:40px 16px}
 .auth-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:32px;width:100%;max-width:390px}
@@ -321,7 +380,6 @@ input,button,select,textarea{font-family:var(--font)}
 .sub-option-btn{width:100%;background:none;border:none;border-radius:var(--radius-sm);padding:12px 14px;font-size:14px;color:var(--text);cursor:pointer;text-align:left;font-family:var(--font)}
 .sub-option-btn:hover{background:var(--bg3)}
 #page-sublink{display:none}
-
 /* ── MOBILE BOTTOM NAV ── */
 .bottom-nav{padding-bottom:env(safe-area-inset-bottom);display:none;position:fixed;bottom:0;left:0;right:0;height:60px;background:var(--bg2);border-top:1px solid var(--border);z-index:200;padding-bottom:env(safe-area-inset-bottom)}
 .bottom-nav-inner{display:flex;height:60px}
@@ -330,31 +388,26 @@ input,button,select,textarea{font-family:var(--font)}
 .bnav-btn.active{color:var(--red)}
 .bnav-badge{position:absolute;top:-2px;right:-4px;width:8px;height:8px;background:var(--red);border-radius:50%;display:none}
 .bnav-badge.show{display:block}
-
 @media(max-width:700px){
   /* Layout */
   .sidenav{display:none !important}
   .bottom-nav{display:block}
   .main-content{padding:12px 10px;padding-bottom:80px}
   .app-layout{min-height:calc(100vh - 54px)}
-
   /* Auth */
   .auth-wrap{padding:16px 12px;align-items:flex-start;padding-top:30px}
   .auth-card{padding:20px 16px}
   .auth-title{font-size:18px}
-
   /* Topbar */
   .topbar{padding:0 10px}
   .topbar-right .wlabel{display:none}
   .logout-btn span{display:none}
-
   /* Product grid 2 columns */
   .products-grid{grid-template-columns:repeat(2,1fr) !important;gap:8px !important}
   .pcard-top{height:52px;font-size:13px}
   .pcard-body{padding:8px 10px}
   .pcard-name{font-size:12px}.pcard-desc{font-size:10px;margin-bottom:6px}
   .pcard-price{font-size:13px}.btn-buy{font-size:10px;padding:5px 9px}
-
   /* All tables scroll horizontally */
   .card{overflow-x:auto}
   .admin-cust-table,.admin-req-table,.tx-table,.arqt-table{
@@ -366,96 +419,72 @@ input,button,select,textarea{font-family:var(--font)}
   .admin-cust-table td,.admin-req-table td,.tx-table td,.arqt-table td{
     padding:7px 8px;font-size:11px
   }
-
   /* Modals full screen slide up */
   .modal-wrap{align-items:flex-end;padding:0 !important}
   .modal{border-radius:16px 16px 0 0;max-height:93vh;width:100% !important;max-width:100% !important}
   .modal-body{padding:14px}
-
   /* Admin rows wrap */
   .admin-row{flex-wrap:wrap;gap:6px;padding:10px}
   .admin-actions{width:100%;display:flex;justify-content:flex-end;gap:6px;margin-top:4px}
   .admin-icon{flex-shrink:0}
-
   /* Wallet rows */
   .admin-wallet-row{flex-wrap:wrap;gap:6px;padding:10px 12px}
   .aw-info{flex:1;min-width:140px}
   .admin-wallet-row input{width:65px}
-
   /* Create customer form — single column */
   .create-form .grid2{grid-template-columns:1fr !important}
   .create-form{padding:12px}
-
   /* Wallet */
   .amounts-grid{grid-template-columns:repeat(3,1fr) !important}
   .big-balance{font-size:26px}
-
   /* Toast above nav */
   .toast{bottom:68px;right:50%;transform:translateX(50%);font-size:12px;padding:8px 14px;white-space:nowrap;max-width:88vw;text-align:center}
-
   /* Typography */
   .pg-title{font-size:16px;margin-bottom:2px}
   .pg-sub{font-size:11px;margin-bottom:12px}
-
   /* Filter tabs */
   .filter-tabs{flex-wrap:wrap;gap:5px}
   .ftab{font-size:11px;padding:5px 11px}
-
   /* Sub cards */
   .sub-card{flex-wrap:wrap;gap:8px}
   .sub-right{width:100%;display:flex;justify-content:space-between;align-items:center}
-
   /* Expiry cards */
   .expiry-card{flex-wrap:wrap}
-
   /* Plan rows in buy modal */
   .plan-row{padding:10px 12px}
   .plan-name{font-size:13px}
   .plan-price{font-size:14px}
-
   /* User type grid */
   .user-type-grid{grid-template-columns:1fr 1fr}
-
   /* Acc modal list */
   .acc-list{max-height:160px}
-
   /* Stock admin sub info */
   .admin-sub{font-size:10px}
   .admin-name{font-size:12px}
-
   /* Topup requests */
   .topup-row{flex-wrap:wrap;gap:6px}
-
   /* Game orders */
   .game-order-row{flex-wrap:wrap;gap:6px}
-
   /* Pending orders */
   .pending-row{flex-wrap:wrap;gap:6px}
-
   /* More drawer */
   #admin-more-drawer,#app-more-drawer{padding:10px}
   #admin-more-drawer .drawer-grid,#app-more-drawer .drawer-grid{gap:6px}
-
   /* Sublink page mobile */
   #page-sublink{padding:12px;padding-top:20px;align-items:flex-start}
   #sublink-code{font-size:22px;letter-spacing:4px}
   #tv-code-input{font-size:16px;letter-spacing:2px}
-
   /* Stock panel mobile */
   .stock-panel{padding:12px 10px}
   .stock-header{flex-wrap:wrap;gap:6px}
-
   /* My customers mobile */
   .cust-card{padding:12px}
   .cust-sub-row>div:last-child{width:100%}
-
   /* Fix all inputs 16px to prevent iOS zoom */
   input,select,textarea{font-size:16px !important}
-
   /* Topbar title truncate */
   .topbar-title{font-size:13px;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 }
-
 /* ── SUPPORT CHATBOT ── */
 #rt-chat-bubble{position:fixed;bottom:22px;right:22px;z-index:9999;cursor:pointer;
   width:52px;height:52px;border-radius:50%;background:var(--red);box-shadow:0 4px 20px rgba(226,75,74,0.4);
@@ -506,15 +535,28 @@ input,button,select,textarea{font-family:var(--font)}
 .rt-chat-send:hover{background:var(--red2);}
 .rt-chat-send svg{width:16px;height:16px;stroke:#fff;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
 @media(max-width:400px){#rt-chat-win{width:calc(100vw - 24px);right:12px;bottom:80px;}}
+/* SUBSCRIPTION LINK MODE - Hide all pages except sublink page */
+body.sublink-mode #page-auth,
+body.sublink-mode #page-app,
+body.sublink-mode #page-admin,
+body.sublink-mode #page-profile { display: none !important; }
 
+/* Hide topbar and bottom nav on sublink page */
+body.sublink-mode .topbar,
+body.sublink-mode .bottom-nav { display: none !important; }
+/* Hide chat in sublink mode */
+body.sublink-mode #rt-chat-bubble,
+body.sublink-mode #rt-chat-win { display: none !important; }
+/* Hide all modals in sublink mode */
+body.sublink-mode .modal-overlay { display: none !important; }
+/* Override for page-sublink - always show in sublink mode */
+body.sublink-mode #page-sublink { display: flex !important; visibility: visible !important; opacity: 1 !important; position: fixed !important; }
 </style>
-
 <!--
 EMAILJS FIX APPLIED
 Reason:
 Many EmailJS templates fail because the template variables
 don't match the website variable names.
-
 This patch sends multiple compatible variable names:
 - to_email
 - email
@@ -523,12 +565,134 @@ This patch sends multiple compatible variable names:
 - otp_code
 - verification_code
 - passcode
-
 So your EmailJS template will receive the user email correctly.
 -->
-
 </head>
 <body>
+<div id="page-sublink" class="page" style="position:fixed;top:0;left:0;width:100%;height:100%;display:flex;align-items:center;justify-content:center;padding:20px;overflow-y:auto;z-index:9999;background:var(--bg)">
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px 16px;max-width:420px;width:100%;text-align:center">
+    <div id="sublink-loading" style="color:var(--text3);font-size:14px">Loading your subscription...</div>
+    <div id="sublink-content" style="display:none">
+      <div id="sublink-icon" style="margin:0 auto 12px"></div>
+      <div id="sublink-name" style="font-size:20px;font-weight:700;margin-bottom:4px"></div>
+      <div id="sublink-plan" style="font-size:13px;color:var(--text2);margin-bottom:20px"></div>
+      <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:16px;text-align:left;margin-bottom:16px">
+        <div style="font-size:11px;color:var(--text3);margin-bottom:8px;font-weight:600;letter-spacing:0.5px">YOUR CREDENTIALS</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <span style="font-size:12px;color:var(--text2)">Email</span>
+          <span id="sublink-email" style="font-family:var(--mono);font-size:13px;font-weight:600;cursor:pointer" onclick="copyText(this)"></span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <span style="font-size:12px;color:var(--text2)">Password</span>
+          <div style="display:flex;align-items:center;gap:6px">
+          <span id="sublink-pass" style="font-family:var(--mono);font-size:13px;font-weight:600;cursor:pointer;filter:blur(4px);transition:filter 0.2s" onclick="copyText(this)"></span>
+          <button onclick="togglePassVisibility()" id="pass-toggle-btn" style="background:none;border:none;cursor:pointer;font-size:14px;padding:0;color:var(--text3)">👁</button>
+        </div>
+        </div>
+        <div id="sublink-extra-row" style="display:none;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <span style="font-size:12px;color:var(--text2)">Extra</span>
+          <span id="sublink-extra" style="font-family:var(--mono);font-size:13px;font-weight:600"></span>
+        </div>
+        <div id="sublink-expiry-row" style="display:none;justify-content:space-between;align-items:center">
+          <span style="font-size:12px;color:var(--text2)">Expires</span>
+          <span id="sublink-expiry" style="font-size:13px;font-weight:600;color:var(--orange)"></span>
+        </div>
+        <div id="sublink-profile-row" style="display:none;justify-content:space-between;align-items:center;margin-top:8px">
+          <span style="font-size:12px;color:var(--text2)">Profile Name</span>
+          <span id="sublink-profile-name" style="font-size:13px;font-weight:600;color:var(--blue);cursor:pointer" onclick="copyText(this)"></span>
+        </div>
+        <div id="sublink-pin-row" style="display:none;justify-content:space-between;align-items:center;margin-top:8px">
+          <span style="font-size:12px;color:var(--text2)">Profile PIN</span>
+          <span id="sublink-profile-pin" style="font-family:var(--mono);font-size:16px;font-weight:700;letter-spacing:4px;cursor:pointer" onclick="copyText(this)"></span>
+        </div>
+      </div>
+      <!-- Netflix TV Activation -->
+      <div id="sublink-tv-section" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;margin-bottom:16px">
+        <div style="font-size:11px;color:var(--text3);margin-bottom:10px;font-weight:600;letter-spacing:0.5px">📺 ACTIVATE ON TV</div>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.6">
+          <b>Step 1:</b> <a href="https://www.netflix.com/login" target="_blank" style="color:var(--red);font-weight:600">Log in to Netflix</a> using the email &amp; password above<br>
+          <b>Step 2:</b> Open Netflix on your TV — it will show a code<br>
+          <b>Step 3:</b> Enter the TV code below and tap Activate
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="text" id="tv-code-input" maxlength="8" placeholder="TV code" style="flex:1;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg2);color:var(--text);font-size:18px;font-weight:700;letter-spacing:4px;text-transform:uppercase;outline:none;text-align:center" oninput="this.value=this.value.toUpperCase()">
+          <button onclick="activateTV()" style="background:var(--red);color:#fff;border:none;border-radius:var(--radius-sm);padding:10px 16px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">📺 Activate</button>
+        </div>
+        <div id="tv-activate-status" style="font-size:11px;color:var(--text3);margin-top:8px;text-align:center"></div>
+      </div>
+      <!-- Sign-in Code -->
+      <div id="sublink-code-request" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;margin-bottom:16px;text-align:center">
+        <div style="font-size:11px;color:var(--text3);margin-bottom:8px;font-weight:600;letter-spacing:0.5px">NETFLIX SIGN-IN CODE</div>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:12px">Need a sign-in code? Request one and we'll send it to you.</div>
+        <button onclick="requestSigninCode()" id="request-code-btn" style="background:var(--red);color:#fff;border:none;border-radius:6px;padding:10px 20px;font-size:13px;font-weight:600;cursor:pointer;width:100%">📲 Request Sign-in Code</button>
+        <div id="request-code-status" style="font-size:11px;color:var(--text3);margin-top:8px"></div>
+      </div>
+      <div id="sublink-code-section" style="display:none;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;margin-bottom:16px">
+        <div style="font-size:11px;color:var(--text3);margin-bottom:8px;font-weight:600;letter-spacing:0.5px">NETFLIX SIGN-IN CODE</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <div id="sublink-code" style="font-size:28px;font-weight:700;font-family:var(--mono);letter-spacing:6px;flex:1">------</div>
+          <button onclick="refreshSigninCode()" id="refresh-code-btn" style="background:var(--red);color:#fff;border:none;border-radius:6px;padding:8px 12px;font-size:12px;font-weight:600;cursor:pointer">🔄 Refresh</button>
+        </div>
+        <div id="sublink-code-status" style="font-size:11px;color:var(--text3);margin-top:6px">Tap Refresh to get latest code</div>
+      </div>
+      <!-- QR Code -->
+      <div id="sublink-qr-section" style="margin-bottom:16px;text-align:center">
+        <div style="font-size:11px;color:var(--text3);margin-bottom:8px;font-weight:600;letter-spacing:0.5px">SCAN TO SHARE</div>
+        <img id="sublink-qr" src="" alt="QR Code" style="width:120px;height:120px;border-radius:8px;border:1px solid var(--border)">
+      </div>
+      <div style="font-size:11px;color:var(--text3)">Tap email or password to copy · Powered by <strong>rashadtech.tv</strong></div>
+    </div>
+    <div id="sublink-error" style="display:none;color:var(--red);font-size:14px">Subscription not found or link is invalid.</div>
+  </div>
+</div>
+<script>
+// IMMEDIATE: Hide all pages if sublink mode (runs before rendering)
+(function(){
+  var params = new URLSearchParams(location.search);
+  if(params.get('sub') || params.get('s')) {
+    document.body.classList.add('sublink-mode');
+    // CRITICAL: Hide page-auth immediately using attribute selector (hardest to override)
+    var authPage = document.getElementById('page-auth');
+    if(authPage) {
+      authPage.setAttribute('style', 'display:none !important');
+      authPage.classList.remove('active');
+    }
+    // Hide page-app
+    var appPage = document.getElementById('page-app');
+    if(appPage) {
+      appPage.setAttribute('style', 'display:none !important');
+      appPage.classList.remove('active');
+    }
+    // Hide page-admin
+    var adminPage = document.getElementById('page-admin');
+    if(adminPage) {
+      adminPage.setAttribute('style', 'display:none !important');
+      adminPage.classList.remove('active');
+    }
+    // Hide page-profile
+    var profilePage = document.getElementById('page-profile');
+    if(profilePage) {
+      profilePage.setAttribute('style', 'display:none !important');
+      profilePage.classList.remove('active');
+    }
+    // Show the cover overlay immediately using class
+    var cover = document.getElementById('sublink-cover');
+    if(cover) { 
+      cover.classList.remove('sublink-cover-hidden');
+      cover.classList.add('sublink-cover-visible');
+    }
+    // Hide chat and modals
+    var cb = document.getElementById('rt-chat-bubble');
+    if(cb) { cb.setAttribute('style', 'display:none !important'); }
+    var cw = document.getElementById('rt-chat-win');
+    if(cw) { cw.setAttribute('style', 'display:none !important'); }
+    var mods = document.querySelectorAll('.modal-overlay');
+    for(var j = 0; j < mods.length; j++) {
+      mods[j].setAttribute('style', 'display:none !important');
+    }
+  }
+})();
+</script>
 <!-- AUTH -->
 <div id="page-auth" class="page active">
   <div class="auth-wrap"><div class="auth-card">
@@ -615,7 +779,6 @@ So your EmailJS template will receive the user email correctly.
     </div>
   </div></div>
 </div>
-
 <!-- CUSTOMER APP -->
 <div id="page-app" class="page">
   <div class="topbar">
@@ -632,7 +795,6 @@ So your EmailJS template will receive the user email correctly.
       <button class="logout-btn" onclick="doLogout()"><i class="ti ti-logout" style="font-size:13px;vertical-align:-1px"></i> Logout</button>
     </div>
   </div>
-
   <!-- MOBILE BOTTOM NAV -->
   <div class="bottom-nav" id="app-bottom-nav">
     <div class="bottom-nav-inner">
@@ -648,13 +810,11 @@ So your EmailJS template will receive the user email correctly.
       <button class="bnav-btn" id="bn-wallet" onclick="switchTab('wallet',null);setActiveBottomNav('bn-wallet')">
         <span class="bico">💳</span><span data-t="wallet">Wallet</span>
       </button>
-
       <button class="bnav-btn" id="bn-more" onclick="toggleAppMore()">
         <span class="bico">☰</span><span data-t="more">More</span>
       </button>
     </div>
   </div>
-
   <!-- CUSTOMER MORE DRAWER -->
   <div id="app-more-drawer" style="display:none;position:fixed;bottom:60px;left:0;right:0;background:var(--bg2);border-top:1px solid var(--border);z-index:199;padding:8px">
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
@@ -769,14 +929,12 @@ So your EmailJS template will receive the user email correctly.
     </div>
   </div>
 </div>
-
 <!-- ADMIN PANEL -->
 <div id="page-admin" class="page">
   <div class="topbar">
     <div class="logo">rashadtech<span>.tv</span><span class="admin-badge">Admin</span></div>
     <div class="topbar-right"><button class="logout-btn" onclick="doLogout()"><i class="ti ti-logout" style="font-size:13px;vertical-align:-1px"></i> Logout</button></div>
   </div>
-
   <!-- ADMIN MOBILE BOTTOM NAV -->
   <div class="bottom-nav" id="admin-bottom-nav">
     <div class="bottom-nav-inner">
@@ -797,7 +955,6 @@ So your EmailJS template will receive the user email correctly.
       </button>
     </div>
   </div>
-
   <!-- ADMIN MORE DRAWER (slides up on mobile) -->
   <div id="admin-more-drawer" style="display:none;position:fixed;bottom:60px;left:0;right:0;background:var(--bg2);border-top:1px solid var(--border);z-index:199;padding:8px">
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
@@ -919,13 +1076,11 @@ So your EmailJS template will receive the user email correctly.
     </div>
   </div>
 </div>
-
 <!-- MODALS -->
 <div class="modal-wrap" id="buy-modal"><div class="modal">
   <div class="modal-head"><h3 id="modal-title">Buy subscription</h3><button class="mclose" onclick="closeModal('buy-modal')">✕</button></div>
   <div class="modal-body" id="modal-body"></div>
 </div></div>
-
 <div class="modal-wrap" id="topup-modal"><div class="modal">
   <div class="modal-head"><h3>Top-up request</h3><button class="mclose" onclick="closeModal('topup-modal')">✕</button></div>
   <div class="modal-body" style="text-align:center;padding:28px">
@@ -936,7 +1091,6 @@ So your EmailJS template will receive the user email correctly.
     <button class="btn-secondary" onclick="closeModal('topup-modal')">Close</button>
   </div>
 </div></div>
-
 <div class="modal-wrap" id="verify-modal"><div class="modal">
   <div class="modal-head"><h3>Verify your email</h3><button class="mclose" onclick="closeModal('verify-modal')">✕</button></div>
   <div class="modal-body" style="text-align:center;padding:24px">
@@ -956,7 +1110,6 @@ So your EmailJS template will receive the user email correctly.
     <div style="font-size:12px;color:var(--text2)">Didn't get it? <a onclick="resendOTPModal()" style="color:var(--blue);cursor:pointer">Resend</a></div>
   </div>
 </div></div>
-
 <div class="modal-wrap" id="addmycust-modal"><div class="modal">
   <div class="modal-head"><h3>Add customer</h3><button class="mclose" onclick="closeModal('addmycust-modal')">✕</button></div>
   <div class="modal-body">
@@ -976,17 +1129,14 @@ So your EmailJS template will receive the user email correctly.
     <button class="btn-primary" onclick="addMyCustomer()">Add customer</button>
   </div>
 </div></div>
-
 <div class="modal-wrap" id="assign-modal"><div class="modal">
   <div class="modal-head"><h3 id="assign-title">Add subscription</h3><button class="mclose" onclick="closeModal('assign-modal')">✕</button></div>
   <div class="modal-body" id="assign-body"></div>
 </div></div>
-
 <div class="modal-wrap" id="accounts-modal"><div class="modal" style="width:500px">
   <div class="modal-head"><h3 id="acc-modal-title">Accounts</h3><button class="mclose" onclick="closeModal('accounts-modal')">✕</button></div>
   <div class="modal-body" id="acc-modal-body"></div>
 </div></div>
-
 <div class="toast" id="toast"></div>
 <script>
 // ── JSONBIN.IO STORAGE ──
@@ -1006,11 +1156,7 @@ function setPageActive(pageId){
     else{p.classList.remove('active');p.setAttribute('inert','');}
   });
 }
-
-
 (function(){function ping(){fetch(RT_SERVER+'/ping',{method:'GET',mode:'no-cors'}).catch(function(){});}setInterval(ping,14*60*1000);setTimeout(ping,3000);})();
-
-
 function resetActivity(){_lastActivity=Date.now();}
 function checkInactivity(){
   if(!currentUser&&!isAdmin)return;
@@ -1023,7 +1169,6 @@ function checkInactivity(){
 ['click','keypress','touchstart','scroll'].forEach(e=>{
   document.addEventListener(e,resetActivity,{passive:true});
 });
-
 // Theme management
 function initTheme(){
   const saved=localStorage.getItem('rt_theme')||'dark';
@@ -1040,7 +1185,6 @@ function toggleTheme(){
   applyTheme(current==='dark'?'light':'dark');
 }
 let activityLog=[];
-
 function logActivity(action,details=''){
   activityLog.unshift({
     action,details,
@@ -1050,9 +1194,7 @@ function logActivity(action,details=''){
   if(activityLog.length>100)activityLog.pop(); // Keep last 100
 }
 let _jbCache=null; // local cache of full bin
-
 function initFirebase(){} // no-op, kept for compatibility
-
 async function jbRead(){
   const controller=new AbortController();
   const timeout=setTimeout(()=>controller.abort(),12000);
@@ -1070,7 +1212,6 @@ async function jbRead(){
     throw new Error(e.name==='AbortError'?'Timeout after 12s':e.message);
   }
 }
-
 async function jbWrite(data){
   const r=await fetch(RT_SERVER+'/db/write',{
     method:'POST',headers:{'Content-Type':'application/json'},
@@ -1079,7 +1220,6 @@ async function jbWrite(data){
   if(!r.ok)throw new Error('Write failed: '+r.status);
   return await r.json();
 }
-
 // fbGet/fbSet wrap JSONBin — full bin read/write
 async function fbGet(key){
   try{
@@ -1087,7 +1227,6 @@ async function fbGet(key){
     return _jbCache[key]||null;
   }catch(e){console.warn('fbGet error:',key,e.message);return null;}
 }
-
 async function fbSet(key,data){
   try{
     if(!_jbCache)_jbCache=await jbRead();
@@ -1095,7 +1234,6 @@ async function fbSet(key,data){
     await jbWrite(_jbCache);
   }catch(e){console.warn('fbSet error:',key,e.message);}
 }
-
 // Temporary safer admin setup
 const DEFAULT_savedPass='RashadTech2026!';
 function getAdminPassword(){
@@ -1104,9 +1242,7 @@ function getAdminPassword(){
 function setAdminPassword(newPass){
   localStorage.setItem('rt_admin_pass', newPass);
 }
-
 // TG_TOKEN and TG_CHAT_ID moved to server — use /notify endpoint
-
 const DURATIONS_NF_1U=[{key:'1m',label:'1 Month',price:1.5},{key:'3m',label:'3 Months',price:5.4},{key:'6m',label:'6 Months',price:10},{key:'1y',label:'1 Year',price:18}];
 const DURATIONS_NF_FULL=Array.from({length:12},(_,i)=>({key:`${i+1}m`,label:`${i+1} Month${i>0?'s':''}`,price:(i+1)*7}));
 const DURATIONS_SH_1U=[{key:'1m',label:'1 Month',price:1.5},{key:'3m',label:'3 Months',price:2.4},{key:'1y',label:'1 Year',price:10}];
@@ -1136,7 +1272,6 @@ const PRODUCT_ICONS={
   xbox:'https://www.xbox.com/favicon.ico',
   psplus:'https://www.playstation.com/favicon.ico',
 };
-
 function prodIcon(p,size=32,radius=8){
   const ico=PRODUCT_ICONS[p.id];
   if(ico)return `<img src="${ico}" width="${size}" height="${size}" style="border-radius:${radius}px;object-fit:contain;background:#fff;padding:2px" onerror="this.style.display='none';this.nextSibling.style.display='flex'"><div style="display:none;width:${size}px;height:${size}px;border-radius:${radius}px;background:${p.color};color:${p.tc};align-items:center;justify-content:center;font-size:${Math.round(size*0.4)}px;font-weight:700">${p.short}</div>`;
@@ -1160,7 +1295,6 @@ const products=[
     {name:'3 Months',desc:'$4 · Unlimited',price:4},{name:'6 Months',desc:'$8 · Unlimited',price:8},{name:'1 Year',desc:'$15 · Unlimited',price:15}]},
   {id:'spotify',name:'Spotify',short:'S',color:'#1DB954',tc:'#fff',cat:'music',badge:'',desc:'Music & podcasts',hasUserTypes:false,plans:[
     {name:'1 Month',desc:'Ad-free',price:4},{name:'3 Months',desc:'Ad-free',price:10},{name:'6 Months',desc:'Best value',price:18}]},
-
   // ── VIDEO ──
   {id:'appletv',name:'Apple TV+',short:'TV+',color:'#000',tc:'#fff',cat:'video',badge:'new',desc:'Apple Originals',hasUserTypes:false,plans:[
     {name:'1 Month',desc:'Full access',price:3},{name:'3 Months',desc:'Full access',price:8},{name:'1 Year',desc:'Best value',price:25}]},
@@ -1180,7 +1314,6 @@ const products=[
     {name:'1 Month',desc:'Full access',price:3},{name:'3 Months',desc:'Full access',price:8},{name:'1 Year',desc:'Best value',price:25}]},
   {id:'rotana',name:'Rotana+',short:'R+',color:'#C8962E',tc:'#fff',cat:'arab',badge:'',desc:'Arabic music & films',hasUserTypes:false,plans:[
     {name:'1 Month',desc:'Full access',price:3},{name:'3 Months',desc:'Full access',price:8},{name:'1 Year',desc:'Best value',price:25}]},
-
   // ── MUSIC ──
   {id:'deezer',name:'Deezer',short:'DZ',color:'#A238FF',tc:'#fff',cat:'music',badge:'',desc:'Music streaming',hasUserTypes:false,plans:[
     {name:'1 Month',desc:'Ad-free',price:3},{name:'3 Months',desc:'Ad-free',price:8},{name:'1 Year',desc:'Best value',price:25}]},
@@ -1188,7 +1321,6 @@ const products=[
     {name:'1 Month',desc:'HiFi',price:4},{name:'3 Months',desc:'HiFi',price:11},{name:'1 Year',desc:'Best value',price:35}]},
   {id:'ytmusic',name:'YouTube Music',short:'YT',color:'#FF0000',tc:'#fff',cat:'music',badge:'',desc:'Music & podcasts',hasUserTypes:false,plans:[
     {name:'1 Month',desc:'Ad-free',price:4},{name:'3 Months',desc:'Ad-free',price:10},{name:'1 Year',desc:'Best value',price:30}]},
-
   // ── GAMES ──
   {id:'jawaker',name:'Jawaker',short:'JK',color:'#1B5E20',tc:'#fff',cat:'games',badge:'hot',desc:'Arab card & board games',hasUserTypes:false,hasCustomOrder:true,customOrderType:'jawaker',customOrderLabel:'Jawaker ID',customOrderPlaceholder:'Enter your Jawaker ID',plans:[]},
   {id:'pubg',name:'PUBG Mobile',short:'UC',color:'#C89B3C',tc:'#000',cat:'games',badge:'hot',desc:'Unknown Cash (UC)',hasUserTypes:false,hasCustomOrder:true,customOrderType:'pubg',customOrderLabel:'PUBG Player ID',customOrderPlaceholder:'Enter your PUBG Player ID',plans:[
@@ -1198,7 +1330,6 @@ const products=[
   {id:'psplus',name:'PlayStation Plus',short:'PS+',color:'#003087',tc:'#fff',cat:'games',badge:'new',desc:'PS4 & PS5 games',hasUserTypes:false,plans:[
     {name:'1 Month',desc:'Essential',price:4},{name:'3 Months',desc:'Essential',price:11},{name:'1 Year',desc:'Best value',price:35}]},
 ];
-
 // Requestable services not yet in store
 const requestableServices=[
   {name:'Shahid (Egypt)',icon:'🎬',color:'#555'},
@@ -1212,7 +1343,6 @@ const requestableServices=[
   {name:'StarzPlay',icon:'🌟',color:'#000'},
   {name:'Jawwy TV',icon:'📡',color:'#E4007C'},
 ];
-
 let accountStock={};
 const sk=(p,u,d)=>u?`${p}__${u}__${d}`:`${p}__${d}`;
 const getAccounts=k=>accountStock[k]||[];
@@ -1221,7 +1351,6 @@ const totalCount=k=>getAccounts(k).length;
 const getNextAcc=k=>getAccounts(k).find(a=>!a.used)||null;
 function markUsed(k,i){if(accountStock[k]&&accountStock[k][i])accountStock[k][i].used=true;}
 function stockLabel(n){if(n===0)return['Out of stock','sout'];if(n<=3)return[`${n} left`,'slow'];return[`${n} in stock`,'sok'];}
-
 const topupAmts=[{v:5,l:'$5'},{v:10,l:'$10'},{v:20,l:'$20'},{v:30,l:'$30'},{v:50,l:'$50'},{v:100,l:'$100'}];
 let users=[],currentUser=null,isAdmin=false;
 // HTML sanitizer to prevent XSS
@@ -1233,7 +1362,6 @@ let selectedTopup=null,curProd=null,selUT=null,selDur=null,selPlan=null;
 let customDays=0,anghamiProfile='',assignCustId=null,curAccModalKey=null;
 let pendingOTPs={},pendingResetOTPs={},pendingSignupData=null;
 const OTP_EXPIRY_MS=10*60*1000; // 10 minutes
-
 function cleanExpiredOTPs(){
   const now=Date.now();
   Object.keys(pendingOTPs).forEach(k=>{
@@ -1245,7 +1373,6 @@ function cleanExpiredOTPs(){
 // Global requests store: [{id,service,notes,requesters:[email],resolved,date}]
 let globalRequests=[];
 let topupRequests=[];
-
 async function sendTelegramMessage(message){
   try{
     await fetch(RT_SERVER+'/notify',{
@@ -1254,10 +1381,7 @@ async function sendTelegramMessage(message){
     });
   }catch(err){console.error('Telegram send error:',err);}
 }
-
-
 let selectedReqService=null;
-
 async function sendTelegramToUser(chatId,msg){
   if(!chatId)return;
   try{
@@ -1281,7 +1405,6 @@ let _sublinkAccKey=null;
 let _sublinkEmail=null;
 let _sublinkPass=null;
 let _sublinkProfileName=null;
-
 async function activateTV(){
   const code=document.getElementById('tv-code-input').value.trim().toUpperCase();
   const status=document.getElementById('tv-activate-status');
@@ -1295,7 +1418,6 @@ async function activateTV(){
   },500);
 }
 let _codeRefreshInterval=null;
-
 async function requestSigninCode(){
   const btn=document.getElementById('request-code-btn');
   const status=document.getElementById('request-code-status');
@@ -1333,7 +1455,6 @@ async function requestSigninCode(){
     status.textContent='Error: '+e.message;
   }
 }
-
 async function refreshSigninCode(){
   const btn=document.getElementById('refresh-code-btn');
   const status=document.getElementById('sublink-code-status');
@@ -1364,7 +1485,6 @@ async function refreshSigninCode(){
   }
   btn.disabled=false;btn.textContent='🔄 Refresh';
 }
-
 let _passVisible=false;
 function togglePassVisibility(){
   const el=document.getElementById('sublink-pass');
@@ -1376,7 +1496,6 @@ function togglePassVisibility(){
 }
 // Current subscription being actioned
 let _currentSubId=null;
-
 function openSubOptions(orderId){
   _currentSubId=orderId;
   const o=currentUser?.orders.find(x=>x.id===orderId);
@@ -1386,12 +1505,10 @@ function openSubOptions(orderId){
   btn.textContent=o.autoRenew?'🔁 Disable Auto-Renewal':'🔁 Enable Auto-Renewal';
   openModal('sub-options-modal');
 }
-
 function subOptionGenLink(){
   closeModal('sub-options-modal');
   copySubLink(_currentSubId);
 }
-
 async function subOptionAddNote(){
   closeModal('sub-options-modal');
   const o=currentUser?.orders.find(x=>x.id===_currentSubId);
@@ -1403,21 +1520,17 @@ async function subOptionAddNote(){
   renderSubs();
   showToast('✅ Note saved');
 }
-
 async function subOptionRenew(){
   closeModal('sub-options-modal');
   const o=currentUser?.orders.find(x=>x.id===_currentSubId);
   if(!o)return;
   await sendTelegram(`🔄 <b>Renewal Request</b>
-
 👤 ${currentUser.name} (${currentUser.email})
 📺 ${o.product} · ${o.plan}
 📅 Expires: ${o.expiryDate||'N/A'}
-
 Customer is requesting renewal.`);
   showToast('✅ Renewal request sent!');
 }
-
 async function subOptionReport(){
   closeModal('sub-options-modal');
   const o=currentUser?.orders.find(x=>x.id===_currentSubId);
@@ -1425,14 +1538,11 @@ async function subOptionReport(){
   const issue=prompt('Describe the issue:');
   if(!issue)return;
   await sendTelegram(`⚠️ <b>Issue Report</b>
-
 👤 ${currentUser.name} (${currentUser.email})
 📺 ${o.product} · ${o.plan}
-
 📝 Issue: ${issue}`);
   showToast('✅ Issue reported — we will contact you');
 }
-
 async function subOptionChangeProfile(){
   closeModal('sub-options-modal');
   const o=currentUser?.orders.find(x=>x.id===_currentSubId);
@@ -1444,7 +1554,6 @@ async function subOptionChangeProfile(){
   renderSubs();
   showToast('✅ Profile name updated');
 }
-
 async function subOptionChangePin(){
   closeModal('sub-options-modal');
   const o=currentUser?.orders.find(x=>x.id===_currentSubId);
@@ -1456,7 +1565,6 @@ async function subOptionChangePin(){
   renderSubs();
   showToast('✅ PIN updated');
 }
-
 async function subOptionRemovePin(){
   closeModal('sub-options-modal');
   const o=currentUser?.orders.find(x=>x.id===_currentSubId);
@@ -1467,7 +1575,6 @@ async function subOptionRemovePin(){
   renderSubs();
   showToast('✅ PIN removed');
 }
-
 async function subOptionAutoRenew(){
   closeModal('sub-options-modal');
   const o=currentUser?.orders.find(x=>x.id===_currentSubId);
@@ -1477,7 +1584,6 @@ async function subOptionAutoRenew(){
   renderSubs();
   showToast(o.autoRenew?'✅ Auto-renewal enabled':'✅ Auto-renewal disabled');
 }
-
 function filterSubs(){
   const q=(document.getElementById('subs-search')?.value||'').toLowerCase();
   document.querySelectorAll('.sub-card').forEach(card=>{
@@ -1485,7 +1591,6 @@ function filterSubs(){
     card.style.display=text.includes(q)?'':'none';
   });
 }
-
 function showProfilePage(){
   if(!currentUser)return;
   document.getElementById('profile-name-input').value=currentUser.name||'';
@@ -1495,7 +1600,6 @@ function showProfilePage(){
   document.getElementById('profile-avatar').textContent=(currentUser.name||'?')[0].toUpperCase();
   document.getElementById('profile-joined').textContent=currentUser.joinedDate||'';
 }
-
 async function saveProfile(){
   if(!currentUser)return;
   const name=document.getElementById('profile-name-input').value.trim();
@@ -1511,7 +1615,6 @@ async function saveProfile(){
   document.getElementById('profile-avatar').textContent=name[0].toUpperCase();
   showToast('✅ Profile updated');
 }
-
 function copyText(el){
   navigator.clipboard.writeText(el.textContent).then(()=>showToast('✓ Copied!')).catch(()=>{});
 }
@@ -1531,7 +1634,6 @@ function copySubLinkForCust(cleanId, custId){
   const url=`${location.origin}${location.pathname}?s=${encoded}`;
   navigator.clipboard.writeText(url).then(()=>showToast('✓ Link copied!')).catch(()=>{});
 }
-
 // Set profile name for sub-customer subscription
 async function setSubCustProfileName(orderId, custId){
   const c=currentUser?.myCustomers.find(x=>x.id===custId);
@@ -1539,7 +1641,6 @@ async function setSubCustProfileName(orderId, custId){
   const s=c.subs?.find(x=>x.id===orderId);
   if(!s)return;
   const current=s.profileName?`Current: "${s.profileName}"
-
 `:'';
   const name=prompt(`${current}Enter Netflix profile name for ${c.fname}:`);
   if(!name||!name.trim())return;
@@ -1548,7 +1649,6 @@ async function setSubCustProfileName(orderId, custId){
   renderMyCustomers();
   showToast('✓ Profile name saved');
 }
-
 async function setProfileName(orderId){
   const name=prompt('Enter the Netflix profile name exactly as created:');
   if(!name||!name.trim())return;
@@ -1585,12 +1685,10 @@ async function checkSubLink(){
   // Old format: ?sub=id (legacy)
   const subId=params.get('sub');
   if(!encoded && !subId)return false;
-
   const el=document.getElementById('sublink-loading');
   // Hide admin elements on subscription page
   const chatBubble=document.getElementById('rt-chat-bubble');
   if(chatBubble)chatBubble.style.display='none';
-
   let found=null;
   if(encoded){
     // Decode data directly from URL — no server needed
@@ -1633,7 +1731,6 @@ async function checkSubLink(){
     }catch(e){}
     if(!found){el.textContent='Link expired or not found. Please ask for a new link.';return true;}
   }
-
   // Populate subscription page
   const ico=PRODUCT_ICONS[found.productId]||'';
   document.getElementById('sublink-icon').innerHTML=ico
@@ -1672,7 +1769,6 @@ function generateOTP(){return String(Math.floor(100000+Math.random()*900000));}
 const EMAILJS_SERVICE_ID  = 'service_g05xq5o';
 const EMAILJS_TEMPLATE_ID = 'template_e0h7eia';
 const EMAILJS_PUBLIC_KEY  = 'LyKu6ZB_y6qoFh7Ef';
-
 async function sendOTPEmail(toEmail, otpCode, userName){
   // If EmailJS not configured yet, fall back to demo mode
   if(EMAILJS_SERVICE_ID==='YOUR_SERVICE_ID'){
@@ -1711,7 +1807,6 @@ async function sendOTPEmail(toEmail, otpCode, userName){
     showToast(`Email failed — code sent to your Telegram`);
   }
 }
-
 async function simulateSendOTP(email, code, name){
   // Send via email (EmailJS)
   sendOTPEmail(email, code, name);
@@ -1733,7 +1828,6 @@ function otpMove(pfx,i){if(document.getElementById(pfx+i).value)document.getElem
 function otpBack(e,pfx,i){if(e.key==='Backspace'&&!document.getElementById(pfx+i).value)document.getElementById(pfx+(i-1))?.focus();}
 function getOTP(pfx){return[0,1,2,3,4,5].map(i=>document.getElementById(pfx+i)?.value||'').join('');}
 function clearOTP(pfx){[0,1,2,3,4,5].forEach(i=>{const el=document.getElementById(pfx+i);if(el)el.value='';});}
-
 function showView(v){['login','signup','verify','forgot','reset','admin'].forEach(x=>{const el=document.getElementById('view-'+x);if(el)el.style.display=x===v?'block':'none';});}
 function doLogin(){
   const e=document.getElementById('login-email').value.trim();
@@ -1836,7 +1930,6 @@ async function verifyOTPModal(){
   await saveData();document.getElementById('unverified-chip').style.display='none';closeModal('verify-modal');showToast('✓ Email verified!');
 }
 function resendOTPModal(){const code=generateOTP();pendingOTPs[currentUser.email]=code;simulateSendOTP(currentUser.email,code,currentUser.name);showToast('Code resent!');}
-
 function setActiveBottomNav(id){
   document.querySelectorAll('#app-bottom-nav .bnav-btn').forEach(b=>b.classList.remove('active'));
   const el=document.getElementById(id);if(el)el.classList.add('active');
@@ -1906,7 +1999,6 @@ function updateBal(){
   document.getElementById('topbar-bal').textContent=b;
   document.getElementById('wallet-bal-big').textContent=b;
 }
-
 // STORE
 function filterProd(cat,el){document.querySelectorAll('.ftab').forEach(c=>c.classList.remove('active'));if(el)el.classList.add('active');renderProducts(cat);}
 function getProductAvail(p){
@@ -1927,7 +2019,6 @@ function renderProducts(cat){
       <button class="btn-buy" onclick="event.stopPropagation();openBuy('${p.id}',null)">Buy</button></div></div></div>`;
   }).join('');
 }
-
 // BUY MODAL
 function openBuy(id,forCustId){
   curProd=products.find(x=>x.id===id);selUT=null;selDur=null;selPlan=null;customDays=0;anghamiProfile='';
@@ -1941,7 +2032,6 @@ function renderBuyBody(){
     <div>${prodIcon(p,38,9)}</div>
     <div><div style="font-size:14px;font-weight:600">${p.name}</div><div style="font-size:11px;color:var(--text2)">${p.desc}</div></div></div>`;
   if(assignCustId!==null){const c=currentUser.myCustomers.find(x=>x.id===assignCustId);if(c)html+=`<div class="cust-assign-label"><i class="ti ti-user" style="font-size:14px"></i><strong>${c.fname} ${c.lname}</strong>&nbsp;·&nbsp;${c.code}${c.phone}</div>`;}
-
   // CUSTOM ORDER (Jawaker / PUBG)
   if(p.hasCustomOrder){
     renderCustomOrderBody(p,html);
@@ -2020,10 +2110,8 @@ function selUserType(i){selUT=curProd.userTypes[i];selDur=null;customDays=0;rend
 function selDuration(i){selDur=selUT.durations[i];customDays=0;renderBuyBody();}
 function selPlanFn(i){selPlan={idx:i,...curProd.plans[i]};renderBuyBody();}
 function setCustomDays(v){customDays=parseInt(v)||0;selDur=null;renderBuyBody();}
-
 // ── CUSTOM ORDER (Jawaker / PUBG) ──
 let customOrderId='', customOrderAmt=0;
-
 function jawPrice(tokens){
   const base=1.5/12000;
   let price=tokens*base;
@@ -2032,7 +2120,6 @@ function jawPrice(tokens){
   else if(tokens>=50000)price*=0.96;
   return Math.round(price*100)/100;
 }
-
 function renderCustomOrderBody(p,html){
   const isJawaker=p.customOrderType==='jawaker';
   html+=`<div class="plan-section-label">${p.customOrderLabel}</div>
@@ -2079,7 +2166,6 @@ function renderCustomOrderBody(p,html){
   }
   document.getElementById('modal-body').innerHTML=html;
 }
-
 async function submitCustomOrder(){
   const p=curProd;
   const isJawaker=p.customOrderType==='jawaker';
@@ -2102,8 +2188,6 @@ async function submitCustomOrder(){
   await sendTelegram(`🎮 <b>New Game Order ${orderId}</b>\n\n📦 ${p.name}\n📋 ${planLabel}\n🆔 Player ID: <code>${customOrderId}</code>\n💵 ${fmt(price)}\n👤 ${currentUser.name} (${currentUser.email})\n📅 ${dateStr}\n\nGo to Admin → Game Orders to fulfill.`);
   customOrderId='';customOrderAmt=0;selPlan=null;
 }
-
-
 async function confirmPurchase(){
   // Always reload fresh stock from localStorage before purchasing
   const p=curProd;let price,planLabel,skey,extraFields={};
@@ -2215,7 +2299,6 @@ async function confirmPurchase(){
   }
   if(isAdmin)renderStockPanels();
 }
-
 function subRow(o){
   let ex='';if(o.extra)ex+=`<div class="sub-cred">Extra: ${o.extra}</div>`;if(o.profileName)ex+=`<div class="sub-cred">Profile: ${o.profileName}</div>`;
   const ico=PRODUCT_ICONS[o.productId];
@@ -2224,7 +2307,6 @@ function subRow(o){
     <div class="sub-info"><div class="sub-name">${o.product}</div><div class="sub-plan">${o.plan} · ${o.date}</div>
     <div class="sub-cred">${o.email} / ${o.pass}</div>${ex}</div>
     <div class="sub-right"><div class="sub-price">${fmt(o.price)}</div><span class="active-badge">Active</span>
-    
     <button onclick="openSubOptions('${o.id}')" style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px;color:var(--text2);cursor:pointer;margin-top:4px;display:block;width:100%">••• Options</button>
     </div></div>`;
 }
@@ -2236,7 +2318,6 @@ function renderSubs(){
   const nf=currentUser.orders.filter(o=>o.productId==='netflix');
   nel.innerHTML=nf.length?nf.map(subRow).join(''):'<div class="empty-state"><i class="ti ti-brand-netflix"></i>No Netflix subscriptions yet.</div>';
 }
-
 // EXPIRY TRACKER
 function daysLeft(expiryDateStr){
   if(!expiryDateStr)return null;
@@ -2287,7 +2368,6 @@ function renderExpiryTracker(){
     </div>`;
   }).join('');
 }
-
 // ADMIN EXPIRY ALERTS
 const LANG={
   en:{more:'More',netflix:'Netflix',expiryTracker:'Expiry Tracker',menu:'Menu',account:'Account',mySubs:'My Subs',
@@ -2302,44 +2382,37 @@ const LANG={
   }
 };
 let currentLang='en';
-
 function toggleLang(){
   const current=localStorage.getItem('rt_lang')||'en';
   setLang(current==='en'?'ar':'en');
   const btn=document.getElementById('lang-toggle');
   if(btn)btn.textContent=current==='en'?'AR':'EN';
 }
-
 function setLang(lang){
   currentLang=lang;
   localStorage.setItem('rt_lang',lang);
   document.documentElement.setAttribute('dir',lang==='ar'?'rtl':'ltr');
   document.documentElement.setAttribute('lang',lang);
-  
   // Apply translations to all elements with data-t attribute
   document.querySelectorAll('[data-t]').forEach(el=>{
     const key=el.getAttribute('data-t');
     if(LANG[lang]?.[key])el.textContent=LANG[lang][key];
   });
-  
   // Update bottom nav labels
   const labels=LANG[lang];
   document.querySelectorAll('.bnav-btn span:last-child').forEach(el=>{
     // Map buttons to translation keys
   });
-  
   const lb=document.getElementById('lang-toggle');
   if(lb)lb.textContent=lang==='en'?'EN':'AR';
   showToast(lang==='ar'?'تم تغيير اللغة':'Language changed');
 }
-
 function initLang(){
   const saved=localStorage.getItem('rt_lang')||'en';
   setLang(saved);
   const btn=document.getElementById('lang-toggle');
   if(btn)btn.textContent=saved==='en'?'EN':'AR';
 }
-
 async function openRateUs(){
   const stars=['⭐','⭐⭐','⭐⭐⭐','⭐⭐⭐⭐','⭐⭐⭐⭐⭐'];
   const rating=prompt('Rate us 1-5 (1=Poor, 5=Excellent):');
@@ -2350,13 +2423,11 @@ async function openRateUs(){
   await sendTelegram('⭐ New Rating! '+stars[r-1]+' '+r+'/5 | '+(currentUser?.name||'')+' ('+(currentUser?.email||'')+')' + (comment?' | '+comment:''));
   showToast('✅ Thank you for your feedback!');
 }
-
 function openAnnounce(){
   const msg=prompt('Send announcement to ALL customers via Telegram:');
   if(!msg||!msg.trim())return;
   sendAnnouncement(msg.trim());
 }
-
 async function sendAnnouncement(msg){
   let sent=0;
   const fullMsg=`📢 <b>Announcement from rashadtech.tv</b>\n\n${msg}`;
@@ -2371,7 +2442,6 @@ async function sendAnnouncement(msg){
   showToast(`✅ Announcement sent to ${sent} customers`);
   logActivity('Announcement sent',`${sent} customers`);
 }
-
 async function renderDashboard(){
   // Reload fresh data first
   try{
@@ -2381,7 +2451,6 @@ async function renderDashboard(){
   }catch(e){}
   // Draw revenue chart
   drawRevenueChart();
-
   // Calculate stats
   const totalCustomers=users.length;
   const totalBalance=users.reduce((s,u)=>s+(u.balance||0),0);
@@ -2389,7 +2458,6 @@ async function renderDashboard(){
     return s+(u.transactions||[]).filter(t=>t.type==='purchase').reduce((a,t)=>a+(t.amount||0),0);
   },0);
   const totalOrders=users.reduce((s,u)=>s+(u.orders||[]).length,0);
-  
   // Count active subs
   const now=new Date();
   let activeSubs=0;
@@ -2405,7 +2473,6 @@ async function renderDashboard(){
       }
     });
   });
-
   // Count total stock available
   let totalStock=0;
   let lowStockItems=[];
@@ -2415,7 +2482,6 @@ async function renderDashboard(){
     if(available<=2&&available>0)lowStockItems.push({key,available});
     if(available===0)lowStockItems.push({key,available,empty:true});
   });
-
   const stats=[
     {icon:'👥',label:'Customers',value:totalCustomers,color:'var(--blue)'},
     {icon:'💰',label:'Total Revenue',value:'$'+totalRevenue.toFixed(2),color:'var(--green)'},
@@ -2424,14 +2490,12 @@ async function renderDashboard(){
     {icon:'✅',label:'Active Subs',value:activeSubs,color:'var(--green)'},
     {icon:'📋',label:'Total Orders',value:totalOrders,color:'var(--text2)'},
   ];
-
   document.getElementById('dashboard-stats').innerHTML=stats.map(s=>`
     <div class="card" style="padding:16px;text-align:center">
       <div style="font-size:24px;margin-bottom:6px">${s.icon}</div>
       <div style="font-size:22px;font-weight:700;color:${s.color}">${s.value}</div>
       <div style="font-size:11px;color:var(--text3);margin-top:2px">${s.label}</div>
     </div>`).join('');
-
   // Low stock
   const ls=document.getElementById('dashboard-lowstock');
   if(lowStockItems.length===0){
@@ -2443,7 +2507,6 @@ async function renderDashboard(){
         <span style="color:${i.empty?'var(--red)':'var(--orange)'};font-weight:600">${i.empty?'❌ Empty':i.available+' left'}</span>
       </div>`).join('');
   }
-
   // Activity log
   const al=document.getElementById('dashboard-activity');
   if(activityLog.length===0){
@@ -2457,7 +2520,6 @@ async function renderDashboard(){
       </div>`).join('');
   }
 }
-
 function getExpiryStatus(expiryDate){
   if(!expiryDate)return null;
   const parts=expiryDate.split('/');
@@ -2470,7 +2532,6 @@ function getExpiryStatus(expiryDate){
   if(daysLeft<=7)return{status:'warning',daysLeft,label:daysLeft+'d left',color:'var(--orange)'};
   return{status:'ok',daysLeft,label:daysLeft+'d left',color:'var(--green)'};
 }
-
 async function renewSubscription(userEmail, orderId){
   const newExpiry=prompt('Enter new expiry date (dd/mm/yyyy):');
   if(!newExpiry||!newExpiry.match(/\d{2}\/\d{2}\/\d{4}/)){showToast('Invalid date format');return;}
@@ -2492,7 +2553,6 @@ async function renewSubscription(userEmail, orderId){
     );
   }
 }
-
 function renderAdminExpiry(){
   const el=document.getElementById('admin-expiry-list');
   // Collect all accounts with expiry from stock
@@ -2519,11 +2579,9 @@ function renderAdminExpiry(){
       }
     });
   });
-
   if(!items.length&&!custItems.length){el.innerHTML='<div class="empty-state"><i class="ti ti-clock"></i>No accounts with expiry dates added yet.</div>';return;}
   items.sort((a,b)=>(a.daysLeft??9999)-(b.daysLeft??9999));
   custItems.sort((a,b)=>(a.daysLeft??9999)-(b.daysLeft??9999));
-
   el.innerHTML=`
   ${custItems.length?`<div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text2)">👥 Customer Subscriptions</div>
   <div class="admin-panel" style="margin-bottom:16px">
@@ -2564,7 +2622,6 @@ function renderAdminExpiry(){
     }).join('')}
   </div>`:''}`;
 }
-
 // Telegram expiry alert check on admin login
 async function checkExpiryAlerts(){
   let alerts=[];
@@ -2585,7 +2642,6 @@ async function checkExpiryAlerts(){
     await sendTelegram(msg);
   }
 }
-
 // CUSTOMERS
 function openAddMyCust(){document.getElementById('mc-phone').value='';document.getElementById('mc-fname').value='';document.getElementById('mc-lname').value='';document.getElementById('addmycust-err').style.display='none';openModal('addmycust-modal');}
 async function addMyCustomer(){
@@ -2610,7 +2666,6 @@ function renderMyCustomers(){
       <div class="cust-sub-info"><div class="cust-sub-name">${s.product} · ${s.plan}</div><div class="cust-sub-cred">${s.email} / ${s.pass}</div></div>
       <div style="text-align:right">
         <div style="font-size:11px;color:var(--text3);margin-bottom:4px">${s.date}</div>
-        
         <button onclick="copySubLinkForCust('${cleanId}',${c.id})" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:3px 7px;font-size:10px;color:var(--text2);cursor:pointer;display:block;width:100%;margin-bottom:3px">🔗 Copy Link</button>
         <button onclick="setSubCustProfileName('${s.id}',${c.id})" style="background:var(--blue-bg);color:var(--blue);border:1px solid var(--blue-border);border-radius:4px;padding:3px 7px;font-size:10px;font-weight:600;cursor:pointer;display:block;width:100%">👤 ${s.profileName?'Profile: '+s.profileName:'Set Profile'}</button>
       </div></div>`;}).join('')}</div>`:'';
@@ -2636,7 +2691,6 @@ function openAssignSub(custId){
   openModal('assign-modal');
 }
 function pickAssignProduct(id){closeModal('assign-modal');openBuy(id,assignCustId);}
-
 // TX
 function renderTx(){
   if(!currentUser)return;const tbody=document.getElementById('tx-tbody');
@@ -2649,7 +2703,6 @@ function renderTx(){
     <td class="${t.type==='topup'?'apos':'aneg'}">${t.type==='topup'?'+':'-'}${fmt(t.amount)}</td>
     <td style="color:var(--text2)">${fmt(t.balance)}</td></tr>`).join('');
 }
-
 // WALLET
 function renderAmounts(){document.getElementById('amounts-grid').innerHTML=topupAmts.map((a,i)=>`<div class="amt-btn" id="amt-${i}" onclick="selAmt(${i})"><div class="amt-val">${a.l}</div></div>`).join('');}
 function selAmt(i){document.querySelectorAll('.amt-btn').forEach(b=>b.classList.remove('sel'));document.getElementById('amt-'+i).classList.add('sel');selectedTopup=topupAmts[i];const btn=document.getElementById('topup-btn');btn.disabled=false;btn.textContent='Top up '+topupAmts[i].l;}
@@ -2666,7 +2719,6 @@ async function reqTopup(){
     await sendTelegram(`💳 <b>Topup Request</b>\n\n👤 <b>${currentUser.name}</b>\n📧 ${currentUser.email}\n💵 Amount: <b>${selectedTopup.l}</b>\n📅 ${req.date}\n\nGo to Admin → Topup Requests to credit after payment.`);
   }
 }
-
 // PRODUCT REQUESTS
 function renderReqChips(){
   document.getElementById('req-chips-grid').innerHTML=requestableServices.map(s=>`
@@ -2737,7 +2789,6 @@ async function resolveRequest(id){
   r.resolved=true;await saveData();renderAdminRequests();renderMyRequests();showToast('✓ Marked as added');
   sendTelegram(`✅ <b>Request fulfilled</b>\n📺 <b>${r.service}</b> has been added to the store!\n👥 ${r.requesters.length} customer${r.requesters.length!==1?'s':''} requested it`);
 }
-
 // STOCK
 function renderStockPanels(){
   document.getElementById('stock-panels').innerHTML=products.map(p=>`<div class="admin-section-title">${p.name}</div><div class="admin-panel">${renderStockRows(p)}</div>`).join('');
@@ -2806,7 +2857,6 @@ async function delAccount(idx){
   showToast('✅ Account deleted');
   logActivity('Stock account deleted',curAccModalKey);
 }
-
 async function addAccount(){
   await refreshFromFirebase();
   const email=document.getElementById('new-acc-email').value.trim();
@@ -2821,11 +2871,9 @@ async function addAccount(){
   await saveData();renderAccModal(false);renderStockPanels();renderAdminExpiry();showToast('✓ Account added to stock');logActivity('Stock added',curAccModalKey);
   await autoFulfillPending(curAccModalKey);
 }
-
 async function autoFulfillPending(skey){
   // Load latest pending from Firebase
   let pending=[];
-  
   try{if(_jbCache&&_jbCache.pending)pending=_jbCache.pending;else{_jbCache=await jbRead();if(_jbCache.pending)pending=_jbCache.pending;}}catch(e){}
   let freshUsers=users;
   try{if(_jbCache&&_jbCache.users&&_jbCache.users.length>0)freshUsers=_jbCache.users;}catch(e){}
@@ -2896,7 +2944,6 @@ function renderAdminCustomers(){
       </td></tr>`;
   }).join('');
 }
-
 // WALLETS
 async function toggleBanUser(i){
   if(!users[i])return;
@@ -2913,7 +2960,6 @@ async function toggleBanUser(i){
     await sendTelegramToUser(users[i].tgChatId,msg);
   }
 }
-
 async function deleteUser(i){
   const u=users[i];
   if(!u)return;
@@ -2936,9 +2982,7 @@ function getTopupHistory(userEmail){
   const history=deposits.map(t=>t.date+' — '+fmt(t.amount)+' — Bal: '+fmt(t.balance)).join(', ');
   alert('Topup History for '+u.name+':\n\n'+history);
 }
-
 function renderWallets(){
-
   const el=document.getElementById('wallets-list');
   if(!users.length){el.innerHTML='<div class="empty-state" style="padding:32px"><i class="ti ti-wallet"></i>No registered users yet.</div>';return;}
   el.innerHTML=users.map((u,i)=>`<div class="admin-wallet-row">
@@ -2987,9 +3031,7 @@ async function withdrawWallet(i){
     tgIdWd?sendTelegramToUser(tgIdWd,`💸 <b>Balance Updated</b>\n\n➖ ${fmt(amt)} withdrawn from your wallet.\n💵 New balance: ${fmt(users[i].balance)}`):Promise.resolve()
   ]);
 }
-
 // ============================================================
-
 // ============================================================
 // PERSISTENCE — localStorage
 // ============================================================
@@ -3026,7 +3068,6 @@ async function renderAdminPending(){
 async function manualFulfillPending(i){
   await refreshFromFirebase();
   let pending=[];
-  
   if(!pending[i]){showToast('Order not found');return;}
   const po=pending[i];
   // Check if stock available
@@ -3057,7 +3098,6 @@ async function manualFulfillPending(i){
   }
   await sendTelegram(`✅ Fulfilled: ${po.product} · ${po.plan} for ${po.userName}`);
 }
-
 async function renderGameOrders(){
   const el=document.getElementById('gameorders-list');
   if(!el)return;
@@ -3147,7 +3187,6 @@ async function resetAllStock(){
   if(!confirm('Delete ALL stock accounts? This cannot be undone.'))return;
   accountStock={};
   _jbCache=null; // clear cache
-
   // Force write to JSONBin directly
   try{
     const data=await jbRead();
@@ -3162,7 +3201,6 @@ async function resetAllUsers(){
   if(!confirm('Delete ALL user accounts? This cannot be undone.'))return;
   users=[];
   _jbCache=null; // clear cache
-
   // Force write to JSONBin directly
   try{
     const data=await jbRead();
@@ -3188,7 +3226,6 @@ async function saveData(){
     await jbWrite(_jbCache);
   }catch(e){console.warn('save error:',e);}
 }
-
 async function loadData(){
   // Load from JSONBin (authoritative)
   try{
@@ -3208,7 +3245,6 @@ async function loadData(){
     dataLoaded=true;
   }
 }
-
 async function refreshFromFirebase(){
   try{
     _jbCache=await jbRead();
@@ -3217,7 +3253,6 @@ async function refreshFromFirebase(){
     if(_jbCache.topupreqs)topupRequests=_jbCache.topupreqs;
   }catch(e){console.warn('refresh error:',e.message);}
 }
-
 // Keep Render server awake — ping every 14 minutes
 function keepServerAwake(){
   setInterval(()=>{
@@ -3226,7 +3261,6 @@ function keepServerAwake(){
   // Also ping immediately on load
   fetch(RT_SERVER+'/').catch(()=>{});
 }
-
 // Check expiry and send reminders
 async function checkExpiryReminders(){
   if(!isAdmin)return;
@@ -3255,7 +3289,6 @@ async function checkExpiryReminders(){
     }
   }
 }
-
 async function checkLowStock(){
   if(!isAdmin)return;
   for(const [key,accs] of Object.entries(accountStock)){
@@ -3280,7 +3313,6 @@ async function checkLowStock(){
     }
   }
 }
-
 function startRealtimeSync(){
   setInterval(checkInactivity,60000); // Check inactivity every minute
   setInterval(async()=>{
@@ -3303,14 +3335,12 @@ function startRealtimeSync(){
     }catch(e){}
   },5000);
 }
-
 async function reloadStock(){
   try{
     _jbCache=await jbRead();
     if(_jbCache.stock)accountStock=_jbCache.stock;
   }catch(e){}
 }
-
 // Save on tab close / hide
 document.addEventListener('visibilitychange',()=>{
   // Don't save on hide — can overwrite Firebase with empty state
@@ -3321,12 +3351,8 @@ document.addEventListener('visibilitychange',()=>{
   }
 });
 // beforeunload save removed — can wipe data on page close
-
-
-
 // INIT
 const SESSION_MS=7*24*60*60*1000; // 7 days
-
 async function init(){
   initFirebase();
   initTheme();
@@ -3334,9 +3360,12 @@ async function init(){
   // Check for subscription link FIRST — hide all pages immediately
   const params=new URLSearchParams(location.search);
   if(params.get('sub')||params.get('s')){
-    // Hide everything, show only sublink page
+    // Hide everything, show only sublink page (no topbar needed)
     document.querySelectorAll('.page').forEach(p=>{p.classList.remove('active');p.style.display='none';});
-    document.getElementById('page-sublink').style.display='flex';
+    const app=document.getElementById('page-app');
+    if(app){app.style.display='none';}
+    const sublink=document.getElementById('page-sublink');
+    if(sublink){sublink.style.display='flex';sublink.style.minHeight='100vh';}
     await checkSubLink();
     return;
   }
@@ -3346,7 +3375,6 @@ async function init(){
   keepServerAwake();
   setTimeout(checkExpiryReminders,10000);
   setTimeout(checkLowStock,15000); // Check low stock after 15s // Check expiry after 10s
-
   // Restore customer session
   try{
     const s=localStorage.getItem('rt_session');
@@ -3360,7 +3388,6 @@ async function init(){
       }
     }
   }catch(e){}
-
   // Restore admin session
   try{
     const a=localStorage.getItem('rt_admin_session');
@@ -3405,7 +3432,6 @@ if(document.readyState==='loading'){
     <button class="btn-secondary" onclick="closeModal('sub-options-modal')" style="width:100%;margin-top:12px">Cancel</button>
   </div>
 </div>
-
 <!-- CUSTOMER PROFILE PAGE -->
 <div id="page-profile" class="page">
   <div class="topbar">
@@ -3430,7 +3456,6 @@ if(document.readyState==='loading'){
       </div>
       <button class="btn-primary" onclick="saveProfile()" style="width:100%">💾 Save Changes</button>
     </div>
-
     <div class="card" style="padding:20px;margin-bottom:16px">
       <div style="font-size:14px;font-weight:600;margin-bottom:12px">📞 Contact Us</div>
       <a href="https://t.me/Rashadtech" target="_blank" style="display:flex;align-items:center;gap:10px;padding:12px;background:var(--bg3);border-radius:var(--radius-sm);text-decoration:none;color:var(--text)">
@@ -3448,85 +3473,7 @@ if(document.readyState==='loading'){
     </div>
   </div>
 </div>
-
 <!-- SUBSCRIPTION LINK PAGE -->
-<div id="page-sublink" class="page" style="min-height:100vh;display:flex;align-items:flex-start;justify-content:center;padding:20px;padding-top:40px;overflow-y:auto">
-  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px 16px;max-width:420px;width:100%;text-align:center">
-    <div id="sublink-loading" style="color:var(--text3);font-size:14px">Loading your subscription...</div>
-    <div id="sublink-content" style="display:none">
-      <div id="sublink-icon" style="margin:0 auto 12px"></div>
-      <div id="sublink-name" style="font-size:20px;font-weight:700;margin-bottom:4px"></div>
-      <div id="sublink-plan" style="font-size:13px;color:var(--text2);margin-bottom:20px"></div>
-      <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:16px;text-align:left;margin-bottom:16px">
-        <div style="font-size:11px;color:var(--text3);margin-bottom:8px;font-weight:600;letter-spacing:0.5px">YOUR CREDENTIALS</div>
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-          <span style="font-size:12px;color:var(--text2)">Email</span>
-          <span id="sublink-email" style="font-family:var(--mono);font-size:13px;font-weight:600;cursor:pointer" onclick="copyText(this)"></span>
-        </div>
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-          <span style="font-size:12px;color:var(--text2)">Password</span>
-          <div style="display:flex;align-items:center;gap:6px">
-          <span id="sublink-pass" style="font-family:var(--mono);font-size:13px;font-weight:600;cursor:pointer;filter:blur(4px);transition:filter 0.2s" onclick="copyText(this)"></span>
-          <button onclick="togglePassVisibility()" id="pass-toggle-btn" style="background:none;border:none;cursor:pointer;font-size:14px;padding:0;color:var(--text3)">👁</button>
-        </div>
-        </div>
-        <div id="sublink-extra-row" style="display:none;justify-content:space-between;align-items:center;margin-bottom:8px">
-          <span style="font-size:12px;color:var(--text2)">Extra</span>
-          <span id="sublink-extra" style="font-family:var(--mono);font-size:13px;font-weight:600"></span>
-        </div>
-        <div id="sublink-expiry-row" style="display:none;justify-content:space-between;align-items:center">
-          <span style="font-size:12px;color:var(--text2)">Expires</span>
-          <span id="sublink-expiry" style="font-size:13px;font-weight:600;color:var(--orange)"></span>
-        </div>
-        <div id="sublink-profile-row" style="display:none;justify-content:space-between;align-items:center;margin-top:8px">
-          <span style="font-size:12px;color:var(--text2)">Profile Name</span>
-          <span id="sublink-profile-name" style="font-size:13px;font-weight:600;color:var(--blue);cursor:pointer" onclick="copyText(this)"></span>
-        </div>
-        <div id="sublink-pin-row" style="display:none;justify-content:space-between;align-items:center;margin-top:8px">
-          <span style="font-size:12px;color:var(--text2)">Profile PIN</span>
-          <span id="sublink-profile-pin" style="font-family:var(--mono);font-size:16px;font-weight:700;letter-spacing:4px;cursor:pointer" onclick="copyText(this)"></span>
-        </div>
-      </div>
-      <!-- Netflix TV Activation -->
-      <div id="sublink-tv-section" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;margin-bottom:16px">
-        <div style="font-size:11px;color:var(--text3);margin-bottom:10px;font-weight:600;letter-spacing:0.5px">📺 ACTIVATE ON TV</div>
-        <div style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.6">
-          <b>Step 1:</b> <a href="https://www.netflix.com/login" target="_blank" style="color:var(--red);font-weight:600">Log in to Netflix</a> using the email &amp; password above<br>
-          <b>Step 2:</b> Open Netflix on your TV — it will show a code<br>
-          <b>Step 3:</b> Enter the TV code below and tap Activate
-        </div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <input type="text" id="tv-code-input" maxlength="8" placeholder="TV code" style="flex:1;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg2);color:var(--text);font-size:18px;font-weight:700;letter-spacing:4px;text-transform:uppercase;outline:none;text-align:center" oninput="this.value=this.value.toUpperCase()">
-          <button onclick="activateTV()" style="background:var(--red);color:#fff;border:none;border-radius:var(--radius-sm);padding:10px 16px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">📺 Activate</button>
-        </div>
-        <div id="tv-activate-status" style="font-size:11px;color:var(--text3);margin-top:8px;text-align:center"></div>
-      </div>
-
-      <!-- Sign-in Code -->
-      <div id="sublink-code-request" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;margin-bottom:16px;text-align:center">
-        <div style="font-size:11px;color:var(--text3);margin-bottom:8px;font-weight:600;letter-spacing:0.5px">NETFLIX SIGN-IN CODE</div>
-        <div style="font-size:12px;color:var(--text2);margin-bottom:12px">Need a sign-in code? Request one and we'll send it to you.</div>
-        <button onclick="requestSigninCode()" id="request-code-btn" style="background:var(--red);color:#fff;border:none;border-radius:6px;padding:10px 20px;font-size:13px;font-weight:600;cursor:pointer;width:100%">📲 Request Sign-in Code</button>
-        <div id="request-code-status" style="font-size:11px;color:var(--text3);margin-top:8px"></div>
-      </div>
-      <div id="sublink-code-section" style="display:none;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;margin-bottom:16px">
-        <div style="font-size:11px;color:var(--text3);margin-bottom:8px;font-weight:600;letter-spacing:0.5px">NETFLIX SIGN-IN CODE</div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <div id="sublink-code" style="font-size:28px;font-weight:700;font-family:var(--mono);letter-spacing:6px;flex:1">------</div>
-          <button onclick="refreshSigninCode()" id="refresh-code-btn" style="background:var(--red);color:#fff;border:none;border-radius:6px;padding:8px 12px;font-size:12px;font-weight:600;cursor:pointer">🔄 Refresh</button>
-        </div>
-        <div id="sublink-code-status" style="font-size:11px;color:var(--text3);margin-top:6px">Tap Refresh to get latest code</div>
-      </div>
-      <!-- QR Code -->
-      <div id="sublink-qr-section" style="margin-bottom:16px;text-align:center">
-        <div style="font-size:11px;color:var(--text3);margin-bottom:8px;font-weight:600;letter-spacing:0.5px">SCAN TO SHARE</div>
-        <img id="sublink-qr" src="" alt="QR Code" style="width:120px;height:120px;border-radius:8px;border:1px solid var(--border)">
-      </div>
-      <div style="font-size:11px;color:var(--text3)">Tap email or password to copy · Powered by <strong>rashadtech.tv</strong></div>
-    </div>
-    <div id="sublink-error" style="display:none;color:var(--red);font-size:14px">Subscription not found or link is invalid.</div>
-  </div>
-</div>
 
 <!-- RASHADTECH SUPPORT CHATBOT -->
 <button id="rt-chat-bubble" onclick="rtToggleChat()" aria-label="Support chat">
@@ -3588,9 +3535,7 @@ const RT_FAQ=[
 • <b>WhatsApp: <a href="https://wa.me/96179306701" target="_blank">+96179306701</a></b>
 • <b>Telegram: <a href="https://t.me/Rashadtech" target="_blank">@Rashadtech</a></b>'}
 ];
-
 let rtOpen=false;
-
 function rtToggleChat(){
   rtOpen=!rtOpen;
   const win=document.getElementById('rt-chat-win');
@@ -3598,13 +3543,11 @@ function rtToggleChat(){
     document.getElementById('rt-chat-badge').classList.remove('show');
   }else{win.classList.remove('open');}
 }
-
 function rtAsk(q){
   document.getElementById('rt-qrs').style.display='none';
   rtAddMsg(q,'user');
   setTimeout(()=>rtRespond(q),600);
 }
-
 function rtSend(){
   const inp=document.getElementById('rt-chat-inp');
   const q=(inp.value||'').trim();
@@ -3614,7 +3557,6 @@ function rtSend(){
   rtAddMsg(q,'user');
   setTimeout(()=>rtRespond(q),600);
 }
-
 function rtAddMsg(text,role){
   const msgs=document.getElementById('rt-msgs');
   const div=document.createElement('div');
@@ -3624,7 +3566,6 @@ function rtAddMsg(text,role){
   msgs.scrollTop=msgs.scrollHeight;
   if(!rtOpen){document.getElementById('rt-chat-badge').classList.add('show');}
 }
-
 function rtRespond(q){
   const typing=document.getElementById('rt-typing');
   typing.classList.add('show');
@@ -3647,8 +3588,5 @@ function rtRespond(q){
   },900+Math.random()*400);
 }
 </script>
-
-
-
 </body>
 </html>
