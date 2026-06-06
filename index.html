@@ -513,8 +513,12 @@ This patch sends multiple compatible variable names:
 - otp_code
 - verification_code
 - passcode
+- code
+- otp
+- reset_code
+- message
 
-So your EmailJS template will receive the user email correctly.
+So your EmailJS template will receive the user email and verification code correctly.
 -->
 
 </head>
@@ -1761,7 +1765,7 @@ async function sendOTPEmail(toEmail, otpCode, userName){
   if(EMAILJS_SERVICE_ID==='YOUR_SERVICE_ID'){
     showToast(`⚠️ EmailJS not set up — Demo OTP: ${otpCode}`);
     sendTelegram(`📧 <b>OTP (demo mode)</b>\nEmail: ${toEmail}\nCode: <code>${otpCode}</code>`);
-    return;
+    return false;
   }
   try{
     const res = await emailjs.send(
@@ -1775,24 +1779,36 @@ async function sendOTPEmail(toEmail, otpCode, userName){
         recipient: toEmail,
         to_name: userName || toEmail,
         user_name: userName || toEmail,
+        from_name: 'rashadtech.tv',
         otp_code: otpCode,
         verification_code: otpCode,
         passcode: otpCode,
+        code: otpCode,
+        otp: otpCode,
+        reset_code: otpCode,
+        message: `Your rashadtech.tv verification code is ${otpCode}. It expires in 10 minutes.`,
         reply_to: toEmail,
       },
       EMAILJS_PUBLIC_KEY
     );
     if(res.status===200){
       showToast(`✓ Verification code sent to ${toEmail}`);
-    } else {
-      throw new Error('EmailJS status: '+res.status);
+      return true;
     }
+    throw new Error('EmailJS status: '+res.status);
   } catch(e){
     console.error('EmailJS error:',e);
     // Fallback to Telegram notification so admin can manually share code
     sendTelegram(`📧 <b>OTP (email failed)</b>\nEmail: ${toEmail}\nCode: <code>${otpCode}</code>\n⚠️ Email failed: ${e.message||e}`);
-    showToast(`Email failed — code sent to your Telegram`);
+    showToast(`Email failed — check Telegram if you added your Chat ID`);
+    return false;
   }
+}
+
+async function deliverClientOtpEmail(payload){
+  if(!payload?.clientEmailRequired||!payload?.otp||!payload?.email)return payload;
+  await sendOTPEmail(payload.email,payload.otp,payload.name||payload.email);
+  return payload;
 }
 
 async function simulateSendOTP(email, code, name){
@@ -1856,7 +1872,7 @@ async function doSignup(){
   const tgid=document.getElementById('su-tgid')?.value.trim()||'';
   try{
     const r=await fetch(RT_SERVER+'/auth/signup-start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:n,email:e,tgChatId:tgid})});
-    const j=await r.json().catch(()=>({}));
+    const j=await deliverClientOtpEmail(await r.json().catch(()=>({})));
     if(!r.ok||!j.success)throw new Error(j.error||'Could not send verification code.');
   }catch(ex){
     err.textContent=ex.message||'Could not send verification code.';
@@ -1890,14 +1906,15 @@ async function verifyOTP(){
 function resendOTP(){
   if(!pendingSignupData)return;
   fetch(RT_SERVER+'/auth/signup-start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:pendingSignupData.name,email:pendingSignupData.email,tgChatId:pendingSignupData.tgChatId||''})})
-    .then(r=>r.json()).then(()=>{document.getElementById('verify-ok').style.display='block';})
+    .then(r=>r.json().then(j=>deliverClientOtpEmail(j).then(()=>{if(!r.ok||!j.success)throw new Error(j.error||'Could not resend code');})))
+    .then(()=>{document.getElementById('verify-ok').style.display='block';})
     .catch(()=>{document.getElementById('verify-err').textContent='Could not resend code';document.getElementById('verify-err').style.display='block';});
 }
 async function sendResetCode(){
   const e=document.getElementById('forgot-email').value.trim();
   try{
     const r=await fetch(RT_SERVER+'/auth/reset-start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:e})});
-    const j=await r.json();
+    const j=await deliverClientOtpEmail(await r.json());
     if(!r.ok||j.success===false)throw new Error(j.error||'Could not send reset code.');
     document.getElementById('forgot-err').style.display='none';
     document.getElementById('forgot-ok').style.display='block';

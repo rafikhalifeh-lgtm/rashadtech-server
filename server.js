@@ -48,6 +48,7 @@ const MAX_BACKUPS = Number(process.env.MAX_BACKUPS || 100);
 const EMAILJS_SERVICE_ID = normalizeEnvSecret(process.env.EMAILJS_SERVICE_ID) || 'service_g05xq5o';
 const EMAILJS_TEMPLATE_ID = normalizeEnvSecret(process.env.EMAILJS_TEMPLATE_ID) || 'template_e0h7eia';
 const EMAILJS_PUBLIC_KEY = normalizeEnvSecret(process.env.EMAILJS_PUBLIC_KEY) || 'LyKu6ZB_y6qoFh7Ef';
+const EMAILJS_PRIVATE_KEY = normalizeEnvSecret(process.env.EMAILJS_PRIVATE_KEY);
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'RkhRkh7979@';
 const ADMIN_PIN = process.env.ADMIN_PIN || '7979';
 const JSONBIN_ALLOW_PUBLIC_READ = normalizeEnvSecret(process.env.JSONBIN_ALLOW_PUBLIC_READ) === 'true';
@@ -149,33 +150,50 @@ function verifyOtp(store, email, otp) {
   return true;
 }
 
+function emailJsTemplateParams(email, otp, name) {
+  const recipient = normalizeEmail(email);
+  const displayName = name || recipient;
+  return {
+    to_email: recipient,
+    email: recipient,
+    user_email: recipient,
+    recipient,
+    to_name: displayName,
+    user_name: displayName,
+    from_name: 'rashadtech.tv',
+    otp_code: otp,
+    verification_code: otp,
+    passcode: otp,
+    code: otp,
+    otp,
+    reset_code: otp,
+    message: `Your rashadtech.tv verification code is ${otp}. It expires in 10 minutes.`,
+    reply_to: recipient
+  };
+}
+
 async function sendOtpEmail(email, otp, name) {
+  const payload = {
+    service_id: EMAILJS_SERVICE_ID,
+    template_id: EMAILJS_TEMPLATE_ID,
+    user_id: EMAILJS_PUBLIC_KEY,
+    template_params: emailJsTemplateParams(email, otp, name)
+  };
+  if (EMAILJS_PRIVATE_KEY) payload.accessToken = EMAILJS_PRIVATE_KEY;
   const r = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      service_id: EMAILJS_SERVICE_ID,
-      template_id: EMAILJS_TEMPLATE_ID,
-      user_id: EMAILJS_PUBLIC_KEY,
-      template_params: {
-        to_email: email,
-        email,
-        user_email: email,
-        recipient: email,
-        to_name: name || email,
-        user_name: name || email,
-        otp_code: otp,
-        verification_code: otp,
-        passcode: otp,
-        reply_to: email
-      }
-    })
+    body: JSON.stringify(payload)
   });
-  if (!r.ok) throw new Error(`Email OTP failed: ${r.status}`);
+  if (!r.ok) {
+    const body = await r.text().catch(() => '');
+    throw new Error(`Email OTP failed: ${r.status}${body ? ` — ${body}` : ''}`);
+  }
 }
 
 async function deliverOtp({ email, otp, name, tgChatId, purpose }) {
   let emailSent = false;
+  let telegramSent = false;
   try {
     await sendOtpEmail(email, otp, name);
     emailSent = true;
@@ -183,12 +201,15 @@ async function deliverOtp({ email, otp, name, tgChatId, purpose }) {
     console.error(`${purpose || 'OTP'} email delivery error:`, e.message);
   }
   if (tgChatId) {
-    await sendTG(String(tgChatId), `🔐 <b>Your rashadtech.tv verification code:</b>\n\n<b>${otp}</b>\n\nThis code expires in 10 minutes. Do not share it.`, 'HTML').catch(e => {
+    try {
+      await sendTG(String(tgChatId), `🔐 <b>Your rashadtech.tv verification code:</b>\n\n<b>${otp}</b>\n\nThis code expires in 10 minutes. Do not share it.`, 'HTML');
+      telegramSent = true;
+    } catch(e) {
       console.error(`${purpose || 'OTP'} Telegram delivery error:`, e.message);
-    });
+    }
   }
-  if (!emailSent && !tgChatId) throw new Error('Could not send verification code');
-  return { emailSent, telegramSent: Boolean(tgChatId) };
+  if (!emailSent && !telegramSent) throw new Error('Could not send verification code');
+  return { emailSent, telegramSent, clientEmailRequired: !emailSent };
 }
 
 function linkEncryptionKey() {
@@ -934,8 +955,15 @@ app.post('/auth/signup-start', async (req, res) => {
     data.users = Array.isArray(data.users) ? data.users : [];
     if (data.users.some(u => normalizeEmail(u.email) === cleanEmail)) return res.status(409).json({ error: 'Email already registered' });
     const otp = setOtp(signupOtps, cleanEmail, { name: String(name).trim(), tgChatId: String(tgChatId || '').trim() });
-    await deliverOtp({ email: cleanEmail, otp, name, tgChatId, purpose: 'signup' });
-    res.json({ success: true, message: 'Verification code sent' });
+    const delivery = await deliverOtp({ email: cleanEmail, otp, name, tgChatId, purpose: 'signup' });
+    res.json({
+      success: true,
+      message: 'Verification code sent',
+      emailSent: delivery.emailSent,
+      telegramSent: delivery.telegramSent,
+      clientEmailRequired: delivery.clientEmailRequired,
+      ...(delivery.clientEmailRequired ? { otp, name: String(name).trim(), email: cleanEmail } : {})
+    });
   } catch(e) {
     console.error('Signup start error:', e.message);
     res.status(503).json({ error: 'Could not send verification code. Please try again.' });
@@ -980,11 +1008,23 @@ app.post('/auth/reset-start', async (req, res) => {
   try {
     const data = await readJsonBinRaw();
     const user = (data.users || []).find(u => normalizeEmail(u.email) === cleanEmail);
+    let delivery = null;
+    let otpForClient = null;
     if (user) {
       const otp = setOtp(resetOtps, cleanEmail);
-      await deliverOtp({ email: cleanEmail, otp, name: user.name || cleanEmail, tgChatId: user.tgChatId || '', purpose: 'password reset' });
+      otpForClient = otp;
+      delivery = await deliverOtp({ email: cleanEmail, otp, name: user.name || cleanEmail, tgChatId: user.tgChatId || '', purpose: 'password reset' });
     }
-    res.json({ success: true, message: 'If the email exists, a reset code was sent.' });
+    res.json({
+      success: true,
+      message: 'If the email exists, a reset code was sent.',
+      ...(delivery ? {
+        emailSent: delivery.emailSent,
+        telegramSent: delivery.telegramSent,
+        clientEmailRequired: delivery.clientEmailRequired,
+        ...(delivery.clientEmailRequired ? { otp: otpForClient, name: user.name || cleanEmail, email: cleanEmail } : {})
+      } : {})
+    });
   } catch(e) {
     console.error('Reset start error:', e.message);
     res.status(503).json({ error: 'Could not send reset code. Please try again.' });
