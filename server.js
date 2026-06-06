@@ -144,11 +144,19 @@ function describeGmailError(error) {
 
 async function readJsonBinRaw() {
   if (!JB_KEY || !JB_BIN) throw new Error('DB not configured');
-  const r = await fetch(`https://api.jsonbin.io/v3/b/${JB_BIN}/latest`, {
-    headers: { 'X-Master-Key': JB_KEY, 'X-Bin-Meta': 'false' }
-  });
-  if (!r.ok) throw new Error('JSONBin read failed: ' + r.status);
-  return await r.json();
+  const url = `https://api.jsonbin.io/v3/b/${JB_BIN}/latest`;
+  const headerModes = [
+    { 'X-Master-Key': JB_KEY, 'X-Bin-Meta': 'false' },
+    { 'X-Access-Key': JB_KEY, 'X-Bin-Meta': 'false' }
+  ];
+  let lastStatus = 0;
+  for (const headers of headerModes) {
+    const r = await fetch(url, { headers });
+    lastStatus = r.status;
+    if (r.ok) return await r.json();
+    if (r.status !== 401 && r.status !== 403) break;
+  }
+  throw new Error('JSONBin read failed: ' + lastStatus);
 }
 
 async function writeJsonBinRaw(data) {
@@ -161,13 +169,19 @@ async function writeJsonBinRaw(data) {
     { ts: Date.now(), data: backupSource },
     ...((nextData[BACKUPS_KEY] || []).slice(0, 9))
   ];
-  const r = await fetch(`https://api.jsonbin.io/v3/b/${JB_BIN}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json', 'X-Master-Key': JB_KEY, 'X-Bin-Meta': 'false' },
-    body: JSON.stringify(nextData)
-  });
-  if (!r.ok) throw new Error('JSONBin write failed: ' + r.status);
-  return await r.json();
+  const url = `https://api.jsonbin.io/v3/b/${JB_BIN}`;
+  const headerModes = [
+    { 'Content-Type': 'application/json', 'X-Master-Key': JB_KEY, 'X-Bin-Meta': 'false' },
+    { 'Content-Type': 'application/json', 'X-Access-Key': JB_KEY, 'X-Bin-Meta': 'false' }
+  ];
+  let lastStatus = 0;
+  for (const headers of headerModes) {
+    const r = await fetch(url, { method: 'PUT', headers, body: JSON.stringify(nextData) });
+    lastStatus = r.status;
+    if (r.ok) return await r.json();
+    if (r.status !== 401 && r.status !== 403) break;
+  }
+  throw new Error('JSONBin write failed: ' + lastStatus);
 }
 
 function stripPrivateData(data) {
