@@ -10,7 +10,8 @@ const app = express();
 const ALLOWED_ORIGINS = new Set([
   'https://rashadtech.tv',
   'https://www.rashadtech.tv',
-  'https://rashadtechtv.netlify.app'
+  'https://rashadtechtv.netlify.app',
+  'https://rashadtech-server.onrender.com'
 ]);
 app.use(cors({
   origin(origin, cb) {
