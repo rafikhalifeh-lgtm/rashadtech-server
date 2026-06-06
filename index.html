@@ -2020,12 +2020,17 @@ function getProductAvail(p){
   else(p.plans||[]).forEach((_,i)=>{const key=sk(p.id,null,i);if(!isStockBlocked(key))t+=availableCount(key);});
   return t;
 }
+function hasUnblockedPlan(p){
+  if(p.hasCustomOrder)return true;
+  if(p.hasUserTypes)return p.userTypes.some(ut=>ut.durations.some(d=>!isStockBlocked(sk(p.id,ut.key,d.key))));
+  return (p.plans||[]).some((_,i)=>!isStockBlocked(sk(p.id,null,i)));
+}
 function renderProducts(cat){
   const list=cat==='all'?products:products.filter(p=>p.cat===cat);
   document.getElementById('products-grid').innerHTML=list.map(p=>{
     const tot=getProductAvail(p);
     let minP=p.hasUserTypes?Math.min(...p.userTypes.map(ut=>Math.min(...ut.durations.map(d=>d.price)))):Math.min(...(p.plans||[]).map(pl=>pl.price));
-    const blocked=tot===0;
+    const blocked=!hasUnblockedPlan(p);
     const cardClick=blocked?'':`onclick="openBuy('${p.id}',null)"`;
     return `<div class="pcard${blocked?' oos':''}" ${cardClick}>
       <div class="pcard-top" style="background:${p.color}">${prodIcon(p,44,10)}${p.badge==='hot'?'<div class="hot-badge">Hot</div>':p.badge==='new'?'<div class="new-badge">New</div>':''}
