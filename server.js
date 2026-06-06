@@ -21,13 +21,23 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-const API_SECRET = process.env.API_SECRET;
-const TG_TOKEN   = process.env.TG_TOKEN;
-const TG_ADMIN   = process.env.TG_ADMIN;
-const JB_KEY     = process.env.JB_KEY;
-const JB_BIN     = process.env.JB_BIN;
+function normalizeEnvSecret(value) {
+  let secret = String(value || '').trim();
+  if ((secret.startsWith('"') && secret.endsWith('"')) || (secret.startsWith("'") && secret.endsWith("'"))) {
+    secret = secret.slice(1, -1).trim();
+  }
+  // Some dashboards/CLI copy flows leave shell escaping in bcrypt-style keys.
+  return secret.replace(/\\\$/g, '$');
+}
+
+const API_SECRET = normalizeEnvSecret(process.env.API_SECRET);
+const TG_TOKEN   = normalizeEnvSecret(process.env.TG_TOKEN);
+const TG_ADMIN   = normalizeEnvSecret(process.env.TG_ADMIN);
+const JB_KEY     = normalizeEnvSecret(process.env.JB_KEY);
+const JB_BIN     = normalizeEnvSecret(process.env.JB_BIN);
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'RkhRkh7979@';
 const ADMIN_PIN = process.env.ADMIN_PIN || '7979';
+const JSONBIN_ALLOW_PUBLIC_READ = normalizeEnvSecret(process.env.JSONBIN_ALLOW_PUBLIC_READ) === 'true';
 const GMAIL_MONITORS_KEY = 'gmailMonitors';
 const BACKUPS_KEY = 'backups';
 const LINK_TOKENS_KEY = 'linkTokens';
@@ -89,7 +99,10 @@ function verifyPassword(password, stored) {
   const [, salt, expected] = String(stored).split('$');
   if (!salt || !expected) return false;
   const actual = crypto.pbkdf2Sync(String(password), salt, 120000, 32, 'sha256').toString('hex');
-  return crypto.timingSafeEqual(Buffer.from(actual, 'hex'), Buffer.from(expected, 'hex'));
+  const actualBuffer = Buffer.from(actual, 'hex');
+  const expectedBuffer = Buffer.from(expected, 'hex');
+  if (actualBuffer.length !== expectedBuffer.length) return false;
+  return crypto.timingSafeEqual(actualBuffer, expectedBuffer);
 }
 
 function createSession(role, email) {
@@ -147,9 +160,9 @@ async function readJsonBinRaw() {
   const url = `https://api.jsonbin.io/v3/b/${JB_BIN}/latest`;
   const headerModes = [
     { 'X-Master-Key': JB_KEY, 'X-Bin-Meta': 'false' },
-    { 'X-Access-Key': JB_KEY, 'X-Bin-Meta': 'false' },
-    { 'X-Bin-Meta': 'false' }
+    { 'X-Access-Key': JB_KEY, 'X-Bin-Meta': 'false' }
   ];
+  if (JSONBIN_ALLOW_PUBLIC_READ) headerModes.push({ 'X-Bin-Meta': 'false' });
   let lastStatus = 0;
   for (const headers of headerModes) {
     const r = await fetch(url, { headers });
@@ -160,16 +173,25 @@ async function readJsonBinRaw() {
   throw new Error('JSONBin read failed: ' + lastStatus);
 }
 
-async function writeJsonBinRaw(data) {
+async function writeJsonBinRaw(data, options = {}) {
   if (!JB_KEY || !JB_BIN) throw new Error('DB not configured');
   const nextData = { ...(data || {}) };
-  const backupSource = { ...nextData };
-  delete backupSource[BACKUPS_KEY];
-  delete backupSource[GMAIL_MONITORS_KEY];
-  nextData[BACKUPS_KEY] = [
-    { ts: Date.now(), data: backupSource },
-    ...((nextData[BACKUPS_KEY] || []).slice(0, 9))
-  ];
+  const existingBackups = Array.isArray(nextData[BACKUPS_KEY])
+    ? nextData[BACKUPS_KEY].filter(item => item && item.data).slice(0, 9)
+    : [];
+  let backupSource = options.backupSource;
+  if (backupSource === undefined) backupSource = await readJsonBinRaw().catch(() => null);
+  if (backupSource) {
+    backupSource = { ...backupSource };
+    delete backupSource[BACKUPS_KEY];
+    delete backupSource[GMAIL_MONITORS_KEY];
+    nextData[BACKUPS_KEY] = [
+      { ts: Date.now(), data: backupSource },
+      ...existingBackups
+    ].slice(0, 10);
+  } else {
+    nextData[BACKUPS_KEY] = existingBackups;
+  }
   const url = `https://api.jsonbin.io/v3/b/${JB_BIN}`;
   const headerModes = [
     { 'Content-Type': 'application/json', 'X-Master-Key': JB_KEY, 'X-Bin-Meta': 'false' },
@@ -288,6 +310,7 @@ function preserveSensitiveFields(existing, incoming) {
   }
   if (existing && existing[GMAIL_MONITORS_KEY]) next[GMAIL_MONITORS_KEY] = existing[GMAIL_MONITORS_KEY];
   if (existing && existing[LINK_TOKENS_KEY] && !next[LINK_TOKENS_KEY]) next[LINK_TOKENS_KEY] = existing[LINK_TOKENS_KEY];
+  if (existing && existing[BACKUPS_KEY]) next[BACKUPS_KEY] = existing[BACKUPS_KEY];
   return next;
 }
 
@@ -338,18 +361,18 @@ app.post('/db/write', async (req, res) => {
   const { data } = req.body;
   if (!JB_KEY || !JB_BIN) return res.status(500).json({ error: 'DB not configured' });
   try {
-    const existing = await readJsonBinRaw().catch(() => ({}));
+    const existing = await readJsonBinRaw();
     let nextData;
     if (session.role === 'admin') {
       nextData = preserveSensitiveFields(existing, data || {});
     } else {
       nextData = mergeUserWrite(existing, data || {}, session);
     }
-    const result = await writeJsonBinRaw(nextData);
+    const result = await writeJsonBinRaw(nextData, { backupSource: existing });
     res.json({ success: true, result });
   } catch(e) {
     console.error('DB write error:', e.message);
-    res.status(500).json({ error: e.message });
+    res.status(503).json({ error: 'Database is unavailable. Nothing was saved.' });
   }
 });
 
@@ -371,7 +394,7 @@ app.post('/auth/login', async (req, res) => {
     res.json({ success: true, token, user: sanitizeUser(user), data: safeDataForSession(data, { role: 'user', email: normalizeEmail(user.email) }) });
   } catch(e) {
     console.error('Login error:', e.message);
-    res.status(500).json({ error: 'Login failed' });
+    res.status(503).json({ error: 'Login service is temporarily unavailable. Please try again soon.' });
   }
 });
 
