@@ -212,6 +212,35 @@ function markEmergencyDb(data) {
   return next;
 }
 
+function mergeArrayByKey(primaryItems, fallbackItems, keyFn) {
+  const output = Array.isArray(primaryItems) ? [...primaryItems] : [];
+  const seen = new Set(output.map(keyFn).filter(Boolean));
+  for (const item of Array.isArray(fallbackItems) ? fallbackItems : []) {
+    const key = keyFn(item);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    output.push(item);
+  }
+  return output;
+}
+
+function mergeEmergencyDb(primary, fallback) {
+  if (!fallback || !fallback.emergencyDb || !fallback.emergencyDb.active) return primary;
+  const merged = { ...(primary || emptyDbData()) };
+  merged.users = mergeArrayByKey(merged.users, fallback.users, user => normalizeEmail(user && user.email));
+  merged.pending = mergeArrayByKey(merged.pending, fallback.pending, item => item && item.id);
+  merged.gameorders = mergeArrayByKey(merged.gameorders, fallback.gameorders, item => item && item.id);
+  merged.topupreqs = mergeArrayByKey(merged.topupreqs, fallback.topupreqs, item => item && (item.id || `${normalizeEmail(item.email)}:${item.date || ''}:${item.amount || ''}`));
+  merged.requests = mergeArrayByKey(merged.requests, fallback.requests, item => item && (item.id || `${normalizeEmail(item.email)}:${item.date || ''}:${item.type || ''}`));
+  merged[LINK_TOKENS_KEY] = { ...(fallback[LINK_TOKENS_KEY] || {}), ...(merged[LINK_TOKENS_KEY] || {}) };
+  merged.emergencyDb = {
+    active: false,
+    reason: 'Merged emergency fallback data after JSONBin recovery',
+    updatedAt: new Date().toISOString()
+  };
+  return merged;
+}
+
 async function readJsonBinRaw() {
   if (!JB_KEY || !JB_BIN) throw new Error('DB not configured');
   const url = `https://api.jsonbin.io/v3/b/${JB_BIN}/latest`;
@@ -227,7 +256,8 @@ async function readJsonBinRaw() {
     const r = await fetch(url, { headers });
     lastStatus = r.status;
     if (r.ok) {
-      const data = await r.json();
+      const fallback = readFallbackDb();
+      const data = mergeEmergencyDb(await r.json(), fallback);
       writeFallbackDb(data);
       return data;
     }
