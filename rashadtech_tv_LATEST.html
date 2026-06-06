@@ -618,7 +618,7 @@ So your EmailJS template will receive the user email and verification code corre
     <div class="logo">rashadtech<span>.tv</span></div>
     <div class="topbar-right">
       <button onclick="toggleTheme()" id="theme-toggle" style="background:none;border:none;cursor:pointer;font-size:16px;padding:4px;color:var(--text2);line-height:1">🌙</button>
-      <button onclick="toggleLang()" id="lang-toggle" style="background:none;border:none;cursor:pointer;font-size:12px;font-weight:700;padding:4px 6px;color:var(--text2);line-height:1;border:1px solid var(--border);border-radius:4px">EN</button>
+      <button onclick="toggleLang()" id="lang-toggle" class="lang-toggle-btn" style="background:none;border:none;cursor:pointer;font-size:12px;font-weight:700;padding:4px 6px;color:var(--text2);line-height:1;border:1px solid var(--border);border-radius:4px">EN</button>
       <span class="unverified-chip" id="unverified-chip" onclick="showVerifyModal()" style="display:none"><i class="ti ti-mail-exclamation" style="font-size:12px;vertical-align:-1px;margin-right:3px"></i>Verify email</span>
       <div class="wallet-chip" onclick="switchTab('wallet',null)">
         <i class="ti ti-wallet" style="font-size:15px;color:var(--text3)"></i>
@@ -636,7 +636,7 @@ So your EmailJS template will receive the user email and verification code corre
         <span class="bico">🛍</span><span data-t="store">Store</span>
       </button>
       <button class="bnav-btn" id="bn-subscriptions" onclick="switchTab('subscriptions',null);setActiveBottomNav('bn-subscriptions')">
-        <span class="bico">📺</span><span>My Subs</span>
+        <span class="bico">📺</span><span data-t="subscriptions">My Subs</span>
       </button>
       <button class="bnav-btn" id="bn-expiry" onclick="switchTab('expiry',null);setActiveBottomNav('bn-expiry')">
         <span class="bico">⏰</span><span data-t="expiry">Expiry</span>
@@ -677,8 +677,8 @@ So your EmailJS template will receive the user email and verification code corre
     </div>
     <div class="main-content">
       <div id="tab-store" class="tab-pane active">
-        <div class="pg-title">Store</div>
-        <div class="pg-sub">Instant delivery · Wallet-powered purchases</div>
+        <div class="pg-title" data-t="store">Store</div>
+        <div class="pg-sub" data-t="storeSub">Instant delivery · Wallet-powered purchases</div>
         <div class="filter-row">
           <div class="ftab active" onclick="filterProd('all',this)" data-cat="all">All</div>
           <div class="ftab" onclick="filterProd('video',this)" data-cat="video">Video</div>
@@ -689,22 +689,22 @@ So your EmailJS template will receive the user email and verification code corre
         <div class="products-grid" id="products-grid"></div>
       </div>
       <div id="tab-subscriptions" class="tab-pane">
-        <div class="pg-title">My subscriptions</div>
-        <div class="pg-sub">All purchased accounts and credentials</div>
+        <div class="pg-title" data-t="subscriptions">My subscriptions</div>
+        <div class="pg-sub" data-t="subsSub">All purchased accounts and credentials</div>
         <div style="margin-bottom:10px">
           <input type="text" id="subs-search" placeholder="🔍 Search subscriptions..." oninput="filterSubs()" style="width:100%;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg2);color:var(--text);font-size:14px;box-sizing:border-box">
         </div>
         <div class="subs-list" id="subs-list"><div class="empty-state"><i class="ti ti-device-tv"></i>No subscriptions yet.<br><br><button onclick="switchTab('store',null)" style="background:var(--red);color:#fff;border:none;border-radius:var(--radius-sm);padding:8px 18px;font-size:12px;font-weight:600;cursor:pointer;margin-top:8px">Go to store</button></div></div>
       </div>
       <div id="tab-netflix" class="tab-pane">
-        <div class="pg-title">Netflix</div>
-        <div class="pg-sub">Your Netflix subscriptions</div>
+        <div class="pg-title" data-t="netflix">Netflix</div>
+        <div class="pg-sub" data-t="netflixSub">Your Netflix subscriptions</div>
         <div class="subs-list" id="netflix-list"><div class="empty-state"><i class="ti ti-brand-netflix"></i>No Netflix subscriptions yet.</div></div>
       </div>
       <!-- EXPIRY TRACKER -->
       <div id="tab-expiry" class="tab-pane">
-        <div class="pg-title">Expiry Tracker</div>
-        <div class="pg-sub">Monitor how long your subscriptions have left</div>
+        <div class="pg-title" data-t="expiry">Expiry Tracker</div>
+        <div class="pg-sub" data-t="expirySub">Monitor how long your subscriptions have left</div>
         <div id="expiry-summary" style="display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap"></div>
         <div class="expiry-list" id="expiry-list"><div class="empty-state"><i class="ti ti-clock"></i>No subscriptions yet.</div></div>
       </div>
@@ -745,8 +745,8 @@ So your EmailJS template will receive the user email and verification code corre
         <div class="req-list" id="my-req-list"><div class="empty-state" style="padding:28px"><i class="ti ti-bulb"></i>No requests yet.</div></div>
       </div>
       <div id="tab-wallet" class="tab-pane">
-        <div class="pg-title">Wallet</div>
-        <div class="pg-sub">Top up your balance to make purchases</div>
+        <div class="pg-title" data-t="wallet">Wallet</div>
+        <div class="pg-sub" data-t="walletSub">Top up your balance to make purchases</div>
         <div class="wallet-section">
           <div class="card card-pad" style="margin-bottom:14px">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px">
@@ -1590,6 +1590,9 @@ function showProfilePage(){
   document.getElementById('profile-email-display').textContent=currentUser.email||'';
   document.getElementById('profile-avatar').textContent=(currentUser.name||'?')[0].toUpperCase();
   document.getElementById('profile-joined').textContent=currentUser.joinedDate||'';
+  const themeBtn=document.querySelector('#page-profile .theme-toggle-btn');
+  if(themeBtn)themeBtn.textContent=localStorage.getItem('rt_theme')==='light'?'☀️':'🌙';
+  if(typeof setLang==='function')setLang(currentLang,true);
 }
 
 async function saveProfile(){
@@ -2513,9 +2516,9 @@ function subRow(o){
   return `<div class="sub-card"><div class="sub-icon" style="background:${ico?'#fff':o.color};overflow:hidden;padding:0">${iconHtml}</div>
     <div class="sub-info"><div class="sub-name">${o.product}</div><div class="sub-plan">${o.plan} · ${o.date}</div>
     <div class="sub-cred">${o.email} / ${o.pass}</div>${ex}</div>
-    <div class="sub-right"><div class="sub-price">${fmt(o.price)}</div><span class="active-badge">Active</span>
+    <div class="sub-right"><div class="sub-price">${fmt(o.price)}</div><span class="active-badge">${t('active','Active')}</span>
     
-    <button onclick="openSubOptions('${o.id}')" style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px;color:var(--text2);cursor:pointer;margin-top:4px;display:block;width:100%">••• Options</button>
+    <button onclick="openSubOptions('${o.id}')" style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px;color:var(--text2);cursor:pointer;margin-top:4px;display:block;width:100%">••• ${t('options','Options')}</button>
     </div></div>`;
 }
 function pendingSubRow(o){
@@ -2535,15 +2538,15 @@ function renderSubs(){
   const pending=(Array.isArray(_jbCache?.pending)?_jbCache.pending:[]).filter(o=>o&&o.userEmail===currentUser.email);
   const orders=currentUser.orders||[];
   if(!orders.length&&!pending.length){
-    el.innerHTML='<div class="empty-state"><i class="ti ti-device-tv"></i>No subscriptions yet.<br><br><button onclick="switchTab(\'store\',null)" style="background:var(--red);color:#fff;border:none;border-radius:var(--radius-sm);padding:8px 18px;font-size:12px;font-weight:600;cursor:pointer;margin-top:8px">Go to store</button></div>';
-    nel.innerHTML='<div class="empty-state"><i class="ti ti-brand-netflix"></i>No Netflix subscriptions yet.</div>';
+    el.innerHTML=`<div class="empty-state"><i class="ti ti-device-tv"></i>${t('noSubscriptions','No subscriptions yet.')}<br><br><button onclick="switchTab('store',null)" style="background:var(--red);color:#fff;border:none;border-radius:var(--radius-sm);padding:8px 18px;font-size:12px;font-weight:600;cursor:pointer;margin-top:8px">${t('goToStore','Go to store')}</button></div>`;
+    nel.innerHTML=`<div class="empty-state"><i class="ti ti-brand-netflix"></i>${t('noNetflixSubs','No Netflix subscriptions yet.')}</div>`;
     return;
   }
   el.innerHTML=[...pending.map(pendingSubRow),...orders.map(subRow)].join('');
   const nfPending=pending.filter(o=>o.productId==='netflix');
   const nf=orders.filter(o=>o.productId==='netflix');
   const nfHtml=[...nfPending.map(pendingSubRow),...nf.map(subRow)].join('');
-  nel.innerHTML=nfHtml||'<div class="empty-state"><i class="ti ti-brand-netflix"></i>No Netflix subscriptions yet.</div>';
+  nel.innerHTML=nfHtml||`<div class="empty-state"><i class="ti ti-brand-netflix"></i>${t('noNetflixSubs','No Netflix subscriptions yet.')}</div>`;
 }
 
 // EXPIRY TRACKER
@@ -2636,9 +2639,9 @@ const LANG={
   en:{
     store:'Store',subscriptions:'My Subscriptions',wallet:'Wallet',profile:'Profile',expiry:'Expiry',
     expiryAlerts:'Expiry Alerts',wallets:'Wallets',requests:'Requests',customers:'Customers',transactions:'Transactions',
-    more:'More',menu:'Menu',account:'Account',login:'Login',signup:'Sign Up',logout:'Logout',settings:'Settings',
+    more:'More',menu:'Menu',account:'🔐 Account',login:'Login',signup:'Sign Up',settings:'Settings',
     buyNow:'Buy Now',subscribe:'Subscribe',topUp:'Top Up',pending:'Pending',completed:'Completed',cancelled:'Cancelled',
-    save:'Save',cancel:'Cancel',confirm:'Confirm',delete:'Delete',edit:'Edit',close:'Close',
+    save:'Save',cancel:'Cancel',confirm:'Confirm',delete:'Delete',edit:'Edit',close:'Close',logout:'🚪 Logout',
     name:'Name',email:'Email',password:'Password',phone:'Phone',balance:'Balance',status:'Status',
     date:'Date',time:'Time',amount:'Amount',description:'Description',action:'Action',
     success:'Success',error:'Error',warning:'Warning',info:'Info',loading:'Loading...',
@@ -2646,19 +2649,22 @@ const LANG={
     dashboard:'Dashboard',stock:'Stock',topupreqs:'Topup Requests',gameorders:'Game Orders',announce:'Announce',
     pendingOrders:'Pending Orders',topups:'Top-ups',games:'Games',pgTitle:'Page Title',admin:'Admin',
     myProfile:'My Profile',fullName:'Full Name',telegramChatId:'Telegram Chat ID',telegramHint:'Get your ID from @userinfobot on Telegram',
-    saveChanges:'Save Changes',contactUs:'Contact Us',accountSecurity:'Account security',memberSince:'Member since',
-    changePassword:'Change password',currentPassword:'Current password',newPassword:'New password',confirmPassword:'Confirm new password',
-    updatePassword:'Update password',logoutAll:'Logout all devices',requestRenewal:'Request Renewal',reportIssue:'Report Issue',
+    saveChanges:'💾 Save Changes',contactUs:'📞 Contact Us',accountSecurity:'🔐 Account security',memberSince:'Member since',
+    changePassword:'🔑 Change password',currentPassword:'Current password',newPassword:'New password',confirmPassword:'Confirm new password',
+    updatePassword:'Update password',logoutAll:'🔐 Logout all devices',requestRenewal:'🔄 Request Renewal',reportIssue:'⚠️ Report Issue',
     topupHelp:'To top up your wallet, contact support on WhatsApp with payment proof.',
-    netflix:'Netflix',options:'Options',active:'Active',goToStore:'Go to store',noSubscriptions:'No subscriptions yet',
-    analytics:'Analytics',exportOrders:'Export orders',bulkImport:'Bulk import'
+    netflix:'Netflix',options:'Options',active:'Active',goToStore:'Go to store',noSubscriptions:'No subscriptions yet',noNetflixSubs:'No Netflix subscriptions yet.',
+    analytics:'Analytics',exportOrders:'Export orders',bulkImport:'Bulk import',
+    storeSub:'Instant delivery · Wallet-powered purchases',subsSub:'All purchased accounts and credentials',
+    netflixSub:'Your Netflix subscriptions',expirySub:'Monitor how long your subscriptions have left',
+    walletSub:'Top up your balance to make purchases',daysLeft:'days left',expired:'Expired',subOptions:'Subscription Options'
   },
   ar:{
     store:'المتجر',subscriptions:'اشتراكاتي',wallet:'المحفظة',profile:'الملف الشخصي',expiry:'الانتهاء',
     expiryAlerts:'تنبيهات الانتهاء',wallets:'المحافظ',requests:'الطلبات',customers:'العملاء',transactions:'المعاملات',
-    more:'المزيد',menu:'القائمة',account:'الحساب',login:'تسجيل الدخول',signup:'إنشاء حساب',logout:'تسجيل الخروج',settings:'الإعدادات',
+    more:'المزيد',menu:'القائمة',account:'🔐 الحساب',login:'تسجيل الدخول',signup:'إنشاء حساب',settings:'الإعدادات',
     buyNow:'اشتري الآن',subscribe:'اشترك',topUp:'شحن المحفظة',pending:'قيد الانتظار',completed:'مكتمل',cancelled:'ملغي',
-    save:'حفظ',cancel:'إلغاء',confirm:'تأكيد',delete:'حذف',edit:'تعديل',close:'إغلاق',
+    save:'حفظ',cancel:'إلغاء',confirm:'تأكيد',delete:'حذف',edit:'تعديل',close:'إغلاق',logout:'🚪 تسجيل الخروج',
     name:'الاسم',email:'البريد الإلكتروني',password:'كلمة المرور',phone:'الهاتف',balance:'الرصيد',status:'الحالة',
     date:'التاريخ',time:'الوقت',amount:'المبلغ',description:'الوصف',action:'إجراء',
     success:'نجاح',error:'خطأ',warning:'تحذير',info:'معلومة',loading:'جاري التحميل...',
@@ -2666,24 +2672,29 @@ const LANG={
     dashboard:'لوحة التحكم',stock:'المخزون',topupreqs:'طلبات الشحن',gameorders:'طلبات الألعاب',announce:'إعلان',
     pendingOrders:'الطلبات المعلقة',topups:'شحن',games:'ألعاب',pgTitle:'عنوان الصفحة',admin:'الإدارة',
     myProfile:'ملفي الشخصي',fullName:'الاسم الكامل',telegramChatId:'معرّف تيليجرام',telegramHint:'احصل على معرّفك من @userinfobot على تيليجرام',
-    saveChanges:'حفظ التغييرات',contactUs:'تواصل معنا',accountSecurity:'أمان الحساب',memberSince:'عضو منذ',
-    changePassword:'تغيير كلمة المرور',currentPassword:'كلمة المرور الحالية',newPassword:'كلمة المرور الجديدة',confirmPassword:'تأكيد كلمة المرور',
-    updatePassword:'تحديث كلمة المرور',logoutAll:'تسجيل الخروج من جميع الأجهزة',requestRenewal:'طلب تجديد',reportIssue:'الإبلاغ عن مشكلة',
+    saveChanges:'💾 حفظ التغييرات',contactUs:'📞 تواصل معنا',accountSecurity:'🔐 أمان الحساب',memberSince:'عضو منذ',
+    changePassword:'🔑 تغيير كلمة المرور',currentPassword:'كلمة المرور الحالية',newPassword:'كلمة المرور الجديدة',confirmPassword:'تأكيد كلمة المرور',
+    updatePassword:'تحديث كلمة المرور',logoutAll:'🔐 تسجيل الخروج من جميع الأجهزة',requestRenewal:'🔄 طلب تجديد',reportIssue:'⚠️ الإبلاغ عن مشكلة',
     topupHelp:'لشحن المحفظة، تواصل مع الدعم على واتساب وأرسل إثبات الدفع.',
-    netflix:'نتفليكس',options:'خيارات',active:'نشط',goToStore:'اذهب للمتجر',noSubscriptions:'لا توجد اشتراكات بعد',
-    analytics:'الإحصائيات',exportOrders:'تصدير الطلبات',bulkImport:'استيراد جماعي'
+    netflix:'نتفليكس',options:'خيارات',active:'نشط',goToStore:'اذهب للمتجر',noSubscriptions:'لا توجد اشتراكات بعد',noNetflixSubs:'لا توجد اشتراكات نتفليكس بعد.',
+    analytics:'الإحصائيات',exportOrders:'تصدير الطلبات',bulkImport:'استيراد جماعي',
+    storeSub:'توصيل فوري · شراء عبر المحفظة',subsSub:'جميع الحسابات والبيانات المشتراة',
+    netflixSub:'اشتراكات نتفليكس الخاصة بك',expirySub:'راقب المدة المتبقية لاشتراكاتك',
+    walletSub:'اشحن رصيدك لإجراء المشتريات',daysLeft:'يوم متبقي',expired:'منتهي',subOptions:'خيارات الاشتراك'
   }
 };
 let currentLang='en';
 
+function t(key,fallback){
+  return (LANG[currentLang]&&LANG[currentLang][key])||(LANG.en&&LANG.en[key])||fallback||key;
+}
+
 function toggleLang(){
   const current=localStorage.getItem('rt_lang')||'en';
   setLang(current==='en'?'ar':'en');
-  const btn=document.getElementById('lang-toggle');
-  if(btn)btn.textContent=current==='en'?'AR':'EN';
 }
 
-function setLang(lang){
+function setLang(lang,silent){
   currentLang=lang;
   localStorage.setItem('rt_lang',lang);
   document.documentElement.setAttribute('dir',lang==='ar'?'rtl':'ltr');
@@ -2699,16 +2710,16 @@ function setLang(lang){
     if(labels[key])el.placeholder=labels[key];
   });
   
-  const lb=document.getElementById('lang-toggle');
-  if(lb)lb.textContent=lang==='en'?'EN':'AR';
-  showToast(lang==='ar'?'تم تغيير اللغة':'Language changed');
+  document.querySelectorAll('.lang-toggle-btn').forEach(lb=>{
+    lb.textContent=lang==='en'?'EN':'AR';
+  });
+  if(typeof renderSubs==='function'&&currentUser)renderSubs();
+  if(typeof renderProducts==='function')renderProducts(document.querySelector('.ftab.active')?.dataset?.cat||'all');
+  if(!silent)showToast(lang==='ar'?'تم تغيير اللغة':'Language changed');
 }
 
 function initLang(){
-  const saved=localStorage.getItem('rt_lang')||'en';
-  setLang(saved);
-  const btn=document.getElementById('lang-toggle');
-  if(btn)btn.textContent=saved==='en'?'EN':'AR';
+  setLang(localStorage.getItem('rt_lang')||'en',true);
 }
 
 async function openRateUs(){
@@ -3912,7 +3923,7 @@ if(document.readyState==='loading'){
 <!-- SUBSCRIPTION OPTIONS MODAL -->
 <div class="modal-wrap" id="sub-options-modal" aria-hidden="true" onclick="closeModal('sub-options-modal')">
   <div class="modal" onclick="event.stopPropagation()" style="max-width:340px">
-    <div class="modal-title">Subscription Options</div>
+    <div class="modal-title" data-t="subOptions">Subscription Options</div>
     <div id="sub-options-product" style="font-size:13px;color:var(--text3);margin-bottom:16px"></div>
     <div style="display:flex;flex-direction:column;gap:2px">
       <button onclick="subOptionGenLink()" class="sub-option-btn">🔗 Generate Link</button>
@@ -3931,9 +3942,11 @@ if(document.readyState==='loading'){
 </div>
 
 <!-- CHANGE PASSWORD MODAL -->
-<div id="change-pass-modal" class="modal-overlay" onclick="if(event.target===this)closeModal('change-pass-modal')">
-  <div class="modal" style="max-width:380px">
-    <div style="font-size:16px;font-weight:700;margin-bottom:14px" data-t="changePassword">Change password</div>
+<div class="modal-wrap" id="change-pass-modal" aria-hidden="true" onclick="closeModal('change-pass-modal')">
+  <div class="modal" onclick="event.stopPropagation()" style="max-width:380px">
+    <div class="modal-head" style="border-bottom:1px solid var(--border);padding-bottom:12px;margin-bottom:14px">
+      <h3 style="font-size:16px;font-weight:700;margin:0" data-t="changePassword">Change password</h3>
+    </div>
     <div class="field">
       <label data-t="currentPassword">Current password</label>
       <input type="password" id="cp-current" autocomplete="current-password">
@@ -3954,9 +3967,11 @@ if(document.readyState==='loading'){
 
 <!-- CUSTOMER PROFILE PAGE -->
 <div id="page-profile" class="page">
-  <div class="topbar">
+  <div class="topbar" style="display:flex;align-items:center;gap:8px">
     <button onclick="switchTab('store',null)" style="background:none;border:none;cursor:pointer;color:var(--text2);font-size:20px;padding:0 8px 0 0">←</button>
-    <div class="topbar-title" data-t="myProfile">My Profile</div>
+    <div class="topbar-title" data-t="myProfile" style="flex:1">My Profile</div>
+    <button onclick="toggleTheme()" class="theme-toggle-btn" style="background:none;border:none;cursor:pointer;font-size:16px;padding:4px;color:var(--text2)">🌙</button>
+    <button onclick="toggleLang()" class="lang-toggle-btn" style="background:none;border:none;cursor:pointer;font-size:12px;font-weight:700;padding:4px 6px;color:var(--text2);line-height:1;border:1px solid var(--border);border-radius:4px">EN</button>
   </div>
   <div class="main-content">
     <div class="card" style="padding:20px;margin-bottom:16px">
@@ -3974,18 +3989,18 @@ if(document.readyState==='loading'){
         <input type="text" id="profile-tgid-input" placeholder="e.g. 123456789">
         <div style="font-size:11px;color:var(--text3);margin-top:4px" data-t="telegramHint">Get your ID from @userinfobot on Telegram</div>
       </div>
-      <button class="btn-primary" onclick="saveProfile()" style="width:100%" data-t="saveChanges">💾 Save Changes</button>
+      <button class="btn-primary" onclick="saveProfile()" style="width:100%" data-t="saveChanges">Save Changes</button>
     </div>
 
     <div class="card" style="padding:20px;margin-bottom:16px">
-      <div style="font-size:14px;font-weight:600;margin-bottom:12px" data-t="accountSecurity">🔐 Account security</div>
-      <button onclick="openChangePasswordModal()" style="width:100%;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:10px" data-t="changePassword">🔑 Change password</button>
+      <div style="font-size:14px;font-weight:600;margin-bottom:12px" data-t="accountSecurity">Account security</div>
+      <button onclick="openChangePasswordModal()" style="width:100%;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:10px" data-t="changePassword">Change password</button>
       <div style="font-size:12px;color:var(--text2);line-height:1.5" data-t="topupHelp">To top up your wallet, contact support on WhatsApp with payment proof.</div>
       <a href="https://wa.me/96179306701" target="_blank" style="display:inline-block;margin-top:8px;font-size:12px;color:var(--green);font-weight:600">WhatsApp +96179306701</a>
     </div>
 
     <div class="card" style="padding:20px;margin-bottom:16px">
-      <div style="font-size:14px;font-weight:600;margin-bottom:12px" data-t="contactUs">📞 Contact Us</div>
+      <div style="font-size:14px;font-weight:600;margin-bottom:12px" data-t="contactUs">Contact Us</div>
       <a href="https://t.me/Rashadtech" target="_blank" style="display:flex;align-items:center;gap:10px;padding:12px;background:var(--bg3);border-radius:var(--radius-sm);text-decoration:none;color:var(--text)">
         <span style="font-size:24px">✈️</span>
         <div>
@@ -3995,10 +4010,10 @@ if(document.readyState==='loading'){
       </a>
     </div>
     <div class="card" style="padding:20px">
-      <div style="font-size:14px;font-weight:600;margin-bottom:4px" data-t="account">🔐 Account</div>
+      <div style="font-size:14px;font-weight:600;margin-bottom:4px" data-t="account">Account</div>
       <div style="font-size:12px;color:var(--text3);margin-bottom:12px"><span data-t="memberSince">Member since</span> <span id="profile-joined"></span></div>
-      <button onclick="logoutAllDevices()" style="width:100%;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:8px" data-t="logoutAll">🔐 Logout all devices</button>
-      <button onclick="doLogout()" style="width:100%;background:var(--red-bg);color:var(--red);border:1px solid var(--red-border);border-radius:var(--radius-sm);padding:10px;font-size:13px;font-weight:600;cursor:pointer" data-t="logout">🚪 Logout</button>
+      <button onclick="logoutAllDevices()" style="width:100%;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:8px" data-t="logoutAll">Logout all devices</button>
+      <button onclick="doLogout()" style="width:100%;background:var(--red-bg);color:var(--red);border:1px solid var(--red-border);border-radius:var(--radius-sm);padding:10px;font-size:13px;font-weight:600;cursor:pointer" data-t="logout">Logout</button>
     </div>
   </div>
 </div>

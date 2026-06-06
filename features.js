@@ -274,7 +274,7 @@
     }
     const subPage=document.getElementById('page-sublink');
     if(subPage&&localStorage.getItem('rt_theme'))subPage.setAttribute('data-theme',localStorage.getItem('rt_theme'));
-    if(typeof setLang==='function'&&typeof currentLang!=='undefined')setLang(currentLang);
+    if(typeof setLang==='function'&&typeof currentLang!=='undefined')setLang(currentLang,true);
   }
 
   function updateTvProfileHint(){
@@ -299,7 +299,7 @@
 
   const _origShowProfile=window.showProfilePage;
   if(typeof _origShowProfile==='function'){
-    window.showProfilePage=function(){_origShowProfile();if(typeof setLang==='function'&&typeof currentLang!=='undefined')setLang(currentLang);};
+    window.showProfilePage=function(){_origShowProfile();if(typeof setLang==='function'&&typeof currentLang!=='undefined')setLang(currentLang,true);};
   }
 
   const _origReqCode=window.requestSigninCode;
