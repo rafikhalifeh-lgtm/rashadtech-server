@@ -837,6 +837,13 @@ So your EmailJS template will receive the user email correctly.
             <div style="font-size:13px;font-weight:600;margin-bottom:10px">📋 Recent Activity</div>
             <div id="dashboard-activity"></div>
           </div>
+          <div class="card" style="padding:16px">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px">
+              <div style="font-size:13px;font-weight:600">🛡️ Backups & Restore</div>
+              <button class="inline-btn" style="padding:6px 9px;font-size:11px" onclick="createManualBackup()">Backup now</button>
+            </div>
+            <div id="dashboard-backups"><div style="color:var(--text3)">Loading...</div></div>
+          </div>
         </div>
       </div>
       <div id="admin-stock" class="tab-pane active">
@@ -2649,6 +2656,61 @@ async function renderDashboard(){
         <div style="font-size:10px;color:var(--text3)">${a.time}</div>
       </div>`).join('');
   }
+  renderBackups();
+}
+
+function backupSummaryText(summary){
+  summary=summary||{};
+  return `${summary.users||0} users · ${summary.stockAccounts||0} stock · ${summary.pending||0} pending · ${summary.gameorders||0} games`;
+}
+async function renderBackups(){
+  const el=document.getElementById('dashboard-backups');
+  if(!el)return;
+  el.innerHTML='<div style="color:var(--text3);font-size:12px">Loading backups...</div>';
+  try{
+    const r=await fetch(RT_SERVER+'/admin/backups',{headers:authHeaders()});
+    const j=await r.json();
+    if(!r.ok||!j.success)throw new Error(j.error||'Could not load backups');
+    const backups=j.backups||[];
+    if(!backups.length){
+      el.innerHTML='<div style="color:var(--orange);font-size:12px">No backups yet. A backup is created automatically before every save.</div>';
+      return;
+    }
+    el.innerHTML=backups.slice(0,8).map(b=>`
+      <div style="border-bottom:1px solid var(--border);padding:7px 0;font-size:12px">
+        <div style="display:flex;justify-content:space-between;gap:8px;align-items:center">
+          <div>
+            <div style="font-weight:600">${new Date(b.ts).toLocaleString()}</div>
+            <div style="color:var(--text3)">${b.reason||'auto'} · ${backupSummaryText(b.summary)}</div>
+          </div>
+          <button class="view-btn" style="color:var(--orange)" onclick="restoreBackup('${b.id}')">Restore</button>
+        </div>
+      </div>`).join('');
+  }catch(e){
+    el.innerHTML=`<div style="color:var(--red);font-size:12px">${e.message}</div>`;
+  }
+}
+async function createManualBackup(){
+  try{
+    const r=await fetch(RT_SERVER+'/admin/backups/create',{method:'POST',headers:authHeaders(),body:JSON.stringify({})});
+    const j=await r.json();
+    if(!r.ok||!j.success)throw new Error(j.error||'Could not create backup');
+    showToast('✓ Backup created');
+    await renderBackups();
+  }catch(e){showToast('⚠️ '+e.message);}
+}
+async function restoreBackup(id){
+  if(!confirm('Restore this backup? Current data will be backed up first, then replaced by the selected snapshot.'))return;
+  const confirmText=prompt('Type RESTORE to confirm:');
+  if(confirmText!=='RESTORE'){showToast('Restore canceled');return;}
+  try{
+    const r=await fetch(RT_SERVER+'/admin/backups/restore',{method:'POST',headers:authHeaders(),body:JSON.stringify({id})});
+    const j=await r.json();
+    if(!r.ok||!j.success)throw new Error(j.error||'Could not restore backup');
+    applyDataSnapshot(j.data||{});
+    renderStockPanels();renderAdminCustomers();renderWallets();renderAdminRequests();renderAdminExpiry();renderTopupRequests();renderGameOrders();renderAdminPending();renderDashboard();
+    showToast('✓ Backup restored');
+  }catch(e){showToast('⚠️ '+e.message);}
 }
 
 function getExpiryStatus(expiryDate){

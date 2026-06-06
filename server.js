@@ -41,6 +41,9 @@ const NETLIFY_SITE_ID = normalizeEnvSecret(process.env.NETLIFY_SITE_ID);
 const NETLIFY_BLOBS_TOKEN = normalizeEnvSecret(process.env.NETLIFY_BLOBS_TOKEN || process.env.NETLIFY_AUTH_TOKEN);
 const NETLIFY_DB_STORE = normalizeEnvSecret(process.env.NETLIFY_DB_STORE) || 'rashadtech-db';
 const NETLIFY_DB_KEY = normalizeEnvSecret(process.env.NETLIFY_DB_KEY) || 'database';
+const NETLIFY_BACKUP_MANIFEST_KEY = normalizeEnvSecret(process.env.NETLIFY_BACKUP_MANIFEST_KEY) || `${NETLIFY_DB_KEY}-backup-manifest`;
+const NETLIFY_BACKUP_PREFIX = normalizeEnvSecret(process.env.NETLIFY_BACKUP_PREFIX) || `${NETLIFY_DB_KEY}-backup-`;
+const MAX_BACKUPS = Number(process.env.MAX_BACKUPS || 100);
 const EMAILJS_SERVICE_ID = normalizeEnvSecret(process.env.EMAILJS_SERVICE_ID) || 'service_g05xq5o';
 const EMAILJS_TEMPLATE_ID = normalizeEnvSecret(process.env.EMAILJS_TEMPLATE_ID) || 'template_e0h7eia';
 const EMAILJS_PUBLIC_KEY = normalizeEnvSecret(process.env.EMAILJS_PUBLIC_KEY) || 'LyKu6ZB_y6qoFh7Ef';
@@ -368,6 +371,75 @@ async function writeNetlifyDb(data) {
   });
 }
 
+function backupSummary(data) {
+  const stock = data && data.stock ? data.stock : {};
+  return {
+    users: Array.isArray(data && data.users) ? data.users.length : 0,
+    stockKeys: Object.keys(stock).length,
+    stockAccounts: Object.values(stock).reduce((sum, accounts) => sum + (Array.isArray(accounts) ? accounts.length : 0), 0),
+    pending: Array.isArray(data && data.pending) ? data.pending.length : 0,
+    gameorders: Array.isArray(data && data.gameorders) ? data.gameorders.length : 0,
+    topupreqs: Array.isArray(data && data.topupreqs) ? data.topupreqs.length : 0
+  };
+}
+
+async function readBackupManifest() {
+  const store = await getNetlifyStore();
+  if (!store) return [];
+  const raw = await store.get(NETLIFY_BACKUP_MANIFEST_KEY, { type: 'text', consistency: 'strong' }).catch(() => null);
+  if (!raw) return [];
+  const parsed = JSON.parse(raw);
+  return Array.isArray(parsed) ? parsed : [];
+}
+
+async function writeBackupManifest(manifest) {
+  const store = await getNetlifyStore();
+  if (!store) return;
+  await store.set(NETLIFY_BACKUP_MANIFEST_KEY, JSON.stringify(manifest || []), {
+    metadata: { updatedAt: new Date().toISOString() }
+  });
+}
+
+async function createBackupSnapshot(data, reason = 'auto') {
+  const store = await getNetlifyStore();
+  if (!store || !data) return null;
+  const snapshot = cloneData(data);
+  delete snapshot[BACKUPS_KEY];
+  const ts = Date.now();
+  const id = `${ts}-${crypto.randomBytes(4).toString('hex')}`;
+  const key = `${NETLIFY_BACKUP_PREFIX}${id}`;
+  const meta = {
+    id,
+    key,
+    ts,
+    iso: new Date(ts).toISOString(),
+    reason,
+    summary: backupSummary(snapshot)
+  };
+  await store.set(key, JSON.stringify(snapshot), { metadata: meta });
+  const manifest = await readBackupManifest().catch(() => []);
+  const nextManifest = [meta, ...manifest.filter(item => item && item.key !== key)].slice(0, MAX_BACKUPS);
+  const removed = manifest.slice(Math.max(0, MAX_BACKUPS - 1));
+  await writeBackupManifest(nextManifest);
+  if (typeof store.delete === 'function') {
+    await Promise.allSettled(removed.map(item => item && item.key ? store.delete(item.key) : null));
+  }
+  return meta;
+}
+
+async function readBackupSnapshot(keyOrId) {
+  const store = await getNetlifyStore();
+  if (!store) throw new Error('Netlify database is not configured');
+  const manifest = await readBackupManifest();
+  const entry = manifest.find(item => item && (item.id === keyOrId || item.key === keyOrId));
+  if (!entry) throw new Error('Backup not found');
+  const raw = await store.get(entry.key, { type: 'text', consistency: 'strong' });
+  if (!raw) throw new Error('Backup data missing');
+  const data = JSON.parse(raw);
+  if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Backup data invalid');
+  return { entry, data };
+}
+
 function markEmergencyDb(data, reason = 'JSONBin quota exhausted', active = true) {
   const next = { ...(data || emptyDbData()) };
   next.emergencyDb = {
@@ -528,6 +600,7 @@ async function writeJsonBinRaw(data, options = {}) {
   const fallbackData = markEmergencyDb(nextData, NETLIFY_SITE_ID && NETLIFY_BLOBS_TOKEN ? 'Netlify Blobs primary database' : 'Primary server file database', !(NETLIFY_SITE_ID && NETLIFY_BLOBS_TOKEN));
   saveLocalDb(fallbackData, true);
   if (NETLIFY_SITE_ID && NETLIFY_BLOBS_TOKEN) {
+    if (backupSource) await createBackupSnapshot(backupSource, options.backupReason || 'before-write').catch(e => console.error('Backup snapshot error:', e.message));
     await writeNetlifyDb(fallbackData);
     setDbCache(fallbackData, false);
   }
@@ -1019,6 +1092,52 @@ app.post('/admin/cancel-pending', async (req, res) => {
   } catch(e) {
     console.error('Cancel pending error:', e.message);
     res.status(500).json({ error: 'Could not cancel pending order' });
+  }
+});
+
+app.get('/admin/backups', async (req, res) => {
+  const session = requireSession(req, res, ['admin']);
+  if (!session) return;
+  try {
+    const backups = await readBackupManifest();
+    res.json({ success: true, backups: backups.slice(0, MAX_BACKUPS) });
+  } catch(e) {
+    console.error('List backups error:', e.message);
+    res.status(500).json({ error: 'Could not load backups' });
+  }
+});
+
+app.post('/admin/backups/create', async (req, res) => {
+  const session = requireSession(req, res, ['admin']);
+  if (!session) return;
+  try {
+    const data = await readJsonBinRaw();
+    const backup = await createBackupSnapshot(data, 'manual');
+    res.json({ success: true, backup });
+  } catch(e) {
+    console.error('Create backup error:', e.message);
+    res.status(500).json({ error: 'Could not create backup' });
+  }
+});
+
+app.post('/admin/backups/restore', async (req, res) => {
+  const session = requireSession(req, res, ['admin']);
+  if (!session) return;
+  const { id, key } = req.body || {};
+  if (!id && !key) return res.status(400).json({ error: 'Backup ID is required' });
+  try {
+    const current = await readJsonBinRaw().catch(() => null);
+    if (current) await createBackupSnapshot(current, 'before-restore').catch(e => console.error('Pre-restore backup error:', e.message));
+    const { entry, data } = await readBackupSnapshot(id || key);
+    const restored = markEmergencyDb(data, 'Restored from backup', false);
+    saveLocalDb(restored, false);
+    if (NETLIFY_SITE_ID && NETLIFY_BLOBS_TOKEN) await writeNetlifyDb(restored);
+    syncDbToJsonBin(false).catch(e => console.error('Background JSONBin sync error:', e.message));
+    await sendTG(TG_ADMIN, `♻️ <b>Database restored</b>\nBackup: <code>${entry.id}</code>\nTime: ${entry.iso}`, 'HTML').catch(() => {});
+    res.json({ success: true, backup: entry, data: safeDataForSession(restored, { role: 'admin' }) });
+  } catch(e) {
+    console.error('Restore backup error:', e.message);
+    res.status(500).json({ error: 'Could not restore backup' });
   }
 });
 
