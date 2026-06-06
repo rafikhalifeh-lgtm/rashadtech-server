@@ -222,6 +222,7 @@ async function readJsonBinRaw() {
   if (JSONBIN_ALLOW_PUBLIC_READ) headerModes.push({ 'X-Bin-Meta': 'false' });
   let lastStatus = 0;
   let lastBody = '';
+  let quotaSeen = false;
   for (const headers of headerModes) {
     const r = await fetch(url, { headers });
     lastStatus = r.status;
@@ -231,10 +232,11 @@ async function readJsonBinRaw() {
       return data;
     }
     lastBody = await r.text().catch(() => '');
+    if (isJsonBinQuotaError(createJsonBinError('read', r.status, lastBody))) quotaSeen = true;
     if (r.status !== 401 && r.status !== 403) break;
   }
   const error = createJsonBinError('read', lastStatus, lastBody);
-  if (isJsonBinQuotaError(error)) {
+  if (quotaSeen || isJsonBinQuotaError(error)) {
     console.warn('JSONBin quota exhausted; using emergency local DB fallback.');
     return markEmergencyDb(readFallbackDb());
   }
@@ -266,6 +268,7 @@ async function writeJsonBinRaw(data, options = {}) {
     { 'Content-Type': 'application/json', 'X-Access-Key': JB_KEY, 'X-Bin-Meta': 'false' }
   ];
   let lastStatus = 0;
+  let quotaSeen = false;
   for (const headers of headerModes) {
     const r = await fetch(url, { method: 'PUT', headers, body: JSON.stringify(nextData) });
     lastStatus = r.status;
@@ -274,7 +277,8 @@ async function writeJsonBinRaw(data, options = {}) {
       return await r.json();
     }
     const body = await r.text().catch(() => '');
-    if (isJsonBinQuotaError(createJsonBinError('write', r.status, body))) {
+    if (isJsonBinQuotaError(createJsonBinError('write', r.status, body))) quotaSeen = true;
+    if (quotaSeen) {
       const fallbackData = markEmergencyDb(nextData);
       writeFallbackDb(fallbackData);
       console.warn('JSONBin quota exhausted; saved write to emergency local DB fallback.');
