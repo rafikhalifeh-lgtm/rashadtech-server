@@ -240,9 +240,12 @@
       search.id='stock-search';search.placeholder='🔍 Search stock by product or alias...';
       search.style.cssText='width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg2);color:var(--text);margin-bottom:12px';
       search.oninput=()=>{if(typeof renderStockPanels==='function')renderStockPanels();};
-      stockTab.insertBefore(search,stockTab.firstChild);
+      const titleRow=stockTab.querySelector('.pg-sub');
+      if(titleRow)titleRow.after(search);
+      else stockTab.insertBefore(search,stockTab.firstChild);
     }
-    if(stockTab&&!document.getElementById('gmail-monitor-panel')){
+    const dashTools=document.getElementById('admin-dashboard');
+    if(dashTools&&!document.getElementById('gmail-monitor-panel')){
       const block=document.createElement('div');block.className='card card-pad';block.style.marginBottom='12px';
       block.innerHTML=`<div style="font-weight:700;margin-bottom:8px">Gmail monitors</div><div id="gmail-monitor-panel"></div>
         <div style="margin-top:12px;font-weight:700">Netflix alias usage</div><div id="netflix-alias-usage"></div>
@@ -254,7 +257,9 @@
         <input id="admin-referral-discount" type="number" placeholder="Discount %" style="width:90px;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg3);color:var(--text)"></div>
         <button onclick="rtSaveSiteSettings()" style="margin-top:6px;padding:8px 12px;border:none;background:var(--red);color:#fff;border-radius:6px;cursor:pointer">Save settings</button>
         <div style="margin-top:12px;font-weight:700">Server activity</div><div id="admin-activity-server"></div>`;
-      stockTab.prepend(block);
+      const stats=document.getElementById('dashboard-stats');
+      if(stats)stats.after(block);
+      else dashTools.appendChild(block);
     }
     const tv=document.getElementById('sublink-tv-section');
     if(tv&&!document.getElementById('sublink-tv-profile-hint')){
