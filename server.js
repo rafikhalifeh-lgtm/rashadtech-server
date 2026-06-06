@@ -40,7 +40,7 @@ const JB_BIN     = normalizeEnvSecret(process.env.JB_BIN);
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'RkhRkh7979@';
 const ADMIN_PIN = process.env.ADMIN_PIN || '7979';
 const JSONBIN_ALLOW_PUBLIC_READ = normalizeEnvSecret(process.env.JSONBIN_ALLOW_PUBLIC_READ) === 'true';
-const FALLBACK_DB_FILE = process.env.FALLBACK_DB_FILE || path.join(process.cwd(), '.data', 'emergency-db.json');
+let FALLBACK_DB_FILE = process.env.FALLBACK_DB_FILE || (fs.existsSync('/var/data') ? '/var/data/rashadtech-db.json' : path.join(process.cwd(), '.data', 'emergency-db.json'));
 const JSONBIN_SYNC_INTERVAL_MS = Number(process.env.JSONBIN_SYNC_INTERVAL_MS || 10 * 60 * 1000);
 const GMAIL_MONITORS_KEY = 'gmailMonitors';
 const BACKUPS_KEY = 'backups';
@@ -213,9 +213,22 @@ function setDbCache(data, dirty = dbDirty) {
 }
 
 function writeFallbackDb(data) {
-  const dir = path.dirname(FALLBACK_DB_FILE);
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(FALLBACK_DB_FILE, JSON.stringify(data || emptyDbData(), null, 2));
+  const writeTo = file => {
+    const dir = path.dirname(file);
+    fs.mkdirSync(dir, { recursive: true });
+    const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(data || emptyDbData(), null, 2));
+    fs.renameSync(tmp, file);
+  };
+  try {
+    writeTo(FALLBACK_DB_FILE);
+  } catch(e) {
+    const safeFile = path.join(process.cwd(), '.data', 'emergency-db.json');
+    if (FALLBACK_DB_FILE === safeFile) throw e;
+    console.error(`Primary DB file ${FALLBACK_DB_FILE} is not writable; falling back to ${safeFile}:`, e.message);
+    FALLBACK_DB_FILE = safeFile;
+    writeTo(FALLBACK_DB_FILE);
+  }
 }
 
 function saveLocalDb(data, dirty = true) {
@@ -322,6 +335,7 @@ async function pushJsonBinRaw(data) {
 }
 
 async function syncDbToJsonBin(force = false) {
+  if (!JB_KEY || !JB_BIN) return { skipped: true, reason: 'JSONBin not configured' };
   if (!dbCache || dbSyncInFlight) return { skipped: true };
   const now = Date.now();
   if (!force && (!dbDirty || now - dbLastSyncAttempt < JSONBIN_SYNC_INTERVAL_MS)) return { skipped: true };
@@ -329,11 +343,6 @@ async function syncDbToJsonBin(force = false) {
   dbLastSyncAttempt = now;
   try {
     let data = cloneData(dbCache);
-    if (data.emergencyDb && data.emergencyDb.active) {
-      const merged = await fetchJsonBinRaw();
-      if (merged.emergencyDb && merged.emergencyDb.active) return { emergencyDb: true, saved: true };
-      data = merged;
-    }
     delete data.emergencyDb;
     await pushJsonBinRaw(data);
     setDbCache({ ...data, emergencyDb: { active: false, reason: 'Synced to JSONBin', updatedAt: new Date().toISOString() } }, false);
@@ -354,13 +363,12 @@ async function syncDbToJsonBin(force = false) {
 
 async function readJsonBinRaw() {
   if (dbCache) return cloneData(dbCache);
-  const data = await fetchJsonBinRaw();
-  setDbCache(data, data && data.emergencyDb && data.emergencyDb.active);
+  const data = markEmergencyDb(readFallbackDb(), 'Primary server file database');
+  setDbCache(data, false);
   return cloneData(dbCache);
 }
 
 async function writeJsonBinRaw(data, options = {}) {
-  if (!JB_KEY || !JB_BIN) throw new Error('DB not configured');
   const nextData = { ...(data || {}) };
   const existingBackups = Array.isArray(nextData[BACKUPS_KEY])
     ? nextData[BACKUPS_KEY].filter(item => item && item.data).slice(0, 9)
@@ -378,7 +386,7 @@ async function writeJsonBinRaw(data, options = {}) {
   } else {
     nextData[BACKUPS_KEY] = existingBackups;
   }
-  const fallbackData = markEmergencyDb(nextData, 'Local cache pending JSONBin sync');
+  const fallbackData = markEmergencyDb(nextData, 'Primary server file database');
   saveLocalDb(fallbackData, true);
   syncDbToJsonBin(false).catch(e => console.error('Background JSONBin sync error:', e.message));
   return { cached: true, emergencyDb: Boolean(fallbackData.emergencyDb && fallbackData.emergencyDb.active) };
