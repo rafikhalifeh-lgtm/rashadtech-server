@@ -1088,6 +1088,30 @@ function applyDataSnapshot(data){
   dataLoaded=true;
 }
 
+function clearStoredSession(){
+  authToken='';authRole='';isAdmin=false;currentUser=null;
+  try{
+    localStorage.removeItem('rt_session');
+    localStorage.removeItem('rt_admin_session');
+    localStorage.removeItem('rt_auth_token');
+    localStorage.removeItem('rt_auth_role');
+  }catch(e){}
+}
+
+async function validateStoredSession(role){
+  if(!authToken)return false;
+  try{
+    const r=await fetch(RT_SERVER+'/db/read',{method:'POST',headers:authHeaders(),body:JSON.stringify({})});
+    if(r.status===401){clearStoredSession();return false;}
+    if(!r.ok)return false;
+    const j=await r.json();
+    if(j.success&&j.data)applyDataSnapshot(j.data);
+    return true;
+  }catch(e){
+    return false;
+  }
+}
+
 async function jbRead(){
   const controller=new AbortController();
   const timeout=setTimeout(()=>controller.abort(),12000);
@@ -2445,13 +2469,32 @@ function subRow(o){
     <button onclick="openSubOptions('${o.id}')" style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px;color:var(--text2);cursor:pointer;margin-top:4px;display:block;width:100%">••• Options</button>
     </div></div>`;
 }
+function pendingSubRow(o){
+  return `<div class="sub-row" style="border:1px dashed var(--orange-border);background:var(--orange-bg)">
+    <div class="sub-icon" style="background:${o.color||'var(--orange)'}20;color:${o.color||'var(--orange)'}">${o.short||'⏳'}</div>
+    <div class="sub-info">
+      <div class="sub-name">${esc(o.product||'Subscription')} <span style="font-size:11px;color:var(--orange);font-weight:700">PENDING</span></div>
+      <div class="sub-plan">${esc(o.plan||'')}</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:4px">Order ${esc(o.id||'')} · ${esc(o.date||'')}</div>
+      <div style="font-size:11px;color:var(--orange);margin-top:4px">Credentials will appear here once admin fulfills your order.</div>
+    </div>
+  </div>`;
+}
 function renderSubs(){
   if(!currentUser)return;
   const el=document.getElementById('subs-list');const nel=document.getElementById('netflix-list');
-  if(!currentUser.orders.length){el.innerHTML='<div class="empty-state"><i class="ti ti-device-tv"></i>No subscriptions yet.<br><br><button onclick="switchTab(\'store\',null)" style="background:var(--red);color:#fff;border:none;border-radius:var(--radius-sm);padding:8px 18px;font-size:12px;font-weight:600;cursor:pointer;margin-top:8px">Go to store</button></div>';nel.innerHTML='<div class="empty-state"><i class="ti ti-brand-netflix"></i>No Netflix subscriptions yet.</div>';return;}
-  el.innerHTML=currentUser.orders.map(subRow).join('');
-  const nf=currentUser.orders.filter(o=>o.productId==='netflix');
-  nel.innerHTML=nf.length?nf.map(subRow).join(''):'<div class="empty-state"><i class="ti ti-brand-netflix"></i>No Netflix subscriptions yet.</div>';
+  const pending=(Array.isArray(_jbCache?.pending)?_jbCache.pending:[]).filter(o=>o&&o.userEmail===currentUser.email);
+  const orders=currentUser.orders||[];
+  if(!orders.length&&!pending.length){
+    el.innerHTML='<div class="empty-state"><i class="ti ti-device-tv"></i>No subscriptions yet.<br><br><button onclick="switchTab(\'store\',null)" style="background:var(--red);color:#fff;border:none;border-radius:var(--radius-sm);padding:8px 18px;font-size:12px;font-weight:600;cursor:pointer;margin-top:8px">Go to store</button></div>';
+    nel.innerHTML='<div class="empty-state"><i class="ti ti-brand-netflix"></i>No Netflix subscriptions yet.</div>';
+    return;
+  }
+  el.innerHTML=[...pending.map(pendingSubRow),...orders.map(subRow)].join('');
+  const nfPending=pending.filter(o=>o.productId==='netflix');
+  const nf=orders.filter(o=>o.productId==='netflix');
+  const nfHtml=[...nfPending.map(pendingSubRow),...nf.map(subRow)].join('');
+  nel.innerHTML=nfHtml||'<div class="empty-state"><i class="ti ti-brand-netflix"></i>No Netflix subscriptions yet.</div>';
 }
 
 // EXPIRY TRACKER
@@ -3762,14 +3805,16 @@ async function init(){
     if(s&&authToken&&authRole==='user'){
       const sess=JSON.parse(s);
       if(Date.now()-sess.ts < SESSION_MS){
-        if(!users.length)await loadData();
-        const u=users.find(x=>x.email===sess.email);
-        if(u){currentUser=u;enterApp();return;}
+        if(await validateStoredSession('user')){
+          const u=users.find(x=>x.email===sess.email);
+          if(u){currentUser=u;enterApp();return;}
+        }
+        clearStoredSession();
       } else {
-        localStorage.removeItem('rt_session');localStorage.removeItem('rt_auth_token');localStorage.removeItem('rt_auth_role');
+        clearStoredSession();
       }
     }
-  }catch(e){}
+  }catch(e){clearStoredSession();}
 
   // Restore admin session
   try{
@@ -3777,17 +3822,19 @@ async function init(){
     if(a&&authToken&&authRole==='admin'){
       const sess=JSON.parse(a);
       if(Date.now()-sess.ts < SESSION_MS){
-        if(!users.length&&!Object.keys(accountStock).length)await loadData();
-        isAdmin=true;
-        document.getElementById('page-auth').classList.remove('active');
-        document.getElementById('page-admin').classList.add('active');
-        renderStockPanels();renderAdminCustomers();renderWallets();renderAdminRequests();renderAdminExpiry();renderNetflixRenewalAlerts();renderTopupRequests();renderGameOrders();renderAdminPending();
-        return;
+        if(await validateStoredSession('admin')){
+          isAdmin=true;
+          document.getElementById('page-auth').classList.remove('active');
+          document.getElementById('page-admin').classList.add('active');
+          renderStockPanels();renderAdminCustomers();renderWallets();renderAdminRequests();renderAdminExpiry();renderNetflixRenewalAlerts();renderTopupRequests();renderGameOrders();renderAdminPending();
+          return;
+        }
+        clearStoredSession();
       } else {
-        localStorage.removeItem('rt_admin_session');localStorage.removeItem('rt_auth_token');localStorage.removeItem('rt_auth_role');
+        clearStoredSession();
       }
     }
-  }catch(e){}
+  }catch(e){clearStoredSession();}
 }
 // Wait for full DOM before running
 if(document.readyState==='loading'){

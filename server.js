@@ -682,8 +682,8 @@ function dataForSession(data, session) {
     stockBlocks: sanitizeStockBlocks(publicData.stockBlocks || {}),
     requests: publicData.requests || [],
     topupreqs: (publicData.topupreqs || []).filter(r => normalizeEmail(r.email) === session.email),
-    pending: [],
-    gameorders: []
+    pending: (publicData.pending || []).filter(o => normalizeEmail(o.userEmail) === session.email),
+    gameorders: (publicData.gameorders || []).filter(o => normalizeEmail(o.userEmail) === session.email)
   };
 }
 
@@ -1378,10 +1378,6 @@ async function sendTG(chatId, text, parse_mode) {
 
 async function loadGmailMonitors(force = false) {
   if (gmailMonitorsLoaded && !force) return monitoredEmails;
-  if (!JB_KEY || !JB_BIN) {
-    gmailMonitorsLoaded = true;
-    return monitoredEmails;
-  }
   try {
     const data = await readJsonBinRaw();
     const stored = data[GMAIL_MONITORS_KEY] || {};
@@ -1408,10 +1404,9 @@ async function loadGmailMonitors(force = false) {
 }
 
 async function persistGmailMonitors() {
-  if (!JB_KEY || !JB_BIN) return;
   const data = await readJsonBinRaw();
   data[GMAIL_MONITORS_KEY] = monitoredEmails;
-  await writeJsonBinRaw(data);
+  await writeJsonBinRaw(data, { backupReason: 'gmail-monitor-update' });
 }
 
 async function getInboxMaxUid(email, password) {
