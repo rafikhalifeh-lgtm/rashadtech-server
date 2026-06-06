@@ -770,7 +770,10 @@ So your EmailJS template will receive the user email and verification code corre
 <div id="page-admin" class="page">
   <div class="topbar">
     <div class="logo">rashadtech<span>.tv</span><span class="admin-badge">Admin</span></div>
-    <div class="topbar-right"><button class="logout-btn" onclick="doLogout()"><i class="ti ti-logout" style="font-size:13px;vertical-align:-1px"></i> Logout</button></div>
+    <div class="topbar-right" style="display:flex;align-items:center;gap:8px">
+      <span id="admin-backup-status" style="font-size:11px;color:var(--text3);padding:4px 8px;border:1px solid var(--border);border-radius:6px;white-space:nowrap" title="Last database backup">Backup: …</span>
+      <button class="logout-btn" onclick="doLogout()"><i class="ti ti-logout" style="font-size:13px;vertical-align:-1px"></i> Logout</button>
+    </div>
   </div>
 
   <!-- ADMIN MOBILE BOTTOM NAV -->
@@ -849,6 +852,10 @@ So your EmailJS template will receive the user email and verification code corre
             <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px">
               <div style="font-size:13px;font-weight:600">🛡️ Backups & Restore</div>
               <button class="inline-btn" style="padding:6px 9px;font-size:11px" onclick="createManualBackup()">Backup now</button>
+            </div>
+            <div id="dashboard-last-backup" style="font-size:12px;margin-bottom:10px;padding:10px 12px;border-radius:8px;background:var(--bg3);border:1px solid var(--border);line-height:1.5">
+              <div style="font-weight:600;margin-bottom:2px">Last backup</div>
+              <div id="dashboard-last-backup-detail" style="color:var(--text3)">Loading...</div>
             </div>
             <div id="dashboard-backups"><div style="color:var(--text3)">Loading...</div></div>
           </div>
@@ -2030,6 +2037,8 @@ async function doAdminLogin(){
     document.getElementById('page-auth').classList.remove('active');
     document.getElementById('page-admin').classList.add('active');
     renderStockPanels();renderAdminCustomers();renderWallets();renderAdminRequests();renderAdminExpiry();renderNetflixRenewalAlerts();renderTopupRequests();renderGameOrders();renderAdminPending();
+    refreshAdminBackupStatus();
+    if(!window._adminBackupPoll)window._adminBackupPoll=setInterval(refreshAdminBackupStatus,5*60*1000);
     startRealtimeSync();
   }catch(ex){
     document.getElementById('admin-err').textContent=ex.message;document.getElementById('admin-err').style.display='block';
@@ -2864,6 +2873,59 @@ function backupSummaryText(summary){
   summary=summary||{};
   return `${summary.users||0} users · ${summary.stockAccounts||0} stock · ${summary.pending||0} pending · ${summary.gameorders||0} games`;
 }
+function backupAgeText(ts){
+  if(!ts)return 'unknown';
+  const mins=Math.floor((Date.now()-ts)/60000);
+  if(mins<1)return 'just now';
+  if(mins<60)return mins+' min ago';
+  const hrs=Math.floor(mins/60);
+  if(hrs<24)return hrs+' hour'+(hrs===1?'':'s')+' ago';
+  const days=Math.floor(hrs/24);
+  return days+' day'+(days===1?'':'s')+' ago';
+}
+function backupAgeColor(ts){
+  if(!ts)return 'var(--red)';
+  const hrs=(Date.now()-ts)/3600000;
+  if(hrs<6)return 'var(--green)';
+  if(hrs<24)return 'var(--orange)';
+  return 'var(--red)';
+}
+function updateLastBackupIndicator(backups){
+  const latest=Array.isArray(backups)&&backups.length?backups[0]:null;
+  const detail=document.getElementById('dashboard-last-backup-detail');
+  const banner=document.getElementById('dashboard-last-backup');
+  const topbar=document.getElementById('admin-backup-status');
+  if(!latest){
+    if(detail)detail.innerHTML='<span style="color:var(--red)">No backup found — tap Backup now</span>';
+    if(banner)banner.style.borderColor='var(--red-border)';
+    if(topbar){topbar.textContent='Backup: none';topbar.style.color='var(--red)';topbar.style.borderColor='var(--red-border)';}
+    return;
+  }
+  const when=new Date(latest.ts).toLocaleString();
+  const age=backupAgeText(latest.ts);
+  const color=backupAgeColor(latest.ts);
+  const summary=backupSummaryText(latest.summary);
+  if(detail){
+    detail.innerHTML=`<span style="color:${color};font-weight:600">${when}</span> · ${age}<br><span style="font-size:11px">${latest.reason||'auto'} · ${summary}</span>`;
+  }
+  if(banner){
+    banner.style.borderColor=color==='var(--green)'?'var(--green-border)':color==='var(--orange)'?'var(--orange-border)':'var(--red-border)';
+    banner.style.background=color==='var(--green)'?'var(--green-bg)':color==='var(--orange)'?'var(--orange-bg)':'var(--red-bg)';
+  }
+  if(topbar){
+    topbar.textContent='Backup: '+age;
+    topbar.style.color=color;
+    topbar.style.borderColor=color==='var(--green)'?'var(--green-border)':color==='var(--orange)'?'var(--orange-border)':'var(--red-border)';
+    topbar.title='Last backup: '+when+' ('+(latest.reason||'auto')+')';
+  }
+}
+async function refreshAdminBackupStatus(){
+  try{
+    const r=await fetch(RT_SERVER+'/admin/backups',{headers:authHeaders()});
+    const j=await r.json();
+    if(r.ok&&j.success)updateLastBackupIndicator(j.backups||[]);
+  }catch(e){}
+}
 async function renderBackups(){
   const el=document.getElementById('dashboard-backups');
   if(!el)return;
@@ -2873,6 +2935,7 @@ async function renderBackups(){
     const j=await r.json();
     if(!r.ok||!j.success)throw new Error(j.error||'Could not load backups');
     const backups=j.backups||[];
+    updateLastBackupIndicator(backups);
     if(!backups.length){
       el.innerHTML='<div style="color:var(--orange);font-size:12px">No backups yet. A backup is created automatically before every save.</div>';
       return;
@@ -3908,6 +3971,8 @@ async function init(){
           document.getElementById('page-auth').classList.remove('active');
           document.getElementById('page-admin').classList.add('active');
           renderStockPanels();renderAdminCustomers();renderWallets();renderAdminRequests();renderAdminExpiry();renderNetflixRenewalAlerts();renderTopupRequests();renderGameOrders();renderAdminPending();
+          refreshAdminBackupStatus();
+          if(!window._adminBackupPoll)window._adminBackupPoll=setInterval(refreshAdminBackupStatus,5*60*1000);
           return;
         }
         clearStoredSession();
