@@ -736,6 +736,51 @@ function recoverMissingPasswordFromBackups(data, user) {
   return false;
 }
 
+function isNetflixStockKey(skey) {
+  return String(skey || '').startsWith('netflix__');
+}
+
+function isNetflixFullStockKey(skey) {
+  return /^netflix__full__/.test(String(skey || ''));
+}
+
+function isNetflixOneUserStockKey(skey) {
+  return /^netflix__1user__/.test(String(skey || ''));
+}
+
+function netflixAliasUsage(data, aliasEmail) {
+  const alias = normalizeEmail(aliasEmail);
+  const usage = { oneUser: 0, full: 0 };
+  if (!alias) return usage;
+  for (const [key, accounts] of Object.entries((data && data.stock) || {})) {
+    if (!isNetflixStockKey(key)) continue;
+    for (const account of Array.isArray(accounts) ? accounts : []) {
+      if (normalizeEmail(account && account.email) !== alias) continue;
+      if (isNetflixFullStockKey(key)) usage.full += 1;
+      if (isNetflixOneUserStockKey(key)) usage.oneUser += 1;
+    }
+  }
+  return usage;
+}
+
+function validateNetflixAliasPurchase(data, skey, acc) {
+  if (!acc || !isNetflixStockKey(skey)) return null;
+  const usage = netflixAliasUsage(data, acc.email);
+  if (isNetflixFullStockKey(skey) && usage.oneUser > 0) {
+    return 'This Netflix alias is already split into 1-user profiles and cannot be sold as full account.';
+  }
+  if (isNetflixFullStockKey(skey) && usage.full > 1) {
+    return 'This Netflix alias is already reserved as a full account and cannot be sold again.';
+  }
+  if (isNetflixOneUserStockKey(skey) && usage.full > 0) {
+    return 'This Netflix alias is already reserved as a full account and cannot be sold as 1-user profile.';
+  }
+  if (isNetflixOneUserStockKey(skey) && usage.oneUser > 5) {
+    return 'This Netflix alias already has more than 5 one-user profile slots.';
+  }
+  return null;
+}
+
 // ── HEALTH ─────────────────────────────────────────────────────────────
 app.get('/', (req, res) => {
   res.json({ status: 'rashadtech server running', codes: Object.keys(latestCodes) });
@@ -1056,11 +1101,15 @@ app.post('/purchase', async (req, res) => {
     user.transactions = Array.isArray(user.transactions) ? user.transactions : [];
 
     if (!acc) {
+      const assignedCustomer = assignCustId !== null && assignCustId !== undefined
+        ? (user.myCustomers || []).find(c => c.id === assignCustId)
+        : null;
       const pendingOrder = {
         id:'#'+(Math.floor(Math.random()*90000+10000)),
         userEmail:user.email,userName:user.name,userTgChatId:user.tgChatId||'',
         product:product.name,short:product.short,color:product.color,tc:product.tc,
         productId:product.id,plan:planLabel,price:Number(price),skey,date:dateStr,
+        ...(assignedCustomer ? { assignCustId, profileName: extraFields?.profileName || assignedCustomer.fname } : {}),
         ...(extraFields||{})
       };
       data.pending.unshift(pendingOrder);
@@ -1068,6 +1117,9 @@ app.post('/purchase', async (req, res) => {
       await writeJsonBinRaw(data);
       return res.json({ success:true, pending:true, user:sanitizeUser(user), order:pendingOrder, data:safeDataForSession(data, session) });
     }
+
+    const aliasError = validateNetflixAliasPurchase(data, skey, acc);
+    if (aliasError) return res.status(409).json({ error: aliasError });
 
     acc.used = true;
     const order = {

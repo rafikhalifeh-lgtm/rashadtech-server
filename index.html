@@ -830,6 +830,10 @@ So your EmailJS template will receive the user email correctly.
             <div id="dashboard-lowstock"></div>
           </div>
           <div class="card" style="padding:16px">
+            <div style="font-size:13px;font-weight:600;margin-bottom:10px">🍿 Netflix Renewals</div>
+            <div id="dashboard-netflix-renewal-alerts"><div style="color:var(--text3)">Loading...</div></div>
+          </div>
+          <div class="card" style="padding:16px">
             <div style="font-size:13px;font-weight:600;margin-bottom:10px">📧 Gmail Monitors</div>
             <div id="dashboard-gmail-monitors"><div style="color:var(--text3)">Loading...</div></div>
           </div>
@@ -915,6 +919,10 @@ So your EmailJS template will receive the user email correctly.
       <div id="admin-expiry" class="tab-pane">
         <div class="pg-title">Expiry Alerts</div>
         <div class="pg-sub">Accounts expiring soon — renew before customers notice</div>
+        <div class="card" style="padding:14px;margin-bottom:12px">
+          <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--orange)">🍿 Netflix renewal reminders (1-2 days)</div>
+          <div id="netflix-renewal-alerts"><div style="color:var(--text3);font-size:12px">Loading...</div></div>
+        </div>
         <div id="admin-expiry-list">
           <div class="empty-state"><i class="ti ti-clock"></i>No accounts with expiry dates added yet.</div>
         </div>
@@ -1551,6 +1559,16 @@ async function saveProfile(){
 function copyText(el){
   navigator.clipboard.writeText(el.textContent).then(()=>showToast('✓ Copied!')).catch(()=>{});
 }
+function customerWhatsAppUrl(c){
+  const digits=String((c?.code||'')+(c?.phone||'')).replace(/\D/g,'');
+  return digits?`https://wa.me/${digits}`:'#';
+}
+function openCustomerChat(custId){
+  const c=currentUser?.myCustomers?.find(x=>x.id===custId);
+  const url=customerWhatsAppUrl(c);
+  if(!c||url==='#'){showToast('Customer phone is missing');return;}
+  window.open(url,'_blank');
+}
 function subLinkDataFromOrder(o){
   const inboxEmail=o.mainEmail||o.inboxEmail||'';
   const codeEmail=o.codeEmail||o.email||inboxEmail;
@@ -1584,6 +1602,12 @@ async function copySubLinkForCust(cleanId, custId){
   const url=await createSubLinkUrl(data);
   if(!url)return;
   navigator.clipboard.writeText(url).then(()=>showToast('✓ Link copied!')).catch(()=>{});
+}
+
+function toggleCustomerSubs(custId){
+  const el=document.getElementById('cust-subs-'+custId);
+  if(!el)return;
+  el.style.display=el.style.display==='none'?'flex':'none';
 }
 
 // Set profile name for sub-customer subscription
@@ -1912,7 +1936,7 @@ async function doAdminLogin(){
     document.getElementById('admin-err').style.display='none';logActivity('Admin login');
     document.getElementById('page-auth').classList.remove('active');
     document.getElementById('page-admin').classList.add('active');
-    renderStockPanels();renderAdminCustomers();renderWallets();renderAdminRequests();renderAdminExpiry();renderTopupRequests();renderGameOrders();renderAdminPending();
+    renderStockPanels();renderAdminCustomers();renderWallets();renderAdminRequests();renderAdminExpiry();renderNetflixRenewalAlerts();renderTopupRequests();renderGameOrders();renderAdminPending();
     startRealtimeSync();
   }catch(ex){
     document.getElementById('admin-err').textContent=ex.message;document.getElementById('admin-err').style.display='block';
@@ -2016,7 +2040,7 @@ async function switchAdminTab(name,el){
   if(name==='stock')renderStockPanels();
   if(name==='customers')renderAdminCustomers();
   if(name==='requests')renderAdminRequests();
-  if(name==='expiry')renderAdminExpiry();
+  if(name==='expiry'){renderAdminExpiry();renderNetflixRenewalAlerts();}
   if(name==='topupreqs')renderTopupRequests();
   if(name==='gameorders')renderGameOrders();
   if(name==='pending')renderAdminPending();
@@ -2255,6 +2279,10 @@ async function confirmPurchase(){
   }
   if(!skey){showToast('Please complete your selection');return;}
   if(!currentUser)return;
+  if(assignCustId!==null){
+    const assignedCustomer=currentUser.myCustomers?.find(x=>x.id===assignCustId);
+    if(assignedCustomer)extraFields.profileName=assignedCustomer.fname;
+  }
   // Safety checks
   if(currentUser.balance<price){showToast('⚠️ Insufficient balance. Please top up your wallet.');return;}
   const freshUser=users.find(x=>x.email===currentUser.email);
@@ -2420,6 +2448,40 @@ function daysLeft(expiryDateStr){
   return Math.round((exp-now)/(1000*60*60*24));
 }
 function expiryClass(d){if(d===null)return'';if(d<=3)return'critical';if(d<=7)return'warning';return'good';}
+function isNetflixRenewalTarget(o){
+  if(!o||o.productId!=='netflix'||!o.expiryDate)return false;
+  const d=daysLeft(o.expiryDate);
+  if(d!==1&&d!==2)return false;
+  const plan=String(o.plan||'').toLowerCase();
+  if(plan.includes('custom')||plan.includes('day'))return false;
+  return !(/\b1\s*month\b/.test(plan));
+}
+function getNetflixRenewalAlerts(){
+  const alerts=[];
+  users.forEach(u=>{
+    (u.orders||[]).forEach(o=>{if(isNetflixRenewalTarget(o))alerts.push({user:u,order:o,customer:null,days:daysLeft(o.expiryDate)});});
+    (u.myCustomers||[]).forEach(c=>(c.subs||[]).forEach(o=>{if(isNetflixRenewalTarget(o))alerts.push({user:u,order:o,customer:c,days:daysLeft(o.expiryDate)});}));
+  });
+  return alerts.sort((a,b)=>a.days-b.days);
+}
+function renderNetflixRenewalAlerts(){
+  const targets=[document.getElementById('netflix-renewal-alerts'),document.getElementById('dashboard-netflix-renewal-alerts')].filter(Boolean);
+  if(!targets.length)return;
+  const alerts=getNetflixRenewalAlerts();
+  if(!alerts.length){targets.forEach(el=>el.innerHTML='<div style="color:var(--green);font-size:12px">✅ No Netflix renewals due in 1-2 days.</div>');return;}
+  const html=alerts.map(a=>{
+    const c=a.customer;
+    const who=c?`${esc(c.fname)} ${esc(c.lname)} (${esc(c.code)}${esc(c.phone)})`:`${esc(a.user.name)} (${esc(a.user.email)})`;
+    const wa=c?`<a href="${customerWhatsAppUrl(c)}" target="_blank" style="color:var(--green);font-weight:700;text-decoration:none">Open WhatsApp</a>`:'';
+    return `<div style="border-bottom:1px solid var(--border);padding:8px 0;font-size:12px">
+      <div style="font-weight:700;color:${a.days===1?'var(--red)':'var(--orange)'}">${a.days} day${a.days!==1?'s':''} left · ${esc(a.order.plan||'Netflix')}</div>
+      <div style="color:var(--text2)">👤 ${who}</div>
+      <div style="color:var(--text3);font-family:var(--mono)">📧 ${esc(a.order.email||'')} · Exp: ${esc(a.order.expiryDate||'')}</div>
+      ${wa?`<div style="margin-top:4px">${wa}</div>`:''}
+    </div>`;
+  }).join('');
+  targets.forEach(el=>el.innerHTML=html);
+}
 function renderExpiryTracker(){
   if(!currentUser)return;
   const orders=currentUser.orders.filter(o=>o.expiryDate);
@@ -2626,6 +2688,8 @@ async function renderDashboard(){
         <span style="color:${i.empty?'var(--red)':'var(--orange)'};font-weight:600">${i.empty?'❌ Empty':i.available+' left'}</span>
       </div>`).join('');
   }
+
+  renderNetflixRenewalAlerts();
 
   const gm=document.getElementById('dashboard-gmail-monitors');
   if(gm){
@@ -2858,11 +2922,11 @@ function renderMyCustomers(){
   const custs=currentUser.myCustomers||[];cnt.textContent=custs.length+' customer'+(custs.length!==1?'s':'');
   if(!custs.length){el.innerHTML='<div class="empty-state"><i class="ti ti-users"></i>No customers yet.</div>';return;}
   el.innerHTML=custs.map(c=>{
-    const sh=c.subs&&c.subs.length?`<div class="cust-subs-list">${c.subs.map(s=>{
+    const sh=c.subs&&c.subs.length?`<div class="cust-subs-list" id="cust-subs-${c.id}" style="display:none">${c.subs.map(s=>{
       const cleanId=(s.id||'').replace('#','');
       return `<div class="cust-sub-row">
       <div class="cust-sub-icon" style="background:${s.color};color:${s.tc}">${s.short}</div>
-      <div class="cust-sub-info"><div class="cust-sub-name">${s.product} · ${s.plan}</div><div class="cust-sub-cred">${s.email} / ${s.pass}</div></div>
+      <div class="cust-sub-info"><div class="cust-sub-name">${s.product} · ${s.plan}</div><div class="cust-sub-cred">${s.email} / ${s.pass}</div>${s.profilePin?`<div class="cust-sub-cred">PIN: ${s.profilePin}</div>`:''}${s.expiryDate?`<div class="cust-sub-cred">Exp: ${s.expiryDate}</div>`:''}</div>
       <div style="text-align:right">
         <div style="font-size:11px;color:var(--text3);margin-bottom:4px">${s.date}</div>
         
@@ -2873,7 +2937,11 @@ function renderMyCustomers(){
       <div class="cust-avatar">${c.fname.charAt(0).toUpperCase()}</div>
       <div class="cust-info"><div class="cust-name">${c.fname} ${c.lname}</div><div class="cust-phone">${c.code} ${c.phone}</div>
       <div class="cust-subs-count">${c.subs&&c.subs.length?c.subs.length+' subscription'+(c.subs.length!==1?'s':''):'No subscriptions yet'}</div></div>
-      <button class="btn-add-sub" onclick="openAssignSub(${c.id})"><i class="ti ti-plus" style="font-size:14px"></i> Add subscription</button>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+        <button class="btn-add-sub" onclick="openCustomerChat(${c.id})">💬 Open chat</button>
+        <button class="btn-add-sub" onclick="toggleCustomerSubs(${c.id})">📺 Subscriptions</button>
+        <button class="btn-add-sub" onclick="openAssignSub(${c.id})"><i class="ti ti-plus" style="font-size:14px"></i> Add subscription</button>
+      </div>
     </div>${sh}</div>`;
   }).join('');
 }
@@ -3071,6 +3139,29 @@ function renderAccModal(showForm=false){
   document.getElementById('acc-modal-body').innerHTML=html;
   if(showForm)setTimeout(()=>document.getElementById('new-acc-email')?.focus(),100);
 }
+function isNetflixKey(k){return String(k||'').startsWith('netflix__');}
+function isNetflixOneUserKey(k){return /^netflix__1user__/.test(String(k||''));}
+function isNetflixFullKey(k){return /^netflix__full__/.test(String(k||''));}
+function netflixAliasAccounts(alias){
+  const clean=String(alias||'').trim().toLowerCase();
+  const rows=[];
+  Object.entries(accountStock||{}).forEach(([key,accs])=>{
+    if(!isNetflixKey(key))return;
+    (accs||[]).forEach(a=>{if(String(a.email||'').trim().toLowerCase()===clean)rows.push({key,account:a});});
+  });
+  return rows;
+}
+function validateNetflixAliasForAdd(skey,email,pin){
+  if(!isNetflixKey(skey))return '';
+  const rows=netflixAliasAccounts(email);
+  const oneCount=rows.filter(r=>isNetflixOneUserKey(r.key)).length;
+  const fullCount=rows.filter(r=>isNetflixFullKey(r.key)).length;
+  if(isNetflixFullKey(skey)&&(oneCount>0||fullCount>0))return 'This Netflix alias is already used/reserved. Full account can only be added once and cannot mix with 1-user profiles.';
+  if(isNetflixOneUserKey(skey)&&fullCount>0)return 'This Netflix alias is already reserved as full account and cannot be used for 1-user profiles.';
+  if(isNetflixOneUserKey(skey)&&oneCount>=5)return 'This Netflix alias already has 5 one-user profile slots.';
+  if(isNetflixOneUserKey(skey)&&pin&&rows.some(r=>isNetflixOneUserKey(r.key)&&String(r.account.profilePin||'')===String(pin)))return 'This PIN is already used for this Netflix alias. Use a different profile PIN.';
+  return '';
+}
 async function delAccount(idx){
   if(!confirm('Delete this account from stock?'))return;
   if(!accountStock[curAccModalKey])return;
@@ -3093,6 +3184,8 @@ async function addAccount(){
   const mainEmail=document.getElementById('new-acc-main-email')?.value.trim()||'';
   const mainPass=(document.getElementById('new-acc-main-pass')?.value||'').replace(/\s+/g,'');
   const profilePin=document.getElementById('new-acc-profile-pin')?.value.trim()||'';
+  const aliasError=validateNetflixAliasForAdd(curAccModalKey,email,profilePin);
+  if(aliasError){showToast('⚠️ '+aliasError);return;}
   const accKey=curAccModalKey+'__'+Date.now();
   accountStock[curAccModalKey].push({email,pass,extra,expiryDate,used:false,accKey,profilePin,mainEmail:mainEmail||''});
   await saveData();
@@ -3671,7 +3764,7 @@ async function init(){
         isAdmin=true;
         document.getElementById('page-auth').classList.remove('active');
         document.getElementById('page-admin').classList.add('active');
-        renderStockPanels();renderAdminCustomers();renderWallets();renderAdminRequests();renderAdminExpiry();renderTopupRequests();renderGameOrders();renderAdminPending();
+        renderStockPanels();renderAdminCustomers();renderWallets();renderAdminRequests();renderAdminExpiry();renderNetflixRenewalAlerts();renderTopupRequests();renderGameOrders();renderAdminPending();
         return;
       } else {
         localStorage.removeItem('rt_admin_session');localStorage.removeItem('rt_auth_token');localStorage.removeItem('rt_auth_role');
