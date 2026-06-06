@@ -1802,14 +1802,24 @@ async function doLogin(){
     err.textContent=ex.message||'Invalid email or password.';err.style.display='block';
   }
 }
-function doSignup(){
+async function doSignup(){
   const n=document.getElementById('su-name').value.trim();
-  const e=document.getElementById('su-email').value.trim();
+  const e=document.getElementById('su-email').value.trim().toLowerCase();
   const p=document.getElementById('su-pass').value;
   const err=document.getElementById('signup-err');
   if(!n||!e||p.length<6){err.textContent='Please fill all fields (min 6 chars password).';err.style.display='block';return;}
   if(users.find(x=>x.email===e)){err.textContent='Email already registered.';err.style.display='block';return;}
   err.style.display='none';
+  try{
+    const r=await fetch(RT_SERVER+'/auth/user-lookup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:e})});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(j.error||'Account service is temporarily unavailable. Please try again soon.');
+    if(j.exists){err.textContent='Email already registered.';err.style.display='block';return;}
+  }catch(ex){
+    err.textContent=ex.message||'Account service is temporarily unavailable. Please try again soon.';
+    err.style.display='block';
+    return;
+  }
   const tgid=document.getElementById('su-tgid')?.value.trim()||'';
   pendingSignupData={name:n,email:e,pass:p,tgChatId:tgid};
   const code=generateOTP();pendingOTPs[e]=code;pendingOTPs[e+'_ts']=Date.now();simulateSendOTP(e,code,n);

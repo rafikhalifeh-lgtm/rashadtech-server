@@ -46,6 +46,7 @@ const EMAIL_LOOKBACK_MS = 24 * 60 * 60 * 1000;
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const LINK_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 const PASSWORD_HASH_PREFIX = 'pbkdf2$';
+const ACCOUNT_SERVICE_UNAVAILABLE = 'Account service is temporarily unavailable. Please try again soon.';
 
 if (!API_SECRET || !TG_TOKEN || !TG_ADMIN) {
   console.error('❌ Missing required env vars: API_SECRET, TG_TOKEN, TG_ADMIN');
@@ -437,7 +438,7 @@ app.post('/auth/signup', async (req, res) => {
     res.json({ success: true, token, user: sanitizeUser(user), data: safeDataForSession(data, { role: 'user', email: cleanEmail }) });
   } catch(e) {
     console.error('Signup error:', e.message);
-    res.status(500).json({ error: 'Signup failed' });
+    res.status(503).json({ error: ACCOUNT_SERVICE_UNAVAILABLE });
   }
 });
 
@@ -450,7 +451,7 @@ app.post('/auth/user-lookup', async (req, res) => {
     res.json({ success: true, exists: true, name: user.name || normalizeEmail(email) });
   } catch(e) {
     console.error('User lookup error:', e.message);
-    res.status(500).json({ error: 'Lookup failed' });
+    res.status(503).json({ error: ACCOUNT_SERVICE_UNAVAILABLE });
   }
 });
 
@@ -466,7 +467,7 @@ app.post('/auth/reset-password', async (req, res) => {
     res.json({ success: true });
   } catch(e) {
     console.error('Reset password error:', e.message);
-    res.status(500).json({ error: 'Password reset failed' });
+    res.status(503).json({ error: ACCOUNT_SERVICE_UNAVAILABLE });
   }
 });
 
