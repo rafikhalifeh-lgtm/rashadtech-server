@@ -658,7 +658,7 @@ So your EmailJS template will receive the user email and verification code corre
       <button onclick="switchTab('requests',null);setActiveBottomNav('bn-more');toggleAppMore()" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 8px;cursor:pointer;color:var(--text);font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">💡</span>Requests</button>
       <button onclick="switchTab('customers',null);setActiveBottomNav('bn-more');toggleAppMore()" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 8px;cursor:pointer;color:var(--text);font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">👥</span>Customers</button>
       <button onclick="toggleAppMore();openRateUs()" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 8px;cursor:pointer;color:var(--text);font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">⭐</span>Rate Us</button>
-      <button onclick="switchTab('profile',null);setActiveBottomNav('bn-more');toggleAppMore()" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 8px;cursor:pointer;color:var(--text);font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">👤</span>Profile</button>
+      <button onclick="switchTab('profile',null);setActiveBottomNav('bn-more');toggleAppMore()" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 8px;cursor:pointer;color:var(--text);font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">👤</span><span data-t="profile">Profile</span></button>
       <button onclick="doLogout();toggleAppMore()" style="background:var(--red-bg);border:1px solid var(--red-border);border-radius:var(--radius-sm);padding:12px 8px;cursor:pointer;color:var(--red);font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">🚪</span>Logout</button>
     </div>
   </div>
@@ -1079,6 +1079,14 @@ function authHeaders(){
   return headers;
 }
 
+async function rtApi(path,opts={}){
+  const r=await fetch(RT_SERVER+path,{...opts,headers:{...authHeaders(),...(opts.headers||{})}});
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok)throw new Error(j.error||'Request failed');
+  if(j.success===false)throw new Error(j.error||'Request failed');
+  return j;
+}
+
 function applyDataSnapshot(data){
   _jbCache=data||{};
   users=Array.isArray(_jbCache.users)?_jbCache.users:[];
@@ -1480,29 +1488,45 @@ async function subOptionRenew(){
   closeModal('sub-options-modal');
   const o=currentUser?.orders.find(x=>x.id===_currentSubId);
   if(!o)return;
-  await sendTelegram(`🔄 <b>Renewal Request</b>
+  try{
+    await rtApi('/customer/renew-request',{method:'POST',body:JSON.stringify({orderId:o.id,product:o.product,plan:o.plan,expiryDate:o.expiryDate||''})});
+    showToast(currentLang==='ar'?'✓ تم إرسال طلب التجديد':'✓ Renewal request sent');
+  }catch(e){
+    await sendTelegram(`🔄 <b>Renewal Request</b>
 
 👤 ${currentUser.name} (${currentUser.email})
 📺 ${o.product} · ${o.plan}
 📅 Expires: ${o.expiryDate||'N/A'}
 
 Customer is requesting renewal.`);
-  showToast('✅ Renewal request sent!');
+    showToast(currentLang==='ar'?'✓ تم إرسال طلب التجديد':'✓ Renewal request sent');
+  }
 }
 
 async function subOptionReport(){
   closeModal('sub-options-modal');
   const o=currentUser?.orders.find(x=>x.id===_currentSubId);
   if(!o)return;
-  const issue=prompt('Describe the issue:');
+  const issue=prompt(currentLang==='ar'?'صف المشكلة:':'Describe the issue:');
   if(!issue)return;
-  await sendTelegram(`⚠️ <b>Issue Report</b>
+  try{
+    await rtApi('/report-issue',{method:'POST',body:JSON.stringify({
+      issueType:'subscription issue',
+      details:issue,
+      subscription:{product:o.product,plan:o.plan,email:o.email},
+      customerEmail:currentUser?.email,
+      customerName:currentUser?.name
+    })});
+    showToast(currentLang==='ar'?'✓ تم الإبلاغ عن المشكلة':'✓ Issue reported — we will contact you');
+  }catch(e){
+    await sendTelegram(`⚠️ <b>Issue Report</b>
 
 👤 ${currentUser.name} (${currentUser.email})
 📺 ${o.product} · ${o.plan}
 
 📝 Issue: ${issue}`);
-  showToast('✅ Issue reported — we will contact you');
+    showToast(currentLang==='ar'?'✓ تم الإبلاغ عن المشكلة':'✓ Issue reported — we will contact you');
+  }
 }
 
 async function subOptionChangeProfile(){
@@ -1572,7 +1596,7 @@ async function saveProfile(){
   if(!currentUser)return;
   const name=document.getElementById('profile-name-input').value.trim();
   const tgid=document.getElementById('profile-tgid-input').value.trim();
-  if(!name){showToast('Name cannot be empty');return;}
+  if(!name){showToast(currentLang==='ar'?'الاسم مطلوب':'Name cannot be empty');return;}
   currentUser.name=name;
   currentUser.tgChatId=tgid;
   // Update in users array
@@ -1581,7 +1605,32 @@ async function saveProfile(){
   await saveData();
   document.getElementById('profile-name-display').textContent=name;
   document.getElementById('profile-avatar').textContent=name[0].toUpperCase();
-  showToast('✅ Profile updated');
+  showToast(currentLang==='ar'?'✓ تم تحديث الملف':'✓ Profile updated');
+}
+
+function openChangePasswordModal(){
+  document.getElementById('cp-current').value='';
+  document.getElementById('cp-new').value='';
+  document.getElementById('cp-confirm').value='';
+  document.getElementById('cp-err').style.display='none';
+  openModal('change-pass-modal');
+}
+
+async function submitChangePassword(){
+  const cur=document.getElementById('cp-current').value;
+  const np=document.getElementById('cp-new').value;
+  const confirm=document.getElementById('cp-confirm').value;
+  const err=document.getElementById('cp-err');
+  if(!cur||!np){err.textContent=currentLang==='ar'?'أدخل كلمة المرور الحالية والجديدة':'Enter current and new password';err.style.display='block';return;}
+  if(np.length<6){err.textContent=currentLang==='ar'?'كلمة المرور الجديدة 6 أحرف على الأقل':'New password must be at least 6 characters';err.style.display='block';return;}
+  if(np!==confirm){err.textContent=currentLang==='ar'?'كلمتا المرور غير متطابقتين':'Passwords do not match';err.style.display='block';return;}
+  try{
+    await rtApi('/auth/change-password',{method:'POST',body:JSON.stringify({currentPassword:cur,newPassword:np})});
+    closeModal('change-pass-modal');
+    showToast(currentLang==='ar'?'✓ تم تغيير كلمة المرور':'✓ Password updated');
+  }catch(e){
+    err.textContent=e.message||'Could not change password';err.style.display='block';
+  }
 }
 
 function copyText(el){
@@ -2595,20 +2644,34 @@ const LANG={
     success:'Success',error:'Error',warning:'Warning',info:'Info',loading:'Loading...',
     noData:'No data available',confirmDelete:'Are you sure you want to delete this?',
     dashboard:'Dashboard',stock:'Stock',topupreqs:'Topup Requests',gameorders:'Game Orders',announce:'Announce',
-    pendingOrders:'Pending Orders',topups:'Top-ups',games:'Games',pgTitle:'Page Title',admin:'Admin'
+    pendingOrders:'Pending Orders',topups:'Top-ups',games:'Games',pgTitle:'Page Title',admin:'Admin',
+    myProfile:'My Profile',fullName:'Full Name',telegramChatId:'Telegram Chat ID',telegramHint:'Get your ID from @userinfobot on Telegram',
+    saveChanges:'Save Changes',contactUs:'Contact Us',accountSecurity:'Account security',memberSince:'Member since',
+    changePassword:'Change password',currentPassword:'Current password',newPassword:'New password',confirmPassword:'Confirm new password',
+    updatePassword:'Update password',logoutAll:'Logout all devices',requestRenewal:'Request Renewal',reportIssue:'Report Issue',
+    topupHelp:'To top up your wallet, contact support on WhatsApp with payment proof.',
+    netflix:'Netflix',options:'Options',active:'Active',goToStore:'Go to store',noSubscriptions:'No subscriptions yet',
+    analytics:'Analytics',exportOrders:'Export orders',bulkImport:'Bulk import'
   },
   ar:{
-    store:'المتجر',subscriptions:'اشتراكاتي',wallet:'المحفظة',profile:'الملف',expiry:'الانتهاء',
+    store:'المتجر',subscriptions:'اشتراكاتي',wallet:'المحفظة',profile:'الملف الشخصي',expiry:'الانتهاء',
     expiryAlerts:'تنبيهات الانتهاء',wallets:'المحافظ',requests:'الطلبات',customers:'العملاء',transactions:'المعاملات',
-    more:'المزيد',menu:'القائمة',account:'الحساب',login:'تسجيل الدخول',signup:'التسجيل',logout:'تسجيل الخروج',settings:'الإعدادات',
-    buyNow:'اشتري الآن',subscribe:'اشترك',topUp:'شحن',pending:'قيد الانتظار',completed:'مكتمل',cancelled:'ملغي',
+    more:'المزيد',menu:'القائمة',account:'الحساب',login:'تسجيل الدخول',signup:'إنشاء حساب',logout:'تسجيل الخروج',settings:'الإعدادات',
+    buyNow:'اشتري الآن',subscribe:'اشترك',topUp:'شحن المحفظة',pending:'قيد الانتظار',completed:'مكتمل',cancelled:'ملغي',
     save:'حفظ',cancel:'إلغاء',confirm:'تأكيد',delete:'حذف',edit:'تعديل',close:'إغلاق',
-    name:'الاسم',email:'البريد',password:'كلمة المرور',phone:'الهاتف',balance:'الرصيد',status:'الحالة',
+    name:'الاسم',email:'البريد الإلكتروني',password:'كلمة المرور',phone:'الهاتف',balance:'الرصيد',status:'الحالة',
     date:'التاريخ',time:'الوقت',amount:'المبلغ',description:'الوصف',action:'إجراء',
     success:'نجاح',error:'خطأ',warning:'تحذير',info:'معلومة',loading:'جاري التحميل...',
     noData:'لا توجد بيانات',confirmDelete:'هل أنت متأكد من حذف هذا؟',
     dashboard:'لوحة التحكم',stock:'المخزون',topupreqs:'طلبات الشحن',gameorders:'طلبات الألعاب',announce:'إعلان',
-    pendingOrders:'الطلبات المعلقة',topups:'شحن',games:'ألعاب',pgTitle:'عنوان الصفحة',admin:'إدارة'
+    pendingOrders:'الطلبات المعلقة',topups:'شحن',games:'ألعاب',pgTitle:'عنوان الصفحة',admin:'الإدارة',
+    myProfile:'ملفي الشخصي',fullName:'الاسم الكامل',telegramChatId:'معرّف تيليجرام',telegramHint:'احصل على معرّفك من @userinfobot على تيليجرام',
+    saveChanges:'حفظ التغييرات',contactUs:'تواصل معنا',accountSecurity:'أمان الحساب',memberSince:'عضو منذ',
+    changePassword:'تغيير كلمة المرور',currentPassword:'كلمة المرور الحالية',newPassword:'كلمة المرور الجديدة',confirmPassword:'تأكيد كلمة المرور',
+    updatePassword:'تحديث كلمة المرور',logoutAll:'تسجيل الخروج من جميع الأجهزة',requestRenewal:'طلب تجديد',reportIssue:'الإبلاغ عن مشكلة',
+    topupHelp:'لشحن المحفظة، تواصل مع الدعم على واتساب وأرسل إثبات الدفع.',
+    netflix:'نتفليكس',options:'خيارات',active:'نشط',goToStore:'اذهب للمتجر',noSubscriptions:'لا توجد اشتراكات بعد',
+    analytics:'الإحصائيات',exportOrders:'تصدير الطلبات',bulkImport:'استيراد جماعي'
   }
 };
 let currentLang='en';
@@ -2626,11 +2689,14 @@ function setLang(lang){
   document.documentElement.setAttribute('dir',lang==='ar'?'rtl':'ltr');
   document.documentElement.setAttribute('lang',lang);
   
-  // Translate all elements with data-t attribute
   const labels=LANG[lang];
   document.querySelectorAll('[data-t]').forEach(el=>{
     const key=el.getAttribute('data-t');
     if(labels[key])el.textContent=labels[key];
+  });
+  document.querySelectorAll('[data-t-placeholder]').forEach(el=>{
+    const key=el.getAttribute('data-t-placeholder');
+    if(labels[key])el.placeholder=labels[key];
   });
   
   const lb=document.getElementById('lang-toggle');
@@ -3851,8 +3917,8 @@ if(document.readyState==='loading'){
     <div style="display:flex;flex-direction:column;gap:2px">
       <button onclick="subOptionGenLink()" class="sub-option-btn">🔗 Generate Link</button>
       <button onclick="subOptionAddNote()" class="sub-option-btn">📝 Add Note</button>
-      <button onclick="subOptionRenew()" class="sub-option-btn">🔄 Request Renewal</button>
-      <button onclick="subOptionReport()" class="sub-option-btn">⚠️ Report Issue</button>
+      <button onclick="subOptionRenew()" class="sub-option-btn" data-t="requestRenewal">🔄 Request Renewal</button>
+      <button onclick="subOptionReport()" class="sub-option-btn" data-t="reportIssue">⚠️ Report Issue</button>
       <div style="border-top:1px solid var(--border);margin:6px 0"></div>
       <button onclick="subOptionChangeProfile()" class="sub-option-btn">👤 Change Profile Name</button>
       <button onclick="subOptionChangePin()" class="sub-option-btn">🔢 Change PIN Code</button>
@@ -3864,11 +3930,33 @@ if(document.readyState==='loading'){
   </div>
 </div>
 
+<!-- CHANGE PASSWORD MODAL -->
+<div id="change-pass-modal" class="modal-overlay" onclick="if(event.target===this)closeModal('change-pass-modal')">
+  <div class="modal" style="max-width:380px">
+    <div style="font-size:16px;font-weight:700;margin-bottom:14px" data-t="changePassword">Change password</div>
+    <div class="field">
+      <label data-t="currentPassword">Current password</label>
+      <input type="password" id="cp-current" autocomplete="current-password">
+    </div>
+    <div class="field">
+      <label data-t="newPassword">New password</label>
+      <input type="password" id="cp-new" autocomplete="new-password">
+    </div>
+    <div class="field">
+      <label data-t="confirmPassword">Confirm new password</label>
+      <input type="password" id="cp-confirm" autocomplete="new-password">
+    </div>
+    <div id="cp-err" style="display:none;color:var(--red);font-size:12px;margin-bottom:10px"></div>
+    <button class="btn-primary" onclick="submitChangePassword()" style="width:100%;margin-bottom:8px" data-t="updatePassword">Update password</button>
+    <button class="btn-secondary" onclick="closeModal('change-pass-modal')" style="width:100%" data-t="cancel">Cancel</button>
+  </div>
+</div>
+
 <!-- CUSTOMER PROFILE PAGE -->
 <div id="page-profile" class="page">
   <div class="topbar">
     <button onclick="switchTab('store',null)" style="background:none;border:none;cursor:pointer;color:var(--text2);font-size:20px;padding:0 8px 0 0">←</button>
-    <div class="topbar-title">My Profile</div>
+    <div class="topbar-title" data-t="myProfile">My Profile</div>
   </div>
   <div class="main-content">
     <div class="card" style="padding:20px;margin-bottom:16px">
@@ -3878,19 +3966,26 @@ if(document.readyState==='loading'){
         <div style="font-size:13px;color:var(--text3)" id="profile-email-display"></div>
       </div>
       <div class="field">
-        <label>Full Name</label>
-        <input type="text" id="profile-name-input" placeholder="Your name">
+        <label data-t="fullName">Full Name</label>
+        <input type="text" id="profile-name-input" data-t-placeholder="fullName">
       </div>
       <div class="field">
-        <label>Telegram Chat ID</label>
+        <label data-t="telegramChatId">Telegram Chat ID</label>
         <input type="text" id="profile-tgid-input" placeholder="e.g. 123456789">
-        <div style="font-size:11px;color:var(--text3);margin-top:4px">Get your ID from @userinfobot on Telegram</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:4px" data-t="telegramHint">Get your ID from @userinfobot on Telegram</div>
       </div>
-      <button class="btn-primary" onclick="saveProfile()" style="width:100%">💾 Save Changes</button>
+      <button class="btn-primary" onclick="saveProfile()" style="width:100%" data-t="saveChanges">💾 Save Changes</button>
     </div>
 
     <div class="card" style="padding:20px;margin-bottom:16px">
-      <div style="font-size:14px;font-weight:600;margin-bottom:12px">📞 Contact Us</div>
+      <div style="font-size:14px;font-weight:600;margin-bottom:12px" data-t="accountSecurity">🔐 Account security</div>
+      <button onclick="openChangePasswordModal()" style="width:100%;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:10px" data-t="changePassword">🔑 Change password</button>
+      <div style="font-size:12px;color:var(--text2);line-height:1.5" data-t="topupHelp">To top up your wallet, contact support on WhatsApp with payment proof.</div>
+      <a href="https://wa.me/96179306701" target="_blank" style="display:inline-block;margin-top:8px;font-size:12px;color:var(--green);font-weight:600">WhatsApp +96179306701</a>
+    </div>
+
+    <div class="card" style="padding:20px;margin-bottom:16px">
+      <div style="font-size:14px;font-weight:600;margin-bottom:12px" data-t="contactUs">📞 Contact Us</div>
       <a href="https://t.me/Rashadtech" target="_blank" style="display:flex;align-items:center;gap:10px;padding:12px;background:var(--bg3);border-radius:var(--radius-sm);text-decoration:none;color:var(--text)">
         <span style="font-size:24px">✈️</span>
         <div>
@@ -3900,10 +3995,10 @@ if(document.readyState==='loading'){
       </a>
     </div>
     <div class="card" style="padding:20px">
-      <div style="font-size:14px;font-weight:600;margin-bottom:4px">🔐 Account</div>
-      <div style="font-size:12px;color:var(--text3);margin-bottom:12px">Member since <span id="profile-joined"></span></div>
-      <button onclick="logoutAllDevices()" style="width:100%;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:8px">🔐 Logout all devices</button>
-      <button onclick="doLogout()" style="width:100%;background:var(--red-bg);color:var(--red);border:1px solid var(--red-border);border-radius:var(--radius-sm);padding:10px;font-size:13px;font-weight:600;cursor:pointer">🚪 Logout</button>
+      <div style="font-size:14px;font-weight:600;margin-bottom:4px" data-t="account">🔐 Account</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:12px"><span data-t="memberSince">Member since</span> <span id="profile-joined"></span></div>
+      <button onclick="logoutAllDevices()" style="width:100%;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:8px" data-t="logoutAll">🔐 Logout all devices</button>
+      <button onclick="doLogout()" style="width:100%;background:var(--red-bg);color:var(--red);border:1px solid var(--red-border);border-radius:var(--radius-sm);padding:10px;font-size:13px;font-weight:600;cursor:pointer" data-t="logout">🚪 Logout</button>
     </div>
   </div>
 </div>

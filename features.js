@@ -12,10 +12,11 @@
   }
   function expiryBadge(exp){
     const d=daysLeft(exp);if(d===null)return '';
-    if(d<0)return `<span style="font-size:10px;color:var(--red);font-weight:700">Expired</span>`;
-    if(d<=3)return `<span style="font-size:10px;color:var(--red);font-weight:700">${d}d left</span>`;
-    if(d<=7)return `<span style="font-size:10px;color:var(--orange);font-weight:700">${d}d left</span>`;
-    return `<span style="font-size:10px;color:var(--green);font-weight:700">${d}d left</span>`;
+    const lang=(typeof currentLang!=='undefined'&&currentLang==='ar')?'ar':'en';
+    if(d<0)return `<span style="font-size:10px;color:var(--red);font-weight:700">${lang==='ar'?'منتهي':'Expired'}</span>`;
+    if(d<=3)return `<span style="font-size:10px;color:var(--red);font-weight:700">${d}${lang==='ar'?' يوم':'d left'}</span>`;
+    if(d<=7)return `<span style="font-size:10px;color:var(--orange);font-weight:700">${d}${lang==='ar'?' يوم':'d left'}</span>`;
+    return `<span style="font-size:10px;color:var(--green);font-weight:700">${d}${lang==='ar'?' يوم':'d left'}</span>`;
   }
 
   window.rtShowLoading=function(msg){
@@ -27,6 +28,7 @@
   window.rtHideLoading=function(){const el=document.getElementById('rt-loading');if(el)el.style.display='none';};
 
   async function api(path,opts={}){
+    if(typeof window.rtApi==='function')return window.rtApi(path,opts);
     opts.headers=Object.assign({'Content-Type':'application/json'},opts.headers||{});
     if(typeof authHeaders==='function')Object.assign(opts.headers,authHeaders());
     const r=await fetch((window.RT_SERVER||'')+path,opts);
@@ -104,15 +106,17 @@
   window.rtReportIssue=async function(issueType,details,subscription){
     try{
       await api('/report-issue',{method:'POST',body:JSON.stringify({issueType,details,subscription,customerEmail:currentUser?.email,customerName:currentUser?.name})});
-      showToast('✓ Issue sent to support');
+      showToast(typeof currentLang!=='undefined'&&currentLang==='ar'?'✓ تم الإبلاغ عن المشكلة':'✓ Issue sent to support');
     }catch(e){showToast('⚠️ '+e.message);}
   };
 
-  window.rtChangePassword=async function(){
+  window.rtChangePassword=function(){
+    if(typeof openChangePasswordModal==='function')return openChangePasswordModal();
     const cur=prompt('Current password:');if(!cur)return;
     const np=prompt('New password (min 6 chars):');if(!np||np.length<6){showToast('Password too short');return;}
-    try{rtShowLoading('Updating password...');await api('/auth/change-password',{method:'POST',body:JSON.stringify({currentPassword:cur,newPassword:np})});showToast('✓ Password updated');}
-    catch(e){showToast('⚠️ '+e.message);}finally{rtHideLoading();}
+    api('/auth/change-password',{method:'POST',body:JSON.stringify({currentPassword:cur,newPassword:np})})
+      .then(()=>showToast('✓ Password updated'))
+      .catch(e=>showToast('⚠️ '+e.message));
   };
 
   window.rtRevokeCurrentLink=async function(){
@@ -212,24 +216,11 @@
   window.loadGmailMonitorPanel=loadGmailMonitorPanel;
 
   window.rtRequestRenewal=async function(orderId,product,plan,expiryDate){
-    try{await api('/customer/renew-request',{method:'POST',body:JSON.stringify({orderId,product,plan,expiryDate})});showToast('✓ Renewal request sent');}
-    catch(e){showToast('⚠️ '+e.message);}
+    try{
+      await api('/customer/renew-request',{method:'POST',body:JSON.stringify({orderId,product,plan,expiryDate})});
+      showToast(typeof currentLang!=='undefined'&&currentLang==='ar'?'✓ تم إرسال طلب التجديد':'✓ Renewal request sent');
+    }catch(e){showToast('⚠️ '+e.message);}
   };
-
-  function patchSubRow(){
-    const orig=window.subRow;
-    if(typeof orig!=='function')return;
-    window.subRow=function(o){
-      const base=orig(o);
-      const actions=`<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">
-        <button onclick="copyText(document.createElement('span'));navigator.clipboard.writeText('${esc(o.email)}')" style="font-size:10px;padding:4px 6px;border:1px solid var(--border);background:var(--bg3);border-radius:4px;cursor:pointer">Copy email</button>
-        <button onclick="navigator.clipboard.writeText('${esc(o.pass)}')" style="font-size:10px;padding:4px 6px;border:1px solid var(--border);background:var(--bg3);border-radius:4px;cursor:pointer">Copy pass</button>
-        <button onclick="rtRequestRenewal('${esc(o.id)}','${esc(o.product)}','${esc(o.plan)}','${esc(o.expiryDate||'')}')" style="font-size:10px;padding:4px 6px;border:1px solid var(--border);background:var(--bg3);border-radius:4px;cursor:pointer">Renew</button>
-        <button onclick="rtReportIssue('subscription issue','Order ${esc(o.id)}',null)" style="font-size:10px;padding:4px 6px;border:1px solid var(--border);background:var(--bg3);border-radius:4px;cursor:pointer">Report</button>
-      </div>${expiryBadge(o.expiryDate)}`;
-      return base.replace('</div></div>',actions+'</div></div>');
-    };
-  }
 
   function injectUI(){
     const store=document.getElementById('tab-store');
@@ -237,19 +228,10 @@
       const b=document.createElement('div');b.id='store-promo-banner';b.style.cssText='display:none;background:var(--blue-bg);border:1px solid var(--blue-border);color:var(--blue);padding:10px 14px;border-radius:8px;margin-bottom:14px;font-size:13px;font-weight:600';
       store.insertBefore(b,store.firstChild.nextSibling);
     }
-    const profile=document.getElementById('tab-profile');
-    if(profile&&!document.getElementById('rt-change-pass-btn')){
-      const box=document.createElement('div');
-      box.className='card card-pad';box.style.marginTop='12px';
-      box.innerHTML=`<div style="font-weight:600;margin-bottom:8px">Account security</div>
-        <button class="btn-secondary" id="rt-change-pass-btn" onclick="rtChangePassword()">Change password</button>
-        <div style="margin-top:10px;font-size:12px;color:var(--text2)">Top up: contact support on <a href="${WA}" target="_blank" style="color:var(--green);font-weight:600">WhatsApp</a>, send payment proof, and admin will credit your wallet after approval.</div>`;
-      profile.appendChild(box);
-    }
     const dash=document.getElementById('admin-dashboard');
     if(dash&&!document.getElementById('dashboard-analytics')){
       const wrap=document.createElement('div');wrap.style.marginBottom='14px';
-      wrap.innerHTML='<div style="font-size:13px;font-weight:700;margin-bottom:8px">Analytics</div><div id="dashboard-analytics"></div>';
+      wrap.innerHTML='<div style="font-size:13px;font-weight:700;margin-bottom:8px" data-t="analytics">Analytics</div><div id="dashboard-analytics"></div>';
       dash.prepend(wrap);
     }
     const stockTab=document.getElementById('admin-stock');
@@ -264,8 +246,8 @@
       const block=document.createElement('div');block.className='card card-pad';block.style.marginBottom='12px';
       block.innerHTML=`<div style="font-weight:700;margin-bottom:8px">Gmail monitors</div><div id="gmail-monitor-panel"></div>
         <div style="margin-top:12px;font-weight:700">Netflix alias usage</div><div id="netflix-alias-usage"></div>
-        <div style="margin-top:12px"><button onclick="rtBulkImportStock()" style="padding:8px 12px;border:1px solid var(--border);background:var(--bg3);border-radius:6px;cursor:pointer">Bulk import CSV</button>
-        <button onclick="rtExportOrders()" style="padding:8px 12px;border:1px solid var(--border);background:var(--bg3);border-radius:6px;cursor:pointer;margin-left:6px">Export orders CSV</button></div>
+        <div style="margin-top:12px"><button onclick="rtBulkImportStock()" style="padding:8px 12px;border:1px solid var(--border);background:var(--bg3);border-radius:6px;cursor:pointer" data-t="bulkImport">Bulk import CSV</button>
+        <button onclick="rtExportOrders()" style="padding:8px 12px;border:1px solid var(--border);background:var(--bg3);border-radius:6px;cursor:pointer;margin-left:6px" data-t="exportOrders">Export orders CSV</button></div>
         <div style="margin-top:12px;font-weight:700">Site settings</div>
         <input id="admin-promo-banner" placeholder="Promo banner text" style="width:100%;margin:6px 0;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg3);color:var(--text)">
         <div style="display:flex;gap:8px"><input id="admin-referral-code" placeholder="Referral code" style="flex:1;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg3);color:var(--text)">
@@ -282,14 +264,17 @@
     const subContent=document.getElementById('sublink-content');
     if(subContent&&!document.getElementById('rt-issue-btn')){
       const row=document.createElement('div');row.style.marginTop='10px';
-      row.innerHTML=`<button onclick="rtReportIssue('subscription link','From sub link',{email:_sublinkEmail,product:document.getElementById('sublink-name')?.textContent})" style="width:100%;padding:10px;border:1px solid var(--orange-border);background:var(--orange-bg);color:var(--orange);border-radius:8px;cursor:pointer;font-weight:600">⚠️ Report issue</button>`;
+      row.innerHTML=`<button id="rt-issue-btn" onclick="rtReportIssue('subscription link','From sub link',{email:_sublinkEmail,product:document.getElementById('sublink-name')?.textContent})" style="width:100%;padding:10px;border:1px solid var(--orange-border);background:var(--orange-bg);color:var(--orange);border-radius:8px;cursor:pointer;font-weight:600" data-t="reportIssue">⚠️ Report issue</button>`;
       subContent.appendChild(row);
     }
-    const style=document.createElement('style');
-    style.textContent=`@media(max-width:768px){.admin-wallet-row{flex-wrap:wrap}.aw-input{min-width:70px}.snav{font-size:12px;padding:8px}} #page-sublink[data-theme]{background:var(--bg);color:var(--text)}`;
-    document.head.appendChild(style);
+    if(!document.getElementById('rt-features-style')){
+      const style=document.createElement('style');style.id='rt-features-style';
+      style.textContent=`@media(max-width:768px){.admin-wallet-row{flex-wrap:wrap}.aw-input{min-width:70px}.snav{font-size:12px;padding:8px}} #page-sublink[data-theme]{background:var(--bg);color:var(--text)}`;
+      document.head.appendChild(style);
+    }
     const subPage=document.getElementById('page-sublink');
     if(subPage&&localStorage.getItem('rt_theme'))subPage.setAttribute('data-theme',localStorage.getItem('rt_theme'));
+    if(typeof setLang==='function'&&typeof currentLang!=='undefined')setLang(currentLang);
   }
 
   function updateTvProfileHint(){
@@ -299,9 +284,22 @@
     if(profile)el.innerHTML=`On TV after activation, choose profile <b>${esc(profile)}</b>${pin?` and enter PIN <b>${esc(pin)}</b>`:''}.`;
   }
 
+  function bootstrap(){
+    injectUI();
+    loadPromoBanner();
+    setInterval(updateTvProfileHint,1000);
+    if(typeof isAdmin!=='undefined'&&isAdmin){loadAdminEnhancements();loadGmailMonitorPanel();}
+  }
+  window.rtBootstrapFeatures=bootstrap;
+
   const _origEnter=window.enterApp;
   if(typeof _origEnter==='function'){
-    window.enterApp=function(){_origEnter();loadPromoBanner();patchSubRow();};
+    window.enterApp=function(){_origEnter();bootstrap();};
+  }
+
+  const _origShowProfile=window.showProfilePage;
+  if(typeof _origShowProfile==='function'){
+    window.showProfilePage=function(){_origShowProfile();if(typeof setLang==='function'&&typeof currentLang!=='undefined')setLang(currentLang);};
   }
 
   const _origReqCode=window.requestSigninCode;
@@ -344,31 +342,14 @@
     window.doSignup=async function(){try{rtShowLoading('Creating account...');await _origSignup();}finally{rtHideLoading();}};
   }
 
-  const I18N_EXTRA={
-    ar:{
-      changePassword:'تغيير كلمة المرور',reportIssue:'الإبلاغ عن مشكلة',renew:'تجديد',
-      pendingLabel:'قيد الانتظار',expiresIn:'متبقي',topupHelp:'لشحن المحفظة تواصل معنا على واتساب',
-      analytics:'الإحصائيات',exportOrders:'تصدير الطلبات',bulkImport:'استيراد جماعي'
-    },
-    en:{
-      changePassword:'Change password',reportIssue:'Report issue',renew:'Renew',
-      pendingLabel:'Pending',expiresIn:'left',topupHelp:'To top up, contact us on WhatsApp',
-      analytics:'Analytics',exportOrders:'Export orders',bulkImport:'Bulk import'
-    }
-  };
-  const _origToggleLang=window.toggleLang;
-  if(typeof _origToggleLang==='function'){
-    window.toggleLang=function(){
-      _origToggleLang();
-      const lang=localStorage.getItem('rt_lang')||'en';
-      window.RT_I18N=I18N_EXTRA[lang]||I18N_EXTRA.en;
-    };
+  if(typeof LANG!=='undefined'){
+    Object.assign(LANG.en,{analytics:'Analytics',exportOrders:'Export orders',bulkImport:'Bulk import'});
+    Object.assign(LANG.ar,{analytics:'الإحصائيات',exportOrders:'تصدير الطلبات',bulkImport:'استيراد جماعي'});
   }
 
-  document.addEventListener('DOMContentLoaded',()=>{
-    injectUI();loadPromoBanner();patchSubRow();
-    setInterval(updateTvProfileHint,1000);
-    if(typeof isAdmin!=='undefined'&&isAdmin){loadAdminEnhancements();loadGmailMonitorPanel();}
-  });
+  if(document.readyState==='loading'){
+    document.addEventListener('DOMContentLoaded',bootstrap);
+  }else{
+    bootstrap();
+  }
 })();
-
