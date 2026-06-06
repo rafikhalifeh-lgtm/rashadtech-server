@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { ImapFlow } = require('imapflow');
 const { simpleParser } = require('mailparser');
+const { registerEnhancements } = require('./enhancements');
 
 const app = express();
 const ALLOWED_ORIGINS = new Set([
@@ -248,6 +249,7 @@ function decodeLinkToken(token) {
 function createSession(role, email) {
   const token = crypto.randomBytes(32).toString('hex');
   sessions.set(token, { role, email: normalizeEmail(email), expiresAt: Date.now() + SESSION_TTL_MS });
+  if (rtEnhancements && rtEnhancements.persistSessions) rtEnhancements.persistSessions().catch(() => {});
   return token;
 }
 
@@ -1075,6 +1077,7 @@ app.post('/auth/logout', (req, res) => {
   const header = req.get('authorization') || '';
   const match = header.match(/^Bearer\s+(.+)$/i);
   if (match) sessions.delete(match[1]);
+  if (rtEnhancements && rtEnhancements.persistSessions) rtEnhancements.persistSessions().catch(() => {});
   res.json({ success: true });
 });
 
@@ -1084,6 +1087,7 @@ app.post('/auth/logout-all', (req, res) => {
   for (const [token, item] of sessions.entries()) {
     if (session.role === 'admin' || (item.role === 'user' && item.email === session.email)) sessions.delete(token);
   }
+  if (rtEnhancements && rtEnhancements.persistSessions) rtEnhancements.persistSessions().catch(() => {});
   res.json({ success: true });
 });
 
@@ -1108,6 +1112,9 @@ app.post('/links/create', async (req, res) => {
 
 app.get('/links/:token', async (req, res) => {
   try {
+    if (rtEnhancements && await rtEnhancements.isLinkRevoked(req.params.token)) {
+      return res.status(404).json({ error: 'Subscription link has been revoked' });
+    }
     try {
       const payload = decodeLinkToken(req.params.token);
       if (!payload.subscription || Date.now() > Number(payload.expiresAt || 0)) {
@@ -1661,16 +1668,52 @@ app.get('/monitored-emails', (req, res) => {
     success: true,
     emails: Object.entries(monitoredEmails).map(([email, creds]) => ({
       email,
+      user: creds.user || email,
       lastUid: creds.lastUid || 0,
-      lastCheckedAt: creds.lastCheckedAt || null
+      lastCheckedAt: creds.lastCheckedAt || null,
+      status: creds.lastCheckedAt ? 'connected' : 'unknown'
     }))
   });
+});
+
+let rtEnhancements = null;
+rtEnhancements = registerEnhancements(app, {
+  requireSession,
+  readJsonBinRaw,
+  writeJsonBinRaw,
+  normalizeEmail,
+  hashPassword,
+  verifyPassword,
+  sanitizeUser,
+  safeDataForSession,
+  sendTG,
+  TG_ADMIN,
+  encodeLinkToken,
+  decodeLinkToken,
+  LINK_TTL_MS,
+  validateNetflixAliasPurchase,
+  isNetflixStockKey,
+  isNetflixFullStockKey,
+  isNetflixOneUserStockKey,
+  netflixAliasUsage,
+  loadGmailMonitors,
+  monitoredEmails,
+  persistGmailMonitors,
+  getInboxMaxUid,
+  normalizeGmailPassword,
+  describeGmailError,
+  createGmailClient,
+  readBackupManifest,
+  createBackupSnapshot,
+  sessions,
+  SESSION_TTL_MS
 });
 
 // ── START ──────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, async () => {
   console.log('rashadtech server running on port ' + PORT);
+  if (rtEnhancements && rtEnhancements.loadPersistedSessions) await rtEnhancements.loadPersistedSessions();
   await loadGmailMonitors();
   syncDbToJsonBin(false).catch(e => console.error('Initial JSONBin sync error:', e.message));
   try {
