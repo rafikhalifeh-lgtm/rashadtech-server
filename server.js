@@ -743,6 +743,69 @@ app.get('/ping', (req, res) => {
   res.json({ ok: true, ts: Date.now() });
 });
 
+app.get('/backup-admin', (req, res) => {
+  res.type('html').send(`<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RashadTech Backups</title>
+<style>
+body{font-family:Arial,sans-serif;background:#0f1115;color:#f5f5f5;margin:0;padding:20px}
+.card{max-width:760px;margin:0 auto;background:#181b22;border:1px solid #2b303b;border-radius:14px;padding:18px}
+input,button{border-radius:8px;border:1px solid #333;padding:10px;margin:5px 0;background:#11141a;color:#fff}
+button{cursor:pointer;background:#e50914;border-color:#e50914;font-weight:700}
+.row{border-bottom:1px solid #2b303b;padding:12px 0;display:flex;justify-content:space-between;gap:12px;align-items:center}
+.muted{color:#9ca3af;font-size:12px}.ok{color:#22c55e}.err{color:#ef4444}
+</style></head><body><div class="card">
+<h2>🛡️ RashadTech Database Backups</h2>
+<p class="muted">Backups are created automatically before every save. Use restore only if data was damaged.</p>
+<div id="login">
+<input id="pass" type="password" placeholder="Admin password" style="width:100%"><br>
+<input id="pin" type="password" placeholder="Admin PIN" style="width:100%"><br>
+<button onclick="login()">Login</button>
+</div>
+<div id="panel" style="display:none">
+<button onclick="createBackup()">Backup now</button>
+<button onclick="loadBackups()">Refresh list</button>
+<div id="status" class="muted"></div>
+<div id="list"></div>
+</div>
+</div>
+<script>
+let token='';
+async function api(path, opts={}){
+  opts.headers=Object.assign({'Content-Type':'application/json'}, opts.headers||{});
+  if(token)opts.headers.Authorization='Bearer '+token;
+  const r=await fetch(path, opts); const j=await r.json().catch(()=>({}));
+  if(!r.ok||j.success===false)throw new Error(j.error||'Request failed');
+  return j;
+}
+function summary(s){s=s||{};return (s.users||0)+' users · '+(s.stockAccounts||0)+' stock · '+(s.pending||0)+' pending · '+(s.gameorders||0)+' games';}
+async function login(){
+  try{
+    const j=await api('/auth/admin-login',{method:'POST',body:JSON.stringify({password:pass.value,pin:pin.value})});
+    token=j.token; document.getElementById('login').style.display='none'; document.getElementById('panel').style.display='block'; await loadBackups();
+  }catch(e){alert(e.message)}
+}
+async function loadBackups(){
+  const st=document.getElementById('status'); st.textContent='Loading...';
+  try{
+    const j=await api('/admin/backups');
+    const backups=j.backups||[];
+    st.textContent=backups.length+' backups available';
+    document.getElementById('list').innerHTML=backups.length?backups.map(b=>'<div class="row"><div><b>'+new Date(b.ts).toLocaleString()+'</b><div class="muted">'+(b.reason||'auto')+' · '+summary(b.summary)+'</div></div><button onclick="restore(\\''+b.id+'\\')">Restore</button></div>').join(''):'<p class="muted">No backups yet.</p>';
+  }catch(e){st.innerHTML='<span class="err">'+e.message+'</span>'}
+}
+async function createBackup(){
+  try{await api('/admin/backups/create',{method:'POST',body:'{}'}); status.innerHTML='<span class="ok">Backup created</span>'; await loadBackups();}catch(e){alert(e.message)}
+}
+async function restore(id){
+  if(!confirm('Restore this backup? Current data will be backed up first.'))return;
+  const txt=prompt('Type RESTORE to confirm');
+  if(txt!=='RESTORE')return;
+  try{await api('/admin/backups/restore',{method:'POST',body:JSON.stringify({id})}); status.innerHTML='<span class="ok">Backup restored</span>'; await loadBackups();}catch(e){alert(e.message)}
+}
+</script></body></html>`);
+});
+
 app.use('/auth', rateLimit('auth', 40, 15 * 60 * 1000));
 app.use('/get-code', rateLimit('get-code', 30, 5 * 60 * 1000));
 app.use('/notify', rateLimit('notify', 60, 5 * 60 * 1000));
