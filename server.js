@@ -115,6 +115,35 @@ function verifyPassword(password, stored) {
   return crypto.timingSafeEqual(actualBuffer, expectedBuffer);
 }
 
+function linkEncryptionKey() {
+  return crypto.createHash('sha256').update(API_SECRET || 'rashadtech-link-fallback').digest();
+}
+
+function encodeLinkToken(payload) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', linkEncryptionKey(), iv);
+  const encrypted = Buffer.concat([
+    cipher.update(JSON.stringify(payload), 'utf8'),
+    cipher.final()
+  ]);
+  const tag = cipher.getAuthTag();
+  return Buffer.concat([iv, tag, encrypted]).toString('base64url');
+}
+
+function decodeLinkToken(token) {
+  const raw = Buffer.from(String(token || ''), 'base64url');
+  if (raw.length < 29) throw new Error('Invalid encrypted link token');
+  const iv = raw.subarray(0, 12);
+  const tag = raw.subarray(12, 28);
+  const encrypted = raw.subarray(28);
+  const decipher = crypto.createDecipheriv('aes-256-gcm', linkEncryptionKey(), iv);
+  decipher.setAuthTag(tag);
+  const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8');
+  const payload = JSON.parse(decrypted);
+  if (!payload || typeof payload !== 'object') throw new Error('Invalid encrypted link payload');
+  return payload;
+}
+
 function createSession(role, email) {
   const token = crypto.randomBytes(32).toString('hex');
   sessions.set(token, { role, email: normalizeEmail(email), expiresAt: Date.now() + SESSION_TTL_MS });
@@ -677,16 +706,12 @@ app.post('/links/create', async (req, res) => {
   const { subscription } = req.body;
   if (!subscription || !subscription.email || !subscription.pass) return res.status(400).json({ error: 'Invalid subscription link data' });
   try {
-    const data = await readJsonBinRaw();
-    data[LINK_TOKENS_KEY] = data[LINK_TOKENS_KEY] || {};
-    const token = crypto.randomBytes(24).toString('hex');
-    data[LINK_TOKENS_KEY][token] = {
+    const token = encodeLinkToken({
       subscription,
       owner: session.email,
       createdAt: Date.now(),
       expiresAt: Date.now() + LINK_TTL_MS
-    };
-    await writeJsonBinRaw(data);
+    });
     res.json({ success: true, token, url: `https://rashadtech.tv?t=${token}` });
   } catch(e) {
     console.error('Create link error:', e.message);
@@ -696,6 +721,15 @@ app.post('/links/create', async (req, res) => {
 
 app.get('/links/:token', async (req, res) => {
   try {
+    try {
+      const payload = decodeLinkToken(req.params.token);
+      if (!payload.subscription || Date.now() > Number(payload.expiresAt || 0)) {
+        return res.status(404).json({ error: 'Subscription link not found or expired' });
+      }
+      return res.json({ success: true, subscription: payload.subscription });
+    } catch(e) {
+      // Continue to legacy database-backed token lookup below.
+    }
     const data = await readJsonBinRaw();
     const entry = data[LINK_TOKENS_KEY] && data[LINK_TOKENS_KEY][req.params.token];
     if (!entry || Date.now() > Number(entry.expiresAt || 0)) return res.status(404).json({ error: 'Subscription link not found or expired' });
