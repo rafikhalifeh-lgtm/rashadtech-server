@@ -48,6 +48,8 @@ const MAX_BACKUPS = Number(process.env.MAX_BACKUPS || 100);
 const EMAILJS_SERVICE_ID = normalizeEnvSecret(process.env.EMAILJS_SERVICE_ID) || 'service_g05xq5o';
 const EMAILJS_TEMPLATE_ID = normalizeEnvSecret(process.env.EMAILJS_TEMPLATE_ID) || 'template_e0h7eia';
 const EMAILJS_PUBLIC_KEY = normalizeEnvSecret(process.env.EMAILJS_PUBLIC_KEY) || 'LyKu6ZB_y6qoFh7Ef';
+const EMAILJS_PRIVATE_KEY = normalizeEnvSecret(process.env.EMAILJS_PRIVATE_KEY || process.env.EMAILJS_ACCESS_TOKEN);
+const OTP_DELIVERY_TTL_MS = 5 * 60 * 1000;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'RkhRkh7979@';
 const ADMIN_PIN = process.env.ADMIN_PIN || '7979';
 const JSONBIN_ALLOW_PUBLIC_READ = normalizeEnvSecret(process.env.JSONBIN_ALLOW_PUBLIC_READ) === 'true';
@@ -82,6 +84,7 @@ let dbLastSyncAttempt = 0;
 let netlifyStorePromise = null;
 let signupOtps = new Map();
 let resetOtps = new Map();
+let otpDeliveryTokens = new Map();
 
 function rateLimit(name, limit, windowMs) {
   return (req, res, next) => {
@@ -149,46 +152,78 @@ function verifyOtp(store, email, otp) {
   return true;
 }
 
+function createOtpDeliveryToken(email, purpose) {
+  const token = crypto.randomBytes(24).toString('hex');
+  otpDeliveryTokens.set(token, {
+    email: normalizeEmail(email),
+    purpose: String(purpose || 'otp'),
+    expiresAt: Date.now() + OTP_DELIVERY_TTL_MS
+  });
+  return token;
+}
+
+function consumeOtpDeliveryToken(token) {
+  const key = String(token || '').trim();
+  const item = otpDeliveryTokens.get(key);
+  if (!item || Date.now() > Number(item.expiresAt || 0)) {
+    otpDeliveryTokens.delete(key);
+    return null;
+  }
+  otpDeliveryTokens.delete(key);
+  return item;
+}
+
+function otpStoreForPurpose(purpose) {
+  return purpose === 'password reset' ? resetOtps : signupOtps;
+}
+
 async function sendOtpEmail(email, otp, name) {
+  const payload = {
+    service_id: EMAILJS_SERVICE_ID,
+    template_id: EMAILJS_TEMPLATE_ID,
+    user_id: EMAILJS_PUBLIC_KEY,
+    template_params: {
+      to_email: email,
+      email,
+      user_email: email,
+      recipient: email,
+      to_name: name || email,
+      user_name: name || email,
+      otp_code: otp,
+      verification_code: otp,
+      passcode: otp,
+      reply_to: email
+    }
+  };
+  if (EMAILJS_PRIVATE_KEY) payload.accessToken = EMAILJS_PRIVATE_KEY;
   const r = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      service_id: EMAILJS_SERVICE_ID,
-      template_id: EMAILJS_TEMPLATE_ID,
-      user_id: EMAILJS_PUBLIC_KEY,
-      template_params: {
-        to_email: email,
-        email,
-        user_email: email,
-        recipient: email,
-        to_name: name || email,
-        user_name: name || email,
-        otp_code: otp,
-        verification_code: otp,
-        passcode: otp,
-        reply_to: email
-      }
-    })
+    body: JSON.stringify(payload)
   });
-  if (!r.ok) throw new Error(`Email OTP failed: ${r.status}`);
+  const body = await r.text().catch(() => '');
+  if (!r.ok) throw new Error(`Email OTP failed: ${r.status}${body ? ` — ${body}` : ''}`);
 }
 
 async function deliverOtp({ email, otp, name, tgChatId, purpose }) {
   let emailSent = false;
+  let deliveryToken = null;
   try {
     await sendOtpEmail(email, otp, name);
     emailSent = true;
   } catch(e) {
     console.error(`${purpose || 'OTP'} email delivery error:`, e.message);
+    deliveryToken = createOtpDeliveryToken(email, purpose);
   }
+  let telegramSent = false;
   if (tgChatId) {
-    await sendTG(String(tgChatId), `🔐 <b>Your rashadtech.tv verification code:</b>\n\n<b>${otp}</b>\n\nThis code expires in 10 minutes. Do not share it.`, 'HTML').catch(e => {
+    telegramSent = await sendTG(String(tgChatId), `🔐 <b>Your rashadtech.tv verification code:</b>\n\n<b>${otp}</b>\n\nThis code expires in 10 minutes. Do not share it.`, 'HTML').then(() => true).catch(e => {
       console.error(`${purpose || 'OTP'} Telegram delivery error:`, e.message);
+      return false;
     });
   }
-  if (!emailSent && !tgChatId) throw new Error('Could not send verification code');
-  return { emailSent, telegramSent: Boolean(tgChatId) };
+  if (!emailSent && !telegramSent && !deliveryToken) throw new Error('Could not send verification code');
+  return { emailSent, telegramSent, deliveryToken };
 }
 
 function linkEncryptionKey() {
@@ -934,8 +969,14 @@ app.post('/auth/signup-start', async (req, res) => {
     data.users = Array.isArray(data.users) ? data.users : [];
     if (data.users.some(u => normalizeEmail(u.email) === cleanEmail)) return res.status(409).json({ error: 'Email already registered' });
     const otp = setOtp(signupOtps, cleanEmail, { name: String(name).trim(), tgChatId: String(tgChatId || '').trim() });
-    await deliverOtp({ email: cleanEmail, otp, name, tgChatId, purpose: 'signup' });
-    res.json({ success: true, message: 'Verification code sent' });
+    const delivery = await deliverOtp({ email: cleanEmail, otp, name, tgChatId, purpose: 'signup' });
+    res.json({
+      success: true,
+      message: 'Verification code sent',
+      emailSent: delivery.emailSent,
+      telegramSent: delivery.telegramSent,
+      deliveryToken: delivery.deliveryToken || undefined
+    });
   } catch(e) {
     console.error('Signup start error:', e.message);
     res.status(503).json({ error: 'Could not send verification code. Please try again.' });
@@ -982,13 +1023,37 @@ app.post('/auth/reset-start', async (req, res) => {
     const user = (data.users || []).find(u => normalizeEmail(u.email) === cleanEmail);
     if (user) {
       const otp = setOtp(resetOtps, cleanEmail);
-      await deliverOtp({ email: cleanEmail, otp, name: user.name || cleanEmail, tgChatId: user.tgChatId || '', purpose: 'password reset' });
+      const delivery = await deliverOtp({ email: cleanEmail, otp, name: user.name || cleanEmail, tgChatId: user.tgChatId || '', purpose: 'password reset' });
+      return res.json({
+        success: true,
+        message: 'If the email exists, a reset code was sent.',
+        emailSent: delivery.emailSent,
+        telegramSent: delivery.telegramSent,
+        deliveryToken: delivery.deliveryToken || undefined
+      });
     }
     res.json({ success: true, message: 'If the email exists, a reset code was sent.' });
   } catch(e) {
     console.error('Reset start error:', e.message);
     res.status(503).json({ error: 'Could not send reset code. Please try again.' });
   }
+});
+
+app.post('/auth/otp-delivery', rateLimit('otp-delivery', 10, 10 * 60 * 1000), async (req, res) => {
+  const { token } = req.body;
+  const payload = consumeOtpDeliveryToken(token);
+  if (!payload) return res.status(400).json({ error: 'Invalid or expired delivery token' });
+  const store = otpStoreForPurpose(payload.purpose);
+  const item = store.get(payload.email);
+  if (!item || Date.now() > Number(item.expiresAt || 0)) {
+    return res.status(400).json({ error: 'Verification code expired. Please request a new one.' });
+  }
+  res.json({
+    success: true,
+    email: payload.email,
+    name: item.name || payload.email,
+    otp: item.otp
+  });
 });
 
 app.post('/auth/user-lookup', async (req, res) => {

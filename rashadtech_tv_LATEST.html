@@ -1755,6 +1755,21 @@ function generateOTP(){return String(Math.floor(100000+Math.random()*900000));}
 const EMAILJS_SERVICE_ID  = 'service_g05xq5o';
 const EMAILJS_TEMPLATE_ID = 'template_e0h7eia';
 const EMAILJS_PUBLIC_KEY  = 'LyKu6ZB_y6qoFh7Ef';
+if(typeof emailjs!=='undefined')emailjs.init({ publicKey: EMAILJS_PUBLIC_KEY });
+
+async function sendOtpViaClientDelivery(deliveryToken){
+  if(!deliveryToken)return;
+  const r=await fetch(RT_SERVER+'/auth/otp-delivery',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:deliveryToken})});
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok||!j.success)throw new Error(j.error||'Could not send verification email');
+  await sendOTPEmail(j.email,j.otp,j.name);
+}
+
+async function deliverVerificationEmail(result){
+  if(result?.emailSent||result?.telegramSent)return;
+  if(result?.deliveryToken)await sendOtpViaClientDelivery(result.deliveryToken);
+  else throw new Error('Could not send verification code.');
+}
 
 async function sendOTPEmail(toEmail, otpCode, userName){
   // If EmailJS not configured yet, fall back to demo mode
@@ -1858,6 +1873,7 @@ async function doSignup(){
     const r=await fetch(RT_SERVER+'/auth/signup-start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:n,email:e,tgChatId:tgid})});
     const j=await r.json().catch(()=>({}));
     if(!r.ok||!j.success)throw new Error(j.error||'Could not send verification code.');
+    await deliverVerificationEmail(j);
   }catch(ex){
     err.textContent=ex.message||'Could not send verification code.';
     err.style.display='block';
@@ -1890,7 +1906,12 @@ async function verifyOTP(){
 function resendOTP(){
   if(!pendingSignupData)return;
   fetch(RT_SERVER+'/auth/signup-start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:pendingSignupData.name,email:pendingSignupData.email,tgChatId:pendingSignupData.tgChatId||''})})
-    .then(r=>r.json()).then(()=>{document.getElementById('verify-ok').style.display='block';})
+    .then(r=>r.json())
+    .then(async j=>{
+      if(!j.success)throw new Error(j.error||'Could not resend code');
+      await deliverVerificationEmail(j);
+      document.getElementById('verify-ok').style.display='block';
+    })
     .catch(()=>{document.getElementById('verify-err').textContent='Could not resend code';document.getElementById('verify-err').style.display='block';});
 }
 async function sendResetCode(){
@@ -1899,6 +1920,7 @@ async function sendResetCode(){
     const r=await fetch(RT_SERVER+'/auth/reset-start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:e})});
     const j=await r.json();
     if(!r.ok||j.success===false)throw new Error(j.error||'Could not send reset code.');
+    await deliverVerificationEmail(j);
     document.getElementById('forgot-err').style.display='none';
     document.getElementById('forgot-ok').style.display='block';
     setTimeout(()=>showView('reset'),1500);
