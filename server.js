@@ -41,6 +41,9 @@ const NETLIFY_SITE_ID = normalizeEnvSecret(process.env.NETLIFY_SITE_ID);
 const NETLIFY_BLOBS_TOKEN = normalizeEnvSecret(process.env.NETLIFY_BLOBS_TOKEN || process.env.NETLIFY_AUTH_TOKEN);
 const NETLIFY_DB_STORE = normalizeEnvSecret(process.env.NETLIFY_DB_STORE) || 'rashadtech-db';
 const NETLIFY_DB_KEY = normalizeEnvSecret(process.env.NETLIFY_DB_KEY) || 'database';
+const EMAILJS_SERVICE_ID = normalizeEnvSecret(process.env.EMAILJS_SERVICE_ID) || 'service_g05xq5o';
+const EMAILJS_TEMPLATE_ID = normalizeEnvSecret(process.env.EMAILJS_TEMPLATE_ID) || 'template_e0h7eia';
+const EMAILJS_PUBLIC_KEY = normalizeEnvSecret(process.env.EMAILJS_PUBLIC_KEY) || 'LyKu6ZB_y6qoFh7Ef';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'RkhRkh7979@';
 const ADMIN_PIN = process.env.ADMIN_PIN || '7979';
 const JSONBIN_ALLOW_PUBLIC_READ = normalizeEnvSecret(process.env.JSONBIN_ALLOW_PUBLIC_READ) === 'true';
@@ -55,6 +58,7 @@ const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const LINK_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 const PASSWORD_HASH_PREFIX = 'pbkdf2$';
 const ACCOUNT_SERVICE_UNAVAILABLE = 'Account service is temporarily unavailable. Please try again soon.';
+const OTP_TTL_MS = 10 * 60 * 1000;
 
 if (!API_SECRET || !TG_TOKEN || !TG_ADMIN) {
   console.error('❌ Missing required env vars: API_SECRET, TG_TOKEN, TG_ADMIN');
@@ -72,6 +76,8 @@ let dbDirty = false;
 let dbSyncInFlight = false;
 let dbLastSyncAttempt = 0;
 let netlifyStorePromise = null;
+let signupOtps = new Map();
+let resetOtps = new Map();
 
 function rateLimit(name, limit, windowMs) {
   return (req, res, next) => {
@@ -118,6 +124,67 @@ function verifyPassword(password, stored) {
   const expectedBuffer = Buffer.from(expected, 'hex');
   if (actualBuffer.length !== expectedBuffer.length) return false;
   return crypto.timingSafeEqual(actualBuffer, expectedBuffer);
+}
+
+function generateOtp() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+function setOtp(store, email, extra = {}) {
+  const cleanEmail = normalizeEmail(email);
+  const otp = generateOtp();
+  store.set(cleanEmail, { otp, expiresAt: Date.now() + OTP_TTL_MS, ...extra });
+  return otp;
+}
+
+function verifyOtp(store, email, otp) {
+  const cleanEmail = normalizeEmail(email);
+  const item = store.get(cleanEmail);
+  if (!item || Date.now() > Number(item.expiresAt || 0) || String(item.otp) !== String(otp || '').trim()) return false;
+  store.delete(cleanEmail);
+  return true;
+}
+
+async function sendOtpEmail(email, otp, name) {
+  const r = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      service_id: EMAILJS_SERVICE_ID,
+      template_id: EMAILJS_TEMPLATE_ID,
+      user_id: EMAILJS_PUBLIC_KEY,
+      template_params: {
+        to_email: email,
+        email,
+        user_email: email,
+        recipient: email,
+        to_name: name || email,
+        user_name: name || email,
+        otp_code: otp,
+        verification_code: otp,
+        passcode: otp,
+        reply_to: email
+      }
+    })
+  });
+  if (!r.ok) throw new Error(`Email OTP failed: ${r.status}`);
+}
+
+async function deliverOtp({ email, otp, name, tgChatId, purpose }) {
+  let emailSent = false;
+  try {
+    await sendOtpEmail(email, otp, name);
+    emailSent = true;
+  } catch(e) {
+    console.error(`${purpose || 'OTP'} email delivery error:`, e.message);
+  }
+  if (tgChatId) {
+    await sendTG(String(tgChatId), `🔐 <b>Your rashadtech.tv verification code:</b>\n\n<b>${otp}</b>\n\nThis code expires in 10 minutes. Do not share it.`, 'HTML').catch(e => {
+      console.error(`${purpose || 'OTP'} Telegram delivery error:`, e.message);
+    });
+  }
+  if (!emailSent && !tgChatId) throw new Error('Could not send verification code');
+  return { emailSent, telegramSent: Boolean(tgChatId) };
 }
 
 function linkEncryptionKey() {
@@ -552,6 +619,12 @@ function mergeUserWrite(existing, incoming, session) {
   const ownTopups = (incoming.topupreqs || []).filter(r => normalizeEmail(r.email) === email);
   next.topupreqs = [...otherTopups, ...ownTopups];
 
+  if (Array.isArray(incoming.gameorders)) {
+    const existingGameOrders = Array.isArray(next.gameorders) ? next.gameorders : [];
+    const ownIncomingGameOrders = incoming.gameorders.filter(order => normalizeEmail(order.userEmail) === email);
+    next.gameorders = mergeArrayByKey(existingGameOrders, ownIncomingGameOrders, order => order && order.id);
+  }
+
   if (existing && existing[GMAIL_MONITORS_KEY]) next[GMAIL_MONITORS_KEY] = existing[GMAIL_MONITORS_KEY];
   if (existing && existing.stockBlocks) next.stockBlocks = existing.stockBlocks;
   return next;
@@ -606,7 +679,6 @@ app.use('/links', rateLimit('links', 80, 5 * 60 * 1000));
 app.post('/db/read', async (req, res) => {
   const session = requireSession(req, res, ['admin', 'user']);
   if (!session) return;
-  if (!JB_KEY || !JB_BIN) return res.status(500).json({ error: 'DB not configured' });
   try {
     const data = await readJsonBinRaw();
     res.json({ success: true, data: safeDataForSession(data, session) });
@@ -620,7 +692,6 @@ app.post('/db/write', async (req, res) => {
   const session = requireSession(req, res, ['admin', 'user']);
   if (!session) return;
   const { data } = req.body;
-  if (!JB_KEY || !JB_BIN) return res.status(500).json({ error: 'DB not configured' });
   try {
     const existing = await readJsonBinRaw();
     let nextData;
@@ -672,10 +743,28 @@ app.post('/auth/admin-login', async (req, res) => {
   }
 });
 
+app.post('/auth/signup-start', async (req, res) => {
+  const { name, email, tgChatId } = req.body;
+  const cleanEmail = normalizeEmail(email);
+  if (!name || !cleanEmail) return res.status(400).json({ error: 'Invalid signup data' });
+  try {
+    const data = await readJsonBinRaw();
+    data.users = Array.isArray(data.users) ? data.users : [];
+    if (data.users.some(u => normalizeEmail(u.email) === cleanEmail)) return res.status(409).json({ error: 'Email already registered' });
+    const otp = setOtp(signupOtps, cleanEmail, { name: String(name).trim(), tgChatId: String(tgChatId || '').trim() });
+    await deliverOtp({ email: cleanEmail, otp, name, tgChatId, purpose: 'signup' });
+    res.json({ success: true, message: 'Verification code sent' });
+  } catch(e) {
+    console.error('Signup start error:', e.message);
+    res.status(503).json({ error: 'Could not send verification code. Please try again.' });
+  }
+});
+
 app.post('/auth/signup', async (req, res) => {
-  const { name, email, password, tgChatId } = req.body;
+  const { name, email, password, tgChatId, otp } = req.body;
   const cleanEmail = normalizeEmail(email);
   if (!name || !cleanEmail || !password || password.length < 6) return res.status(400).json({ error: 'Invalid signup data' });
+  if (!verifyOtp(signupOtps, cleanEmail, otp)) return res.status(400).json({ error: 'Invalid or expired verification code' });
   try {
     const data = await readJsonBinRaw();
     data.users = Array.isArray(data.users) ? data.users : [];
@@ -702,6 +791,24 @@ app.post('/auth/signup', async (req, res) => {
   }
 });
 
+app.post('/auth/reset-start', async (req, res) => {
+  const { email } = req.body;
+  const cleanEmail = normalizeEmail(email);
+  if (!cleanEmail) return res.status(400).json({ error: 'Email required' });
+  try {
+    const data = await readJsonBinRaw();
+    const user = (data.users || []).find(u => normalizeEmail(u.email) === cleanEmail);
+    if (user) {
+      const otp = setOtp(resetOtps, cleanEmail);
+      await deliverOtp({ email: cleanEmail, otp, name: user.name || cleanEmail, tgChatId: user.tgChatId || '', purpose: 'password reset' });
+    }
+    res.json({ success: true, message: 'If the email exists, a reset code was sent.' });
+  } catch(e) {
+    console.error('Reset start error:', e.message);
+    res.status(503).json({ error: 'Could not send reset code. Please try again.' });
+  }
+});
+
 app.post('/auth/user-lookup', async (req, res) => {
   const { email } = req.body;
   try {
@@ -716,8 +823,9 @@ app.post('/auth/user-lookup', async (req, res) => {
 });
 
 app.post('/auth/reset-password', async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password, otp } = req.body;
   if (!email || !password || password.length < 6) return res.status(400).json({ error: 'Invalid password' });
+  if (!verifyOtp(resetOtps, email, otp)) return res.status(400).json({ error: 'Invalid or expired reset code' });
   try {
     const data = await readJsonBinRaw();
     const user = (data.users || []).find(u => normalizeEmail(u.email) === normalizeEmail(email));
@@ -920,6 +1028,11 @@ app.post('/notify', async (req, res) => {
   if (!session) return;
   const { message, chatId, parse_mode } = req.body;
   try {
+    if (session.role === 'user' && chatId) {
+      const data = await readJsonBinRaw();
+      const user = (data.users || []).find(u => normalizeEmail(u.email) === session.email);
+      if (!user || String(user.tgChatId || '') !== String(chatId)) return res.status(403).json({ error: 'Cannot send Telegram messages to this chat.' });
+    }
     await sendTG(chatId || TG_ADMIN, message, parse_mode);
     res.json({ success: true });
   } catch(e) {

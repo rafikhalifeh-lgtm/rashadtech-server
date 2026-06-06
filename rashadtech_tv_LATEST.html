@@ -1564,8 +1564,8 @@ async function createSubLinkUrl(data){
     return j.url;
   }catch(e){
     console.warn('secure link error:',e.message);
-    const encoded=btoa(unescape(encodeURIComponent(JSON.stringify(data))));
-    return `${location.origin}${location.pathname}?s=${encoded}`;
+    showToast('⚠️ Could not create secure subscription link. Try again.');
+    return '';
   }
 }
 // Copy link for sub-customer subscription
@@ -1575,6 +1575,7 @@ async function copySubLinkForCust(cleanId, custId){
   if(!o){showToast('Order not found');return;}
   const data=subLinkDataFromOrder(o);
   const url=await createSubLinkUrl(data);
+  if(!url)return;
   navigator.clipboard.writeText(url).then(()=>showToast('✓ Link copied!')).catch(()=>{});
 }
 
@@ -1615,6 +1616,7 @@ async function copySubLink(orderId){
   // Encode subscription data directly in URL — no server call needed to view
   const data=subLinkDataFromOrder(o);
   const url=await createSubLinkUrl(data);
+  if(!url)return;
   navigator.clipboard.writeText(url).then(()=>showToast('✓ Link copied!')).catch(()=>{});
 }
 async function checkSubLink(){
@@ -1821,19 +1823,26 @@ async function doSignup(){
     return;
   }
   const tgid=document.getElementById('su-tgid')?.value.trim()||'';
+  try{
+    const r=await fetch(RT_SERVER+'/auth/signup-start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:n,email:e,tgChatId:tgid})});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok||!j.success)throw new Error(j.error||'Could not send verification code.');
+  }catch(ex){
+    err.textContent=ex.message||'Could not send verification code.';
+    err.style.display='block';
+    return;
+  }
   pendingSignupData={name:n,email:e,pass:p,tgChatId:tgid};
-  const code=generateOTP();pendingOTPs[e]=code;pendingOTPs[e+'_ts']=Date.now();simulateSendOTP(e,code,n);
   document.getElementById('verify-desc').textContent=`We sent a 6-digit code to ${e}.`;
   clearOTP('otp');document.getElementById('verify-err').style.display='none';document.getElementById('verify-ok').style.display='none';
   showView('verify');
 }
 async function verifyOTP(){
   const code=getOTP('otp');const e=pendingSignupData?.email;
-  cleanExpiredOTPs();
-  if(!e||pendingOTPs[e]!==code){document.getElementById('verify-err').style.display='block';return;}
+  if(!e||code.length!==6){document.getElementById('verify-err').style.display='block';return;}
   document.getElementById('verify-err').style.display='none';
   try{
-    const r=await fetch(RT_SERVER+'/auth/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:pendingSignupData.name,email:pendingSignupData.email,password:pendingSignupData.pass,tgChatId:pendingSignupData.tgChatId||''})});
+    const r=await fetch(RT_SERVER+'/auth/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:pendingSignupData.name,email:pendingSignupData.email,password:pendingSignupData.pass,tgChatId:pendingSignupData.tgChatId||'',otp:code})});
     const j=await r.json();
     if(!r.ok||!j.success)throw new Error(j.error||'Signup failed');
     authToken=j.token;authRole='user';
@@ -1849,17 +1858,17 @@ async function verifyOTP(){
 }
 function resendOTP(){
   if(!pendingSignupData)return;
-  const code=generateOTP();pendingOTPs[pendingSignupData.email]=code;simulateSendOTP(pendingSignupData.email,code,pendingSignupData.name);
-  document.getElementById('verify-ok').style.display='block';
+  fetch(RT_SERVER+'/auth/signup-start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:pendingSignupData.name,email:pendingSignupData.email,tgChatId:pendingSignupData.tgChatId||''})})
+    .then(r=>r.json()).then(()=>{document.getElementById('verify-ok').style.display='block';})
+    .catch(()=>{document.getElementById('verify-err').textContent='Could not resend code';document.getElementById('verify-err').style.display='block';});
 }
 async function sendResetCode(){
   const e=document.getElementById('forgot-email').value.trim();
   try{
-    const r=await fetch(RT_SERVER+'/auth/user-lookup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:e})});
+    const r=await fetch(RT_SERVER+'/auth/reset-start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:e})});
     const j=await r.json();
-    if(!r.ok||!j.exists)throw new Error('Email not found.');
+    if(!r.ok||j.success===false)throw new Error(j.error||'Could not send reset code.');
     document.getElementById('forgot-err').style.display='none';
-    const code=generateOTP();pendingResetOTPs[e]=code;simulateSendOTP(e,code,j.name||e);
     document.getElementById('forgot-ok').style.display='block';
     setTimeout(()=>showView('reset'),1500);
   }catch(ex){
@@ -1870,12 +1879,12 @@ async function sendResetCode(){
 async function doResetPass(){
   const code=getOTP('rotp');const np=document.getElementById('new-pass').value;const cp=document.getElementById('confirm-pass').value;
   const email=document.getElementById('forgot-email').value.trim();
-  if(pendingResetOTPs[email]!==code||np.length<6||np!==cp){document.getElementById('reset-err').style.display='block';return;}
+  if(code.length!==6||np.length<6||np!==cp){document.getElementById('reset-err').style.display='block';return;}
   try{
-    const r=await fetch(RT_SERVER+'/auth/reset-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:np})});
+    const r=await fetch(RT_SERVER+'/auth/reset-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:np,otp:code})});
     const j=await r.json().catch(()=>({}));
     if(!r.ok||j.success===false)throw new Error(j.error||'Password reset failed');
-    document.getElementById('reset-err').style.display='none';delete pendingResetOTPs[email];
+    document.getElementById('reset-err').style.display='none';
     showToast('✓ Password reset! Please sign in.');showView('login');
   }catch(ex){
     document.getElementById('reset-err').textContent=ex.message;document.getElementById('reset-err').style.display='block';
