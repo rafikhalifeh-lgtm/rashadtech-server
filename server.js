@@ -1,6 +1,8 @@
 const express = require('express');
 const cors = require('cors');
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const { ImapFlow } = require('imapflow');
 const { simpleParser } = require('mailparser');
 
@@ -38,6 +40,7 @@ const JB_BIN     = normalizeEnvSecret(process.env.JB_BIN);
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'RkhRkh7979@';
 const ADMIN_PIN = process.env.ADMIN_PIN || '7979';
 const JSONBIN_ALLOW_PUBLIC_READ = normalizeEnvSecret(process.env.JSONBIN_ALLOW_PUBLIC_READ) === 'true';
+const FALLBACK_DB_FILE = process.env.FALLBACK_DB_FILE || path.join(process.cwd(), '.data', 'emergency-db.json');
 const GMAIL_MONITORS_KEY = 'gmailMonitors';
 const BACKUPS_KEY = 'backups';
 const LINK_TOKENS_KEY = 'linkTokens';
@@ -156,6 +159,59 @@ function describeGmailError(error) {
   return raw || 'Gmail setup failed. Use a Gmail App Password with IMAP enabled.';
 }
 
+function emptyDbData() {
+  return {
+    users: [],
+    stock: {},
+    stockBlocks: {},
+    requests: [],
+    topupreqs: [],
+    pending: [],
+    gameorders: [],
+    [LINK_TOKENS_KEY]: {},
+    [GMAIL_MONITORS_KEY]: {}
+  };
+}
+
+function isJsonBinQuotaError(error) {
+  const text = `${error && error.message || ''} ${error && error.body || ''}`.toLowerCase();
+  return text.includes('requests exhausted') || text.includes('quota');
+}
+
+function createJsonBinError(action, status, body) {
+  const error = new Error(`JSONBin ${action} failed: ${status}`);
+  error.status = status;
+  error.body = body || '';
+  return error;
+}
+
+function readFallbackDb() {
+  try {
+    const raw = fs.readFileSync(FALLBACK_DB_FILE, 'utf8');
+    const data = JSON.parse(raw);
+    if (data && typeof data === 'object' && !Array.isArray(data)) return data;
+  } catch(e) {
+    if (e.code !== 'ENOENT') console.error('Emergency DB read error:', e.message);
+  }
+  return emptyDbData();
+}
+
+function writeFallbackDb(data) {
+  const dir = path.dirname(FALLBACK_DB_FILE);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(FALLBACK_DB_FILE, JSON.stringify(data || emptyDbData(), null, 2));
+}
+
+function markEmergencyDb(data) {
+  const next = { ...(data || emptyDbData()) };
+  next.emergencyDb = {
+    active: true,
+    reason: 'JSONBin quota exhausted',
+    updatedAt: new Date().toISOString()
+  };
+  return next;
+}
+
 async function readJsonBinRaw() {
   if (!JB_KEY || !JB_BIN) throw new Error('DB not configured');
   const url = `https://api.jsonbin.io/v3/b/${JB_BIN}/latest`;
@@ -165,13 +221,24 @@ async function readJsonBinRaw() {
   ];
   if (JSONBIN_ALLOW_PUBLIC_READ) headerModes.push({ 'X-Bin-Meta': 'false' });
   let lastStatus = 0;
+  let lastBody = '';
   for (const headers of headerModes) {
     const r = await fetch(url, { headers });
     lastStatus = r.status;
-    if (r.ok) return await r.json();
+    if (r.ok) {
+      const data = await r.json();
+      writeFallbackDb(data);
+      return data;
+    }
+    lastBody = await r.text().catch(() => '');
     if (r.status !== 401 && r.status !== 403) break;
   }
-  throw new Error('JSONBin read failed: ' + lastStatus);
+  const error = createJsonBinError('read', lastStatus, lastBody);
+  if (isJsonBinQuotaError(error)) {
+    console.warn('JSONBin quota exhausted; using emergency local DB fallback.');
+    return markEmergencyDb(readFallbackDb());
+  }
+  throw error;
 }
 
 async function writeJsonBinRaw(data, options = {}) {
@@ -202,7 +269,17 @@ async function writeJsonBinRaw(data, options = {}) {
   for (const headers of headerModes) {
     const r = await fetch(url, { method: 'PUT', headers, body: JSON.stringify(nextData) });
     lastStatus = r.status;
-    if (r.ok) return await r.json();
+    if (r.ok) {
+      writeFallbackDb(nextData);
+      return await r.json();
+    }
+    const body = await r.text().catch(() => '');
+    if (isJsonBinQuotaError(createJsonBinError('write', r.status, body))) {
+      const fallbackData = markEmergencyDb(nextData);
+      writeFallbackDb(fallbackData);
+      console.warn('JSONBin quota exhausted; saved write to emergency local DB fallback.');
+      return { emergencyDb: true, saved: true };
+    }
     if (r.status !== 401 && r.status !== 403) break;
   }
   throw new Error('JSONBin write failed: ' + lastStatus);
