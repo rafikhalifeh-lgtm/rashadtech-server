@@ -37,6 +37,10 @@ const TG_TOKEN   = normalizeEnvSecret(process.env.TG_TOKEN);
 const TG_ADMIN   = normalizeEnvSecret(process.env.TG_ADMIN);
 const JB_KEY     = normalizeEnvSecret(process.env.JB_KEY);
 const JB_BIN     = normalizeEnvSecret(process.env.JB_BIN);
+const NETLIFY_SITE_ID = normalizeEnvSecret(process.env.NETLIFY_SITE_ID);
+const NETLIFY_BLOBS_TOKEN = normalizeEnvSecret(process.env.NETLIFY_BLOBS_TOKEN || process.env.NETLIFY_AUTH_TOKEN);
+const NETLIFY_DB_STORE = normalizeEnvSecret(process.env.NETLIFY_DB_STORE) || 'rashadtech-db';
+const NETLIFY_DB_KEY = normalizeEnvSecret(process.env.NETLIFY_DB_KEY) || 'database';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'RkhRkh7979@';
 const ADMIN_PIN = process.env.ADMIN_PIN || '7979';
 const JSONBIN_ALLOW_PUBLIC_READ = normalizeEnvSecret(process.env.JSONBIN_ALLOW_PUBLIC_READ) === 'true';
@@ -67,6 +71,7 @@ let dbCacheLoadedAt = 0;
 let dbDirty = false;
 let dbSyncInFlight = false;
 let dbLastSyncAttempt = 0;
+let netlifyStorePromise = null;
 
 function rateLimit(name, limit, windowMs) {
   return (req, res, next) => {
@@ -266,10 +271,40 @@ function saveLocalDb(data, dirty = true) {
   setDbCache(next, dirty);
 }
 
-function markEmergencyDb(data, reason = 'JSONBin quota exhausted') {
+async function getNetlifyStore() {
+  if (!NETLIFY_SITE_ID || !NETLIFY_BLOBS_TOKEN) return null;
+  if (!netlifyStorePromise) {
+    netlifyStorePromise = import('@netlify/blobs').then(({ getStore }) => getStore({
+      name: NETLIFY_DB_STORE,
+      siteID: NETLIFY_SITE_ID,
+      token: NETLIFY_BLOBS_TOKEN
+    }));
+  }
+  return netlifyStorePromise;
+}
+
+async function readNetlifyDb() {
+  const store = await getNetlifyStore();
+  if (!store) return null;
+  const raw = await store.get(NETLIFY_DB_KEY, { type: 'text', consistency: 'strong' });
+  if (!raw) return null;
+  const data = JSON.parse(raw);
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+  return data;
+}
+
+async function writeNetlifyDb(data) {
+  const store = await getNetlifyStore();
+  if (!store) throw new Error('Netlify database is not configured');
+  await store.set(NETLIFY_DB_KEY, JSON.stringify(data || emptyDbData()), {
+    metadata: { updatedAt: new Date().toISOString() }
+  });
+}
+
+function markEmergencyDb(data, reason = 'JSONBin quota exhausted', active = true) {
   const next = { ...(data || emptyDbData()) };
   next.emergencyDb = {
-    active: true,
+    active: Boolean(active),
     reason,
     updatedAt: new Date().toISOString()
   };
@@ -392,8 +427,16 @@ async function syncDbToJsonBin(force = false) {
 
 async function readJsonBinRaw() {
   if (dbCache) return cloneData(dbCache);
-  const data = markEmergencyDb(readFallbackDb(), 'Primary server file database');
+  let data = null;
+  try {
+    data = await readNetlifyDb();
+  } catch(e) {
+    console.error('Netlify database read error:', e.message);
+  }
+  if (!data) data = readFallbackDb();
+  data = markEmergencyDb(data, NETLIFY_SITE_ID && NETLIFY_BLOBS_TOKEN ? 'Netlify Blobs primary database' : 'Primary server file database', !(NETLIFY_SITE_ID && NETLIFY_BLOBS_TOKEN));
   setDbCache(data, false);
+  writeFallbackDb(data);
   return cloneData(dbCache);
 }
 
@@ -415,8 +458,12 @@ async function writeJsonBinRaw(data, options = {}) {
   } else {
     nextData[BACKUPS_KEY] = existingBackups;
   }
-  const fallbackData = markEmergencyDb(nextData, 'Primary server file database');
+  const fallbackData = markEmergencyDb(nextData, NETLIFY_SITE_ID && NETLIFY_BLOBS_TOKEN ? 'Netlify Blobs primary database' : 'Primary server file database', !(NETLIFY_SITE_ID && NETLIFY_BLOBS_TOKEN));
   saveLocalDb(fallbackData, true);
+  if (NETLIFY_SITE_ID && NETLIFY_BLOBS_TOKEN) {
+    await writeNetlifyDb(fallbackData);
+    setDbCache(fallbackData, false);
+  }
   syncDbToJsonBin(false).catch(e => console.error('Background JSONBin sync error:', e.message));
   return { cached: true, emergencyDb: Boolean(fallbackData.emergencyDb && fallbackData.emergencyDb.active) };
 }
