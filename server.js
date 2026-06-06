@@ -208,8 +208,12 @@ async function deliverOtp({ email, otp, name, tgChatId, purpose }) {
       console.error(`${purpose || 'OTP'} Telegram delivery error:`, e.message);
     }
   }
-  if (!emailSent && !telegramSent) throw new Error('Could not send verification code');
-  return { emailSent, telegramSent, clientEmailRequired: !emailSent };
+  // Browser EmailJS fallback handles delivery when server email fails.
+  return {
+    emailSent,
+    telegramSent,
+    clientEmailRequired: !emailSent
+  };
 }
 
 function linkEncryptionKey() {
@@ -956,9 +960,12 @@ app.post('/auth/signup-start', async (req, res) => {
     if (data.users.some(u => normalizeEmail(u.email) === cleanEmail)) return res.status(409).json({ error: 'Email already registered' });
     const otp = setOtp(signupOtps, cleanEmail, { name: String(name).trim(), tgChatId: String(tgChatId || '').trim() });
     const delivery = await deliverOtp({ email: cleanEmail, otp, name, tgChatId, purpose: 'signup' });
+    if (!delivery.emailSent && !delivery.telegramSent && !delivery.clientEmailRequired) {
+      return res.status(503).json({ error: 'Could not send verification code. Please try again.' });
+    }
     res.json({
       success: true,
-      message: 'Verification code sent',
+      message: delivery.clientEmailRequired ? 'Verification code ready — check your email shortly' : 'Verification code sent',
       emailSent: delivery.emailSent,
       telegramSent: delivery.telegramSent,
       clientEmailRequired: delivery.clientEmailRequired,
@@ -1014,6 +1021,9 @@ app.post('/auth/reset-start', async (req, res) => {
       const otp = setOtp(resetOtps, cleanEmail);
       otpForClient = otp;
       delivery = await deliverOtp({ email: cleanEmail, otp, name: user.name || cleanEmail, tgChatId: user.tgChatId || '', purpose: 'password reset' });
+      if (!delivery.emailSent && !delivery.telegramSent && !delivery.clientEmailRequired) {
+        return res.status(503).json({ error: 'Could not send reset code. Please try again.' });
+      }
     }
     res.json({
       success: true,
