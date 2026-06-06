@@ -3250,7 +3250,7 @@ function renderAccModal(showForm=false){
       ${a.expiryDate?`<div class="acc-extra" style="color:${daysLeft(a.expiryDate)!==null&&daysLeft(a.expiryDate)<=7?'var(--orange)':'var(--text3)'}">⏰ Expires: ${a.expiryDate}${daysLeft(a.expiryDate)!==null?' ('+daysLeft(a.expiryDate)+'d)':''}</div>`:''}
       </div>
       <span class="acc-badge ${a.used?'acc-used':'acc-avail'}">${a.used?'Used':'Available'}</span>
-      ${!a.used?`<button class="del-btn" onclick="delAccount(${i})"><i class="ti ti-trash" style="font-size:13px"></i></button>`:''}
+      <button class="del-btn" onclick="delAccount(${i})" title="${a.used?'Remove sold account':'Delete account'}"><i class="ti ti-trash" style="font-size:13px"></i></button>
     </div>`).join('')}</div><div style="height:1px;background:var(--border);margin:14px 0"></div>`;
   } else {
     html+=`<div class="empty-state" style="padding:24px"><i class="ti ti-inbox"></i>No accounts added yet.</div><div style="height:1px;background:var(--border);margin:14px 0"></div>`;
@@ -3300,7 +3300,9 @@ function validateNetflixAliasForAdd(skey,email,pin){
   return '';
 }
 async function delAccount(idx){
-  if(!confirm('Delete this account from stock?'))return;
+  const acc=accountStock[curAccModalKey]?.[idx];
+  const msg=acc?.used?'Remove this sold account from stock?':'Delete this account from stock?';
+  if(!confirm(msg))return;
   if(!accountStock[curAccModalKey])return;
   accountStock[curAccModalKey].splice(idx,1);
   await saveData();
