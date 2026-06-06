@@ -1232,6 +1232,7 @@ const requestableServices=[
 let accountStock={};
 const sk=(p,u,d)=>u?`${p}__${u}__${d}`:`${p}__${d}`;
 const getAccounts=k=>accountStock[k]||[];
+const isStockBlocked=k=>Boolean(_jbCache?.stockBlocks?.[k]);
 const availableCount=k=>getAccounts(k).filter(a=>!a.used).length;
 const totalCount=k=>getAccounts(k).length;
 const getNextAcc=k=>getAccounts(k).find(a=>!a.used)||null;
@@ -2005,8 +2006,8 @@ function updateBal(){
 function filterProd(cat,el){document.querySelectorAll('.ftab').forEach(c=>c.classList.remove('active'));if(el)el.classList.add('active');renderProducts(cat);}
 function getProductAvail(p){
   let t=0;
-  if(p.hasUserTypes)p.userTypes.forEach(ut=>ut.durations.forEach(d=>{t+=availableCount(sk(p.id,ut.key,d.key));}));
-  else(p.plans||[]).forEach((_,i)=>{t+=availableCount(sk(p.id,null,i));});
+  if(p.hasUserTypes)p.userTypes.forEach(ut=>ut.durations.forEach(d=>{const key=sk(p.id,ut.key,d.key);if(!isStockBlocked(key))t+=availableCount(key);}));
+  else(p.plans||[]).forEach((_,i)=>{const key=sk(p.id,null,i);if(!isStockBlocked(key))t+=availableCount(key);});
   return t;
 }
 function renderProducts(cat){
@@ -2014,11 +2015,13 @@ function renderProducts(cat){
   document.getElementById('products-grid').innerHTML=list.map(p=>{
     const tot=getProductAvail(p);
     let minP=p.hasUserTypes?Math.min(...p.userTypes.map(ut=>Math.min(...ut.durations.map(d=>d.price)))):Math.min(...(p.plans||[]).map(pl=>pl.price));
-    return `<div class="pcard" onclick="openBuy('${p.id}',null)">
+    const blocked=tot===0;
+    const cardClick=blocked?'':`onclick="openBuy('${p.id}',null)"`;
+    return `<div class="pcard${blocked?' oos':''}" ${cardClick}>
       <div class="pcard-top" style="background:${p.color}">${prodIcon(p,44,10)}${p.badge==='hot'?'<div class="hot-badge">Hot</div>':p.badge==='new'?'<div class="new-badge">New</div>':''}
       </div><div class="pcard-body"><div class="pcard-name">${p.name}</div><div class="pcard-desc">${p.desc}</div>
       <div class="pcard-footer"><div><div class="pfrom">from</div><div class="pprice">${fmt(minP)}</div></div>
-      <button class="btn-buy" onclick="event.stopPropagation();openBuy('${p.id}',null)">Buy</button></div></div></div>`;
+      <button class="btn-buy" ${blocked?'disabled':''} onclick="event.stopPropagation();openBuy('${p.id}',null)">${blocked?'Unavailable':'Buy'}</button></div></div></div>`;
   }).join('');
 }
 
@@ -2052,14 +2055,16 @@ function renderBuyBody(){
       if(selUT.durations.length<=4){
         html+=`<div class="dur-grid" style="grid-template-columns:repeat(${selUT.durations.length},1fr)">
           ${selUT.durations.map((d,i)=>{
-            return `<div class="dur-btn${selDur&&selDur.key===d.key?' sel':''}" onclick="selDuration(${i})">
-              <div class="dur-label">${d.label}</div><div class="dur-price">${fmt(d.price)}</div></div>`;}).join('')}</div>`;
+            const key=sk(p.id,selUT.key,d.key);const blocked=isStockBlocked(key);
+            return `<div class="dur-btn${selDur&&selDur.key===d.key?' sel':''}${blocked?' dis':''}" ${blocked?'':'onclick="selDuration('+i+')"'} >
+              <div class="dur-label">${d.label}</div><div class="dur-price">${blocked?'Blocked':fmt(d.price)}</div></div>`;}).join('')}</div>`;
       } else {
         html+=`<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px;max-height:200px;overflow-y:auto">
           ${selUT.durations.map((d,i)=>{
-            return `<div class="plan-row${selDur&&selDur.key===d.key?' sel':''}" style="margin-bottom:0" onclick="selDuration(${i})">
+            const key=sk(p.id,selUT.key,d.key);const blocked=isStockBlocked(key);
+            return `<div class="plan-row${selDur&&selDur.key===d.key?' sel':''}" style="margin-bottom:0;${blocked?'opacity:.45;pointer-events:none':''}" ${blocked?'':'onclick="selDuration('+i+')"'} >
               <div><div class="plan-name">${d.label}</div></div>
-              <div><div class="plan-price">${fmt(d.price)}</div></div>
+              <div><div class="plan-price">${blocked?'Blocked':fmt(d.price)}</div></div>
             </div>`;}).join('')}</div>`;
       }
       if(selUT.hasCustom){html+=`<div class="plan-section-label">Or — Custom ($${selUT.customDayRate}/day)</div>
@@ -2086,9 +2091,10 @@ function renderBuyBody(){
       html+=`<div class="plan-section-label">Choose a plan</div>`;
     }
     html+=`${(p.plans||[]).map((pl,i)=>{
-      return `<div class="plan-row${selPlan&&selPlan.idx===i?' sel':''}" onclick="selPlanFn(${i})">
+      const key=sk(p.id,null,i);const blocked=isStockBlocked(key);
+      return `<div class="plan-row${selPlan&&selPlan.idx===i?' sel':''}" style="${blocked?'opacity:.45;pointer-events:none':''}" ${blocked?'':'onclick="selPlanFn('+i+')"'} >
         <div><div class="plan-name">${pl.name}</div><div class="plan-desc">${pl.desc}</div></div>
-        <div style="text-align:right"><div class="plan-price">${fmt(pl.price)}</div></div>
+        <div style="text-align:right"><div class="plan-price">${blocked?'Blocked':fmt(pl.price)}</div></div>
       </div>`;}).join('')}`;
     if(selPlan)renderConfirm(html,p);
     else{html+=`<button class="modal-buy-btn" disabled>Select a plan</button>`;document.getElementById('modal-body').innerHTML=html;}
@@ -2100,19 +2106,21 @@ function renderConfirm(html,p){
   else if(p.hasUserTypes&&selUT&&selUT.hasCustom&&customDays>0){price=customDays*selUT.customDayRate;label=`${selUT.name} · ${customDays} days`;}
   else if(selPlan){price=selPlan.price;label=selPlan.name;}
   const bal=currentUser?currentUser.balance:0;const after=bal-price;const ok=after>=0;
+  const selectedKey=p.hasUserTypes&&selUT&&selDur?sk(p.id,selUT.key,selDur.key):(!p.hasUserTypes&&selPlan?sk(p.id,null,selPlan.idx):null);
+  const blocked=selectedKey&&isStockBlocked(selectedKey);
   html+=`<div class="divider"></div>
   <div class="confirm-row"><span class="cl">Plan</span><span class="cv">${label}</span></div>
   <div class="confirm-row"><span class="cl">Your balance</span><span class="cv">${fmt(bal)}</span></div>
   <div class="confirm-row"><span class="cl">Cost</span><span class="cv">${fmt(price)}</span></div>
   <hr style="border:none;border-top:1px solid var(--border);margin:9px 0">
   <div class="confirm-row"><span class="cl" style="font-weight:600">After purchase</span><span class="cv">${fmt(Math.max(0,after))}</span></div>
-  ${!ok?`<div class="insuf"><i class="ti ti-alert-circle" style="font-size:12px;vertical-align:-1px"></i> Insufficient balance</div>`:''}
-  <button class="modal-buy-btn" ${ok?'':'disabled'} onclick="confirmPurchase()">${ok?'Confirm — '+fmt(price):'Insufficient balance'}</button>`;
+  ${blocked?`<div class="insuf"><i class="ti ti-alert-circle" style="font-size:12px;vertical-align:-1px"></i> This plan is blocked by admin</div>`:(!ok?`<div class="insuf"><i class="ti ti-alert-circle" style="font-size:12px;vertical-align:-1px"></i> Insufficient balance</div>`:'')}
+  <button class="modal-buy-btn" ${ok&&!blocked?'':'disabled'} onclick="confirmPurchase()">${blocked?'Blocked':(ok?'Confirm — '+fmt(price):'Insufficient balance')}</button>`;
   document.getElementById('modal-body').innerHTML=html;
 }
 function selUserType(i){selUT=curProd.userTypes[i];selDur=null;customDays=0;renderBuyBody();}
-function selDuration(i){selDur=selUT.durations[i];customDays=0;renderBuyBody();}
-function selPlanFn(i){selPlan={idx:i,...curProd.plans[i]};renderBuyBody();}
+function selDuration(i){const d=selUT.durations[i];if(isStockBlocked(sk(curProd.id,selUT.key,d.key)))return;selDur=d;customDays=0;renderBuyBody();}
+function selPlanFn(i){if(isStockBlocked(sk(curProd.id,null,i)))return;selPlan={idx:i,...curProd.plans[i]};renderBuyBody();}
 function setCustomDays(v){customDays=parseInt(v)||0;selDur=null;renderBuyBody();}
 
 // ── CUSTOM ORDER (Jawaker / PUBG) ──
@@ -2906,24 +2914,39 @@ function renderStockPanels(){
 function renderStockRows(p){
   if(p.hasUserTypes){return p.userTypes.map(ut=>ut.durations.map(d=>{
     const skey=sk(p.id,ut.key,d.key);const av=availableCount(skey);const tot=totalCount(skey);const [sl,sc]=stockLabel(av);
+    const blocked=isStockBlocked(skey);
     return `<div class="admin-row"><div class="admin-icon" style="background:${p.color};overflow:hidden">${prodIcon(p,34,8)}</div>
       <div class="admin-info"><div class="admin-name">${ut.name} · ${d.label}</div>
-      <div class="admin-sub">${fmt(d.price)} &nbsp;·&nbsp; <span class="spill ${sc}" style="padding:1px 6px">${sl}</span> &nbsp;·&nbsp; ${tot} total</div></div>
+      <div class="admin-sub">${fmt(d.price)} &nbsp;·&nbsp; <span class="spill ${sc}" style="padding:1px 6px">${sl}</span> &nbsp;·&nbsp; ${tot} total ${blocked?'&nbsp;·&nbsp;<span style="color:var(--red);font-weight:700">BLOCKED</span>':''}</div></div>
       <div class="admin-actions">
+        <button class="view-btn" style="${blocked?'color:var(--green)':'color:var(--red)'}" onclick="toggleStockBlock('${skey}',${blocked?'false':'true'})">${blocked?'Unblock':'Block'}</button>
         <button class="view-btn" onclick="openAccModal('${skey}','${p.name} — ${ut.name} · ${d.label}')">View</button>
         <button class="add-acc-btn" onclick="openAccModal('${skey}','${p.name} — ${ut.name} · ${d.label}',true)"><i class="ti ti-plus" style="font-size:11px;vertical-align:-1px"></i> Add</button>
       </div></div>`;
   }).join('')).join('');}
   return(p.plans||[]).map((pl,i)=>{
     const skey=sk(p.id,null,i);const av=availableCount(skey);const tot=totalCount(skey);const [sl,sc]=stockLabel(av);
+    const blocked=isStockBlocked(skey);
     return `<div class="admin-row"><div class="admin-icon" style="background:${p.color};overflow:hidden">${prodIcon(p,34,8)}</div>
       <div class="admin-info"><div class="admin-name">${pl.name}</div>
-      <div class="admin-sub">${fmt(pl.price)} &nbsp;·&nbsp; <span class="spill ${sc}" style="padding:1px 6px">${sl}</span> &nbsp;·&nbsp; ${tot} total</div></div>
+      <div class="admin-sub">${fmt(pl.price)} &nbsp;·&nbsp; <span class="spill ${sc}" style="padding:1px 6px">${sl}</span> &nbsp;·&nbsp; ${tot} total ${blocked?'&nbsp;·&nbsp;<span style="color:var(--red);font-weight:700">BLOCKED</span>':''}</div></div>
       <div class="admin-actions">
+        <button class="view-btn" style="${blocked?'color:var(--green)':'color:var(--red)'}" onclick="toggleStockBlock('${skey}',${blocked?'false':'true'})">${blocked?'Unblock':'Block'}</button>
         <button class="view-btn" onclick="openAccModal('${skey}','${p.name} — ${pl.name}')">View</button>
         <button class="add-acc-btn" onclick="openAccModal('${skey}','${p.name} — ${pl.name}',true)"><i class="ti ti-plus" style="font-size:11px;vertical-align:-1px"></i> Add</button>
       </div></div>`;
   }).join('');
+}
+async function toggleStockBlock(skey,blocked){
+  try{
+    const r=await fetch(RT_SERVER+'/admin/stock-block',{method:'POST',headers:authHeaders(),body:JSON.stringify({skey,blocked})});
+    const j=await r.json();
+    if(!r.ok||!j.success)throw new Error(j.error||'Could not update block');
+    applyDataSnapshot(j.data||_jbCache);
+    renderStockPanels();renderProducts('all');
+    showToast(blocked?'Plan blocked':'Plan unblocked');
+    logActivity(blocked?'Stock blocked':'Stock unblocked',skey);
+  }catch(e){showToast('⚠️ '+e.message);}
 }
 function openAccModal(skey,label,focusAdd=false){curAccModalKey=skey;document.getElementById('acc-modal-title').textContent=label;renderAccModal(focusAdd);openModal('accounts-modal');}
 function renderAccModal(showForm=false){
@@ -3186,6 +3209,7 @@ function renderAdminPendingHtml(pending){
     <div class="aw-email">👤 ${po.userName} · 📧 ${po.userEmail} · 💵 ${fmt(po.price)} · 📅 ${po.date}</div>
     ${po.userTgChatId?`<div class="aw-email" style="color:var(--blue)">💬 TG: ${po.userTgChatId}</div>`:''}</div>
     <button class="aabtn" onclick="manualFulfillPending(${i})">✓ Fulfill</button>
+    <button class="aabtn" style="background:var(--red-bg);color:var(--red);border-color:var(--red-border)" onclick="cancelPendingOrder('${po.id}')">✕ Cancel & Refund</button>
   </div>`).join('');
 }
 async function renderAdminPending(){
@@ -3204,7 +3228,21 @@ async function renderAdminPending(){
         ${po.userTgChatId?`<div class="aw-email" style="color:var(--blue)">💬 TG: ${po.userTgChatId}</div>`:''}
       </div>
       <button class="aabtn" onclick="manualFulfillPending(${i})">✓ Fulfill</button>
+      <button class="aabtn" style="background:var(--red-bg);color:var(--red);border-color:var(--red-border)" onclick="cancelPendingOrder('${po.id}')">✕ Cancel & Refund</button>
     </div>`).join('');
+}
+async function cancelPendingOrder(orderId){
+  const reason=prompt('Reason for canceling this pending order (optional):')||'';
+  if(!confirm('Cancel this order, refund the customer wallet, and notify them?'))return;
+  try{
+    const r=await fetch(RT_SERVER+'/admin/cancel-pending',{method:'POST',headers:authHeaders(),body:JSON.stringify({orderId,reason})});
+    const j=await r.json();
+    if(!r.ok||!j.success)throw new Error(j.error||'Cancel failed');
+    applyDataSnapshot(j.data||_jbCache);
+    renderAdminPending();renderWallets();renderAdminCustomers();
+    showToast('✓ Order canceled and refunded');
+    logActivity('Pending order canceled',orderId);
+  }catch(e){showToast('⚠️ '+e.message);}
 }
 async function manualFulfillPending(i){
   await refreshFromFirebase();

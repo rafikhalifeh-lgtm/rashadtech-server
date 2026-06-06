@@ -190,6 +190,10 @@ function sanitizeStock(stock) {
   return safe;
 }
 
+function sanitizeStockBlocks(blocks) {
+  return { ...(blocks || {}) };
+}
+
 function sanitizeUser(user) {
   if (!user) return null;
   const safeUser = JSON.parse(JSON.stringify(user));
@@ -204,6 +208,7 @@ function dataForSession(data, session) {
   return {
     users: user ? [sanitizeUser(user)] : [],
     stock: sanitizeStock(publicData.stock || {}),
+    stockBlocks: sanitizeStockBlocks(publicData.stockBlocks || {}),
     requests: publicData.requests || [],
     topupreqs: (publicData.topupreqs || []).filter(r => normalizeEmail(r.email) === session.email),
     pending: [],
@@ -239,6 +244,7 @@ function mergeUserWrite(existing, incoming, session) {
   next.topupreqs = [...otherTopups, ...ownTopups];
 
   if (existing && existing[GMAIL_MONITORS_KEY]) next[GMAIL_MONITORS_KEY] = existing[GMAIL_MONITORS_KEY];
+  if (existing && existing.stockBlocks) next.stockBlocks = existing.stockBlocks;
   return next;
 }
 
@@ -476,9 +482,11 @@ app.post('/purchase', async (req, res) => {
     data.users = Array.isArray(data.users) ? data.users : [];
     data.stock = data.stock || {};
     data.pending = Array.isArray(data.pending) ? data.pending : [];
+    data.stockBlocks = data.stockBlocks || {};
     const user = data.users.find(u => normalizeEmail(u.email) === session.email);
     if (!user) return res.status(404).json({ error: 'User not found' });
     if (user.banned) return res.status(403).json({ error: 'Your account has been suspended. Contact support.' });
+    if (data.stockBlocks[skey]) return res.status(403).json({ error: 'This plan is temporarily unavailable.' });
     if (Number(user.balance || 0) < Number(price)) return res.status(400).json({ error: 'Insufficient balance' });
 
     const dateStr = new Date().toLocaleString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
@@ -532,6 +540,62 @@ app.post('/purchase', async (req, res) => {
   } catch(e) {
     console.error('Purchase error:', e.message);
     res.status(500).json({ error: 'Purchase failed' });
+  }
+});
+
+app.post('/admin/stock-block', async (req, res) => {
+  const session = requireSession(req, res, ['admin']);
+  if (!session) return;
+  const { skey, blocked } = req.body;
+  if (!skey) return res.status(400).json({ error: 'Stock key is required' });
+  try {
+    const data = await readJsonBinRaw();
+    data.stockBlocks = data.stockBlocks || {};
+    if (blocked) data.stockBlocks[skey] = { blocked: true, ts: Date.now() };
+    else delete data.stockBlocks[skey];
+    await writeJsonBinRaw(data);
+    res.json({ success: true, stockBlocks: data.stockBlocks, data: dataForSession(data, { role: 'admin' }) });
+  } catch(e) {
+    console.error('Stock block error:', e.message);
+    res.status(500).json({ error: 'Could not update stock block' });
+  }
+});
+
+app.post('/admin/cancel-pending', async (req, res) => {
+  const session = requireSession(req, res, ['admin']);
+  if (!session) return;
+  const { orderId, reason } = req.body;
+  if (!orderId) return res.status(400).json({ error: 'Order ID is required' });
+  try {
+    const data = await readJsonBinRaw();
+    data.pending = Array.isArray(data.pending) ? data.pending : [];
+    data.users = Array.isArray(data.users) ? data.users : [];
+    const idx = data.pending.findIndex(o => o.id === orderId);
+    if (idx < 0) return res.status(404).json({ error: 'Pending order not found' });
+    const order = data.pending[idx];
+    const user = data.users.find(u => normalizeEmail(u.email) === normalizeEmail(order.userEmail));
+    const refund = Number(order.price || 0);
+    if (user && refund > 0) {
+      user.balance = Number(user.balance || 0) + refund;
+      user.transactions = Array.isArray(user.transactions) ? user.transactions : [];
+      user.transactions.unshift({
+        type: 'refund',
+        label: `Refund — canceled ${order.product} · ${order.plan}`,
+        amount: refund,
+        balance: user.balance,
+        date: new Date().toLocaleString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' }),
+        orderId: order.id
+      });
+    }
+    data.pending.splice(idx, 1);
+    await writeJsonBinRaw(data);
+    const message = `❌ <b>Order Canceled & Refunded</b>\n\n📦 ${order.product} · ${order.plan}\n💵 Refund: $${refund.toFixed(2)}${reason ? `\n📝 Reason: ${reason}` : ''}\n\nYour wallet balance has been updated.`;
+    if (user && user.tgChatId) await sendTG(user.tgChatId, message, 'HTML').catch(() => {});
+    await sendTG(TG_ADMIN, `↩️ Canceled pending order ${order.id} for ${order.userName} — refunded $${refund.toFixed(2)}`, 'HTML').catch(() => {});
+    res.json({ success: true, order, user: sanitizeUser(user), data: dataForSession(data, { role: 'admin' }) });
+  } catch(e) {
+    console.error('Cancel pending error:', e.message);
+    res.status(500).json({ error: 'Could not cancel pending order' });
   }
 });
 
