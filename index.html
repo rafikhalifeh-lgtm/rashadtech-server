@@ -852,11 +852,6 @@ So your EmailJS template will receive the user email and verification code corre
             </div>
             <div id="dashboard-backups"><div style="color:var(--text3)">Loading...</div></div>
           </div>
-          <div class="card" style="padding:16px;border:1px solid var(--orange-border);background:var(--orange-bg)">
-            <div style="font-size:13px;font-weight:600;margin-bottom:6px">🧹 Fresh start</div>
-            <div style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5">Clear all test users, stock, top-up requests, and pending orders before real customers sign up.</div>
-            <button onclick="adminFreshStart()" style="width:100%;padding:10px;border:1px solid var(--red-border);background:var(--red-bg);color:var(--red);border-radius:var(--radius-sm);font-size:13px;font-weight:600;cursor:pointer">Reset test data</button>
-          </div>
         </div>
       </div>
       <div id="admin-stock" class="tab-pane active">
@@ -3482,33 +3477,6 @@ async function deleteTopupReq(i){
   showToast('✓ Top-up request removed');
 }
 
-async function adminFreshStart(){
-  if(!confirm('Clear ALL test users, stock accounts, top-up requests, pending orders, and game orders?\n\nUse this before real customers sign up. Cannot be undone.'))return;
-  if(prompt('Type RESET to confirm fresh start:')!=='RESET'){showToast('Cancelled');return;}
-  users=[];
-  accountStock={};
-  topupRequests=[];
-  globalRequests=[];
-  try{
-    const data=await jbRead();
-    data.users=[];
-    data.stock={};
-    data.stockBlocks=data.stockBlocks||{};
-    data.topupreqs=[];
-    data.pending=[];
-    data.gameorders=[];
-    data.requests=[];
-    await jbWrite(data);
-    _jbCache=data;
-    applyDataSnapshot(data);
-  }catch(e){
-    _jbCache={users:[],stock:{},requests:[],topupreqs:[],pending:[],gameorders:[]};
-    applyDataSnapshot(_jbCache);
-  }
-  renderStockPanels();renderAdminCustomers();renderWallets();renderTopupRequests();renderAdminPending();renderGameOrders();renderAdminRequests();renderAdminExpiry();renderDashboard();
-  showToast('✓ Fresh start complete — ready for real customers');
-  logActivity('Admin fresh start','All test data cleared');
-}
 function getTopupHistory(userEmail){
   const u=users.find(x=>x.email===userEmail);
   if(!u)return;
@@ -3743,40 +3711,6 @@ async function creditTopupReq(i){
     showToast('⚠️ No Telegram ID for '+req.name);
   }
   await sendTelegram(`✅ Credited ${req.label} to ${req.name} (${req.email}) · Balance: ${fmt(u.balance)}${custTgId?'':' · ⚠️ No TG ID'}`);
-}
-async function resetAllStock(){
-  if(!confirm('Delete ALL stock accounts? This cannot be undone.'))return;
-  accountStock={};
-  _jbCache=null; // clear cache
-
-  // Force write to JSONBin directly
-  try{
-    const data=await jbRead();
-    data.stock={};
-    await jbWrite(data);
-    _jbCache=data;
-  }catch(e){console.warn('reset stock error:',e);}
-  renderStockPanels();renderAdminExpiry();
-  showToast('✓ All stock cleared');
-}
-async function resetAllUsers(){
-  if(!confirm('Delete ALL user accounts and their top-up/pending requests? This cannot be undone.'))return;
-  users=[];
-  topupRequests=[];
-  _jbCache=null;
-
-  try{
-    const data=await jbRead();
-    data.users=[];
-    data.topupreqs=[];
-    data.pending=[];
-    data.gameorders=[];
-    await jbWrite(data);
-    _jbCache=data;
-    applyDataSnapshot(data);
-  }catch(e){console.warn('reset users error:',e);}
-  renderAdminCustomers();renderWallets();renderTopupRequests();renderAdminPending();renderGameOrders();
-  showToast('✓ All users and related requests cleared');
 }
 async function saveData(){
   if(!dataLoaded)return;
