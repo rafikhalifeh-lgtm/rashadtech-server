@@ -41,6 +41,7 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'RkhRkh7979@';
 const ADMIN_PIN = process.env.ADMIN_PIN || '7979';
 const JSONBIN_ALLOW_PUBLIC_READ = normalizeEnvSecret(process.env.JSONBIN_ALLOW_PUBLIC_READ) === 'true';
 const FALLBACK_DB_FILE = process.env.FALLBACK_DB_FILE || path.join(process.cwd(), '.data', 'emergency-db.json');
+const JSONBIN_SYNC_INTERVAL_MS = Number(process.env.JSONBIN_SYNC_INTERVAL_MS || 10 * 60 * 1000);
 const GMAIL_MONITORS_KEY = 'gmailMonitors';
 const BACKUPS_KEY = 'backups';
 const LINK_TOKENS_KEY = 'linkTokens';
@@ -61,6 +62,11 @@ let monitoredEmails = {}; // { gmailEmail: { user, pass, lastUid, lastCheckedAt 
 let gmailMonitorsLoaded = false;
 let sessions = new Map();
 let rateBuckets = new Map();
+let dbCache = null;
+let dbCacheLoadedAt = 0;
+let dbDirty = false;
+let dbSyncInFlight = false;
+let dbLastSyncAttempt = 0;
 
 function rateLimit(name, limit, windowMs) {
   return (req, res, next) => {
@@ -196,17 +202,33 @@ function readFallbackDb() {
   return emptyDbData();
 }
 
+function cloneData(data) {
+  return JSON.parse(JSON.stringify(data || emptyDbData()));
+}
+
+function setDbCache(data, dirty = dbDirty) {
+  dbCache = cloneData(data);
+  dbCacheLoadedAt = Date.now();
+  dbDirty = Boolean(dirty);
+}
+
 function writeFallbackDb(data) {
   const dir = path.dirname(FALLBACK_DB_FILE);
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(FALLBACK_DB_FILE, JSON.stringify(data || emptyDbData(), null, 2));
 }
 
-function markEmergencyDb(data) {
+function saveLocalDb(data, dirty = true) {
+  const next = cloneData(data);
+  writeFallbackDb(next);
+  setDbCache(next, dirty);
+}
+
+function markEmergencyDb(data, reason = 'JSONBin quota exhausted') {
   const next = { ...(data || emptyDbData()) };
   next.emergencyDb = {
     active: true,
-    reason: 'JSONBin quota exhausted',
+    reason,
     updatedAt: new Date().toISOString()
   };
   return next;
@@ -241,7 +263,7 @@ function mergeEmergencyDb(primary, fallback) {
   return merged;
 }
 
-async function readJsonBinRaw() {
+async function fetchJsonBinRaw() {
   if (!JB_KEY || !JB_BIN) throw new Error('DB not configured');
   const url = `https://api.jsonbin.io/v3/b/${JB_BIN}/latest`;
   const headerModes = [
@@ -267,10 +289,74 @@ async function readJsonBinRaw() {
   }
   const error = createJsonBinError('read', lastStatus, lastBody);
   if (quotaSeen || isJsonBinQuotaError(error)) {
+    dbLastSyncAttempt = Date.now();
     console.warn('JSONBin quota exhausted; using emergency local DB fallback.');
     return markEmergencyDb(readFallbackDb());
   }
   throw error;
+}
+
+async function pushJsonBinRaw(data) {
+  if (!JB_KEY || !JB_BIN) throw new Error('DB not configured');
+  const url = `https://api.jsonbin.io/v3/b/${JB_BIN}`;
+  const headerModes = [
+    { 'Content-Type': 'application/json', 'X-Master-Key': JB_KEY, 'X-Bin-Meta': 'false' },
+    { 'Content-Type': 'application/json', 'X-Access-Key': JB_KEY, 'X-Bin-Meta': 'false' }
+  ];
+  let lastStatus = 0;
+  let quotaSeen = false;
+  for (const headers of headerModes) {
+    const r = await fetch(url, { method: 'PUT', headers, body: JSON.stringify(data || emptyDbData()) });
+    lastStatus = r.status;
+    if (r.ok) return await r.json();
+    const body = await r.text().catch(() => '');
+    if (isJsonBinQuotaError(createJsonBinError('write', r.status, body))) quotaSeen = true;
+    if (quotaSeen) {
+      const error = createJsonBinError('write', r.status, body);
+      error.quota = true;
+      throw error;
+    }
+    if (r.status !== 401 && r.status !== 403) break;
+  }
+  throw new Error('JSONBin write failed: ' + lastStatus);
+}
+
+async function syncDbToJsonBin(force = false) {
+  if (!dbCache || dbSyncInFlight) return { skipped: true };
+  const now = Date.now();
+  if (!force && (!dbDirty || now - dbLastSyncAttempt < JSONBIN_SYNC_INTERVAL_MS)) return { skipped: true };
+  dbSyncInFlight = true;
+  dbLastSyncAttempt = now;
+  try {
+    let data = cloneData(dbCache);
+    if (data.emergencyDb && data.emergencyDb.active) {
+      const merged = await fetchJsonBinRaw();
+      if (merged.emergencyDb && merged.emergencyDb.active) return { emergencyDb: true, saved: true };
+      data = merged;
+    }
+    delete data.emergencyDb;
+    await pushJsonBinRaw(data);
+    setDbCache({ ...data, emergencyDb: { active: false, reason: 'Synced to JSONBin', updatedAt: new Date().toISOString() } }, false);
+    writeFallbackDb(dbCache);
+    console.log('JSONBin sync completed');
+    return { success: true };
+  } catch(e) {
+    if (e.quota || isJsonBinQuotaError(e)) {
+      console.warn('JSONBin sync skipped: quota exhausted');
+      return { emergencyDb: true, saved: true };
+    }
+    console.error('JSONBin sync error:', e.message);
+    throw e;
+  } finally {
+    dbSyncInFlight = false;
+  }
+}
+
+async function readJsonBinRaw() {
+  if (dbCache) return cloneData(dbCache);
+  const data = await fetchJsonBinRaw();
+  setDbCache(data, data && data.emergencyDb && data.emergencyDb.active);
+  return cloneData(dbCache);
 }
 
 async function writeJsonBinRaw(data, options = {}) {
@@ -292,31 +378,10 @@ async function writeJsonBinRaw(data, options = {}) {
   } else {
     nextData[BACKUPS_KEY] = existingBackups;
   }
-  const url = `https://api.jsonbin.io/v3/b/${JB_BIN}`;
-  const headerModes = [
-    { 'Content-Type': 'application/json', 'X-Master-Key': JB_KEY, 'X-Bin-Meta': 'false' },
-    { 'Content-Type': 'application/json', 'X-Access-Key': JB_KEY, 'X-Bin-Meta': 'false' }
-  ];
-  let lastStatus = 0;
-  let quotaSeen = false;
-  for (const headers of headerModes) {
-    const r = await fetch(url, { method: 'PUT', headers, body: JSON.stringify(nextData) });
-    lastStatus = r.status;
-    if (r.ok) {
-      writeFallbackDb(nextData);
-      return await r.json();
-    }
-    const body = await r.text().catch(() => '');
-    if (isJsonBinQuotaError(createJsonBinError('write', r.status, body))) quotaSeen = true;
-    if (quotaSeen) {
-      const fallbackData = markEmergencyDb(nextData);
-      writeFallbackDb(fallbackData);
-      console.warn('JSONBin quota exhausted; saved write to emergency local DB fallback.');
-      return { emergencyDb: true, saved: true };
-    }
-    if (r.status !== 401 && r.status !== 403) break;
-  }
-  throw new Error('JSONBin write failed: ' + lastStatus);
+  const fallbackData = markEmergencyDb(nextData, 'Local cache pending JSONBin sync');
+  saveLocalDb(fallbackData, true);
+  syncDbToJsonBin(false).catch(e => console.error('Background JSONBin sync error:', e.message));
+  return { cached: true, emergencyDb: Boolean(fallbackData.emergencyDb && fallbackData.emergencyDb.active) };
 }
 
 function stripPrivateData(data) {
@@ -1073,6 +1138,9 @@ async function fetchNetflixCodes(targetEmail) {
 }
 
 setInterval(fetchNetflixCodes, 30000); // Poll every 30 seconds
+setInterval(() => {
+  syncDbToJsonBin(false).catch(e => console.error('Periodic JSONBin sync error:', e.message));
+}, Math.min(JSONBIN_SYNC_INTERVAL_MS, 60 * 1000));
 
 app.post('/setup-gmail', async (req, res) => {
   const session = requireSession(req, res, ['admin']);
@@ -1122,6 +1190,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, async () => {
   console.log('rashadtech server running on port ' + PORT);
   await loadGmailMonitors();
+  syncDbToJsonBin(false).catch(e => console.error('Initial JSONBin sync error:', e.message));
   try {
     const webhookUrl = process.env.RENDER_EXTERNAL_URL + '/telegram';
     const r = await fetch(`https://api.telegram.org/bot${TG_TOKEN}/setWebhook`, {
