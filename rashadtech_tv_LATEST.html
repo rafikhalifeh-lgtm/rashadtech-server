@@ -852,6 +852,11 @@ So your EmailJS template will receive the user email and verification code corre
             </div>
             <div id="dashboard-backups"><div style="color:var(--text3)">Loading...</div></div>
           </div>
+          <div class="card" style="padding:16px;border:1px solid var(--orange-border);background:var(--orange-bg)">
+            <div style="font-size:13px;font-weight:600;margin-bottom:6px">🧹 Fresh start</div>
+            <div style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5">Clear all test users, stock, top-up requests, and pending orders before real customers sign up.</div>
+            <button onclick="adminFreshStart()" style="width:100%;padding:10px;border:1px solid var(--red-border);background:var(--red-bg);color:var(--red);border-radius:var(--radius-sm);font-size:13px;font-weight:600;cursor:pointer">Reset test data</button>
+          </div>
         </div>
       </div>
       <div id="admin-stock" class="tab-pane active">
@@ -3436,19 +3441,73 @@ async function toggleBanUser(i){
   }
 }
 
+function purgeUserData(email){
+  const e=String(email||'').trim().toLowerCase();
+  if(!e)return;
+  topupRequests=topupRequests.filter(r=>String(r.email||'').trim().toLowerCase()!==e);
+  if(_jbCache){
+    if(Array.isArray(_jbCache.pending))_jbCache.pending=_jbCache.pending.filter(po=>String(po.userEmail||'').trim().toLowerCase()!==e);
+    if(Array.isArray(_jbCache.gameorders))_jbCache.gameorders=_jbCache.gameorders.filter(go=>String(go.userEmail||'').trim().toLowerCase()!==e);
+  }
+  globalRequests.forEach(gr=>{
+    if(Array.isArray(gr.requesters))gr.requesters=gr.requesters.filter(x=>String(x).trim().toLowerCase()!==e);
+  });
+  globalRequests=globalRequests.filter(gr=>(gr.requesters||[]).length>0);
+}
+
 async function deleteUser(i){
   const u=users[i];
   if(!u)return;
-  if(!confirm('Delete account for '+u.name+' ('+u.email+')? This cannot be undone.'))return;
-  // Find by email to avoid index shift issues
-  const idx=users.findIndex(x=>x.email===u.email);
+  if(!confirm('Delete account for '+u.name+' ('+u.email+')?\n\nThis also removes their top-up requests, pending orders, and game orders.'))return;
+  const email=u.email;
+  const idx=users.findIndex(x=>x.email===email);
   if(idx===-1)return;
   users.splice(idx,1);
+  purgeUserData(email);
   _jbCache=null;
   await saveData();
-  renderAdminCustomers();renderWallets();
-  showToast('✓ User deleted');
-  logActivity('Customer deleted',u.email);
+  renderAdminCustomers();renderWallets();renderTopupRequests();renderAdminPending();renderGameOrders();renderAdminRequests();
+  showToast('✓ User and related requests removed');
+  logActivity('Customer deleted',email);
+}
+
+async function deleteTopupReq(i){
+  const req=topupRequests[i];
+  if(!req)return;
+  if(!confirm('Remove top-up request from '+req.name+' ('+req.email+')?'))return;
+  topupRequests.splice(i,1);
+  _jbCache=null;
+  await saveData();
+  renderTopupRequests();
+  showToast('✓ Top-up request removed');
+}
+
+async function adminFreshStart(){
+  if(!confirm('Clear ALL test users, stock accounts, top-up requests, pending orders, and game orders?\n\nUse this before real customers sign up. Cannot be undone.'))return;
+  if(prompt('Type RESET to confirm fresh start:')!=='RESET'){showToast('Cancelled');return;}
+  users=[];
+  accountStock={};
+  topupRequests=[];
+  globalRequests=[];
+  try{
+    const data=await jbRead();
+    data.users=[];
+    data.stock={};
+    data.stockBlocks=data.stockBlocks||{};
+    data.topupreqs=[];
+    data.pending=[];
+    data.gameorders=[];
+    data.requests=[];
+    await jbWrite(data);
+    _jbCache=data;
+    applyDataSnapshot(data);
+  }catch(e){
+    _jbCache={users:[],stock:{},requests:[],topupreqs:[],pending:[],gameorders:[]};
+    applyDataSnapshot(_jbCache);
+  }
+  renderStockPanels();renderAdminCustomers();renderWallets();renderTopupRequests();renderAdminPending();renderGameOrders();renderAdminRequests();renderAdminExpiry();renderDashboard();
+  showToast('✓ Fresh start complete — ready for real customers');
+  logActivity('Admin fresh start','All test data cleared');
 }
 function getTopupHistory(userEmail){
   const u=users.find(x=>x.email===userEmail);
@@ -3643,18 +3702,23 @@ function renderTopupRequests(){
   const el=document.getElementById('topupreqs-list');
   if(!el)return;
   if(!topupRequests.length){el.innerHTML='<div class="empty-state" style="padding:32px"><i class="ti ti-cash"></i>No topup requests yet.</div>';return;}
-  el.innerHTML=topupRequests.map((r,i)=>`
-    <div class="admin-wallet-row" style="${r.status==='credited'?'opacity:0.5':''}">
+  el.innerHTML=topupRequests.map((r,i)=>{
+    const userExists=users.some(u=>String(u.email).toLowerCase()===String(r.email||'').toLowerCase());
+    return `<div class="admin-wallet-row" style="${r.status==='credited'?'opacity:0.5':''}">
       <div class="aw-info">
-        <div class="aw-name">${r.name}</div>
+        <div class="aw-name">${r.name}${!userExists?' <span style="color:var(--orange);font-size:10px">(user deleted)</span>':''}</div>
         <div class="aw-email">${r.email} · ${r.date}</div>
       </div>
       <div class="aw-bal" style="color:var(--blue);font-weight:700">${r.label}</div>
       ${r.status==='pending'
-        ? `<button class="aw-add-btn" onclick="creditTopupReq(${i})" style="white-space:nowrap">✓ Credit & Notify</button>`
+        ? (userExists
+          ? `<button class="aw-add-btn" onclick="creditTopupReq(${i})" style="white-space:nowrap">✓ Credit & Notify</button>`
+          : `<button class="aw-add-btn" onclick="deleteTopupReq(${i})" style="white-space:nowrap;background:var(--red-bg);color:var(--red);border-color:var(--red-border)">🗑 Remove</button>`)
         : `<span style="font-size:11px;background:var(--green-bg);color:var(--green);border:1px solid var(--green-border);padding:3px 8px;border-radius:4px;font-weight:600">Credited</span>`
       }
-    </div>`).join('');
+      ${r.status==='pending'?`<button onclick="deleteTopupReq(${i})" title="Remove request" style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:var(--text3)">✕</button>`:''}
+    </div>`;
+  }).join('');
 }
 async function creditTopupReq(i){
   await refreshFromFirebase();
@@ -3696,19 +3760,23 @@ async function resetAllStock(){
   showToast('✓ All stock cleared');
 }
 async function resetAllUsers(){
-  if(!confirm('Delete ALL user accounts? This cannot be undone.'))return;
+  if(!confirm('Delete ALL user accounts and their top-up/pending requests? This cannot be undone.'))return;
   users=[];
-  _jbCache=null; // clear cache
+  topupRequests=[];
+  _jbCache=null;
 
-  // Force write to JSONBin directly
   try{
     const data=await jbRead();
     data.users=[];
+    data.topupreqs=[];
+    data.pending=[];
+    data.gameorders=[];
     await jbWrite(data);
     _jbCache=data;
+    applyDataSnapshot(data);
   }catch(e){console.warn('reset users error:',e);}
-  renderAdminCustomers();renderWallets();
-  showToast('✓ All users cleared');
+  renderAdminCustomers();renderWallets();renderTopupRequests();renderAdminPending();renderGameOrders();
+  showToast('✓ All users and related requests cleared');
 }
 async function saveData(){
   if(!dataLoaded)return;
