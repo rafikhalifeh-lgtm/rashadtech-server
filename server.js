@@ -147,7 +147,8 @@ async function readJsonBinRaw() {
   const url = `https://api.jsonbin.io/v3/b/${JB_BIN}/latest`;
   const headerModes = [
     { 'X-Master-Key': JB_KEY, 'X-Bin-Meta': 'false' },
-    { 'X-Access-Key': JB_KEY, 'X-Bin-Meta': 'false' }
+    { 'X-Access-Key': JB_KEY, 'X-Bin-Meta': 'false' },
+    { 'X-Bin-Meta': 'false' }
   ];
   let lastStatus = 0;
   for (const headers of headerModes) {
