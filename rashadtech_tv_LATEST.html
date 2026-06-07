@@ -127,7 +127,7 @@ input,button,select,textarea{font-family:var(--font)}
 .sub-info{flex:1;min-width:0}
 .sub-name{font-size:14px;font-weight:600;margin-bottom:2px}
 .sub-plan{font-size:12px;color:var(--text2)}
-.sub-cred{font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:4px;word-break:break-all}
+.sub-cred{font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:4px;word-break:normal;overflow-wrap:anywhere;line-height:1.45}
 .sub-right{text-align:right;flex-shrink:0}
 .sub-price{font-size:14px;font-weight:600;margin-bottom:4px}
 .active-badge{background:var(--green-bg);color:var(--green);border:1px solid var(--green-border);font-size:10px;font-weight:600;padding:2px 8px;border-radius:4px}
@@ -170,7 +170,9 @@ input,button,select,textarea{font-family:var(--font)}
 .cust-sub-icon{width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0}
 .cust-sub-info{flex:1;min-width:0}
 .cust-sub-name{font-size:12px;font-weight:600}
-.cust-sub-cred{font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:2px;word-break:break-all}
+.cust-sub-cred{font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:4px;line-height:1.45;word-break:normal;overflow-wrap:anywhere}
+.cust-sub-cred-line{display:block;margin-top:2px}
+.sub-for-badge{font-size:11px;color:var(--blue);background:var(--blue-bg);border:1px solid var(--blue-border);border-radius:4px;padding:3px 8px;margin-bottom:4px;display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap}
 /* MODAL */
 .modal-wrap{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:500;align-items:flex-start;justify-content:center;padding:40px 16px;overflow-y:auto}
 .modal-wrap.open{display:flex}
@@ -437,7 +439,9 @@ input,button,select,textarea{font-family:var(--font)}
 
   /* My customers mobile */
   .cust-card{padding:12px}
-  .cust-sub-row>div:last-child{width:100%}
+  .cust-sub-row{flex-wrap:wrap}
+  .cust-sub-row .cust-sub-info{flex:1 1 180px;min-width:0}
+  .cust-sub-row>div:last-child{flex:1 1 120px;min-width:120px}
 
   /* Fix all inputs 16px to prevent iOS zoom */
   input,select,textarea{font-size:16px !important}
@@ -1096,6 +1100,28 @@ async function rtApi(path,opts={}){
 
 function normEmail(e){return String(e||'').trim().toLowerCase();}
 
+function collectAssignedSubs(user){
+  const out=[];
+  (user?.myCustomers||[]).forEach(c=>(c.subs||[]).forEach(o=>out.push({order:o,customer:c})));
+  return out;
+}
+function userPurchaseSummary(u){
+  const own=u.orders||[];
+  const assigned=collectAssignedSubs(u);
+  const chipOrders=[...own,...assigned.map(x=>x.order)];
+  return {own,assigned,total:own.length+assigned.length,chipOrders};
+}
+function findUserOrder(orderId){
+  if(!currentUser||!orderId)return null;
+  const direct=(currentUser.orders||[]).find(x=>x.id===orderId);
+  if(direct)return {order:direct,customer:null};
+  for(const c of (currentUser.myCustomers||[])){
+    const sub=(c.subs||[]).find(x=>x.id===orderId);
+    if(sub)return {order:sub,customer:c};
+  }
+  return null;
+}
+
 function applyDataSnapshot(data){
   const incoming=data||{};
   _jbCache={...(_jbCache||{}),...incoming};
@@ -1474,7 +1500,8 @@ let _currentSubId=null;
 
 function openSubOptions(orderId){
   _currentSubId=orderId;
-  const o=currentUser?.orders.find(x=>x.id===orderId);
+  const found=findUserOrder(orderId);
+  const o=found?.order;
   if(!o)return;
   document.getElementById('sub-options-product').textContent=o.product+' · '+o.plan;
   const btn=document.getElementById('sub-option-autorenew-btn');
@@ -1489,7 +1516,7 @@ function subOptionGenLink(){
 
 async function subOptionAddNote(){
   closeModal('sub-options-modal');
-  const o=currentUser?.orders.find(x=>x.id===_currentSubId);
+  const o=findUserOrder(_currentSubId)?.order;
   if(!o)return;
   const note=prompt('Add a note to this subscription:'+(o.note?' Current: '+o.note:''));
   if(note===null)return;
@@ -1501,7 +1528,7 @@ async function subOptionAddNote(){
 
 async function subOptionRenew(){
   closeModal('sub-options-modal');
-  const o=currentUser?.orders.find(x=>x.id===_currentSubId);
+  const o=findUserOrder(_currentSubId)?.order;
   if(!o)return;
   try{
     await rtApi('/customer/renew-request',{method:'POST',body:JSON.stringify({orderId:o.id,product:o.product,plan:o.plan,expiryDate:o.expiryDate||''})});
@@ -1520,7 +1547,7 @@ Customer is requesting renewal.`);
 
 async function subOptionReport(){
   closeModal('sub-options-modal');
-  const o=currentUser?.orders.find(x=>x.id===_currentSubId);
+  const o=findUserOrder(_currentSubId)?.order;
   if(!o)return;
   const issue=prompt(currentLang==='ar'?'صف المشكلة:':'Describe the issue:');
   if(!issue)return;
@@ -1546,7 +1573,7 @@ async function subOptionReport(){
 
 async function subOptionChangeProfile(){
   closeModal('sub-options-modal');
-  const o=currentUser?.orders.find(x=>x.id===_currentSubId);
+  const o=findUserOrder(_currentSubId)?.order;
   if(!o)return;
   const name=prompt('Enter new profile name:'+(o.profileName?' Current: '+o.profileName:''));
   if(!name||!name.trim())return;
@@ -1558,7 +1585,7 @@ async function subOptionChangeProfile(){
 
 async function subOptionChangePin(){
   closeModal('sub-options-modal');
-  const o=currentUser?.orders.find(x=>x.id===_currentSubId);
+  const o=findUserOrder(_currentSubId)?.order;
   if(!o)return;
   const pin=prompt('Enter new PIN code:'+(o.profilePin?' Current: '+o.profilePin:''));
   if(!pin||!pin.trim())return;
@@ -1570,7 +1597,7 @@ async function subOptionChangePin(){
 
 async function subOptionRemovePin(){
   closeModal('sub-options-modal');
-  const o=currentUser?.orders.find(x=>x.id===_currentSubId);
+  const o=findUserOrder(_currentSubId)?.order;
   if(!o)return;
   if(!confirm('Remove PIN code for this subscription?'))return;
   delete o.profilePin;
@@ -1581,7 +1608,7 @@ async function subOptionRemovePin(){
 
 async function subOptionAutoRenew(){
   closeModal('sub-options-modal');
-  const o=currentUser?.orders.find(x=>x.id===_currentSubId);
+  const o=findUserOrder(_currentSubId)?.order;
   if(!o)return;
   o.autoRenew=!o.autoRenew;
   await saveData();
@@ -1727,7 +1754,7 @@ async function setProfileName(orderId){
   if(!name||!name.trim())return;
   if(!currentUser)return;
   // Find and update the order
-  const o=currentUser.orders.find(x=>x.id===orderId);
+  const o=findUserOrder(orderId)?.order;
   if(o){
     o.profileName=name.trim();
     await saveData();
@@ -1736,8 +1763,7 @@ async function setProfileName(orderId){
   }
 }
 async function copySubLink(orderId){
-  // Find the order
-  const o=currentUser?.orders.find(x=>x.id===orderId);
+  const o=findUserOrder(orderId)?.order;
   if(!o){showToast('Order not found');return;}
   // Encode subscription data directly in URL — no server call needed to view
   const data=subLinkDataFromOrder(o);
@@ -2406,35 +2432,15 @@ async function confirmPurchase(){
       const j=await r.json();
       if(!r.ok||!j.success)throw new Error(j.error||'Purchase failed');
       applyDataSnapshot(j.data||{users:[j.user]});
-      currentUser=j.user||users.find(x=>normEmail(x.email)===normEmail(currentUser.email))||currentUser;
-      if(j.order&&!j.pending){
-        currentUser.orders=Array.isArray(currentUser.orders)?currentUser.orders:[];
-        if(!currentUser.orders.some(o=>o.id===j.order.id))currentUser.orders.unshift(j.order);
-        const u=users.find(x=>normEmail(x.email)===normEmail(currentUser.email));
-        if(u)u.orders=currentUser.orders;
-      }
+      currentUser=users.find(x=>normEmail(x.email)===normEmail(currentUser.email))||j.user||currentUser;
       if(_jbCache)_jbCache.users=users;
       closeModal('buy-modal');closeModal('assign-modal');updateBal();renderSubs();renderTx();renderMyCustomers();renderExpiryTracker();renderProducts('all');
       showToast('✓ Purchase successful!');
       if(j.pending){
-        if(currentUser.tgChatId)await sendTelegramToUser(currentUser.tgChatId,`✅ <b>Purchase Confirmed!</b>\n\n📦 ${p.name} · ${planLabel}\n💵 ${fmt(price)}\n💰 New balance: ${fmt(currentUser.balance)}\n\n⏳ Your account credentials will be delivered to you here shortly. Thank you for your patience!`);
-        await sendTelegram(`⏳ <b>Pending Order</b>\n👤 ${currentUser.name} (${currentUser.email})\n📦 ${p.name} · ${planLabel}\n💵 ${fmt(price)}\n⚠️ No stock — add accounts in Stock tab to fulfill.`);
-      } else if(j.order){
-        const order=j.order;
-        let tgMsg=`🎉 <b>New Purchase</b>\n\n📦 <b>Product:</b> ${p.name}\n📋 <b>Plan:</b> ${planLabel}\n💵 <b>Price:</b> ${fmt(price)}\n👤 <b>Buyer:</b> ${currentUser.name} (${currentUser.email})\n\n🔐 <b>Credentials:</b>\n📧 Email: <code>${order.email}</code>\n🔑 Password: <code>${order.pass}</code>`;
-        if(order.extra)tgMsg+=`\nℹ️ Extra: <code>${order.extra}</code>`;
-        if(order.expiryDate)tgMsg+=`\n📅 Expires: ${order.expiryDate}`;
-        await sendTelegram(tgMsg);
-        if(assignCustId===null&&currentUser.tgChatId){
-          const data2={id:order.id,product:p.name,short:p.short,color:p.color,tc:p.tc,productId:p.id,plan:planLabel,email:order.email,pass:order.pass,expiryDate:order.expiryDate||'',profileName:order.profileName||'',profilePin:order.profilePin||'',accKey:order.accKey||'',mainEmail:order.mainEmail||'',codeEmail:order.email,inboxEmail:order.mainEmail||order.email};
-          const subLink=await createSubLinkUrl(data2);
-          let custCred=`✅ <b>Your ${p.name} is ready!</b>\n\n📋 ${planLabel}\n\n🔐 <b>Your credentials:</b>\n📧 Email: <code>${order.email}</code>\n🔑 Password: <code>${order.pass}</code>`;
-          if(order.extra)custCred+=`\nℹ️ Extra: <code>${order.extra}</code>`;
-          if(order.expiryDate)custCred+=`\n⏰ Expires: ${order.expiryDate}`;
-          if(order.profilePin)custCred+=`\n🔢 PIN: <code>${order.profilePin}</code>`;
-          custCred+=`\n\n🔗 <b>Your subscription link:</b>\n${subLink}\n\nEnjoy! 🌟`;
-          await sendTelegramToUser(currentUser.tgChatId,custCred);
-        }
+        const assigned=assignCustId!=null?currentUser.myCustomers?.find(x=>x.id===assignCustId):null;
+        const assignNote=assigned?`\n👥 For: ${assigned.fname} ${assigned.lname}`:'';
+        if(currentUser.tgChatId)await sendTelegramToUser(currentUser.tgChatId,`✅ <b>Purchase Confirmed!</b>\n\n📦 ${p.name} · ${planLabel}\n💵 ${fmt(price)}\n💰 New balance: ${fmt(currentUser.balance)}${assignNote}\n\n⏳ Your account credentials will be delivered to you here shortly. Thank you for your patience!`);
+        await sendTelegram(`⏳ <b>Pending Order</b>\n👤 ${currentUser.name} (${currentUser.email})\n📦 ${p.name} · ${planLabel}\n💵 ${fmt(price)}${assignNote}\n⚠️ No stock — add accounts in Stock tab to fulfill.`);
       }
     }catch(e){showToast('⚠️ '+e.message);}
     return;
@@ -2474,7 +2480,7 @@ async function confirmPurchase(){
       order.profileName=c.fname;
       c.subs=c.subs||[];c.subs.push(order);
     }
-    await saveData();closeModal('buy-modal');closeModal('assign-modal');renderMyCustomers();showToast('✓ Subscription assigned');
+    await saveData();closeModal('buy-modal');closeModal('assign-modal');renderSubs();renderMyCustomers();showToast('✓ Subscription assigned');
     // Send credentials + link to Customer1 only
     const cleanId=(order.id||'').replace('#','');
     const cleanId2=(order.id||'').replace('#','');
@@ -2533,22 +2539,31 @@ async function confirmPurchase(){
   if(isAdmin)renderStockPanels();
 }
 
-function subRow(o){
-  let ex='';if(o.extra)ex+=`<div class="sub-cred">Extra: ${o.extra}</div>`;if(o.profileName)ex+=`<div class="sub-cred">Profile: ${o.profileName}</div>`;
+function subRow(o,forCustomer){
+  let ex='';
+  if(forCustomer)ex+=`<div class="sub-for-badge"><i class="ti ti-user" style="font-size:12px"></i> ${t('forSubCustomer','For')}: <strong>${esc(forCustomer.fname)} ${esc(forCustomer.lname)}</strong> · ${esc(forCustomer.code)} ${esc(forCustomer.phone)}</div>`;
+  if(o.extra)ex+=`<div class="sub-cred">Extra: ${esc(o.extra)}</div>`;
+  if(o.profileName)ex+=`<div class="sub-cred">Profile: ${esc(o.profileName)}</div>`;
   const ico=PRODUCT_ICONS[o.productId];
   const iconHtml=ico?`<img src="${ico}" width="40" height="40" style="border-radius:9px;object-fit:contain;background:#fff;padding:2px" onerror="this.outerHTML='<div style=\'width:40px;height:40px;border-radius:9px;background:${o.color};color:${o.tc};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700\'>${o.short}</div>'">`:`<div style="width:40px;height:40px;border-radius:9px;background:${o.color};color:${o.tc};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700">${o.short}</div>`;
   return `<div class="sub-card"><div class="sub-icon" style="background:${ico?'#fff':o.color};overflow:hidden;padding:0">${iconHtml}</div>
-    <div class="sub-info"><div class="sub-name">${o.product}</div><div class="sub-plan">${o.plan} · ${o.date}</div>
-    <div class="sub-cred">${o.email} / ${o.pass}</div>${ex}</div>
+    <div class="sub-info"><div class="sub-name">${esc(o.product)}</div><div class="sub-plan">${esc(o.plan)} · ${esc(o.date)}</div>
+    <div class="sub-cred"><span class="cust-sub-cred-line">📧 ${esc(o.email)}</span><span class="cust-sub-cred-line">🔑 ${esc(o.pass)}</span></div>${ex}</div>
     <div class="sub-right"><div class="sub-price">${fmt(o.price)}</div><span class="active-badge">${t('active','Active')}</span>
     
     <button onclick="openSubOptions('${o.id}')" style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px;color:var(--text2);cursor:pointer;margin-top:4px;display:block;width:100%">••• ${t('options','Options')}</button>
     </div></div>`;
 }
 function pendingSubRow(o){
+  let forBadge='';
+  if(o.assignCustId!=null&&currentUser){
+    const c=currentUser.myCustomers?.find(x=>x.id===o.assignCustId);
+    if(c)forBadge=`<div class="sub-for-badge"><i class="ti ti-user" style="font-size:12px"></i> ${t('forSubCustomer','For')}: <strong>${esc(c.fname)} ${esc(c.lname)}</strong></div>`;
+  }
   return `<div class="sub-row" style="border:1px dashed var(--orange-border);background:var(--orange-bg)">
     <div class="sub-icon" style="background:${o.color||'var(--orange)'}20;color:${o.color||'var(--orange)'}">${o.short||'⏳'}</div>
     <div class="sub-info">
+      ${forBadge}
       <div class="sub-name">${esc(o.product||'Subscription')} <span style="font-size:11px;color:var(--orange);font-weight:700">PENDING</span></div>
       <div class="sub-plan">${esc(o.plan||'')}</div>
       <div style="font-size:11px;color:var(--text3);margin-top:4px">Order ${esc(o.id||'')} · ${esc(o.date||'')}</div>
@@ -2561,15 +2576,17 @@ function renderSubs(){
   const el=document.getElementById('subs-list');const nel=document.getElementById('netflix-list');
   const pending=(Array.isArray(_jbCache?.pending)?_jbCache.pending:[]).filter(o=>o&&normEmail(o.userEmail)===normEmail(currentUser.email));
   const orders=currentUser.orders||[];
-  if(!orders.length&&!pending.length){
+  const assigned=collectAssignedSubs(currentUser);
+  if(!orders.length&&!pending.length&&!assigned.length){
     el.innerHTML=`<div class="empty-state"><i class="ti ti-device-tv"></i>${t('noSubscriptions','No subscriptions yet.')}<br><br><button onclick="switchTab('store',null)" style="background:var(--red);color:#fff;border:none;border-radius:var(--radius-sm);padding:8px 18px;font-size:12px;font-weight:600;cursor:pointer;margin-top:8px">${t('goToStore','Go to store')}</button></div>`;
     nel.innerHTML=`<div class="empty-state"><i class="ti ti-brand-netflix"></i>${t('noNetflixSubs','No Netflix subscriptions yet.')}</div>`;
     return;
   }
-  el.innerHTML=[...pending.map(pendingSubRow),...orders.map(subRow)].join('');
+  el.innerHTML=[...pending.map(pendingSubRow),...orders.map(o=>subRow(o)),...assigned.map(({order,customer})=>subRow(order,customer))].join('');
   const nfPending=pending.filter(o=>o.productId==='netflix');
-  const nf=orders.filter(o=>o.productId==='netflix');
-  const nfHtml=[...nfPending.map(pendingSubRow),...nf.map(subRow)].join('');
+  const nfOwn=orders.filter(o=>o.productId==='netflix');
+  const nfAssigned=assigned.filter(({order})=>order.productId==='netflix');
+  const nfHtml=[...nfPending.map(pendingSubRow),...nfOwn.map(o=>subRow(o)),...nfAssigned.map(({order,customer})=>subRow(order,customer))].join('');
   nel.innerHTML=nfHtml||`<div class="empty-state"><i class="ti ti-brand-netflix"></i>${t('noNetflixSubs','No Netflix subscriptions yet.')}</div>`;
 }
 
@@ -2677,7 +2694,7 @@ const LANG={
     changePassword:'🔑 Change password',currentPassword:'Current password',newPassword:'New password',confirmPassword:'Confirm new password',
     updatePassword:'Update password',logoutAll:'🔐 Logout all devices',requestRenewal:'🔄 Request Renewal',reportIssue:'⚠️ Report Issue',
     topupHelp:'To top up your wallet, contact support on WhatsApp with payment proof.',
-    netflix:'Netflix',options:'Options',active:'Active',goToStore:'Go to store',noSubscriptions:'No subscriptions yet',noNetflixSubs:'No Netflix subscriptions yet.',
+    netflix:'Netflix',options:'Options',active:'Active',goToStore:'Go to store',noSubscriptions:'No subscriptions yet',noNetflixSubs:'No Netflix subscriptions yet.',forSubCustomer:'For',
     analytics:'Analytics',exportOrders:'Export orders',bulkImport:'Bulk import',
     storeSub:'Instant delivery · Wallet-powered purchases',subsSub:'All purchased accounts and credentials',
     netflixSub:'Your Netflix subscriptions',expirySub:'Monitor how long your subscriptions have left',
@@ -3141,7 +3158,7 @@ function renderMyCustomers(){
       const cleanId=(s.id||'').replace('#','');
       return `<div class="cust-sub-row">
       <div class="cust-sub-icon" style="background:${s.color};color:${s.tc}">${s.short}</div>
-      <div class="cust-sub-info"><div class="cust-sub-name">${s.product} · ${s.plan}</div><div class="cust-sub-cred">${s.email} / ${s.pass}</div>${s.profilePin?`<div class="cust-sub-cred">PIN: ${s.profilePin}</div>`:''}${s.expiryDate?`<div class="cust-sub-cred">Exp: ${s.expiryDate}</div>`:''}</div>
+      <div class="cust-sub-info"><div class="cust-sub-name">${esc(s.product)} · ${esc(s.plan)}</div><div class="cust-sub-cred"><span class="cust-sub-cred-line">📧 ${esc(s.email)}</span><span class="cust-sub-cred-line">🔑 ${esc(s.pass)}</span></div>${s.profilePin?`<div class="cust-sub-cred"><span class="cust-sub-cred-line">PIN: ${esc(s.profilePin)}</span></div>`:''}${s.expiryDate?`<div class="cust-sub-cred"><span class="cust-sub-cred-line">Exp: ${esc(s.expiryDate)}</span></div>`:''}</div>
       <div style="text-align:right">
         <div style="font-size:11px;color:var(--text3);margin-bottom:4px">${s.date}</div>
         
@@ -3471,9 +3488,10 @@ function renderAdminCustomers(){
   const productF=(document.getElementById('admin-cust-filter-product')?.value||'').toLowerCase();
   const statusF=document.getElementById('admin-cust-filter-status')?.value||'';
   const filtered=users.filter(u=>{
+    const ps=userPurchaseSummary(u);
     if(q&&!u.name.toLowerCase().includes(q)&&!u.email.toLowerCase().includes(q))return false;
-    if(productF&&!u.orders.some(o=>o.product.toLowerCase().includes(productF)))return false;
-    if(statusF==='active'&&u.orders.length===0)return false;
+    if(productF&&!ps.chipOrders.some(o=>String(o.product||'').toLowerCase().includes(productF)))return false;
+    if(statusF==='active'&&ps.total===0)return false;
     if(statusF==='banned'&&!u.banned)return false;
     if(statusF==='no-tg'&&u.tgChatId)return false;
     return true;
@@ -3481,16 +3499,22 @@ function renderAdminCustomers(){
   if(!filtered.length){tbody.innerHTML='<tr><td colspan="8" style="text-align:center;padding:32px;color:var(--text3);font-size:13px">No users found</td></tr>';return;}
   tbody.innerHTML=filtered.map(u=>{
     const ri=users.indexOf(u);
+    const ps=userPurchaseSummary(u);
     const spent=u.transactions.filter(t=>t.type==='purchase').reduce((s,t)=>s+t.amount,0);
-    const subChips=u.orders.slice(0,3).map(o=>`<span class="sub-chip">${o.product}</span>`).join('');
-    const more=u.orders.length>3?`<span class="sub-chip">+${u.orders.length-3} more</span>`:'';
+    const subChips=ps.chipOrders.slice(0,3).map(o=>{
+      const assigned=ps.assigned.find(a=>a.order.id===o.id);
+      const label=assigned?`${o.product} → ${assigned.customer.fname}`:o.product;
+      return `<span class="sub-chip">${esc(label)}</span>`;
+    }).join('');
+    const more=ps.total>3?`<span class="sub-chip">+${ps.total-3} more</span>`:'';
+    const assignedNote=ps.assigned.length?`<div style="font-size:10px;color:var(--text3);margin-top:2px">${ps.assigned.length} for sub-customer${ps.assigned.length!==1?'s':''}</div>`:'';
     const banned=u.banned;
     return `<tr style="${banned?'opacity:0.6':''}">
       <td><div style="font-weight:600">${u.name}</div>${banned?'<div style="font-size:10px;color:var(--red);font-weight:600">🚫 BANNED</div>':''}</td>
       <td style="font-family:var(--mono);font-size:12px">${u.email}</td>
       <td><span class="verified-pill ${u.verified?'vpill-yes':'vpill-no'}">${u.verified?'✓ Verified':'⚠ Unverified'}</span></td>
       <td><span style="color:var(--green);font-weight:600">${fmt(u.balance)}</span><div style="font-size:11px;color:var(--text3)">spent: ${fmt(spent)}</div></td>
-      <td><div style="font-weight:600">${u.orders.length} purchase${u.orders.length!==1?'s':''}</div><div class="sub-chips">${subChips}${more}</div></td>
+      <td><div style="font-weight:600">${ps.total} purchase${ps.total!==1?'s':''}</div>${assignedNote}<div class="sub-chips">${subChips}${more}</div></td>
       <td style="color:var(--text3);font-size:12px">${u.joinedDate||'—'}</td>
       <td style="white-space:nowrap">
         <button onclick="toggleBanUser(${ri})" style="background:${banned?'var(--green-bg)':'var(--orange-bg)'};color:${banned?'var(--green)':'var(--orange)'};border:1px solid ${banned?'var(--green-border)':'var(--orange-border)'};border-radius:var(--radius-sm);padding:4px 8px;font-size:11px;font-weight:600;cursor:pointer;margin-bottom:4px;display:block">${banned?'✅ Unban':'🚫 Ban'}</button>
