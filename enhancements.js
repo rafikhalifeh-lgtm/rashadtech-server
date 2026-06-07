@@ -448,8 +448,11 @@ function registerEnhancements(app, deps) {
       const order = user ? placeFulfilledOrder(user, po, acc) : null;
       data.pending.splice(idx, 1);
       await writeJsonBinRaw(data);
-      if (user && user.tgChatId) {
-        await sendTG(user.tgChatId, `✅ <b>Your ${po.product} is ready!</b>\n\n📋 ${po.plan}\n📧 <code>${acc.email}</code>\n🔑 <code>${acc.pass}</code>${acc.profilePin ? `\n🔢 PIN: <code>${acc.profilePin}</code>` : ''}`, 'HTML').catch(() => {});
+      const tgId = String(user?.tgChatId || po.userTgChatId || '').trim();
+      if (tgId) {
+        const assignNote = po.assignCustId != null ? ' (sub-customer order)' : '';
+        await sendTG(tgId, `✅ <b>Your ${po.product} is ready!</b>${assignNote}\n\n📋 ${po.plan}\n📧 <code>${acc.email}</code>\n🔑 <code>${acc.pass}</code>${acc.profilePin ? `\n🔢 PIN: <code>${acc.profilePin}</code>` : ''}`, 'HTML').catch(() => {});
+        if (user && !user.tgChatId) user.tgChatId = tgId;
       }
       await appendActivity('Pending order fulfilled', orderId, session.email);
       res.json({ success: true, order, user: sanitizeUser(user), data: safeDataForSession(data, { role: 'admin' }) });

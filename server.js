@@ -704,7 +704,7 @@ function mergeUserWrite(existing, incoming, session) {
       users[idx] = {
         ...users[idx],
         name: incomingUser.name,
-        tgChatId: incomingUser.tgChatId || '',
+        tgChatId: String(incomingUser.tgChatId || '').trim() || String(users[idx].tgChatId || '').trim(),
         verified: Boolean(incomingUser.verified),
         myCustomers: Array.isArray(incomingUser.myCustomers) ? incomingUser.myCustomers : users[idx].myCustomers
       };
@@ -1133,19 +1133,44 @@ app.get('/links/:token', async (req, res) => {
   }
 });
 
-async function notifyPurchasePending(user, product, planLabel, price) {
-  await sendTG(TG_ADMIN, `⏳ <b>Pending Order</b>\n👤 ${user.name} (${user.email})\n📦 ${product.name} · ${planLabel}\n💵 $${Number(price).toFixed(2)}\n⚠️ No stock — add accounts in Stock tab to fulfill.`, 'HTML').catch(() => {});
-  if (user.tgChatId) {
-    await sendTG(user.tgChatId, `✅ <b>Purchase Confirmed!</b>\n\n📦 ${product.name} · ${planLabel}\n💵 $${Number(price).toFixed(2)}\n💰 New balance: $${Number(user.balance || 0).toFixed(2)}\n\n⏳ Your credentials will be delivered here shortly.`, 'HTML').catch(() => {});
-  }
+function syncUserContact(user, { tgChatId, name } = {}) {
+  if (!user) return user;
+  const nextTg = String(tgChatId || '').trim();
+  if (nextTg) user.tgChatId = nextTg;
+  const nextName = String(name || '').trim();
+  if (nextName) user.name = nextName;
+  return user;
 }
 
-async function notifyPurchaseFulfilled(user, product, planLabel, price, order) {
-  let adminMsg = `🎉 <b>New Purchase</b>\n\n📦 <b>Product:</b> ${product.name}\n📋 <b>Plan:</b> ${planLabel}\n💵 <b>Price:</b> $${Number(price).toFixed(2)}\n👤 <b>Buyer:</b> ${user.name} (${user.email})\n\n🔐 <b>Credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`;
+async function notifyPurchasePending(user, product, planLabel, price, assignCustId) {
+  const assignedCustomer = assignCustId !== null && assignCustId !== undefined
+    ? (user.myCustomers || []).find(c => c.id === assignCustId)
+    : null;
+  const assignNote = assignedCustomer
+    ? `\n👥 For: ${assignedCustomer.fname} ${assignedCustomer.lname}`
+    : '';
+  await sendTG(TG_ADMIN, `⏳ <b>Pending Order</b>\n👤 ${user.name} (${user.email})\n📦 ${product.name} · ${planLabel}\n💵 $${Number(price).toFixed(2)}${assignNote}\n⚠️ No stock — add accounts in Stock tab to fulfill.`, 'HTML').catch((e) => console.error('Pending admin TG:', e.message));
+  if (!user.tgChatId) return false;
+  await sendTG(user.tgChatId, `✅ <b>Purchase Confirmed!</b>\n\n📦 ${product.name} · ${planLabel}\n💵 $${Number(price).toFixed(2)}\n💰 New balance: $${Number(user.balance || 0).toFixed(2)}${assignNote}\n\n⏳ Your credentials will be delivered here shortly.`, 'HTML').catch((e) => { console.error('Pending customer TG:', e.message); return false; });
+  return true;
+}
+
+async function notifyPurchaseFulfilled(user, product, planLabel, price, order, assignCustId) {
+  const assignedCustomer = assignCustId !== null && assignCustId !== undefined
+    ? (user.myCustomers || []).find(c => c.id === assignCustId)
+    : null;
+  let adminMsg = `🎉 <b>New Purchase</b>\n\n📦 <b>Product:</b> ${product.name}\n📋 <b>Plan:</b> ${planLabel}\n💵 <b>Price:</b> $${Number(price).toFixed(2)}\n👤 <b>Buyer:</b> ${user.name} (${user.email})`;
+  if (assignedCustomer) {
+    adminMsg += `\n👥 <b>Assigned to:</b> ${assignedCustomer.fname} ${assignedCustomer.lname} (${assignedCustomer.code}${assignedCustomer.phone})`;
+  }
+  adminMsg += `\n\n🔐 <b>Credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`;
   if (order.extra) adminMsg += `\nℹ️ Extra: <code>${order.extra}</code>`;
   if (order.expiryDate) adminMsg += `\n📅 Expires: ${order.expiryDate}`;
-  await sendTG(TG_ADMIN, adminMsg, 'HTML').catch(() => {});
-  if (!user.tgChatId) return;
+  await sendTG(TG_ADMIN, adminMsg, 'HTML').catch((e) => console.error('Purchase admin TG:', e.message));
+  if (!user.tgChatId) {
+    console.warn('Purchase fulfilled but user has no tgChatId:', user.email);
+    return false;
+  }
   const linkData = {
     id: order.id,
     product: product.name,
@@ -1171,18 +1196,48 @@ async function notifyPurchaseFulfilled(user, product, planLabel, price, order) {
     expiresAt: Date.now() + LINK_TTL_MS
   });
   const subLink = `https://rashadtech.tv?t=${token}`;
-  let custMsg = `✅ <b>Your ${product.name} is ready!</b>\n\n📋 ${planLabel}\n\n🔐 <b>Your credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`;
+  const custName = assignedCustomer ? `${assignedCustomer.fname} ${assignedCustomer.lname}` : null;
+  let custMsg = assignedCustomer
+    ? `✅ <b>${product.name} subscription for ${custName}</b>\n\n📋 ${planLabel}\n👥 <b>For:</b> ${custName}\n\n🔐 <b>Credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`
+    : `✅ <b>Your ${product.name} is ready!</b>\n\n📋 ${planLabel}\n\n🔐 <b>Your credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`;
   if (order.extra) custMsg += `\nℹ️ Extra: <code>${order.extra}</code>`;
   if (order.expiryDate) custMsg += `\n⏰ Expires: ${order.expiryDate}`;
   if (order.profilePin) custMsg += `\n🔢 PIN: <code>${order.profilePin}</code>`;
-  custMsg += `\n\n🔗 <b>Your subscription link:</b>\n${subLink}\n\nEnjoy! 🌟`;
-  await sendTG(user.tgChatId, custMsg, 'HTML').catch(() => {});
+  custMsg += `\n\n🔗 <b>Subscription link:</b>\n${subLink}\n\nEnjoy! 🌟`;
+  try {
+    await sendTG(user.tgChatId, custMsg, 'HTML');
+    if (assignedCustomer && assignedCustomer.tgChatId && String(assignedCustomer.tgChatId) !== String(user.tgChatId)) {
+      await sendTG(assignedCustomer.tgChatId, `✅ <b>${product.name} subscription</b>\n\n📋 ${planLabel}\n\n🔐 <b>Credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>${order.profilePin ? `\n🔢 PIN: <code>${order.profilePin}</code>` : ''}\n\n🔗 ${subLink}`, 'HTML').catch(() => {});
+    }
+    return true;
+  } catch (e) {
+    console.error('Purchase customer TG:', e.message);
+    return false;
+  }
 }
+
+app.post('/customer/profile', async (req, res) => {
+  const session = requireSession(req, res, ['user']);
+  if (!session) return;
+  const { name, tgChatId } = req.body || {};
+  try {
+    const data = await readJsonBinRaw();
+    data.users = Array.isArray(data.users) ? data.users : [];
+    const user = data.users.find(u => normalizeEmail(u.email) === session.email);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    syncUserContact(user, { name, tgChatId });
+    await writeJsonBinRaw(data);
+    res.json({ success: true, user: sanitizeUser(user), data: safeDataForSession(data, session) });
+  } catch (e) {
+    console.error('Profile save error:', e.message);
+    res.status(500).json({ error: 'Could not save profile' });
+  }
+});
 
 app.post('/purchase', async (req, res) => {
   const session = requireSession(req, res, ['user']);
   if (!session) return;
-  const { product, planLabel, price, skey, extraFields, assignCustId } = req.body;
+  const { product, planLabel, price, skey, extraFields, assignCustId, tgChatId } = req.body;
   if (!product || !planLabel || !skey || !Number(price)) return res.status(400).json({ error: 'Invalid purchase' });
   try {
     const data = await readJsonBinRaw();
@@ -1192,6 +1247,7 @@ app.post('/purchase', async (req, res) => {
     data.stockBlocks = data.stockBlocks || {};
     const user = data.users.find(u => normalizeEmail(u.email) === session.email);
     if (!user) return res.status(404).json({ error: 'User not found' });
+    syncUserContact(user, { tgChatId });
     if (user.banned) return res.status(403).json({ error: 'Your account has been suspended. Contact support.' });
     if (data.stockBlocks[skey]) return res.status(403).json({ error: 'This plan is temporarily unavailable.' });
     if (Number(user.balance || 0) < Number(price)) return res.status(400).json({ error: 'Insufficient balance' });
@@ -1217,8 +1273,8 @@ app.post('/purchase', async (req, res) => {
       data.pending.unshift(pendingOrder);
       user.transactions.unshift({type:'purchase',label:'Bought '+product.name+' · '+planLabel,amount:Number(price),balance:user.balance,date:dateStr});
       await writeJsonBinRaw(data);
-      await notifyPurchasePending(user, product, planLabel, price);
-      return res.json({ success:true, pending:true, user:sanitizeUser(user), order:pendingOrder, data:safeDataForSession(data, session) });
+      const telegramSent = await notifyPurchasePending(user, product, planLabel, price, assignCustId);
+      return res.json({ success:true, pending:true, telegramSent, user:sanitizeUser(user), order:pendingOrder, data:safeDataForSession(data, session) });
     }
 
     const aliasError = validateNetflixAliasPurchase(data, skey, acc);
@@ -1252,10 +1308,8 @@ app.post('/purchase', async (req, res) => {
     }
     user.transactions.unshift({type:'purchase',label:'Bought '+product.name+' · '+planLabel,amount:Number(price),balance:user.balance,date:dateStr});
     await writeJsonBinRaw(data);
-    if (assignCustId === null || assignCustId === undefined) {
-      await notifyPurchaseFulfilled(user, product, planLabel, price, order);
-    }
-    res.json({ success:true, pending:false, user:sanitizeUser(user), order, data:safeDataForSession(data, session) });
+    const telegramSent = await notifyPurchaseFulfilled(user, product, planLabel, price, order, assignCustId);
+    res.json({ success:true, pending:false, telegramSent, user:sanitizeUser(user), order, data:safeDataForSession(data, session) });
   } catch(e) {
     console.error('Purchase error:', e.message);
     res.status(500).json({ error: 'Purchase failed' });
@@ -1373,7 +1427,14 @@ app.post('/notify', async (req, res) => {
     if (session.role === 'user' && chatId) {
       const data = await readJsonBinRaw();
       const user = (data.users || []).find(u => normalizeEmail(u.email) === session.email);
-      if (!user || String(user.tgChatId || '') !== String(chatId)) return res.status(403).json({ error: 'Cannot send Telegram messages to this chat.' });
+      if (!user) return res.status(403).json({ error: 'Cannot send Telegram messages to this chat.' });
+      const stored = String(user.tgChatId || '').trim();
+      const requested = String(chatId).trim();
+      if (stored && stored !== requested) return res.status(403).json({ error: 'Cannot send Telegram messages to this chat.' });
+      if (!stored && requested) {
+        user.tgChatId = requested;
+        await writeJsonBinRaw(data);
+      }
     }
     await sendTG(chatId || TG_ADMIN, message, parse_mode);
     res.json({ success: true });
