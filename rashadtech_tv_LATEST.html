@@ -3,7 +3,41 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>rashadtech.tv — Streaming Store</title>
+<title>rashadtech.tv — Buy Netflix, Shahid, Disney+ & Streaming Subscriptions</title>
+<meta name="description" content="rashadtech.tv — Buy Netflix, Shahid VIP, Disney+, OSN+, Spotify, Anghami and more streaming subscriptions. Instant delivery to your Telegram. Sign up and top up your wallet.">
+<meta name="keywords" content="rashadtech, rashadtech.tv, Netflix subscription, Shahid VIP, Disney Plus, OSN Plus, Spotify, streaming Lebanon, buy subscriptions">
+<meta name="author" content="rashadtech.tv">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://rashadtech.tv/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="rashadtech.tv">
+<meta property="og:title" content="rashadtech.tv — Streaming Subscriptions Store">
+<meta property="og:description" content="Buy Netflix, Shahid, Disney+, OSN+ and more. Instant delivery via Telegram.">
+<meta property="og:url" content="https://rashadtech.tv/">
+<meta property="og:locale" content="en_US">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="rashadtech.tv — Streaming Subscriptions">
+<meta name="twitter:description" content="Buy Netflix, Shahid, Disney+, OSN+ and more. Instant delivery via Telegram.">
+<meta name="theme-color" content="#e50914">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  "name": "rashadtech.tv",
+  "alternateName": "RashadTech TV",
+  "url": "https://rashadtech.tv/",
+  "description": "Streaming subscription store for Netflix, Shahid VIP, Disney+, OSN+, Spotify, Anghami and more with instant Telegram delivery."
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  "name": "rashadtech.tv",
+  "url": "https://rashadtech.tv/",
+  "description": "Online store for streaming and music subscriptions with wallet top-up and instant delivery."
+}
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
@@ -46,7 +80,12 @@
 body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden}
 .page{display:none}.page.active{display:block}
 input,button,select,textarea{font-family:var(--font)}
-.auth-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:40px 16px}
+.auth-wrap{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 16px;gap:24px}
+.auth-seo{max-width:520px;text-align:center;color:var(--text3);font-size:12px;line-height:1.7;padding:0 8px}
+.auth-seo h1{font-size:15px;font-weight:600;color:var(--text2);margin-bottom:8px}
+.auth-seo p{margin-bottom:8px}
+.auth-seo ul{list-style:none;padding:0;margin:8px 0 0;display:flex;flex-wrap:wrap;justify-content:center;gap:6px 12px}
+.auth-seo li{font-size:11px;color:var(--text3)}
 .auth-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:32px;width:100%;max-width:390px}
 .auth-logo{font-size:21px;font-weight:600;text-align:center;margin-bottom:4px;letter-spacing:-0.3px}
 .auth-logo span{color:var(--red)}
@@ -613,7 +652,15 @@ So your EmailJS template will receive the user email and verification code corre
       <button class="btn-primary" onclick="doAdminLogin()">Enter</button>
       <div class="auth-switch"><a onclick="showView('login')">← Back</a></div>
     </div>
-  </div></div>
+  </div>
+  <footer class="auth-seo">
+    <h1>rashadtech.tv — Streaming Subscriptions Store</h1>
+    <p>Buy Netflix, Shahid VIP, Disney+, OSN+, Amazon Prime, Spotify, Anghami, Apple TV+, HBO Max and more. Create an account, top up your wallet, and get credentials delivered instantly on Telegram.</p>
+    <ul aria-label="Available services">
+      <li>Netflix</li><li>Shahid VIP</li><li>Disney+</li><li>OSN+</li><li>Spotify</li><li>Anghami</li><li>Amazon Prime</li><li>Apple TV+</li><li>HBO Max</li>
+    </ul>
+  </footer>
+  </div>
 </div>
 
 <!-- CUSTOMER APP -->

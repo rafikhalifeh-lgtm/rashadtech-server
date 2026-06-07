@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+
+# Private subscription links with tokens should not be indexed
+Disallow: /?t=
+
+Sitemap: https://rashadtech.tv/sitemap.xml
