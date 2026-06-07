@@ -138,11 +138,10 @@ function registerEnhancements(app, deps) {
       pass: account.pass,
       date: pendingOrder.date,
       expiryDate: account.expiryDate || null,
-      profileName: pendingOrder.profileName || '',
+      profileName: pendingOrder.profileName || account.profileName || account.extra || '',
       profilePin: account.profilePin || '',
       accKey: account.accKey || '',
-      mainEmail: account.mainEmail || '',
-      ...(account.extra ? { extra: account.extra } : {})
+      mainEmail: account.mainEmail || ''
     };
     if (pendingOrder.assignCustId !== null && pendingOrder.assignCustId !== undefined) {
       const customer = (user.myCustomers || []).find(c => c.id === pendingOrder.assignCustId);
@@ -384,7 +383,7 @@ function registerEnhancements(app, deps) {
         const acc = {
           email,
           pass,
-          extra: row.extra || '',
+          profileName: row.profileName || row.profile || row.extra || '',
           expiryDate: row.expiryDate || '',
           used: false,
           accKey: `${skey}__${Date.now()}_${added}`,

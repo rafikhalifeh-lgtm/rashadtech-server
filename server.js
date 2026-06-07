@@ -1133,6 +1133,16 @@ app.get('/links/:token', async (req, res) => {
   }
 });
 
+function accountProfileName(acc) {
+  if (!acc) return '';
+  return String(acc.profileName || acc.extra || '').trim();
+}
+
+function orderProfileName(order) {
+  if (!order) return '';
+  return String(order.profileName || order.extra || '').trim();
+}
+
 function normalizeTgChatId(raw) {
   const s = String(raw || '').trim();
   if (!s) return '';
@@ -1182,7 +1192,8 @@ async function notifyPurchaseFulfilled(user, product, planLabel, price, order, a
     adminMsg += `\n👥 <b>Assigned to:</b> ${assignedCustomer.fname} ${assignedCustomer.lname} (${assignedCustomer.code}${assignedCustomer.phone})`;
   }
   adminMsg += `\n\n🔐 <b>Credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`;
-  if (order.extra) adminMsg += `\nℹ️ Extra: <code>${order.extra}</code>`;
+  const profileLabel = orderProfileName(order);
+  if (profileLabel) adminMsg += `\n👤 Profile: <code>${profileLabel}</code>`;
   if (order.expiryDate) adminMsg += `\n📅 Expires: ${order.expiryDate}`;
   await sendTG(TG_ADMIN, adminMsg, 'HTML').catch((e) => console.error('Purchase admin TG:', e.message));
   if (!user.tgChatId) {
@@ -1218,7 +1229,7 @@ async function notifyPurchaseFulfilled(user, product, planLabel, price, order, a
   let custMsg = assignedCustomer
     ? `✅ <b>${product.name} subscription for ${custName}</b>\n\n📋 ${planLabel}\n👥 <b>For:</b> ${custName}\n\n🔐 <b>Credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`
     : `✅ <b>Your ${product.name} is ready!</b>\n\n📋 ${planLabel}\n\n🔐 <b>Your credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`;
-  if (order.extra) custMsg += `\nℹ️ Extra: <code>${order.extra}</code>`;
+  if (profileLabel) custMsg += `\n👤 Profile: <code>${profileLabel}</code>`;
   if (order.expiryDate) custMsg += `\n⏰ Expires: ${order.expiryDate}`;
   if (order.profilePin) custMsg += `\n🔢 PIN: <code>${order.profilePin}</code>`;
   custMsg += `\n\n🔗 <b>Subscription link:</b>\n${subLink}\n\nEnjoy! 🌟`;
@@ -1336,7 +1347,7 @@ app.post('/purchase', async (req, res) => {
       productId:product.id,plan:planLabel,price:Number(price),
       email:acc.email,pass:acc.pass,date:dateStr,expiryDate:acc.expiryDate||null,
       ...(extraFields||{}),
-      ...(acc.extra?{extra:acc.extra}:{}),
+      ...(accountProfileName(acc) ? { profileName: accountProfileName(acc) } : {}),
       ...(acc.profilePin?{profilePin:acc.profilePin}:{}),
       accKey:acc.accKey||'',mainEmail:acc.mainEmail||''
     };

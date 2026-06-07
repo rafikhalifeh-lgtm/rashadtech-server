@@ -984,7 +984,7 @@ So your EmailJS template will receive the user email and verification code corre
 </div></div>
 
 <div class="modal-wrap" id="addmycust-modal"><div class="modal">
-  <div class="modal-head"><h3>Add customer</h3><button class="mclose" onclick="closeModal('addmycust-modal')">✕</button></div>
+  <div class="modal-head"><h3 id="addmycust-title">Add customer</h3><button class="mclose" onclick="closeModal('addmycust-modal')">✕</button></div>
   <div class="modal-body">
     <div class="err-msg" id="addmycust-err">Please fill all fields.</div>
     <div class="field"><label>Phone</label><div class="phone-row">
@@ -999,7 +999,7 @@ So your EmailJS template will receive the user email and verification code corre
     </div></div>
     <div class="field"><label>First name</label><input type="text" id="mc-fname" placeholder="First name"></div>
     <div class="field"><label>Last name</label><input type="text" id="mc-lname" placeholder="Last name"></div>
-    <button class="btn-primary" onclick="addMyCustomer()">Add customer</button>
+    <button class="btn-primary" id="addmycust-submit-btn" onclick="saveMyCustomer()">Add customer</button>
   </div>
 </div></div>
 
@@ -1099,6 +1099,9 @@ async function rtApi(path,opts={}){
 }
 
 function normEmail(e){return String(e||'').trim().toLowerCase();}
+function accountProfileName(acc){return String(acc?.profileName||acc?.extra||'').trim();}
+function orderProfileName(o){return String(o?.profileName||o?.extra||'').trim();}
+let editingCustId=null;
 
 function collectAssignedSubs(user){
   const out=[];
@@ -1129,7 +1132,8 @@ async function deliverPurchaseTelegram(order,p,planLabel,price,forCustomer){
   let custCred=forCustomer
     ?`✅ <b>${p.name} subscription for ${who}</b>\n\n📋 ${planLabel}\n👥 <b>For:</b> ${who}\n\n🔐 <b>Credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`
     :`✅ <b>Your ${p.name} is ready!</b>\n\n📋 ${planLabel}\n\n🔐 <b>Your credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`;
-  if(order.extra)custCred+=`\nℹ️ Extra: <code>${order.extra}</code>`;
+  const prof=orderProfileName(order);
+  if(prof)custCred+=`\n👤 Profile: <code>${prof}</code>`;
   if(order.expiryDate)custCred+=`\n⏰ Expires: ${order.expiryDate}`;
   if(order.profilePin)custCred+=`\n🔢 PIN: <code>${order.profilePin}</code>`;
   custCred+=`\n\n🔗 <b>Subscription link:</b>\n${subLink}\n\nEnjoy! 🌟`;
@@ -1900,9 +1904,13 @@ async function checkSubLink(){
   _sublinkMainEmail=found.mainEmail||found.inboxEmail||null;
   _sublinkCodeEmail=found.codeEmail||found.email||found.mainEmail||null;
   _sublinkInboxEmail=found.inboxEmail||found.mainEmail||found.codeEmail||null;
-  if(found.extra){document.getElementById('sublink-extra-row').style.display='flex';document.getElementById('sublink-extra').textContent=found.extra;}
+  const subProf=orderProfileName(found);
+  if(subProf){
+    document.getElementById('sublink-extra-row').style.display='flex';
+    document.getElementById('sublink-extra').textContent=subProf;
+    document.getElementById('sublink-profile-row').style.display='none';
+  }
   if(found.expiryDate){document.getElementById('sublink-expiry-row').style.display='flex';document.getElementById('sublink-expiry').textContent=found.expiryDate;}
-  if(found.profileName){document.getElementById('sublink-profile-row').style.display='flex';document.getElementById('sublink-profile-name').textContent=found.profileName;}
   if(found.profilePin){document.getElementById('sublink-pin-row').style.display='flex';document.getElementById('sublink-profile-pin').textContent=found.profilePin;}
   document.getElementById('sublink-loading').style.display='none';
   document.getElementById('sublink-content').style.display='block';
@@ -2527,7 +2535,7 @@ async function confirmPurchase(){
   }
   const accIdx=getAccounts(skey).indexOf(acc);markUsed(skey,accIdx);
   currentUser.balance-=price;
-  const order={id:'#'+(Math.floor(Math.random()*90000+10000)),product:p.name,short:p.short,color:p.color,tc:p.tc,productId:p.id,plan:planLabel,price,email:acc.email,pass:acc.pass,date:dateStr,expiryDate:acc.expiryDate||null,...extraFields,...(acc.extra?{extra:acc.extra}:{}),...(acc.profilePin?{profilePin:acc.profilePin}:{}),accKey:acc.accKey||'',mainEmail:acc.mainEmail||''};
+  const order={id:'#'+(Math.floor(Math.random()*90000+10000)),product:p.name,short:p.short,color:p.color,tc:p.tc,productId:p.id,plan:planLabel,price,email:acc.email,pass:acc.pass,date:dateStr,expiryDate:acc.expiryDate||null,...extraFields,...(accountProfileName(acc)?{profileName:accountProfileName(acc)}:{}),...(acc.profilePin?{profilePin:acc.profilePin}:{}),accKey:acc.accKey||'',mainEmail:acc.mainEmail||''};
   if(assignCustId!==null){
     const c=currentUser.myCustomers.find(x=>x.id===assignCustId);
     if(c){
@@ -2564,7 +2572,7 @@ async function confirmPurchase(){
   }
   const custInfo=assignCustId!==null?(()=>{const c=currentUser.myCustomers.find(x=>x.id===assignCustId);return c?`\n👥 <b>Assigned to:</b> ${c.fname} ${c.lname} (${c.code}${c.phone})`:''})():'';
   let tgMsg=`🎉 <b>New Purchase</b>\n\n📦 <b>Product:</b> ${p.name}\n📋 <b>Plan:</b> ${planLabel}\n💵 <b>Price:</b> ${fmt(price)}\n👤 <b>Buyer:</b> ${currentUser.name} (${currentUser.email})\n📅 <b>Date:</b> ${dateStr}${custInfo}\n\n🔐 <b>Credentials:</b>\n📧 Email: <code>${acc.email}</code>\n🔑 Password: <code>${acc.pass}</code>`;
-  if(acc.extra)tgMsg+=`\nℹ️ Extra: <code>${acc.extra}</code>`;
+  if(accountProfileName(acc))tgMsg+=`\n👤 Profile: <code>${accountProfileName(acc)}</code>`;
   if(acc.expiryDate)tgMsg+=`\n📅 Expires: ${acc.expiryDate}`;
   await sendTelegram(tgMsg);
   // Send credentials to customer via Telegram bot
@@ -2574,7 +2582,7 @@ async function confirmPurchase(){
   }
   if(assignCustId===null){
     let cl=`<div class="cred-line"><div class="cred-label">Email</div><div class="cred-val">${acc.email}</div></div><div class="cred-line"><div class="cred-label">Password</div><div class="cred-val">${acc.pass}</div></div>`;
-    if(acc.extra)cl+=`<div class="cred-line"><div class="cred-label">Extra</div><div class="cred-val">${acc.extra}</div></div>`;
+    if(accountProfileName(acc))cl+=`<div class="cred-line"><div class="cred-label">Profile</div><div class="cred-val">${accountProfileName(acc)}</div></div>`;
     if(acc.expiryDate)cl+=`<div class="cred-line"><div class="cred-label">Expires</div><div class="cred-val">${acc.expiryDate}</div></div>`;
     document.getElementById('modal-body').innerHTML=`<div class="success-wrap">
       <i class="ti ti-circle-check" style="font-size:40px;color:var(--green);display:block;margin-bottom:12px"></i>
@@ -2590,8 +2598,8 @@ async function confirmPurchase(){
 function subRow(o,forCustomer){
   let ex='';
   if(forCustomer)ex+=`<div class="sub-for-badge"><i class="ti ti-user" style="font-size:12px"></i> ${t('forSubCustomer','For')}: <strong>${esc(forCustomer.fname)} ${esc(forCustomer.lname)}</strong> · ${esc(forCustomer.code)} ${esc(forCustomer.phone)}</div>`;
-  if(o.extra)ex+=`<div class="sub-cred">Extra: ${esc(o.extra)}</div>`;
-  if(o.profileName)ex+=`<div class="sub-cred">Profile: ${esc(o.profileName)}</div>`;
+  const prof=orderProfileName(o);
+  if(prof)ex+=`<div class="sub-cred">Profile: ${esc(prof)}</div>`;
   const ico=PRODUCT_ICONS[o.productId];
   const iconHtml=ico?`<img src="${ico}" width="40" height="40" style="border-radius:9px;object-fit:contain;background:#fff;padding:2px" onerror="this.outerHTML='<div style=\'width:40px;height:40px;border-radius:9px;background:${o.color};color:${o.tc};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700\'>${o.short}</div>'">`:`<div style="width:40px;height:40px;border-radius:9px;background:${o.color};color:${o.tc};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700">${o.short}</div>`;
   return `<div class="sub-card"><div class="sub-icon" style="background:${ico?'#fff':o.color};overflow:hidden;padding:0">${iconHtml}</div>
@@ -3186,16 +3194,57 @@ async function checkExpiryAlerts(){
 }
 
 // CUSTOMERS
-function openAddMyCust(){document.getElementById('mc-phone').value='';document.getElementById('mc-fname').value='';document.getElementById('mc-lname').value='';document.getElementById('addmycust-err').style.display='none';openModal('addmycust-modal');}
-async function addMyCustomer(){
-  const code=document.getElementById('mc-code').value;const phone=document.getElementById('mc-phone').value.trim();
-  const fname=document.getElementById('mc-fname').value.trim();const lname=document.getElementById('mc-lname').value.trim();
-  const tgChatId='';
+function openAddMyCust(){
+  editingCustId=null;
+  document.getElementById('mc-phone').value='';
+  document.getElementById('mc-fname').value='';
+  document.getElementById('mc-lname').value='';
+  document.getElementById('mc-code').value='+961';
+  document.getElementById('addmycust-err').style.display='none';
+  document.getElementById('addmycust-title').textContent=currentLang==='ar'?'إضافة عميل':'Add customer';
+  document.getElementById('addmycust-submit-btn').textContent=currentLang==='ar'?'إضافة عميل':'Add customer';
+  openModal('addmycust-modal');
+}
+function openEditMyCust(custId){
+  const c=currentUser?.myCustomers?.find(x=>x.id===custId);
+  if(!c)return;
+  editingCustId=custId;
+  document.getElementById('mc-code').value=c.code||'+961';
+  document.getElementById('mc-phone').value=c.phone||'';
+  document.getElementById('mc-fname').value=c.fname||'';
+  document.getElementById('mc-lname').value=c.lname||'';
+  document.getElementById('addmycust-err').style.display='none';
+  document.getElementById('addmycust-title').textContent=currentLang==='ar'?'تعديل العميل':'Edit customer';
+  document.getElementById('addmycust-submit-btn').textContent=currentLang==='ar'?'حفظ التغييرات':'Save changes';
+  openModal('addmycust-modal');
+}
+async function saveMyCustomer(){
+  const code=document.getElementById('mc-code').value;
+  const phone=document.getElementById('mc-phone').value.trim();
+  const fname=document.getElementById('mc-fname').value.trim();
+  const lname=document.getElementById('mc-lname').value.trim();
   if(!phone||!fname||!lname){document.getElementById('addmycust-err').style.display='block';return;}
   document.getElementById('addmycust-err').style.display='none';
   currentUser.myCustomers=currentUser.myCustomers||[];
-  currentUser.myCustomers.push({id:Date.now(),code,phone,fname,lname,tgChatId,subs:[]});
-  await saveData();closeModal('addmycust-modal');renderMyCustomers();showToast('✓ Customer added');
+  if(editingCustId!=null){
+    const c=currentUser.myCustomers.find(x=>x.id===editingCustId);
+    if(c){c.code=code;c.phone=phone;c.fname=fname;c.lname=lname;}
+    await saveData();closeModal('addmycust-modal');editingCustId=null;renderMyCustomers();showToast(currentLang==='ar'?'✓ تم تحديث العميل':'✓ Customer updated');
+    return;
+  }
+  currentUser.myCustomers.push({id:Date.now(),code,phone,fname,lname,tgChatId:'',subs:[]});
+  await saveData();closeModal('addmycust-modal');renderMyCustomers();showToast(currentLang==='ar'?'✓ تمت إضافة العميل':'✓ Customer added');
+}
+async function deleteMyCustomer(custId){
+  const c=currentUser?.myCustomers?.find(x=>x.id===custId);
+  if(!c)return;
+  const subCount=(c.subs||[]).length;
+  const msg=subCount
+    ?`Delete ${c.fname} ${c.lname}? This will also remove ${subCount} subscription(s) under this customer.`
+    :`Delete ${c.fname} ${c.lname}?`;
+  if(!confirm(msg))return;
+  currentUser.myCustomers=(currentUser.myCustomers||[]).filter(x=>x.id!==custId);
+  await saveData();renderMyCustomers();renderSubs();showToast(currentLang==='ar'?'✓ تم حذف العميل':'✓ Customer deleted');
 }
 function renderMyCustomers(){
   if(!currentUser)return;const el=document.getElementById('my-cust-list');const cnt=document.getElementById('my-cust-count');
@@ -3206,7 +3255,7 @@ function renderMyCustomers(){
       const cleanId=(s.id||'').replace('#','');
       return `<div class="cust-sub-row">
       <div class="cust-sub-icon" style="background:${s.color};color:${s.tc}">${s.short}</div>
-      <div class="cust-sub-info"><div class="cust-sub-name">${esc(s.product)} · ${esc(s.plan)}</div><div class="cust-sub-cred"><span class="cust-sub-cred-line">📧 ${esc(s.email)}</span><span class="cust-sub-cred-line">🔑 ${esc(s.pass)}</span></div>${s.profilePin?`<div class="cust-sub-cred"><span class="cust-sub-cred-line">PIN: ${esc(s.profilePin)}</span></div>`:''}${s.expiryDate?`<div class="cust-sub-cred"><span class="cust-sub-cred-line">Exp: ${esc(s.expiryDate)}</span></div>`:''}</div>
+      <div class="cust-sub-info"><div class="cust-sub-name">${esc(s.product)} · ${esc(s.plan)}</div><div class="cust-sub-cred"><span class="cust-sub-cred-line">📧 ${esc(s.email)}</span><span class="cust-sub-cred-line">🔑 ${esc(s.pass)}</span></div>${orderProfileName(s)?`<div class="cust-sub-cred"><span class="cust-sub-cred-line">Profile: ${esc(orderProfileName(s))}</span></div>`:''}${s.profilePin?`<div class="cust-sub-cred"><span class="cust-sub-cred-line">PIN: ${esc(s.profilePin)}</span></div>`:''}${s.expiryDate?`<div class="cust-sub-cred"><span class="cust-sub-cred-line">Exp: ${esc(s.expiryDate)}</span></div>`:''}</div>
       <div style="text-align:right">
         <div style="font-size:11px;color:var(--text3);margin-bottom:4px">${s.date}</div>
         
@@ -3221,6 +3270,8 @@ function renderMyCustomers(){
         <button class="btn-add-sub" onclick="openCustomerChat(${c.id})">💬 Open chat</button>
         <button class="btn-add-sub" onclick="toggleCustomerSubs(${c.id})">📺 Subscriptions</button>
         <button class="btn-add-sub" onclick="openAssignSub(${c.id})"><i class="ti ti-plus" style="font-size:14px"></i> Add subscription</button>
+        <button class="btn-add-sub" onclick="openEditMyCust(${c.id})">✏️ Edit</button>
+        <button class="btn-add-sub" onclick="deleteMyCustomer(${c.id})" style="color:var(--red);border-color:var(--red-border)">🗑 Delete</button>
       </div>
     </div>${sh}</div>`;
   }).join('');
@@ -3389,7 +3440,7 @@ function renderAccModal(showForm=false){
     html+=`<div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">${list.length} accounts (${availableCount(skey)} available)</div>
     <div class="acc-list">${list.map((a,i)=>`<div class="acc-item">
       <div class="acc-item-info"><div class="acc-email">${a.email}</div><div class="acc-pass">${a.pass}</div>
-      ${a.extra?`<div class="acc-extra">${a.extra}</div>`:''}
+      ${accountProfileName(a)?`<div class="acc-extra">👤 Profile: ${esc(accountProfileName(a))}</div>`:''}
       ${a.expiryDate?`<div class="acc-extra" style="color:${daysLeft(a.expiryDate)!==null&&daysLeft(a.expiryDate)<=7?'var(--orange)':'var(--text3)'}">⏰ Expires: ${a.expiryDate}${daysLeft(a.expiryDate)!==null?' ('+daysLeft(a.expiryDate)+'d)':''}</div>`:''}
       </div>
       <span class="acc-badge ${a.used?'acc-used':'acc-avail'}">${a.used?'Used':'Available'}</span>
@@ -3401,7 +3452,7 @@ function renderAccModal(showForm=false){
   html+=`<div class="add-acc-form"><div class="add-acc-form-title">Add new account</div>
     <div class="field"><label>Email</label><input type="text" id="new-acc-email" placeholder="account@example.com"></div>
     <div class="field"><label>Password</label><input type="text" id="new-acc-pass" placeholder="password123"></div>
-    <div class="field"><label>Extra info (optional)</label><input type="text" id="new-acc-extra" placeholder="e.g. profile pin, notes..."></div>
+    <div class="field"><label>Profile (optional)</label><input type="text" id="new-acc-profile" placeholder="e.g. Ali, Profile 1"></div>
     <div class="field"><label>Expiry date (optional) — dd/mm/yyyy</label><input type="text" id="new-acc-expiry" placeholder="e.g. 15/08/2025"></div>
     <div class="field">
       <label>Profile PIN (optional — for 1 User accounts)</label>
@@ -3459,7 +3510,7 @@ async function addAccount(){
   await refreshFromFirebase();
   const email=document.getElementById('new-acc-email').value.trim();
   const pass=document.getElementById('new-acc-pass').value.trim();
-  const extra=document.getElementById('new-acc-extra').value.trim();
+  const profileName=document.getElementById('new-acc-profile').value.trim();
   const expiryDate=document.getElementById('new-acc-expiry').value.trim();
   if(!email||!pass){showToast('Email and password are required');return;}
   if(!accountStock[curAccModalKey])accountStock[curAccModalKey]=[];
@@ -3469,7 +3520,7 @@ async function addAccount(){
   const aliasError=validateNetflixAliasForAdd(curAccModalKey,email,profilePin);
   if(aliasError){showToast('⚠️ '+aliasError);return;}
   const accKey=curAccModalKey+'__'+Date.now();
-  accountStock[curAccModalKey].push({email,pass,extra,expiryDate,used:false,accKey,profilePin,mainEmail:mainEmail||''});
+  accountStock[curAccModalKey].push({email,pass,profileName,expiryDate,used:false,accKey,profilePin,mainEmail:mainEmail||''});
   await saveData();
   let gmailConfigured=false;
   // Save main email credentials to server for Netflix code monitoring
@@ -3505,7 +3556,7 @@ async function autoFulfillPending(skey){
     const idx=getAccounts(skey).indexOf(acc);markUsed(skey,idx);
     const u=users.find(x=>x.email===po.userEmail);
     const fu=freshUsers.find(x=>x.email===po.userEmail);
-    if(u)u.orders.unshift({id:po.id,product:po.product,short:po.short,color:po.color,tc:po.tc,productId:po.productId,plan:po.plan,price:po.price,email:acc.email,pass:acc.pass,date:po.date,expiryDate:acc.expiryDate||null,...(po.profileName?{profileName:po.profileName}:{}),...(acc.extra?{extra:acc.extra}:{}),...(acc.profilePin?{profilePin:acc.profilePin}:{}),accKey:acc.accKey||'',mainEmail:acc.mainEmail||''});
+    if(u)u.orders.unshift({id:po.id,product:po.product,short:po.short,color:po.color,tc:po.tc,productId:po.productId,plan:po.plan,price:po.price,email:acc.email,pass:acc.pass,date:po.date,expiryDate:acc.expiryDate||null,profileName:po.profileName||accountProfileName(acc)||'',...(acc.profilePin?{profilePin:acc.profilePin}:{}),accKey:acc.accKey||'',mainEmail:acc.mainEmail||''});
     pending.splice(pending.indexOf(po),1);
     fulfilled++;
     // Use freshest tgChatId
@@ -3514,7 +3565,7 @@ async function autoFulfillPending(skey){
       const linkData={id:po.id,product:po.product,short:po.short,color:po.color,tc:po.tc,productId:po.productId,plan:po.plan,email:acc.email,pass:acc.pass,expiryDate:acc.expiryDate||'',profileName:po.profileName||'',profilePin:acc.profilePin||'',accKey:acc.accKey||'',mainEmail:acc.mainEmail||'',codeEmail:acc.email,inboxEmail:acc.mainEmail||acc.email,linkExpiry:Date.now()+(90*24*60*60*1000)};
       const subLink=await createSubLinkUrl(linkData);
       let msg=`✅ <b>Your ${po.product} is ready!</b>\n\n📋 ${po.plan}\n\n🔐 <b>Credentials:</b>\n📧 Email: <code>${acc.email}</code>\n🔑 Password: <code>${acc.pass}</code>`;
-      if(acc.extra)msg+=`\nℹ️ <code>${acc.extra}</code>`;
+      if(accountProfileName(acc))msg+=`\n👤 Profile: <code>${accountProfileName(acc)}</code>`;
       if(acc.expiryDate)msg+=`\n⏰ Expires: ${acc.expiryDate}`;
       if(acc.profilePin)msg+=`\n🔢 PIN: <code>${acc.profilePin}</code>`;
       msg+=`\n\n🔗 <b>Your subscription link:</b>\n${subLink}\n\nEnjoy! 🌟`;
@@ -3763,10 +3814,11 @@ async function manualFulfillPending(i){
   // Notify customer
   const tgId=u?.tgChatId||po.userTgChatId||'';
   if(tgId){
-    const linkDataM={id:po.id,product:po.product,short:po.short,color:po.color,tc:po.tc,productId:po.productId,plan:po.plan,email:acc.email,pass:acc.pass,expiryDate:acc.expiryDate||'',profileName:po.profileName||'',profilePin:acc.profilePin||'',accKey:acc.accKey||'',mainEmail:acc.mainEmail||'',codeEmail:acc.email,inboxEmail:acc.mainEmail||acc.email,linkExpiry:Date.now()+(90*24*60*60*1000)};
+    const prof=po.profileName||accountProfileName(acc)||'';
+    const linkDataM={id:po.id,product:po.product,short:po.short,color:po.color,tc:po.tc,productId:po.productId,plan:po.plan,email:acc.email,pass:acc.pass,expiryDate:acc.expiryDate||'',profileName:prof,profilePin:acc.profilePin||'',accKey:acc.accKey||'',mainEmail:acc.mainEmail||'',codeEmail:acc.email,inboxEmail:acc.mainEmail||acc.email,linkExpiry:Date.now()+(90*24*60*60*1000)};
     const subLinkM=await createSubLinkUrl(linkDataM);
     let msg=`✅ <b>Your ${po.product} is ready!</b>\n\n📋 ${po.plan}\n\n🔐 <b>Credentials:</b>\n📧 Email: <code>${acc.email}</code>\n🔑 Password: <code>${acc.pass}</code>`;
-    if(acc.extra)msg+=`\nℹ️ <code>${acc.extra}</code>`;
+    if(prof)msg+=`\n👤 Profile: <code>${prof}</code>`;
     if(acc.expiryDate)msg+=`\n⏰ Expires: ${acc.expiryDate}`;
     msg+=`\n\n🔗 <b>Your subscription link:</b>\n${subLinkM}\n\nEnjoy! 🌟`;
     await sendTelegramToUser(tgId,msg);
@@ -4201,7 +4253,7 @@ if(document.readyState==='loading'){
         </div>
         </div>
         <div id="sublink-extra-row" style="display:none;justify-content:space-between;align-items:center;margin-bottom:8px">
-          <span style="font-size:12px;color:var(--text2)">Extra</span>
+          <span style="font-size:12px;color:var(--text2)">Profile</span>
           <span id="sublink-extra" style="font-family:var(--mono);font-size:13px;font-weight:600"></span>
         </div>
         <div id="sublink-expiry-row" style="display:none;justify-content:space-between;align-items:center">

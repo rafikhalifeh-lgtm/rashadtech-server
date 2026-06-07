@@ -38,7 +38,7 @@
   }
 
   window.placeFulfilledOrder=function(u,po,acc){
-    const order={id:po.id,product:po.product,short:po.short,color:po.color,tc:po.tc,productId:po.productId,plan:po.plan,price:po.price,email:acc.email,pass:acc.pass,date:po.date,expiryDate:acc.expiryDate||null,profileName:po.profileName||'',profilePin:acc.profilePin||'',accKey:acc.accKey||'',mainEmail:acc.mainEmail||'',...(acc.extra?{extra:acc.extra}:{})};
+    const order={id:po.id,product:po.product,short:po.short,color:po.color,tc:po.tc,productId:po.productId,plan:po.plan,price:po.price,email:acc.email,pass:acc.pass,date:po.date,expiryDate:acc.expiryDate||null,profileName:po.profileName||acc.profileName||acc.extra||'',profilePin:acc.profilePin||'',accKey:acc.accKey||'',mainEmail:acc.mainEmail||''};
     if(po.assignCustId!=null&&po.assignCustId!==undefined){
       const c=(u.myCustomers||[]).find(x=>x.id===po.assignCustId);
       if(c){order.profileName=order.profileName||c.fname;(c.subs=c.subs||[]).unshift(order);return order;}
