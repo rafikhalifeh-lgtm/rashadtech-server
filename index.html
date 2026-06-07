@@ -1094,13 +1094,21 @@ async function rtApi(path,opts={}){
   return j;
 }
 
+function normEmail(e){return String(e||'').trim().toLowerCase();}
+
 function applyDataSnapshot(data){
-  _jbCache=data||{};
+  const incoming=data||{};
+  _jbCache={...(_jbCache||{}),...incoming};
+  if(incoming.pending)_jbCache.pending=incoming.pending;
   users=Array.isArray(_jbCache.users)?_jbCache.users:[];
   accountStock=_jbCache.stock||{};
   globalRequests=_jbCache.requests||[];
   topupRequests=_jbCache.topupreqs||[];
   dataLoaded=true;
+  if(currentUser){
+    const fu=users.find(x=>normEmail(x.email)===normEmail(currentUser.email));
+    if(fu)currentUser=fu;
+  }
 }
 
 function clearStoredSession(){
@@ -2398,7 +2406,14 @@ async function confirmPurchase(){
       const j=await r.json();
       if(!r.ok||!j.success)throw new Error(j.error||'Purchase failed');
       applyDataSnapshot(j.data||{users:[j.user]});
-      currentUser=j.user||users.find(x=>x.email===currentUser.email)||currentUser;
+      currentUser=j.user||users.find(x=>normEmail(x.email)===normEmail(currentUser.email))||currentUser;
+      if(j.order&&!j.pending){
+        currentUser.orders=Array.isArray(currentUser.orders)?currentUser.orders:[];
+        if(!currentUser.orders.some(o=>o.id===j.order.id))currentUser.orders.unshift(j.order);
+        const u=users.find(x=>normEmail(x.email)===normEmail(currentUser.email));
+        if(u)u.orders=currentUser.orders;
+      }
+      if(_jbCache)_jbCache.users=users;
       closeModal('buy-modal');closeModal('assign-modal');updateBal();renderSubs();renderTx();renderMyCustomers();renderExpiryTracker();renderProducts('all');
       showToast('✓ Purchase successful!');
       if(j.pending){
@@ -2544,7 +2559,7 @@ function pendingSubRow(o){
 function renderSubs(){
   if(!currentUser)return;
   const el=document.getElementById('subs-list');const nel=document.getElementById('netflix-list');
-  const pending=(Array.isArray(_jbCache?.pending)?_jbCache.pending:[]).filter(o=>o&&o.userEmail===currentUser.email);
+  const pending=(Array.isArray(_jbCache?.pending)?_jbCache.pending:[]).filter(o=>o&&normEmail(o.userEmail)===normEmail(currentUser.email));
   const orders=currentUser.orders||[];
   if(!orders.length&&!pending.length){
     el.innerHTML=`<div class="empty-state"><i class="ti ti-device-tv"></i>${t('noSubscriptions','No subscriptions yet.')}<br><br><button onclick="switchTab('store',null)" style="background:var(--red);color:#fff;border:none;border-radius:var(--radius-sm);padding:8px 18px;font-size:12px;font-weight:600;cursor:pointer;margin-top:8px">${t('goToStore','Go to store')}</button></div>`;
@@ -3884,8 +3899,12 @@ function startRealtimeSync(){
       _jbCache=await jbRead();
       if(_jbCache.users&&_jbCache.users.length>0){
         users=_jbCache.users;
-        if(currentUser){const fu=users.find(x=>x.email===currentUser.email);if(fu)currentUser=fu;}
+        if(currentUser){
+          const fu=users.find(x=>normEmail(x.email)===normEmail(currentUser.email));
+          if(fu){currentUser=fu;renderSubs();updateBal();}
+        }
       }
+      if(_jbCache.pending&&currentUser)renderSubs();
       if(_jbCache.stock)accountStock=_jbCache.stock;
       if(_jbCache.topupreqs)topupRequests=_jbCache.topupreqs;
       if(!isAdmin)return;

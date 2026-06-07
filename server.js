@@ -706,7 +706,6 @@ function mergeUserWrite(existing, incoming, session) {
         name: incomingUser.name,
         tgChatId: incomingUser.tgChatId || '',
         verified: Boolean(incomingUser.verified),
-        orders: Array.isArray(incomingUser.orders) ? incomingUser.orders : users[idx].orders,
         myCustomers: Array.isArray(incomingUser.myCustomers) ? incomingUser.myCustomers : users[idx].myCustomers
       };
     }
@@ -1134,6 +1133,52 @@ app.get('/links/:token', async (req, res) => {
   }
 });
 
+async function notifyPurchasePending(user, product, planLabel, price) {
+  await sendTG(TG_ADMIN, `⏳ <b>Pending Order</b>\n👤 ${user.name} (${user.email})\n📦 ${product.name} · ${planLabel}\n💵 $${Number(price).toFixed(2)}\n⚠️ No stock — add accounts in Stock tab to fulfill.`, 'HTML').catch(() => {});
+  if (user.tgChatId) {
+    await sendTG(user.tgChatId, `✅ <b>Purchase Confirmed!</b>\n\n📦 ${product.name} · ${planLabel}\n💵 $${Number(price).toFixed(2)}\n💰 New balance: $${Number(user.balance || 0).toFixed(2)}\n\n⏳ Your credentials will be delivered here shortly.`, 'HTML').catch(() => {});
+  }
+}
+
+async function notifyPurchaseFulfilled(user, product, planLabel, price, order) {
+  let adminMsg = `🎉 <b>New Purchase</b>\n\n📦 <b>Product:</b> ${product.name}\n📋 <b>Plan:</b> ${planLabel}\n💵 <b>Price:</b> $${Number(price).toFixed(2)}\n👤 <b>Buyer:</b> ${user.name} (${user.email})\n\n🔐 <b>Credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`;
+  if (order.extra) adminMsg += `\nℹ️ Extra: <code>${order.extra}</code>`;
+  if (order.expiryDate) adminMsg += `\n📅 Expires: ${order.expiryDate}`;
+  await sendTG(TG_ADMIN, adminMsg, 'HTML').catch(() => {});
+  if (!user.tgChatId) return;
+  const linkData = {
+    id: order.id,
+    product: product.name,
+    short: product.short,
+    color: product.color,
+    tc: product.tc,
+    productId: product.id,
+    plan: planLabel,
+    email: order.email,
+    pass: order.pass,
+    expiryDate: order.expiryDate || '',
+    profileName: order.profileName || '',
+    profilePin: order.profilePin || '',
+    accKey: order.accKey || '',
+    mainEmail: order.mainEmail || '',
+    codeEmail: order.email,
+    inboxEmail: order.mainEmail || order.email
+  };
+  const token = encodeLinkToken({
+    subscription: linkData,
+    owner: normalizeEmail(user.email),
+    createdAt: Date.now(),
+    expiresAt: Date.now() + LINK_TTL_MS
+  });
+  const subLink = `https://rashadtech.tv?t=${token}`;
+  let custMsg = `✅ <b>Your ${product.name} is ready!</b>\n\n📋 ${planLabel}\n\n🔐 <b>Your credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`;
+  if (order.extra) custMsg += `\nℹ️ Extra: <code>${order.extra}</code>`;
+  if (order.expiryDate) custMsg += `\n⏰ Expires: ${order.expiryDate}`;
+  if (order.profilePin) custMsg += `\n🔢 PIN: <code>${order.profilePin}</code>`;
+  custMsg += `\n\n🔗 <b>Your subscription link:</b>\n${subLink}\n\nEnjoy! 🌟`;
+  await sendTG(user.tgChatId, custMsg, 'HTML').catch(() => {});
+}
+
 app.post('/purchase', async (req, res) => {
   const session = requireSession(req, res, ['user']);
   if (!session) return;
@@ -1154,10 +1199,10 @@ app.post('/purchase', async (req, res) => {
     const dateStr = new Date().toLocaleString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
     const accounts = data.stock[skey] || [];
     const acc = accounts.find(a => !a.used);
-    user.balance = Number(user.balance || 0) - Number(price);
     user.transactions = Array.isArray(user.transactions) ? user.transactions : [];
 
     if (!acc) {
+      user.balance = Number(user.balance || 0) - Number(price);
       const assignedCustomer = assignCustId !== null && assignCustId !== undefined
         ? (user.myCustomers || []).find(c => c.id === assignCustId)
         : null;
@@ -1172,12 +1217,14 @@ app.post('/purchase', async (req, res) => {
       data.pending.unshift(pendingOrder);
       user.transactions.unshift({type:'purchase',label:'Bought '+product.name+' · '+planLabel,amount:Number(price),balance:user.balance,date:dateStr});
       await writeJsonBinRaw(data);
+      await notifyPurchasePending(user, product, planLabel, price);
       return res.json({ success:true, pending:true, user:sanitizeUser(user), order:pendingOrder, data:safeDataForSession(data, session) });
     }
 
     const aliasError = validateNetflixAliasPurchase(data, skey, acc);
     if (aliasError) return res.status(409).json({ error: aliasError });
 
+    user.balance = Number(user.balance || 0) - Number(price);
     acc.used = true;
     const order = {
       id:'#'+(Math.floor(Math.random()*90000+10000)),
@@ -1194,7 +1241,7 @@ app.post('/purchase', async (req, res) => {
       if (customer) {
         order.profileName = order.profileName || customer.fname;
         customer.subs = Array.isArray(customer.subs) ? customer.subs : [];
-        customer.subs.push(order);
+        customer.subs.unshift(order);
       } else {
         user.orders = Array.isArray(user.orders) ? user.orders : [];
         user.orders.unshift(order);
@@ -1202,9 +1249,12 @@ app.post('/purchase', async (req, res) => {
     } else {
       user.orders = Array.isArray(user.orders) ? user.orders : [];
       user.orders.unshift(order);
-      user.transactions.unshift({type:'purchase',label:'Bought '+product.name+' · '+planLabel,amount:Number(price),balance:user.balance,date:dateStr});
     }
+    user.transactions.unshift({type:'purchase',label:'Bought '+product.name+' · '+planLabel,amount:Number(price),balance:user.balance,date:dateStr});
     await writeJsonBinRaw(data);
+    if (assignCustId === null || assignCustId === undefined) {
+      await notifyPurchaseFulfilled(user, product, planLabel, price, order);
+    }
     res.json({ success:true, pending:false, user:sanitizeUser(user), order, data:safeDataForSession(data, session) });
   } catch(e) {
     console.error('Purchase error:', e.message);
