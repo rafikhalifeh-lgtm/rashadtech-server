@@ -1140,8 +1140,15 @@ async function notifyPurchasePending(user, product, planLabel, price) {
   }
 }
 
-async function notifyPurchaseFulfilled(user, product, planLabel, price, order) {
-  let adminMsg = `🎉 <b>New Purchase</b>\n\n📦 <b>Product:</b> ${product.name}\n📋 <b>Plan:</b> ${planLabel}\n💵 <b>Price:</b> $${Number(price).toFixed(2)}\n👤 <b>Buyer:</b> ${user.name} (${user.email})\n\n🔐 <b>Credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`;
+async function notifyPurchaseFulfilled(user, product, planLabel, price, order, assignCustId) {
+  const assignedCustomer = assignCustId !== null && assignCustId !== undefined
+    ? (user.myCustomers || []).find(c => c.id === assignCustId)
+    : null;
+  let adminMsg = `🎉 <b>New Purchase</b>\n\n📦 <b>Product:</b> ${product.name}\n📋 <b>Plan:</b> ${planLabel}\n💵 <b>Price:</b> $${Number(price).toFixed(2)}\n👤 <b>Buyer:</b> ${user.name} (${user.email})`;
+  if (assignedCustomer) {
+    adminMsg += `\n👥 <b>Assigned to:</b> ${assignedCustomer.fname} ${assignedCustomer.lname} (${assignedCustomer.code}${assignedCustomer.phone})`;
+  }
+  adminMsg += `\n\n🔐 <b>Credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`;
   if (order.extra) adminMsg += `\nℹ️ Extra: <code>${order.extra}</code>`;
   if (order.expiryDate) adminMsg += `\n📅 Expires: ${order.expiryDate}`;
   await sendTG(TG_ADMIN, adminMsg, 'HTML').catch(() => {});
@@ -1171,12 +1178,18 @@ async function notifyPurchaseFulfilled(user, product, planLabel, price, order) {
     expiresAt: Date.now() + LINK_TTL_MS
   });
   const subLink = `https://rashadtech.tv?t=${token}`;
-  let custMsg = `✅ <b>Your ${product.name} is ready!</b>\n\n📋 ${planLabel}\n\n🔐 <b>Your credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`;
+  const custName = assignedCustomer ? `${assignedCustomer.fname} ${assignedCustomer.lname}` : null;
+  let custMsg = assignedCustomer
+    ? `✅ <b>${product.name} subscription for ${custName}</b>\n\n📋 ${planLabel}\n👥 <b>For:</b> ${custName}\n\n🔐 <b>Credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`
+    : `✅ <b>Your ${product.name} is ready!</b>\n\n📋 ${planLabel}\n\n🔐 <b>Your credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`;
   if (order.extra) custMsg += `\nℹ️ Extra: <code>${order.extra}</code>`;
   if (order.expiryDate) custMsg += `\n⏰ Expires: ${order.expiryDate}`;
   if (order.profilePin) custMsg += `\n🔢 PIN: <code>${order.profilePin}</code>`;
-  custMsg += `\n\n🔗 <b>Your subscription link:</b>\n${subLink}\n\nEnjoy! 🌟`;
+  custMsg += `\n\n🔗 <b>Subscription link:</b>\n${subLink}\n\nEnjoy! 🌟`;
   await sendTG(user.tgChatId, custMsg, 'HTML').catch(() => {});
+  if (assignedCustomer && assignedCustomer.tgChatId && assignedCustomer.tgChatId !== user.tgChatId) {
+    await sendTG(assignedCustomer.tgChatId, `✅ <b>${product.name} subscription</b>\n\n📋 ${planLabel}\n\n🔐 <b>Credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>${order.profilePin ? `\n🔢 PIN: <code>${order.profilePin}</code>` : ''}\n\n🔗 ${subLink}`, 'HTML').catch(() => {});
+  }
 }
 
 app.post('/purchase', async (req, res) => {
@@ -1252,9 +1265,7 @@ app.post('/purchase', async (req, res) => {
     }
     user.transactions.unshift({type:'purchase',label:'Bought '+product.name+' · '+planLabel,amount:Number(price),balance:user.balance,date:dateStr});
     await writeJsonBinRaw(data);
-    if (assignCustId === null || assignCustId === undefined) {
-      await notifyPurchaseFulfilled(user, product, planLabel, price, order);
-    }
+    await notifyPurchaseFulfilled(user, product, planLabel, price, order, assignCustId);
     res.json({ success:true, pending:false, user:sanitizeUser(user), order, data:safeDataForSession(data, session) });
   } catch(e) {
     console.error('Purchase error:', e.message);
