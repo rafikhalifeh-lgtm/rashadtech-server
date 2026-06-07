@@ -2179,6 +2179,7 @@ async function doAdminLogin(){
     refreshAdminBackupStatus();
     if(!window._adminBackupPoll)window._adminBackupPoll=setInterval(refreshAdminBackupStatus,5*60*1000);
     startRealtimeSync();
+    if(typeof rtSyncChatUI==='function')rtSyncChatUI();
   }catch(ex){
     document.getElementById('admin-err').textContent=ex.message;document.getElementById('admin-err').style.display='block';
   }
@@ -2200,6 +2201,7 @@ function doLogout(){
   try{localStorage.removeItem('rt_session');localStorage.removeItem('rt_admin_session');localStorage.removeItem('rt_auth_token');localStorage.removeItem('rt_auth_role');}catch(e){}
   ['page-app','page-admin'].forEach(id=>document.getElementById(id).classList.remove('active'));
   document.getElementById('page-auth').classList.add('active');showView('login');
+  if(typeof rtSyncChatUI==='function')rtSyncChatUI();
 }
 async function logoutAllDevices(){
   if(!confirm('Log out all sessions for this account?'))return;
@@ -4368,25 +4370,16 @@ if(document.readyState==='loading'){
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
     </div>
     <div class="rt-chat-hdr-info">
-      <div class="rt-chat-hdr-name">Netflix Support</div>
-      <div class="rt-chat-hdr-status">Online — instant replies</div>
+      <div class="rt-chat-hdr-name" id="rt-chat-hdr-name">rashadtech Support</div>
+      <div class="rt-chat-hdr-status" id="rt-chat-hdr-status">Online — instant replies</div>
     </div>
     <button class="rt-chat-close" onclick="rtToggleChat()">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
     </button>
   </div>
-  <div class="rt-chat-msgs" id="rt-msgs">
-    <div class="rt-msg bot">Hi! I can help with Netflix login, sign-in codes, TV activation, renewal, wallet top-up, and subscription issues. 👋</div>
-  </div>
+  <div class="rt-chat-msgs" id="rt-msgs"></div>
   <div class="rt-typing" id="rt-typing"><span></span><span></span><span></span></div>
-  <div class="rt-quick-replies" id="rt-qrs">
-    <button class="rt-qr" onclick="rtAsk('How do I log in to Netflix?')">Netflix login</button>
-    <button class="rt-qr" onclick="rtAsk('I need a sign-in code')">Sign-in code</button>
-    <button class="rt-qr" onclick="rtAsk('My code is not working')">Code not working</button>
-    <button class="rt-qr" onclick="rtAsk('How to watch on TV?')">Watch on TV</button>
-    <button class="rt-qr" onclick="rtAsk('Report issue')">Report issue</button>
-    <button class="rt-qr" onclick="rtAsk('How do I renew?')">Renew</button>
-  </div>
+  <div class="rt-quick-replies" id="rt-qrs"></div>
   <div class="rt-chat-input-row">
     <input id="rt-chat-inp" type="text" placeholder="Type a message..." onkeydown="if(event.key==='Enter')rtSend()">
     <button class="rt-chat-send" onclick="rtSend()">
@@ -4395,48 +4388,173 @@ if(document.readyState==='loading'){
   </div>
 </div>
 <script>
-// ── RASHADTECH SUPPORT CHATBOT ──
-const RT_FAQ=[
-  {q:['top up','wallet','balance','credit','pay','topup'],
-   a:'To top up your wallet, contact support on <b>WhatsApp: <a href="https://wa.me/96179306701" target="_blank">+96179306701</a></b>. After confirmation, your wallet balance will update in your account.'},
-  {q:['subscription','buy','purchase','get','order','plan'],
-   a:'Go to the <b>Store</b>, choose your Netflix plan, and tap Buy. If delivery is not instant, you will see it as pending and support will finish it for you.'},
-  {q:['login','log in','password','credentials','netflix login'],
-   a:'Open your subscription link, copy the Netflix email and password, then log in on Netflix. If Netflix asks for a sign-in code, come back to the same subscription link and tap <b>Request Sign-in Code</b>.'},
-  {q:['tv','television','activate','smart tv','setup','install'],
-   a:'Open your subscription link and use the <b>Activate on TV</b> section. Log in to Netflix first, then enter the code shown on your TV.'},
-  {q:['sign in','signin','code','verify','verification','2fa','login code','netflix code'],
-   a:'Open your subscription link and tap <b>Request Sign-in Code</b>. Wait a moment, then tap Refresh if needed. Please avoid pressing many times quickly.'},
-  {q:['code not working','wrong code','expired code','invalid code'],
-   a:'If the Netflix code does not work, wait for a fresh code and tap Refresh on your subscription link. Codes expire quickly, so use the newest one shown.'},
-  {q:['renew','renewal','expire','expired','extend','extension'],
-   a:'To renew, top up your wallet and repurchase from the Store, or contact <b>Telegram: <a href="https://t.me/Rashadtech" target="_blank">@Rashadtech</a></b> for help.'},
-  {q:['issue','problem','not working','broken','error','bug','help','stuck','slow','buffering','freeze','report'],
-   a:'To report a Netflix issue, open your subscription options and tap <b>Report Issue</b>. Include what happened: password not working, code not received, profile locked, expired, TV activation, or playback problem.'},
-  {q:['pending','waiting'],
-   a:'If your order is pending, support is preparing it. You will receive your subscription details as soon as it is ready.'},
-  {q:['profile','name','pin','change'],
-   a:'You can change your Netflix profile name or PIN from <b>Subscription Options</b> on your subscription card.'},
-  {q:['contact','reach','support','human','agent','talk'],
-   a:`You can reach us on:<br>
-• <b>WhatsApp: <a href="https://wa.me/96179306701" target="_blank">+96179306701</a></b><br>
-• <b>Telegram: <a href="https://t.me/Rashadtech" target="_blank">@Rashadtech</a></b>`}
-];
+// ── RASHADTECH SUPPORT CHATBOT (customer-only — no admin/internal info) ──
+const RT_CHAT_I18N={
+  en:{
+    name:'rashadtech Support',
+    status:'Online — instant replies',
+    placeholder:'Type a message...',
+    greeting:'Hi! I can help with purchases, subscriptions, Telegram delivery, wallet top-up, Netflix codes, TV activation, and sub-customers. 👋',
+    sensitive:'I can only help with customer store questions (buying, subscriptions, wallet, Telegram). For account administration or internal systems, please contact support on WhatsApp or Telegram.',
+    fallback:'I\'m not sure about that. Try a quick topic below, or contact us:<br>• <b>WhatsApp: <a href="https://wa.me/96179306701" target="_blank">+96179306701</a></b><br>• <b>Telegram: <a href="https://t.me/Rashadtech" target="_blank">@Rashadtech</a></b><br>• <b>Bot: <a href="https://t.me/Rashadtech_bot" target="_blank">@Rashadtech_bot</a></b>',
+    quick:[
+      {label:'Buy subscription',q:'How do I buy a subscription?'},
+      {label:'Telegram delivery',q:'I did not receive credentials on Telegram'},
+      {label:'My subscriptions',q:'Where are my subscriptions?'},
+      {label:'Sign-in code',q:'I need a Netflix sign-in code'},
+      {label:'Watch on TV',q:'How to watch on TV?'},
+      {label:'Top up wallet',q:'How do I top up my wallet?'},
+      {label:'Sub-customers',q:'How do sub-customers work?'},
+      {label:'Contact support',q:'How do I contact support?'}
+    ],
+    faq:[
+      {q:['buy','purchase','order','store','plan','subscribe','subscription'],
+       a:'Open <b>Store</b>, pick a product (Netflix, Shahid, Disney+, etc.), choose a plan, and tap Buy. Credentials appear in <b>My Subscriptions</b> and are sent to your Telegram if Chat ID is set in Profile.'},
+      {q:['telegram','chat id','tgid','bot','rashadtech_bot','not received','delivery','credentials'],
+       a:'1) Start <b><a href="https://t.me/Rashadtech_bot" target="_blank">@Rashadtech_bot</a></b> and send /start<br>2) Copy your Chat ID into <b>Profile → Telegram Chat ID → Save</b><br>3) In <b>My Subscriptions → Options → Resend to Telegram</b> if you already purchased.'},
+      {q:['subscription','subscriptions','my subs','where','credentials','password','email'],
+       a:'Go to <b>My Subscriptions</b> in the menu. Tap <b>Options</b> on a card to copy link, resend to Telegram, renew, or report an issue.'},
+      {q:['sub-customer','sub customer','my customers','assign','for customer'],
+       a:'Use <b>My Customers</b> to add people you buy for. Tap <b>Add subscription</b> on a customer to assign a purchase. Those subs also appear in <b>My Subscriptions</b> with a <b>For:</b> badge.'},
+      {q:['top up','wallet','balance','credit','pay','topup','deposit'],
+       a:'Tap <b>Wallet → Top up</b>, choose an amount, then pay via WhatsApp <b><a href="https://wa.me/96179306701" target="_blank">+96179306701</a></b>. Support credits your wallet after payment is confirmed.'},
+      {q:['login','log in','netflix login','credentials','sign in to netflix'],
+       a:'Open your subscription link or <b>My Subscriptions</b>, copy email and password, then log in on the service app or website. For Netflix codes, use <b>Request Sign-in Code</b> on the subscription link.'},
+      {q:['tv','television','activate','smart tv','chromecast','setup'],
+       a:'On your subscription link page, use <b>Activate on TV</b>. Log into Netflix in your browser first, then enter the code shown on your TV screen.'},
+      {q:['sign in code','signin code','verification code','2fa','netflix code','login code'],
+       a:'Open your subscription link → <b>Request Sign-in Code</b> → wait a few seconds → tap <b>Refresh</b>. Use the newest code; they expire quickly.'},
+      {q:['code not working','wrong code','expired code','invalid code'],
+       a:'Wait for a fresh code on your subscription link and tap Refresh. Do not request too many times in a row. If it still fails, use <b>Report Issue</b> in subscription options.'},
+      {q:['renew','renewal','expire','expired','extend'],
+       a:'Top up your wallet, buy again from the Store, or use <b>Options → Request Renewal</b> on the subscription. You can also message <b><a href="https://t.me/Rashadtech" target="_blank">@Rashadtech</a></b>.'},
+      {q:['pending','waiting','processing'],
+       a:'Pending means your order is queued until stock is available. You will get credentials in <b>My Subscriptions</b> and on Telegram when ready. Balance is already deducted.'},
+      {q:['profile','change password','chat id','name','settings'],
+       a:'Open <b>Profile</b> from the menu to change name, Telegram Chat ID, password, or language (EN/AR). Always save after editing Chat ID.'},
+      {q:['pin','profile name','change pin'],
+       a:'On a subscription card, tap <b>Options</b> → change profile name or PIN (for Netflix profiles).'},
+      {q:['issue','problem','not working','broken','error','report','help','stuck'],
+       a:'Open the subscription → <b>Options → Report Issue</b>. Describe the problem (login, code, TV, expired, playback). Support will contact you.'},
+      {q:['shahid','disney','osn','spotify','anghami','product','service'],
+       a:'All products are in the <b>Store</b> tab. Pick the service, select a plan, and buy with wallet balance. Delivery works the same as Netflix.'},
+      {q:['arabic','language','عربي','english'],
+       a:'Open <b>Profile</b> and use the language toggle (EN / AR) at the top of the profile page.'},
+      {q:['contact','whatsapp','support','human','agent','talk'],
+       a:'• <b>WhatsApp: <a href="https://wa.me/96179306701" target="_blank">+96179306701</a></b><br>• <b>Telegram: <a href="https://t.me/Rashadtech" target="_blank">@Rashadtech</a></b><br>• <b>Bot: <a href="https://t.me/Rashadtech_bot" target="_blank">@Rashadtech_bot</a></b>'}
+    ]
+  },
+  ar:{
+    name:'دعم rashadtech',
+    status:'متصل — رد فوري',
+    placeholder:'اكتب رسالة...',
+    greeting:'مرحباً! أستطيع مساعدتك في الشراء، الاشتراكات، تيليغرام، المحفظة، أكواد نتفليكس، التلفزيون، والعملاء الفرعيين. 👋',
+    sensitive:'أستطيع مساعدتك في أسئلة المتجر فقط (الشراء، الاشتراكات، المحفظة، تيليغرام). للإدارة الداخلية تواصل مع الدعم على واتساب أو تيليغرام.',
+    fallback:'لم أفهم سؤالك. جرّب موضوعاً سريعاً أدناه، أو تواصل معنا:<br>• <b>واتساب: <a href="https://wa.me/96179306701" target="_blank">+96179306701</a></b><br>• <b>تيليغرام: <a href="https://t.me/Rashadtech" target="_blank">@Rashadtech</a></b><br>• <b>البوت: <a href="https://t.me/Rashadtech_bot" target="_blank">@Rashadtech_bot</a></b>',
+    quick:[
+      {label:'شراء اشتراك',q:'كيف أشتري اشتراك؟'},
+      {label:'تيليغرام',q:'لم أستلم البيانات على تيليغرام'},
+      {label:'اشتراكاتي',q:'أين اشتراكاتي؟'},
+      {label:'كود الدخول',q:'أحتاج كود دخول نتفليكس'},
+      {label:'التلفزيون',q:'كيف أشاهد على التلفزيون؟'},
+      {label:'شحن المحفظة',q:'كيف أشحن المحفظة؟'},
+      {label:'عملاء فرعيون',q:'كيف يعمل العملاء الفرعيون؟'},
+      {label:'الدعم',q:'كيف أتواصل مع الدعم؟'}
+    ],
+    faq:[
+      {q:['شراء','اشتري','اشتراك','متجر','خطة','buy','purchase'],
+       a:'افتح <b>المتجر</b>، اختر المنتج (نتفليكس، شاهد، ديزني+...)، ثم اضغط شراء. البيانات تظهر في <b>اشتراكاتي</b> وتُرسل لتيليغرام إذا أضفت Chat ID في الملف الشخصي.'},
+      {q:['تيليغرام','chat id','بوت','لم يصل','توصيل','بيانات','telegram'],
+       a:'1) ابدأ <b><a href="https://t.me/Rashadtech_bot" target="_blank">@Rashadtech_bot</a></b> وأرسل /start<br>2) انسخ Chat ID في <b>الملف الشخصي → Telegram Chat ID → حفظ</b><br>3) من <b>اشتراكاتي → خيارات → إعادة الإرسال لتيليغرام</b>.'},
+      {q:['اشتراكاتي','اشتراك','أين','بيانات','كلمة المرور','email'],
+       a:'اذهب إلى <b>اشتراكاتي</b> من القائمة. اضغط <b>خيارات</b> لنسخ الرابط أو إعادة الإرسال لتيليغرام أو طلب تجديد.'},
+      {q:['عميل فرعي','عملاء','sub-customer','تعيين'],
+       a:'استخدم <b>عملائي</b> لإضافة من تشتري لهم. اضغط <b>إضافة اشتراك</b> على العميل. تظهر أيضاً في <b>اشتراكاتي</b> مع علامة <b>لـ:</b>.'},
+      {q:['شحن','محفظة','رصيد','top up','wallet'],
+       a:'<b>المحفظة → شحن</b>، اختر المبلغ، ثم ادفع عبر واتساب <b><a href="https://wa.me/96179306701" target="_blank">+96179306701</a></b>. يُضاف الرصيد بعد التأكيد.'},
+      {q:['دخول','login','نتفليكس','credentials'],
+       a:'افتح رابط الاشتراك أو <b>اشتراكاتي</b>، انسخ البريد وكلمة المرور، ثم سجّل الدخول. لأكواد نتفليكس استخدم <b>طلب كود الدخول</b>.'},
+      {q:['تلفزيون','tv','تفعيل','smart tv'],
+       a:'في صفحة رابط الاشتراك استخدم <b>تفعيل على التلفزيون</b>. سجّل الدخول لنتفليكس أولاً ثم أدخل الكود من الشاشة.'},
+      {q:['كود','sign in','verification','دخول'],
+       a:'رابط الاشتراك → <b>طلب كود الدخول</b> → انتظر → <b>تحديث</b>. استخدم أحدث كود.'},
+      {q:['تجديد','renew','منتهي','expired'],
+       a:'اشحن المحفظة واشترِ من المتجر، أو <b>خيارات → طلب تجديد</b>، أو راسل <b><a href="https://t.me/Rashadtech" target="_blank">@Rashadtech</a></b>.'},
+      {q:['معلق','pending','انتظار'],
+       a:'المعلق يعني الطلب في الانتظار حتى يتوفر المخزون. ستصلك البيانات في <b>اشتراكاتي</b> وتيليغرام عند الجاهزية.'},
+      {q:['ملف شخصي','profile','كلمة المرور','لغة','عربي'],
+       a:'<b>الملف الشخصي</b> لتغيير الاسم وChat ID وكلمة المرور واللغة (EN/AR).'},
+      {q:['مشكلة','issue','report','لا يعمل','عطل'],
+       a:'الاشتراك → <b>خيارات → الإبلاغ عن مشكلة</b>. صف المشكلة وسيتواصل معك الدعم.'},
+      {q:['شاهد','ديزني','سبوتيفاي','منتج','shahid','disney'],
+       a:'كل المنتجات في <b>المتجر</b>. اختر الخدمة والخطة واشترِ من رصيد المحفظة.'},
+      {q:['دعم','واتساب','تواصل','contact','whatsapp'],
+       a:'• <b>واتساب: <a href="https://wa.me/96179306701" target="_blank">+96179306701</a></b><br>• <b>تيليغرام: <a href="https://t.me/Rashadtech" target="_blank">@Rashadtech</a></b><br>• <b>البوت: <a href="https://t.me/Rashadtech_bot" target="_blank">@Rashadtech_bot</a></b>'}
+    ]
+  }
+};
 
 let rtOpen=false;
+let rtChatInited=false;
+
+function rtChatLang(){return(typeof currentLang!=='undefined'&&currentLang==='ar')?'ar':'en';}
+function rtChatPack(){return RT_CHAT_I18N[rtChatLang()]||RT_CHAT_I18N.en;}
+
+function rtIsSensitiveQuery(q){
+  const lower=String(q||'').toLowerCase();
+  return/\b(admin|stock|database|server|api|backend|jsonbin|render|bypass|hack|token|secret)\b/.test(lower)
+    ||/admin panel|admin password|admin access|how to access admin|user list|all customers|wallet of|internal/.test(lower);
+}
+
+function rtSyncChatUI(){
+  const p=rtChatPack();
+  const nameEl=document.getElementById('rt-chat-hdr-name');
+  const statusEl=document.getElementById('rt-chat-hdr-status');
+  const inp=document.getElementById('rt-chat-inp');
+  const win=document.getElementById('rt-chat-win');
+  if(nameEl)nameEl.textContent=p.name;
+  if(statusEl)statusEl.textContent=p.status;
+  if(inp){inp.placeholder=p.placeholder;inp.dir=rtChatLang()==='ar'?'rtl':'ltr';}
+  if(win)win.dir=rtChatLang()==='ar'?'rtl':'ltr';
+  rtRenderQuickReplies();
+  const adminActive=document.getElementById('page-admin')?.classList.contains('active');
+  const bubble=document.getElementById('rt-chat-bubble');
+  if(bubble)bubble.style.display=adminActive?'none':'flex';
+}
+
+function rtRenderQuickReplies(){
+  const el=document.getElementById('rt-qrs');
+  if(!el)return;
+  const p=rtChatPack();
+  el.innerHTML=p.quick.map(q=>`<button type="button" class="rt-qr" onclick="rtAsk(${JSON.stringify(q.q)})">${esc(q.label)}</button>`).join('');
+  el.style.display='flex';
+}
+
+function rtInitChat(){
+  if(rtChatInited)return;
+  rtChatInited=true;
+  rtSyncChatUI();
+  const msgs=document.getElementById('rt-msgs');
+  if(msgs&&!msgs.children.length)rtAddMsg(rtChatPack().greeting,'bot');
+}
 
 function rtToggleChat(){
+  if(isAdmin&&document.getElementById('page-admin')?.classList.contains('active'))return;
+  rtInitChat();
   rtOpen=!rtOpen;
   const win=document.getElementById('rt-chat-win');
-  if(rtOpen){win.classList.add('open');document.getElementById('rt-chat-inp').focus();
+  if(rtOpen){
+    win.classList.add('open');
+    document.getElementById('rt-chat-inp').focus();
     document.getElementById('rt-chat-badge').classList.remove('show');
-  }else{win.classList.remove('open');}
+  }else{
+    win.classList.remove('open');
+  }
 }
 
 function rtAsk(q){
-  document.getElementById('rt-qrs').style.display='none';
-  rtAddMsg(q,'user');
-  setTimeout(()=>rtRespond(q),600);
+  rtInitChat();
+  rtRespondFlow(q,true);
 }
 
 function rtSend(){
@@ -4444,42 +4562,69 @@ function rtSend(){
   const q=(inp.value||'').trim();
   if(!q)return;
   inp.value='';
-  document.getElementById('rt-qrs').style.display='none';
-  rtAddMsg(q,'user');
-  setTimeout(()=>rtRespond(q),600);
+  rtRespondFlow(q,true);
+}
+
+function rtRespondFlow(q,hideQuick){
+  if(hideQuick){
+    const qrs=document.getElementById('rt-qrs');
+    if(qrs)qrs.style.display='none';
+  }
+  rtAddMsg(esc(q),'user');
+  setTimeout(()=>rtRespond(q),500);
 }
 
 function rtAddMsg(text,role){
   const msgs=document.getElementById('rt-msgs');
+  if(!msgs)return;
   const div=document.createElement('div');
   div.className='rt-msg '+role;
   div.innerHTML=text;
   msgs.appendChild(div);
   msgs.scrollTop=msgs.scrollHeight;
-  if(!rtOpen){document.getElementById('rt-chat-badge').classList.add('show');}
+  if(!rtOpen){const b=document.getElementById('rt-chat-badge');if(b)b.classList.add('show');}
+}
+
+function rtMatchFaq(lower,faq){
+  let best=null,bestScore=0;
+  faq.forEach(f=>{
+    let score=0;
+    f.q.forEach(kw=>{
+      const k=kw.toLowerCase();
+      if(lower.includes(k))score+=k.length>4?2:1;
+    });
+    if(score>bestScore){bestScore=score;best=f;}
+  });
+  return bestScore>0?best:null;
 }
 
 function rtRespond(q){
   const typing=document.getElementById('rt-typing');
-  typing.classList.add('show');
   const msgs=document.getElementById('rt-msgs');
+  typing.classList.add('show');
   msgs.scrollTop=msgs.scrollHeight;
+  const p=rtChatPack();
   setTimeout(()=>{
     typing.classList.remove('show');
-    const lower=q.toLowerCase();
-    let best=null,bestScore=0;
-    RT_FAQ.forEach(f=>{
-      let score=0;
-      f.q.forEach(kw=>{if(lower.includes(kw))score++;});
-      if(score>bestScore){bestScore=score;best=f;}
-    });
-    if(best&&bestScore>0){
-      rtAddMsg(best.a,'bot');
+    const lower=String(q||'').toLowerCase();
+    if(rtIsSensitiveQuery(q)){
+      rtAddMsg(p.sensitive,'bot');
     }else{
-      rtAddMsg(`I'm not sure about that one. Please contact us directly on <b>WhatsApp: <a href="https://wa.me/96179306701" target="_blank">+96179306701</a></b> or <b>Telegram: <a href="https://t.me/Rashadtech" target="_blank">@Rashadtech</a></b> and we'll help you right away! 😊`,'bot');
+      const match=rtMatchFaq(lower,p.faq);
+      rtAddMsg(match?match.a:p.fallback,'bot');
     }
-  },900+Math.random()*400);
+    rtRenderQuickReplies();
+  },700+Math.random()*350);
 }
+
+const _rtSetLang=typeof setLang==='function'?setLang:null;
+if(_rtSetLang){
+  setLang=function(lang,skipPersist){
+    _rtSetLang(lang,skipPersist);
+    rtSyncChatUI();
+  };
+}
+document.addEventListener('DOMContentLoaded',()=>{rtSyncChatUI();});
 </script>
 <script src="features.js"></script>
 
