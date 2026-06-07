@@ -1133,9 +1133,27 @@ app.get('/links/:token', async (req, res) => {
   }
 });
 
+function normalizeTgChatId(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return '';
+  const match = s.match(/-?\d{5,}/);
+  return match ? match[0] : s.replace(/\s+/g, '');
+}
+
+function findUserOrderRecord(user, orderId) {
+  if (!user || !orderId) return { order: null, customer: null };
+  const direct = (user.orders || []).find(o => o.id === orderId);
+  if (direct) return { order: direct, customer: null };
+  for (const customer of user.myCustomers || []) {
+    const sub = (customer.subs || []).find(o => o.id === orderId);
+    if (sub) return { order: sub, customer };
+  }
+  return { order: null, customer: null };
+}
+
 function syncUserContact(user, { tgChatId, name } = {}) {
   if (!user) return user;
-  const nextTg = String(tgChatId || '').trim();
+  const nextTg = normalizeTgChatId(tgChatId);
   if (nextTg) user.tgChatId = nextTg;
   const nextName = String(name || '').trim();
   if (nextName) user.name = nextName;
@@ -1231,6 +1249,36 @@ app.post('/customer/profile', async (req, res) => {
   } catch (e) {
     console.error('Profile save error:', e.message);
     res.status(500).json({ error: 'Could not save profile' });
+  }
+});
+
+app.post('/customer/resend-subscription', async (req, res) => {
+  const session = requireSession(req, res, ['user']);
+  if (!session) return;
+  const { orderId, tgChatId } = req.body || {};
+  if (!orderId) return res.status(400).json({ error: 'Order ID required' });
+  try {
+    const data = await readJsonBinRaw();
+    data.users = Array.isArray(data.users) ? data.users : [];
+    const user = data.users.find(u => normalizeEmail(u.email) === session.email);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    syncUserContact(user, { tgChatId });
+    const { order, customer } = findUserOrderRecord(user, orderId);
+    if (!order || !order.email) return res.status(404).json({ error: 'Subscription not found' });
+    if (!user.tgChatId) return res.status(400).json({ error: 'Add your Telegram Chat ID in Profile first, then tap Save.' });
+    await writeJsonBinRaw(data);
+    const product = {
+      name: order.product,
+      short: order.short || '',
+      color: order.color || '',
+      tc: order.tc || '',
+      id: order.productId || ''
+    };
+    const telegramSent = await notifyPurchaseFulfilled(user, product, order.plan || '', order.price || 0, order, customer ? customer.id : null);
+    res.json({ success: true, telegramSent, user: sanitizeUser(user), data: safeDataForSession(data, session) });
+  } catch (e) {
+    console.error('Resend subscription error:', e.message);
+    res.status(500).json({ error: e.message || 'Could not resend subscription' });
   }
 });
 
@@ -1428,19 +1476,21 @@ app.post('/notify', async (req, res) => {
       const data = await readJsonBinRaw();
       const user = (data.users || []).find(u => normalizeEmail(u.email) === session.email);
       if (!user) return res.status(403).json({ error: 'Cannot send Telegram messages to this chat.' });
-      const stored = String(user.tgChatId || '').trim();
-      const requested = String(chatId).trim();
+      const stored = normalizeTgChatId(user.tgChatId);
+      const requested = normalizeTgChatId(chatId);
       if (stored && stored !== requested) return res.status(403).json({ error: 'Cannot send Telegram messages to this chat.' });
       if (!stored && requested) {
         user.tgChatId = requested;
         await writeJsonBinRaw(data);
       }
     }
-    await sendTG(chatId || TG_ADMIN, message, parse_mode);
+    const target = chatId || TG_ADMIN;
+    await sendTG(target, message, parse_mode);
     res.json({ success: true });
   } catch(e) {
     console.error('Notify error:', e.message);
-    res.status(500).json({ error: e.message });
+    const desc = e.telegram && e.telegram.description ? e.telegram.description : e.message;
+    res.status(500).json({ error: desc || 'Telegram delivery failed' });
   }
 });
 
@@ -1453,7 +1503,11 @@ app.post('/telegram', async (req, res) => {
     const chatId = String(msg.chat.id);
     const text = (msg.text || '').trim();
     if (chatId !== TG_ADMIN) {
-      await sendTG(chatId, '❌ Unauthorized');
+      const startMsg = text === '/start' || text.startsWith('/start ');
+      const welcome = startMsg
+        ? `👋 <b>Welcome to rashadtech.tv!</b>\n\nYour Telegram Chat ID is:\n<b>${chatId}</b>\n\n1. Copy this number\n2. Open rashadtech.tv → Profile\n3. Paste it in <b>Telegram Chat ID</b> and tap Save\n\n✅ Purchases and credentials will be delivered here.`
+        : `📱 Your Chat ID: <b>${chatId}</b>\n\nAdd it in Profile on rashadtech.tv to receive purchases here.\n\nSend /start for setup help.`;
+      await sendTG(chatId, welcome, 'HTML').catch(e => console.error('Customer bot welcome error:', e.message));
       return res.json({ ok: true });
     }
     if (text.startsWith('/code ')) {
@@ -1495,13 +1549,23 @@ app.post('/telegram', async (req, res) => {
 });
 
 async function sendTG(chatId, text, parse_mode) {
-  const body = { chat_id: chatId, text };
+  const id = String(chatId || '').trim();
+  if (!id) throw new Error('Missing Telegram chat ID');
+  const body = { chat_id: id, text };
   if (parse_mode) body.parse_mode = parse_mode;
-  await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, {
+  const r = await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
   });
+  const j = await r.json().catch(() => ({}));
+  if (!j.ok) {
+    const err = new Error(j.description || `Telegram error HTTP ${r.status}`);
+    err.telegram = j;
+    console.error('sendTG failed:', id, j.description || r.status);
+    throw err;
+  }
+  return j;
 }
 
 async function loadGmailMonitors(force = false) {

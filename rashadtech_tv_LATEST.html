@@ -1530,6 +1530,28 @@ function subOptionGenLink(){
   copySubLink(_currentSubId);
 }
 
+async function subOptionResendTelegram(){
+  closeModal('sub-options-modal');
+  if(!_currentSubId||!currentUser)return;
+  if(!currentUser.tgChatId){
+    showToast(currentLang==='ar'?'أضف Chat ID في الملف الشخصي أولاً':'Add Chat ID in Profile first, then Save');
+    switchTab('profile',null);
+    return;
+  }
+  try{
+    const r=await fetch(RT_SERVER+'/customer/resend-subscription',{
+      method:'POST',headers:authHeaders(),
+      body:JSON.stringify({orderId:_currentSubId,tgChatId:currentUser.tgChatId})
+    });
+    const j=await r.json();
+    if(!r.ok||!j.success)throw new Error(j.error||'Resend failed');
+    if(j.user)currentUser=j.user;
+    showToast(j.telegramSent
+      ?(currentLang==='ar'?'✓ تم الإرسال على تيليغرام':'✓ Sent to Telegram')
+      :(currentLang==='ar'?'⚠️ فشل الإرسال — تأكد من /start للبوت':'⚠️ Telegram failed — start @Rashadtech_bot'));
+  }catch(e){showToast('⚠️ '+e.message);}
+}
+
 async function subOptionAddNote(){
   closeModal('sub-options-modal');
   const o=findUserOrder(_currentSubId)?.order;
@@ -1656,7 +1678,7 @@ function showProfilePage(){
 async function saveProfile(){
   if(!currentUser)return;
   const name=document.getElementById('profile-name-input').value.trim();
-  const tgid=document.getElementById('profile-tgid-input').value.trim();
+  const tgid=String(document.getElementById('profile-tgid-input').value||'').trim().replace(/[^\d-]/g,'').replace(/(?!^)-/g,'');
   if(!name){showToast(currentLang==='ar'?'الاسم مطلوب':'Name cannot be empty');return;}
   try{
     const r=await fetch(RT_SERVER+'/customer/profile',{
@@ -2459,7 +2481,7 @@ async function confirmPurchase(){
         body:JSON.stringify({
           product:{id:p.id,name:p.name,short:p.short,color:p.color,tc:p.tc},
           planLabel,price,skey,extraFields,assignCustId,
-          tgChatId:currentUser.tgChatId||''
+          tgChatId:String(currentUser.tgChatId||'').trim().replace(/[^\d-]/g,'').replace(/(?!^)-/g,'')
         })
       });
       const j=await r.json();
@@ -4065,6 +4087,7 @@ if(document.readyState==='loading'){
     <div id="sub-options-product" style="font-size:13px;color:var(--text3);margin-bottom:16px"></div>
     <div style="display:flex;flex-direction:column;gap:2px">
       <button onclick="subOptionGenLink()" class="sub-option-btn">🔗 Generate Link</button>
+      <button onclick="subOptionResendTelegram()" class="sub-option-btn">📲 Resend to Telegram</button>
       <button onclick="subOptionAddNote()" class="sub-option-btn">📝 Add Note</button>
       <button onclick="subOptionRenew()" class="sub-option-btn" data-t="requestRenewal">🔄 Request Renewal</button>
       <button onclick="subOptionReport()" class="sub-option-btn" data-t="reportIssue">⚠️ Report Issue</button>
