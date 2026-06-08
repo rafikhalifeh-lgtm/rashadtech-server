@@ -458,11 +458,14 @@ function registerEnhancements(app, deps) {
           if (t.orderId === order.id) t.pending = status !== 'done';
         });
       }
+      const credLine = order.playerPassword
+        ? `👤 ${order.playerId}\n🔑 ${order.playerPassword}`
+        : `🆔 ${order.playerId}`;
       if (status === 'processing' && user?.tgChatId) {
-        await sendTG(user.tgChatId, `🎮 <b>Order processing</b>\n\n${order.product} · ${order.plan}\n🆔 ${order.playerId}\n\nWe are working on your order now.`, 'HTML').catch(() => {});
+        await sendTG(user.tgChatId, `🎮 <b>Order processing</b>\n\n${order.product} · ${order.plan}\n${credLine}\n\nWe are working on your order now.`, 'HTML').catch(() => {});
       }
       if (status === 'done' && user?.tgChatId) {
-        await sendTG(user.tgChatId, `✅ <b>Order complete!</b>\n\n${order.product} · ${order.plan}\n🆔 ${order.playerId}\n\nThank you for your order! 🎉`, 'HTML').catch(() => {});
+        await sendTG(user.tgChatId, `✅ <b>Order complete!</b>\n\n${order.product} · ${order.plan}\n${credLine}\n\nThank you for your order! 🎉`, 'HTML').catch(() => {});
       }
       await writeJsonBinRaw(data);
       await appendActivity('Game order updated', `${orderId} → ${status}`, session.email);
