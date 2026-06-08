@@ -1427,6 +1427,9 @@ function stockLabel(n){if(n===0)return['Out of stock','sout'];if(n<=3)return[`${
 const topupAmts=[{v:5,l:'$5'},{v:10,l:'$10'},{v:20,l:'$20'},{v:30,l:'$30'},{v:50,l:'$50'},{v:100,l:'$100'}];
 let users=[],currentUser=null,isAdmin=false;
 // HTML sanitizer to prevent XSS
+function jsOnClick(fn,...args){
+  return `onclick='${fn}(${args.map(a=>JSON.stringify(a)).join(',')})'`;
+}
 function esc(str){
   if(!str)return '';
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#x27;');
@@ -1597,10 +1600,11 @@ let _currentSubId=null;
 function openSubOptions(orderId){
   _currentSubId=orderId;
   const o=findUserOrder(orderId)?.order;
-  if(!o)return;
-  document.getElementById('sub-options-product').textContent=o.product+' · '+o.plan;
+  if(!o){showToast(currentLang==='ar'?'لم يتم العثور على الاشتراك':'Subscription not found');return;}
+  const productEl=document.getElementById('sub-options-product');
+  if(productEl)productEl.textContent=o.product+' · '+o.plan;
   const btn=document.getElementById('sub-option-autorenew-btn');
-  btn.textContent=o.autoRenew?'🔁 Disable Auto-Renewal':'🔁 Enable Auto-Renewal';
+  if(btn)btn.textContent=o.autoRenew?'🔁 Disable Auto-Renewal':'🔁 Enable Auto-Renewal';
   openModal('sub-options-modal');
 }
 
@@ -2696,11 +2700,10 @@ async function confirmPurchase(){
 }
 
 function shahidActionButtons(orderId){
-  const id=JSON.stringify(orderId);
   return `<div class="shahid-actions">
-    <button type="button" class="shahid-act-btn" onclick="shahidReport(${id})">⚠️ ${t('reportIssue','Report')}</button>
-    <button type="button" class="shahid-act-btn" onclick="shahidCopyInfo(${id})">📋 ${t('copyInfo','Copy info')}</button>
-    <button type="button" class="shahid-act-btn shahid-act-primary" onclick="openShahidFixPassword(${id})">🔑 ${t('fixPassword','Fix password')}</button>
+    <button type="button" class="shahid-act-btn" ${jsOnClick('shahidReport',orderId)}>⚠️ ${t('reportIssue','Report')}</button>
+    <button type="button" class="shahid-act-btn" ${jsOnClick('shahidCopyInfo',orderId)}>📋 ${t('copyInfo','Copy info')}</button>
+    <button type="button" class="shahid-act-btn shahid-act-primary" ${jsOnClick('openShahidFixPassword',orderId)}>🔑 ${t('fixPassword','Fix password')}</button>
   </div>`;
 }
 function shahidOrderForAction(orderId){
@@ -2739,14 +2742,14 @@ function renderShahidFixModal(o){
   document.getElementById('shahid-fix-body').innerHTML=`
     <div class="shahid-fix-warn" dir="${ar?'rtl':'ltr'}">
       <div style="font-size:13px;font-weight:600;margin-bottom:8px">${warn1}</div>
-      <div class="shahid-copy-row"><span id="shahid-fix-pass-disp">${esc(o.pass||'')}</span><button type="button" class="shahid-copy-btn" onclick="copyPlainText(${JSON.stringify(o.pass||'')})" title="Copy">📋</button></div>
+      <div class="shahid-copy-row"><span id="shahid-fix-pass-disp">${esc(o.pass||'')}</span><button type="button" class="shahid-copy-btn" ${jsOnClick('copyPlainText',o.pass||'')} title="Copy">📋</button></div>
       <div style="font-size:12px;color:var(--red);font-weight:600;line-height:1.5">${warn2}</div>
     </div>
     <div class="shahid-fix-step" dir="${ar?'rtl':'ltr'}">${step1}</div>
-    <div class="shahid-copy-row"><span>${esc(o.email||'')}</span><button type="button" class="shahid-copy-btn" onclick="copyPlainText(${JSON.stringify(o.email||'')})" title="Copy">📋</button></div>
+    <div class="shahid-copy-row"><span>${esc(o.email||'')}</span><button type="button" class="shahid-copy-btn" ${jsOnClick('copyPlainText',o.email||'')} title="Copy">📋</button></div>
     <a class="shahid-ext-btn" href="${SHAHID_FORGET_URL}" target="_blank" rel="noopener">↗ ${goShahid}</a>
     <div class="shahid-fix-step" dir="${ar?'rtl':'ltr'}" style="margin-top:16px">${step2}</div>
-    <div class="shahid-copy-row"><span>${esc(o.pass||'')}</span><button type="button" class="shahid-copy-btn" onclick="copyPlainText(${JSON.stringify(o.pass||'')})" title="Copy">📋</button></div>
+    <div class="shahid-copy-row"><span>${esc(o.pass||'')}</span><button type="button" class="shahid-copy-btn" ${jsOnClick('copyPlainText',o.pass||'')} title="Copy">📋</button></div>
     <button type="button" class="shahid-reset-btn" id="shahid-get-reset-btn" onclick="fetchShahidResetLink()">${getLink}</button>
     <div id="shahid-reset-status" style="font-size:12px;color:var(--text3);margin-top:8px;text-align:center"></div>
     <div id="shahid-reset-link-wrap"></div>
@@ -2794,7 +2797,7 @@ function subRow(o,forCustomer){
     <div class="sub-info"><div class="sub-name">${esc(o.product)}</div><div class="sub-plan">${esc(o.plan)} · ${esc(o.date)}</div>
     <div class="sub-cred"><span class="cust-sub-cred-line">📧 ${esc(o.email)}</span><span class="cust-sub-cred-line">🔑 ${esc(o.pass)}</span></div>${ex}${shahidBtns}</div>
     <div class="sub-right"><div class="sub-price">${fmt(o.price)}</div><span class="active-badge">${t('active','Active')}</span>
-    <button onclick="openSubOptions(${JSON.stringify(o.id)})" style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px;color:var(--text2);cursor:pointer;margin-top:4px;display:block;width:100%">••• ${t('options','Options')}</button>
+    <button ${jsOnClick('openSubOptions',o.id)} style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px;color:var(--text2);cursor:pointer;margin-top:4px;display:block;width:100%">••• ${t('options','Options')}</button>
     </div></div>`;
 }
 function pendingSubRow(o){
@@ -3450,7 +3453,7 @@ function renderMyCustomers(){
         <div style="font-size:11px;color:var(--text3);margin-bottom:4px">${s.date}</div>
         
         <button onclick="copySubLinkForCust('${cleanId}',${c.id})" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:3px 7px;font-size:10px;color:var(--text2);cursor:pointer;display:block;width:100%;margin-bottom:3px">🔗 Copy Link</button>
-        <button onclick="setSubCustProfileName('${s.id}',${c.id})" style="background:var(--blue-bg);color:var(--blue);border:1px solid var(--blue-border);border-radius:4px;padding:3px 7px;font-size:10px;font-weight:600;cursor:pointer;display:block;width:100%">👤 ${s.profileName?'Profile: '+s.profileName:'Set Profile'}</button>
+        <button ${jsOnClick('setSubCustProfileName',s.id,c.id)} style="background:var(--blue-bg);color:var(--blue);border:1px solid var(--blue-border);border-radius:4px;padding:3px 7px;font-size:10px;font-weight:600;cursor:pointer;display:block;width:100%">👤 ${orderProfileName(s)?'Profile: '+orderProfileName(s):'Set Profile'}</button>
       </div></div>`;}).join('')}</div>`:'';
     return `<div class="cust-card"><div class="cust-card-top">
       <div class="cust-avatar">${c.fname.charAt(0).toUpperCase()}</div>
@@ -4693,7 +4696,7 @@ function rtRenderQuickReplies(){
   const el=document.getElementById('rt-qrs');
   if(!el)return;
   const p=rtChatPack();
-  el.innerHTML=p.quick.map(q=>`<button type="button" class="rt-qr" onclick="rtAsk(${JSON.stringify(q.q)})">${esc(q.label)}</button>`).join('');
+  el.innerHTML=p.quick.map(q=>`<button type="button" class="rt-qr" ${jsOnClick('rtAsk',q.q)}>${esc(q.label)}</button>`).join('');
   el.style.display='flex';
 }
 
