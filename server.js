@@ -6,6 +6,11 @@ const path = require('path');
 const { ImapFlow } = require('imapflow');
 const { simpleParser } = require('mailparser');
 const { registerEnhancements } = require('./enhancements');
+const {
+  getMergedCatalog,
+  resolvePurchasePrice,
+  pricesMatch
+} = require('./priceCatalog');
 
 const app = express();
 const ALLOWED_ORIGINS = new Set([
@@ -1485,10 +1490,15 @@ app.post('/customer/resend-subscription', async (req, res) => {
 app.post('/purchase', async (req, res) => {
   const session = requireSession(req, res, ['user']);
   if (!session) return;
-  const { product, planLabel, price, skey, extraFields, assignCustId, tgChatId } = req.body;
+  const { product, planLabel, price, skey, extraFields, assignCustId, tgChatId, customDays } = req.body;
   if (!product || !planLabel || !skey || !Number(price)) return res.status(400).json({ error: 'Invalid purchase' });
   try {
     const data = await readJsonBinRaw();
+    const catalog = getMergedCatalog(data);
+    const expectedPrice = resolvePurchasePrice(catalog, { skey, customDays: Number(customDays || 0) });
+    if (expectedPrice == null || !pricesMatch(expectedPrice, price)) {
+      return res.status(400).json({ error: 'Price has changed. Refresh the store and try again.' });
+    }
     data.users = Array.isArray(data.users) ? data.users : [];
     data.stock = data.stock || {};
     data.pending = Array.isArray(data.pending) ? data.pending : [];

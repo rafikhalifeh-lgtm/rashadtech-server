@@ -1,4 +1,9 @@
 const crypto = require('crypto');
+const {
+  PRICE_CATALOG_KEY,
+  getMergedCatalog,
+  buildCatalogPayload
+} = require('./priceCatalog');
 
 const SESSIONS_KEY = 'sessions';
 const ACTIVITY_LOG_KEY = 'activityLog';
@@ -256,6 +261,45 @@ function registerEnhancements(app, deps) {
       res.json({ success: true, settings: data[SITE_SETTINGS_KEY] });
     } catch (e) {
       res.status(500).json({ error: 'Could not save settings' });
+    }
+  });
+
+  app.get('/catalog/prices', async (req, res) => {
+    try {
+      const data = await readJsonBinRaw();
+      res.json({ success: true, catalog: getMergedCatalog(data) });
+    } catch (e) {
+      res.status(500).json({ error: 'Could not load prices' });
+    }
+  });
+
+  app.get('/admin/prices', async (req, res) => {
+    const session = requireSession(req, res, ['admin']);
+    if (!session) return;
+    try {
+      const data = await readJsonBinRaw();
+      res.json({ success: true, catalog: getMergedCatalog(data) });
+    } catch (e) {
+      res.status(500).json({ error: 'Could not load prices' });
+    }
+  });
+
+  app.post('/admin/prices', async (req, res) => {
+    const session = requireSession(req, res, ['admin']);
+    if (!session) return;
+    try {
+      const payload = buildCatalogPayload(req.body || {});
+      const data = await readJsonBinRaw();
+      data[PRICE_CATALOG_KEY] = {
+        ...payload,
+        updatedAt: Date.now(),
+        updatedBy: session.email
+      };
+      await writeJsonBinRaw(data);
+      await appendActivity('Prices updated', `${Object.keys(payload.prices).length} plan prices`, session.email);
+      res.json({ success: true, catalog: getMergedCatalog(data) });
+    } catch (e) {
+      res.status(500).json({ error: 'Could not save prices' });
     }
   });
 

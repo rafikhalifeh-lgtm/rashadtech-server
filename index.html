@@ -868,6 +868,7 @@ So your EmailJS template will receive the user email and verification code corre
       <button onclick="switchAdminTab('requests',null);setActiveAdminNav('abn-more');toggleAdminMore()" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 8px;cursor:pointer;color:var(--text);font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">💡</span><span data-t="requests">Requests</span></button>
       <button onclick="switchAdminTab('expiry',null);setActiveAdminNav('abn-more');toggleAdminMore()" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 8px;cursor:pointer;color:var(--text);font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">⏰</span><span data-t="expiry">Expiry</span></button>
       <button onclick="switchAdminTab('dashboard',null);setActiveAdminNav('abn-more');toggleAdminMore()" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 8px;cursor:pointer;color:var(--text);font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">📊</span><span data-t="dashboard">Dashboard</span></button>
+      <button onclick="switchAdminTab('prices',null);setActiveAdminNav('abn-more');toggleAdminMore()" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 8px;cursor:pointer;color:var(--text);font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">💲</span><span>Prices</span></button>
       <button onclick="toggleAdminMore();openAnnounce()" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 8px;cursor:pointer;color:var(--text);font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">📢</span><span data-t="announce">Announce</span></button>
       <button onclick="doLogout();toggleAdminMore()" style="background:var(--red-bg);border:1px solid var(--red-border);border-radius:var(--radius-sm);padding:12px 8px;cursor:pointer;color:var(--red);font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">🚪</span><span data-t="logout">Logout</span></button>
     </div>
@@ -877,6 +878,7 @@ So your EmailJS template will receive the user email and verification code corre
       <div class="snav-section" data-t="admin">Admin</div>
       <button class="snav" onclick="switchAdminTab('dashboard',this)"><i class="ti ti-chart-bar"></i><span data-t="dashboard">Dashboard</span></button>
             <button class="snav active" onclick="switchAdminTab('stock',this)"><i class="ti ti-package"></i><span data-t="stock">Stock</span></button>
+      <button class="snav" onclick="switchAdminTab('prices',this)"><i class="ti ti-currency-dollar"></i><span>Prices</span></button>
       <button class="snav" onclick="switchAdminTab('customers',this)"><i class="ti ti-users"></i><span data-t="customers">All Customers</span></button>
       <button class="snav" onclick="switchAdminTab('wallets',this)"><i class="ti ti-wallet"></i><span data-t="wallets">Wallets</span></button>
       <button class="snav" onclick="switchAdminTab('requests',this)"><i class="ti ti-bulb"></i><span data-t="requests">Requests</span></button>
@@ -930,6 +932,11 @@ So your EmailJS template will receive the user email and verification code corre
         </div>
         <div class="pg-sub">Add credentials per plan. Expiry date triggers automatic alerts.</div>
         <div id="stock-panels"></div>
+      </div>
+      <div id="admin-prices" class="tab-pane">
+        <div class="pg-title">Prices</div>
+        <div class="pg-sub">Update store prices for new purchases. Past orders and transactions keep the price paid at checkout.</div>
+        <div id="admin-prices-body"></div>
       </div>
       <div id="admin-customers" class="tab-pane">
         <div class="pg-title">All Customers</div>
@@ -1343,7 +1350,7 @@ function prodIcon(p,size=32,radius=8){
   if(ico)return `<img src="${ico}" width="${size}" height="${size}" style="border-radius:${radius}px;object-fit:contain;background:#fff;padding:2px" onerror="this.style.display='none';this.nextSibling.style.display='flex'"><div style="display:none;width:${size}px;height:${size}px;border-radius:${radius}px;background:${p.color};color:${p.tc};align-items:center;justify-content:center;font-size:${Math.round(size*0.4)}px;font-weight:700">${p.short}</div>`;
   return `<div style="width:${size}px;height:${size}px;border-radius:${radius}px;background:${p.color};color:${p.tc};display:flex;align-items:center;justify-content:center;font-size:${Math.round(size*0.4)}px;font-weight:700">${p.short}</div>`;
 }
-const products=[
+const DEFAULT_PRODUCTS=[
   {id:'netflix',name:'Netflix',short:'N',color:'#E50914',tc:'#fff',cat:'video',badge:'hot',desc:'Movies & TV shows',hasUserTypes:true,userTypes:[
     {key:'1user',name:'1 User',desc:'Private profile · 1 screen',durations:DURATIONS_NF_1U,hasCustom:true,customDayRate:0.06},
     {key:'full',name:'Full User',desc:'All profiles · 4 screens',durations:DURATIONS_NF_FULL}]},
@@ -1399,6 +1406,41 @@ const products=[
   {id:'psplus',name:'PlayStation Plus',short:'PS+',color:'#003087',tc:'#fff',cat:'games',badge:'new',desc:'PS4 & PS5 games',hasUserTypes:false,plans:[
     {name:'1 Month',desc:'Essential',price:4},{name:'3 Months',desc:'Essential',price:11},{name:'1 Year',desc:'Best value',price:35}]},
 ];
+let products=JSON.parse(JSON.stringify(DEFAULT_PRODUCTS));
+let _rtPriceCatalog=null;
+
+function cloneDefaultProducts(){products=JSON.parse(JSON.stringify(DEFAULT_PRODUCTS));}
+function applyPriceCatalog(catalog){
+  cloneDefaultProducts();
+  if(!catalog)return;
+  _rtPriceCatalog=catalog;
+  const prices=catalog.prices||{};
+  const rates=catalog.customDayRates||{};
+  products.forEach(p=>{
+    if(p.hasUserTypes){
+      (p.userTypes||[]).forEach(ut=>{
+        const rateKey=p.id+'__'+ut.key;
+        if(rates[rateKey]!=null)ut.customDayRate=rates[rateKey];
+        (ut.durations||[]).forEach(d=>{
+          const k=sk(p.id,ut.key,d.key);
+          if(prices[k]!=null)d.price=prices[k];
+        });
+      });
+    }else if(p.id!=='jawaker'){
+      (p.plans||[]).forEach((pl,i)=>{
+        const k=sk(p.id,null,i);
+        if(prices[k]!=null)pl.price=prices[k];
+      });
+    }
+  });
+}
+async function loadPriceCatalog(){
+  try{
+    const r=await fetch(RT_SERVER+'/catalog/prices');
+    const j=await r.json();
+    if(j.success&&j.catalog)applyPriceCatalog(j.catalog);
+  }catch(e){console.warn('price catalog load',e);}
+}
 
 // Requestable services not yet in store
 const requestableServices=[
@@ -2336,6 +2378,7 @@ async function switchAdminTab(name,el){
   await loadData();
   if(name==='wallets')renderWallets();
   if(name==='stock')renderStockPanels();
+  if(name==='prices')renderAdminPrices();
   if(name==='customers')renderAdminCustomers();
   if(name==='requests')renderAdminRequests();
   if(name==='expiry'){renderAdminExpiry();renderNetflixRenewalAlerts();}
@@ -2480,11 +2523,11 @@ function setCustomDays(v){customDays=parseInt(v)||0;selDur=null;renderBuyBody();
 let customOrderId='', customOrderAmt=0;
 
 function jawPrice(tokens){
-  const base=1.5/12000;
+  const jaw=_rtPriceCatalog?.jawaker;
+  const base=jaw?.basePerToken??(1.5/12000);
   let price=tokens*base;
-  if(tokens>=500000)price*=0.90;
-  else if(tokens>=100000)price*=0.93;
-  else if(tokens>=50000)price*=0.96;
+  const tiers=jaw?.tiers||[{min:500000,mult:0.9},{min:100000,mult:0.93},{min:50000,mult:0.96}];
+  for(const tier of tiers){if(tokens>=tier.min){price*=tier.mult;break;}}
   return Math.round(price*100)/100;
 }
 
@@ -2593,6 +2636,7 @@ async function confirmPurchase(){
         body:JSON.stringify({
           product:{id:p.id,name:p.name,short:p.short,color:p.color,tc:p.tc},
           planLabel,price,skey,extraFields,assignCustId,
+          customDays:(p.hasUserTypes&&selUT?.hasCustom&&customDays>0)?customDays:0,
           tgChatId:String(currentUser.tgChatId||'').trim().replace(/[^\d-]/g,'').replace(/(?!^)-/g,'')
         })
       });
@@ -3585,6 +3629,60 @@ async function resolveRequest(id){
   sendTelegram(`✅ <b>Request fulfilled</b>\n📺 <b>${r.service}</b> has been added to the store!\n👥 ${r.requesters.length} customer${r.requesters.length!==1?'s':''} requested it`);
 }
 
+// PRICES
+function adminPriceRow(label,key,value,type){
+  const id='price-'+String(key).replace(/[^a-zA-Z0-9_-]/g,'-');
+  return `<div class="admin-row"><div class="admin-info"><div class="admin-name">${esc(label)}</div><div class="admin-sub" style="font-family:var(--mono);font-size:10px">${esc(key)}</div></div>
+    <input type="number" step="0.01" min="0" id="${id}" data-price-key="${esc(key)}"${type?` data-price-type="${type}"`:''} value="${value}" style="width:96px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg3);color:var(--text)"></div>`;
+}
+function renderAdminPrices(){
+  const el=document.getElementById('admin-prices-body');
+  if(!el)return;
+  let html=`<div style="background:var(--blue-bg);border:1px solid var(--blue-border);border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px;color:var(--text2)">Completed purchases and wallet transactions are <b>not changed</b> when you save new prices here.</div>`;
+  products.forEach(p=>{
+    html+=`<div class="admin-section-title">${p.name}</div><div class="admin-panel">`;
+    if(p.hasUserTypes){
+      p.userTypes.forEach(ut=>{
+        if(ut.hasCustom)html+=adminPriceRow(`${ut.name} — price per day`,`${p.id}__${ut.key}`,ut.customDayRate,'rate');
+        ut.durations.forEach(d=>{html+=adminPriceRow(`${ut.name} · ${d.label}`,sk(p.id,ut.key,d.key),d.price);});
+      });
+    }else if(p.id==='jawaker'){
+      const jaw=_rtPriceCatalog?.jawaker||{};
+      const per12k=Math.round((jaw.basePerToken??(1.5/12000))*12000*100)/100;
+      html+=`<div class="admin-row"><div class="admin-info"><div class="admin-name">Jawaker — price per 12,000 tokens</div></div>
+        <input type="number" step="0.01" min="0" id="jawaker-base-12k" value="${per12k}" style="width:96px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg3);color:var(--text)"></div>`;
+    }else{
+      (p.plans||[]).forEach((pl,i)=>{html+=adminPriceRow(pl.name,sk(p.id,null,i),pl.price);});
+    }
+    html+='</div>';
+  });
+  html+=`<button class="btn-primary" style="margin-top:14px" onclick="saveAdminPrices()">Save all prices</button>`;
+  el.innerHTML=html;
+}
+async function saveAdminPrices(){
+  const prices={};
+  const customDayRates={};
+  document.querySelectorAll('#admin-prices-body [data-price-key]').forEach(inp=>{
+    const v=parseFloat(inp.value);
+    if(isNaN(v)||v<0)return;
+    if(inp.dataset.priceType==='rate')customDayRates[inp.dataset.priceKey]=v;
+    else prices[inp.dataset.priceKey]=v;
+  });
+  const jaw12k=parseFloat(document.getElementById('jawaker-base-12k')?.value||'');
+  const jawaker={basePerToken:(isNaN(jaw12k)?1.5:jaw12k)/12000,tiers:[{min:500000,mult:0.9},{min:100000,mult:0.93},{min:50000,mult:0.96}]};
+  try{
+    const r=await fetch(RT_SERVER+'/admin/prices',{method:'POST',headers:authHeaders(),body:JSON.stringify({prices,customDayRates,jawaker})});
+    const j=await r.json();
+    if(!r.ok||!j.success)throw new Error(j.error||'Save failed');
+    applyPriceCatalog(j.catalog);
+    renderAdminPrices();renderStockPanels();
+    const activeCat=document.querySelector('.ftab.active')?.dataset?.cat||'all';
+    if(document.getElementById('page-app')?.classList.contains('active'))renderProducts(activeCat);
+    showToast('✓ Prices saved for new purchases');
+    logActivity('Prices updated','catalog');
+  }catch(e){showToast('⚠️ '+e.message);}
+}
+
 // STOCK
 function renderStockPanels(){
   document.getElementById('stock-panels').innerHTML=products.map(p=>`<div class="admin-section-title">${p.name}</div><div class="admin-panel">${renderStockRows(p)}</div>`).join('');
@@ -4265,6 +4363,7 @@ async function init(){
   initFirebase();
   initTheme();
   initLang();
+  await loadPriceCatalog();
   // Check for subscription link FIRST — hide all pages immediately
   const params=new URLSearchParams(location.search);
   if(params.get('sub')||params.get('s')||params.get('t')){
