@@ -59,7 +59,9 @@ const GMAIL_MONITORS_KEY = 'gmailMonitors';
 const BACKUPS_KEY = 'backups';
 const LINK_TOKENS_KEY = 'linkTokens';
 const CODE_TTL_MS = 15 * 60 * 1000;
+const SHAHID_RESET_TTL_MS = 60 * 60 * 1000;
 const EMAIL_LOOKBACK_MS = 24 * 60 * 60 * 1000;
+const SHAHID_FORGET_PASSWORD_URL = 'https://shahid.mbc.net/en/hub/forget-password';
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const LINK_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 const PASSWORD_HASH_PREFIX = 'pbkdf2$';
@@ -71,7 +73,9 @@ if (!API_SECRET || !TG_TOKEN || !TG_ADMIN) {
 }
 
 let latestCodes = {};
+let latestShahidResetLinks = {};
 let notifiedCustomers = {};
+let notifiedShahidReset = {};
 let monitoredEmails = {}; // { gmailEmail: { user, pass, lastUid, lastCheckedAt } }
 let gmailMonitorsLoaded = false;
 let sessions = new Map();
@@ -676,11 +680,56 @@ function sanitizeStockBlocks(blocks) {
   return { ...(blocks || {}) };
 }
 
+function sanitizeOrder(order) {
+  if (!order) return order;
+  const safe = { ...order };
+  delete safe.inboxPass;
+  return safe;
+}
+
 function sanitizeUser(user) {
   if (!user) return null;
   const safeUser = { ...user };
   delete safeUser.pass;
+  if (Array.isArray(safeUser.orders)) safeUser.orders = safeUser.orders.map(sanitizeOrder);
+  if (Array.isArray(safeUser.myCustomers)) {
+    safeUser.myCustomers = safeUser.myCustomers.map(customer => ({
+      ...customer,
+      subs: Array.isArray(customer.subs) ? customer.subs.map(sanitizeOrder) : []
+    }));
+  }
   return safeUser;
+}
+
+function isShahidOrder(order) {
+  if (!order) return false;
+  if (order.productId === 'shahid') return true;
+  return /shahid/i.test(String(order.product || ''));
+}
+
+function findStockAccountForOrder(data, order) {
+  if (!order || !order.email) return null;
+  const targetEmail = normalizeEmail(order.email);
+  const targetKey = String(order.accKey || '');
+  for (const accounts of Object.values((data && data.stock) || {})) {
+    for (const acc of accounts || []) {
+      if (!acc || normalizeEmail(acc.email) !== targetEmail) continue;
+      if (targetKey && acc.accKey && acc.accKey !== targetKey) continue;
+      return acc;
+    }
+  }
+  return null;
+}
+
+function resolveShahidInboxCredentials(data, order) {
+  const stockAcc = findStockAccountForOrder(data, order);
+  const inboxEmail = normalizeEmail(
+    order.mainEmail || (stockAcc && stockAcc.mainEmail) || order.email
+  );
+  const inboxPass = String(
+    order.inboxPass || (stockAcc && stockAcc.inboxPass) || (stockAcc && stockAcc.mainPass) || ''
+  ).replace(/\s+/g, '').trim();
+  return { inboxEmail, inboxPass, accountEmail: normalizeEmail(order.email) };
 }
 
 function safeDataForSession(data, session) {
@@ -1339,6 +1388,70 @@ app.post('/customer/subscription/update', async (req, res) => {
   }
 });
 
+async function resolveShahidOrderForRequest(data, session, orderId, linkToken) {
+  if (session && orderId) {
+    const user = (data.users || []).find(u => normalizeEmail(u.email) === session.email);
+    if (!user) return { error: 'User not found', status: 404 };
+    const found = findUserOrderRecord(user, orderId);
+    if (!found.order) return { error: 'Subscription not found', status: 404 };
+    if (!isShahidOrder(found.order)) return { error: 'This tool is only for Shahid subscriptions', status: 400 };
+    return { order: found.order, ownerEmail: session.email };
+  }
+  if (linkToken) {
+    try {
+      const payload = decodeLinkToken(linkToken);
+      const subscription = payload && payload.subscription;
+      if (!subscription || !subscription.email) return { error: 'Invalid subscription link', status: 400 };
+      if (Date.now() > Number(payload.expiresAt || 0)) return { error: 'Subscription link expired', status: 404 };
+      if (!isShahidOrder(subscription)) return { error: 'This tool is only for Shahid subscriptions', status: 400 };
+      const ownerEmail = payload.owner || '';
+      if (ownerEmail) {
+        const user = (data.users || []).find(u => normalizeEmail(u.email) === normalizeEmail(ownerEmail));
+        if (user && subscription.id) {
+          const found = findUserOrderRecord(user, subscription.id);
+          if (found.order) return { order: found.order, ownerEmail };
+        }
+      }
+      return { order: subscription, ownerEmail };
+    } catch (e) {
+      return { error: 'Invalid subscription link', status: 400 };
+    }
+  }
+  return { error: 'Order ID or link token required', status: 400 };
+}
+
+app.post('/customer/shahid-reset-link', async (req, res) => {
+  const session = requireSession(req, res, ['user']);
+  if (!session) return;
+  try {
+    const data = await readJsonBinRaw();
+    const resolved = await resolveShahidOrderForRequest(data, session, req.body && req.body.orderId, null);
+    if (resolved.error) return res.status(resolved.status || 400).json({ error: resolved.error });
+    const result = await fetchShahidResetLinkForOrder(data, resolved.order);
+    if (!result.success) return res.json({ success: false, message: result.message });
+    res.json({ success: true, link: result.link });
+  } catch (e) {
+    console.error('Shahid reset link error:', e.message);
+    res.status(500).json({ error: e.message || 'Could not fetch reset link' });
+  }
+});
+
+app.post('/links/shahid-reset-link', async (req, res) => {
+  const { token } = req.body || {};
+  if (!token) return res.status(400).json({ error: 'Link token required' });
+  try {
+    const data = await readJsonBinRaw();
+    const resolved = await resolveShahidOrderForRequest(data, null, null, token);
+    if (resolved.error) return res.status(resolved.status || 400).json({ error: resolved.error });
+    const result = await fetchShahidResetLinkForOrder(data, resolved.order);
+    if (!result.success) return res.json({ success: false, message: result.message });
+    res.json({ success: true, link: result.link });
+  } catch (e) {
+    console.error('Shahid reset link (token) error:', e.message);
+    res.status(500).json({ error: e.message || 'Could not fetch reset link' });
+  }
+});
+
 app.post('/customer/resend-subscription', async (req, res) => {
   const session = requireSession(req, res, ['user']);
   if (!session) return;
@@ -1425,7 +1538,8 @@ app.post('/purchase', async (req, res) => {
       ...(extraFields||{}),
       ...(accountProfileName(acc) ? { profileName: accountProfileName(acc) } : {}),
       ...(acc.profilePin?{profilePin:acc.profilePin}:{}),
-      accKey:acc.accKey||'',mainEmail:acc.mainEmail||''
+      accKey:acc.accKey||'',mainEmail:acc.mainEmail||'',
+      ...(acc.inboxPass ? { inboxPass: acc.inboxPass } : {})
     };
     if (assignCustId !== null && assignCustId !== undefined) {
       const customer = (user.myCustomers||[]).find(c => c.id === assignCustId);
@@ -1718,7 +1832,7 @@ app.post('/get-code', async (req, res) => {
   if (inboxKey) {
     await loadGmailMonitors();
     if (monitoredEmails[inboxKey]) {
-      await fetchNetflixCodes(inboxKey);
+      await fetchMonitoredInboxes(inboxKey);
     }
   }
   const entry = latestCodes[key] || (!codeEmail && inboxKey ? latestCodes[inboxKey] : null) || (codeKey ? null : latestCodes['default']);
@@ -1750,19 +1864,33 @@ app.post('/set-code', (req, res) => {
 app.post('/add-account', (req, res) => res.json({ success: true }));
 
 // ── IMAP EMAIL POLLING FOR NETFLIX CODES ──────────────────────────────
-function createGmailClient(email, password) {
+function getImapSettings(email) {
+  const domain = String(email || '').split('@')[1] || '';
+  if (/^(gmail|googlemail)\.com$/i.test(domain)) {
+    return { host: 'imap.gmail.com', port: 993, secure: true };
+  }
+  if (/^(hotmail|outlook|live|msn)\.com$/i.test(domain)) {
+    return { host: 'outlook.office365.com', port: 993, secure: true };
+  }
+  return null;
+}
+
+function createImapClient(email, password) {
+  const settings = getImapSettings(email);
+  if (!settings) throw new Error(`IMAP is not supported for ${email}`);
   return new ImapFlow({
-    host: 'imap.gmail.com',
-    port: 993,
-    secure: true,
-    auth: {
-      user: email,
-      pass: password
-    },
+    host: settings.host,
+    port: settings.port,
+    secure: settings.secure,
+    auth: { user: email, pass: password },
     tls: { rejectUnauthorized: false },
     connectionTimeout: 15000,
     logger: false
   });
+}
+
+function createGmailClient(email, password) {
+  return createImapClient(email, password);
 }
 
 function extractNetflixCode(parsedEmail) {
@@ -1779,6 +1907,100 @@ function extractNetflixCode(parsedEmail) {
 
   const fallback = combined.match(/\b(\d{4,8})\b/);
   return fallback ? { code: fallback[1], customerSafe: fallback[1].length === 4 } : null;
+}
+
+function extractShahidResetLink(parsedEmail) {
+  const subject = parsedEmail.subject || '';
+  const text = parsedEmail.text || '';
+  const html = parsedEmail.html || '';
+  const from = (parsedEmail.from || '').toString().toLowerCase();
+  const combined = `${subject}\n${text}\n${html}`;
+  const lower = combined.toLowerCase();
+  if (!from.includes('shahid') && !from.includes('mbc') && !lower.includes('shahid')) return null;
+  if (!/reset|password|forgot|كلمة|مرور|تعيين|إعادة/i.test(combined)) return null;
+
+  const urls = combined.match(/https?:\/\/[^\s"'<>]+/gi) || [];
+  const shahidUrls = urls
+    .map(url => url.replace(/&amp;/g, '&').replace(/[),.]+$/g, ''))
+    .filter(url => /shahid|mbc\.net/i.test(url));
+  if (!shahidUrls.length) return null;
+
+  const preferred = shahidUrls.find(url => /reset|password|token|verify|confirm|hub\/forget/i.test(url));
+  return { link: preferred || shahidUrls[0] };
+}
+
+async function scanInboxForShahidReset(inboxEmail, inboxPass, accountEmail) {
+  const client = createImapClient(inboxEmail, inboxPass);
+  await client.connect();
+  try {
+    const lock = await client.getMailboxLock('INBOX');
+    try {
+      const since = new Date(Date.now() - EMAIL_LOOKBACK_MS);
+      const messages = (await client.search({ since }, { uid: true }) || [])
+        .sort((a, b) => Number(b) - Number(a))
+        .slice(0, 40);
+      for await (const message of client.fetch(messages, { uid: true, source: true }, { uid: true })) {
+        if (!message.source) continue;
+        const parsed = await simpleParser(message.source);
+        const recipients = collectEmailRecipients(parsed, inboxEmail);
+        if (accountEmail && !recipients.includes(accountEmail) && normalizeEmail(inboxEmail) !== accountEmail) continue;
+        const result = extractShahidResetLink(parsed);
+        if (result && result.link) return result.link;
+      }
+    } finally {
+      lock.release();
+    }
+  } finally {
+    if (client.usable) {
+      try { await client.logout(); } catch (e) {}
+    }
+  }
+  return null;
+}
+
+async function fetchShahidResetLinkForOrder(data, order) {
+  const { inboxEmail, inboxPass, accountEmail } = resolveShahidInboxCredentials(data, order);
+  const cacheKey = accountEmail || inboxEmail;
+  const cached = latestShahidResetLinks[cacheKey];
+  if (cached && Date.now() - cached.timestamp < SHAHID_RESET_TTL_MS) {
+    return { success: true, link: cached.link };
+  }
+
+  let link = null;
+  await loadGmailMonitors();
+  if (inboxEmail && monitoredEmails[inboxEmail]) {
+    await fetchMonitoredInboxes(inboxEmail);
+    const refreshed = latestShahidResetLinks[cacheKey];
+    if (refreshed && Date.now() - refreshed.timestamp < SHAHID_RESET_TTL_MS) {
+      return { success: true, link: refreshed.link };
+    }
+  }
+
+  if (inboxEmail && inboxPass) {
+    try {
+      link = await scanInboxForShahidReset(inboxEmail, inboxPass, accountEmail);
+      if (link) {
+        latestShahidResetLinks[cacheKey] = { link, timestamp: Date.now() };
+        delete notifiedShahidReset[cacheKey];
+        return { success: true, link };
+      }
+    } catch (e) {
+      console.log('Shahid inbox scan error for', inboxEmail, e.message);
+    }
+  }
+
+  if (!notifiedShahidReset[cacheKey] || Date.now() - notifiedShahidReset[cacheKey] > 5 * 60 * 1000) {
+    notifiedShahidReset[cacheKey] = Date.now();
+    await sendTG(
+      TG_ADMIN,
+      `🔔 <b>Shahid reset link requested</b>\n📧 Account: <code>${order.email}</code>\n📥 Inbox: <code>${inboxEmail || 'not configured'}</code>\n⚠️ No reset email found yet. Ask customer to request reset on Shahid first.`,
+      'HTML'
+    ).catch(() => {});
+  }
+  return {
+    success: false,
+    message: 'No reset link found yet. Request password reset on Shahid first, wait 1–2 minutes, then tap GET RESET LINK again.'
+  };
 }
 
 function collectEmailRecipients(parsedEmail, fallbackEmail) {
@@ -1816,7 +2038,7 @@ function collectEmailRecipients(parsedEmail, fallbackEmail) {
   return recipients.length ? recipients : uniqueNormalizedEmails([fallbackEmail]);
 }
 
-async function fetchNetflixCodes(targetEmail) {
+async function fetchMonitoredInboxes(targetEmail) {
   await loadGmailMonitors();
   const targetKey = targetEmail ? normalizeEmail(targetEmail) : null;
   const entries = targetKey
@@ -1852,22 +2074,30 @@ async function fetchNetflixCodes(targetEmail) {
         lock.release();
       }
 
-      // Extract Netflix sign-in codes from emails
       for (const e of emails) {
-        const result = extractNetflixCode(e);
-        if (result) {
-          const recipientKeys = collectEmailRecipients(e, email);
-          if (result.customerSafe) {
+        const recipientKeys = collectEmailRecipients(e, email);
+        const netflixResult = extractNetflixCode(e);
+        if (netflixResult) {
+          if (netflixResult.customerSafe) {
             recipientKeys.forEach(key => {
-              latestCodes[key] = { code: result.code, timestamp: Date.now() };
+              latestCodes[key] = { code: netflixResult.code, timestamp: Date.now() };
               delete notifiedCustomers[key];
             });
-            console.log(`📧 Netflix sign-in code ${result.code} captured for ${email} recipients: ${recipientKeys.join(', ')}`);
-            await sendTG(TG_ADMIN, `✅ <b>Netflix Sign-in Code Captured</b>\n📥 Gmail inbox: ${email}\n📧 Recipient: ${recipientKeys.join(', ')}\n🔢 Code: <b>${result.code}</b>`, 'HTML').catch(() => {});
+            console.log(`📧 Netflix sign-in code ${netflixResult.code} captured for ${email} recipients: ${recipientKeys.join(', ')}`);
+            await sendTG(TG_ADMIN, `✅ <b>Netflix Sign-in Code Captured</b>\n📥 Gmail inbox: ${email}\n📧 Recipient: ${recipientKeys.join(', ')}\n🔢 Code: <b>${netflixResult.code}</b>`, 'HTML').catch(() => {});
           } else {
-            console.log(`🔐 Admin-only Netflix security code ${result.code} captured for ${email} recipients: ${recipientKeys.join(', ')}`);
-            await sendTG(TG_ADMIN, `🔐 <b>Netflix Security Code Captured — ADMIN ONLY</b>\n📥 Gmail inbox: ${email}\n📧 Recipient: ${recipientKeys.join(', ')}\n🔢 Code: <b>${result.code}</b>\n\nNot shown on customer subscription links.`, 'HTML').catch(() => {});
+            console.log(`🔐 Admin-only Netflix security code ${netflixResult.code} captured for ${email} recipients: ${recipientKeys.join(', ')}`);
+            await sendTG(TG_ADMIN, `🔐 <b>Netflix Security Code Captured — ADMIN ONLY</b>\n📥 Gmail inbox: ${email}\n📧 Recipient: ${recipientKeys.join(', ')}\n🔢 Code: <b>${netflixResult.code}</b>\n\nNot shown on customer subscription links.`, 'HTML').catch(() => {});
           }
+        }
+        const shahidResult = extractShahidResetLink(e);
+        if (shahidResult && shahidResult.link) {
+          recipientKeys.forEach(key => {
+            latestShahidResetLinks[key] = { link: shahidResult.link, timestamp: Date.now() };
+            delete notifiedShahidReset[key];
+          });
+          console.log(`📧 Shahid reset link captured for ${email} recipients: ${recipientKeys.join(', ')}`);
+          await sendTG(TG_ADMIN, `✅ <b>Shahid Reset Link Captured</b>\n📥 Inbox: ${email}\n📧 Recipient: ${recipientKeys.join(', ')}\n🔗 Link saved for customer`, 'HTML').catch(() => {});
         }
       }
       if (maxUid !== Number(creds.lastUid || 0)) {
@@ -1888,7 +2118,7 @@ async function fetchNetflixCodes(targetEmail) {
   }
 }
 
-setInterval(fetchNetflixCodes, 30000); // Poll every 30 seconds
+setInterval(fetchMonitoredInboxes, 30000); // Poll every 30 seconds
 setInterval(() => {
   syncDbToJsonBin(false).catch(e => console.error('Periodic JSONBin sync error:', e.message));
 }, Math.min(JSONBIN_SYNC_INTERVAL_MS, 60 * 1000));

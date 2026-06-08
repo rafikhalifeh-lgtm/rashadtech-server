@@ -351,6 +351,18 @@ input,button,select,textarea{font-family:var(--font)}
 .toast.show{display:block}
 .sub-option-btn{width:100%;background:none;border:none;border-radius:var(--radius-sm);padding:12px 14px;font-size:14px;color:var(--text);cursor:pointer;text-align:left;font-family:var(--font)}
 .sub-option-btn:hover{background:var(--bg3)}
+.shahid-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;width:100%}
+.shahid-act-btn{flex:1 1 calc(33% - 6px);min-width:88px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:7px 6px;font-size:10px;font-weight:600;color:var(--text2);cursor:pointer;font-family:var(--font)}
+.shahid-act-btn:hover{border-color:var(--blue-border);color:var(--blue)}
+.shahid-act-primary{background:var(--blue-bg);border-color:var(--blue-border);color:var(--blue)}
+.shahid-fix-warn{background:var(--orange-bg);border:1px solid var(--orange-border);border-radius:var(--radius-sm);padding:12px;margin-bottom:14px}
+.shahid-fix-step{font-size:13px;color:var(--text2);line-height:1.7;margin-bottom:14px}
+.shahid-copy-row{display:flex;align-items:center;gap:8px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin:8px 0 12px}
+.shahid-copy-row span{flex:1;font-family:var(--mono);font-size:12px;word-break:break-all}
+.shahid-copy-btn{background:none;border:none;color:var(--blue);cursor:pointer;font-size:16px;padding:0}
+.shahid-ext-btn{display:inline-flex;align-items:center;gap:6px;background:#fff;color:var(--blue);border:1px solid var(--blue-border);border-radius:8px;padding:10px 14px;font-size:12px;font-weight:600;text-decoration:none;cursor:pointer}
+.shahid-reset-btn{width:100%;background:var(--blue);color:#fff;border:none;border-radius:8px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;margin-top:8px}
+.shahid-reset-link{display:block;margin-top:10px;padding:12px;background:var(--green-bg);border:1px solid var(--green-border);border-radius:8px;font-size:12px;word-break:break-all;color:var(--green);text-decoration:none}
 #page-sublink{display:none}
 
 /* ── MOBILE BOTTOM NAV ── */
@@ -1148,6 +1160,10 @@ async function rtApi(path,opts={}){
 function normEmail(e){return String(e||'').trim().toLowerCase();}
 function accountProfileName(acc){return String(acc?.profileName||acc?.extra||'').trim();}
 function orderProfileName(o){return String(o?.profileName||o?.extra||'').trim();}
+function isShahidOrder(o){return Boolean(o&&(o.productId==='shahid'||/shahid/i.test(o.product||'')));}
+const SHAHID_FORGET_URL='https://shahid.mbc.net/en/hub/forget-password';
+let _shahidFixOrderId=null;
+let _shahidFixOrder=null;
 let editingCustId=null;
 
 function collectAssignedSubs(user){
@@ -1985,9 +2001,23 @@ async function checkSubLink(){
   // Generate QR code for this link
   const qrUrl=`https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(location.href)}`;
   document.getElementById('sublink-qr').src=qrUrl;
-  if(found.accKey){
+  const isShahid=isShahidOrder(found);
+  document.getElementById('sublink-tv-section').style.display=isShahid?'none':'block';
+  const shahidActions=document.getElementById('sublink-shahid-actions');
+  if(shahidActions){
+    if(isShahid){
+      shahidActions.style.display='block';
+      const linkOrderId=found.id||'link';
+      shahidActions.innerHTML=shahidActionButtons(linkOrderId);
+      _shahidFixOrderId=found.id||null;
+      _shahidFixOrder=found;
+    }else{
+      shahidActions.style.display='none';
+      shahidActions.innerHTML='';
+    }
+  }
+  if(found.accKey&&!isShahid){
     _sublinkAccKey=found.accKey;
-    // Show request button instead of code section directly
     document.getElementById('sublink-code-request').style.display='block';
     if(_codeRefreshInterval)clearInterval(_codeRefreshInterval);
   } else {
@@ -2665,6 +2695,93 @@ async function confirmPurchase(){
   if(isAdmin)renderStockPanels();
 }
 
+function shahidActionButtons(orderId){
+  const id=JSON.stringify(orderId);
+  return `<div class="shahid-actions">
+    <button type="button" class="shahid-act-btn" onclick="shahidReport(${id})">⚠️ ${t('reportIssue','Report')}</button>
+    <button type="button" class="shahid-act-btn" onclick="shahidCopyInfo(${id})">📋 ${t('copyInfo','Copy info')}</button>
+    <button type="button" class="shahid-act-btn shahid-act-primary" onclick="openShahidFixPassword(${id})">🔑 ${t('fixPassword','Fix password')}</button>
+  </div>`;
+}
+function shahidOrderForAction(orderId){
+  return findUserOrder(orderId)?.order
+    ||(_shahidFixOrder&&(orderId==='link'||orderIdsMatch(_shahidFixOrder.id,orderId))?_shahidFixOrder:null);
+}
+function shahidCopyInfo(orderId){
+  const o=shahidOrderForAction(orderId);
+  if(!o){showToast('Order not found');return;}
+  const text=`${o.product} · ${o.plan}\nEmail: ${o.email}\nPassword: ${o.pass}${o.expiryDate?`\nExpires: ${o.expiryDate}`:''}`;
+  navigator.clipboard.writeText(text).then(()=>showToast(t('copied','✓ Copied!'))).catch(()=>showToast('Could not copy'));
+}
+function shahidReport(orderId){
+  _currentSubId=orderId;
+  subOptionReport();
+}
+function openShahidFixPassword(orderId,orderOverride){
+  const o=orderOverride||shahidOrderForAction(orderId);
+  if(!o||!isShahidOrder(o)){showToast('Shahid subscription not found');return;}
+  _shahidFixOrderId=orderId||o.id;
+  _shahidFixOrder=o;
+  renderShahidFixModal(o);
+  openModal('shahid-fix-modal');
+}
+function renderShahidFixModal(o){
+  const ar=currentLang==='ar';
+  const title=ar?'إصلاح كلمة مرور شاهد':'Fix Shahid password';
+  const warn1=ar?'هام جداً: الرجاء وضع كلمة المرور هذه:':'Very important: You must set this password:';
+  const warn2=ar?'لا تقم بوضع كلمة مرور اخرى. استخدام كلمة مرور اخرى يؤدي الى ايقاف اليوزر':'Do not use a different password. Using another password will suspend your account.';
+  const step1=ar?'١- انسخ الايميل واضغط على الزر بالاسفل للانتقال الى صفحة شاهد واطلب اعادة تعيين كلمة المرور':'1 — Copy the email, open Shahid, and request a password reset.';
+  const step2=ar?'٢- انسخ كلمة المرور وانقر على الزر ادناه لرؤية رابط تعيين المرور':'2 — Copy the password below, then tap GET RESET LINK after you requested reset on Shahid.';
+  const goShahid=ar?'الانتقال الى صفحة شاهد لاعادة تعيين كلمة المرور':'Go to Shahid password reset page';
+  const getLink=ar?'GET RESET LINK':'GET RESET LINK';
+  const close=ar?'إغلاق':'Close';
+  document.getElementById('shahid-fix-title').textContent=title;
+  document.getElementById('shahid-fix-body').innerHTML=`
+    <div class="shahid-fix-warn" dir="${ar?'rtl':'ltr'}">
+      <div style="font-size:13px;font-weight:600;margin-bottom:8px">${warn1}</div>
+      <div class="shahid-copy-row"><span id="shahid-fix-pass-disp">${esc(o.pass||'')}</span><button type="button" class="shahid-copy-btn" onclick="copyPlainText(${JSON.stringify(o.pass||'')})" title="Copy">📋</button></div>
+      <div style="font-size:12px;color:var(--red);font-weight:600;line-height:1.5">${warn2}</div>
+    </div>
+    <div class="shahid-fix-step" dir="${ar?'rtl':'ltr'}">${step1}</div>
+    <div class="shahid-copy-row"><span>${esc(o.email||'')}</span><button type="button" class="shahid-copy-btn" onclick="copyPlainText(${JSON.stringify(o.email||'')})" title="Copy">📋</button></div>
+    <a class="shahid-ext-btn" href="${SHAHID_FORGET_URL}" target="_blank" rel="noopener">↗ ${goShahid}</a>
+    <div class="shahid-fix-step" dir="${ar?'rtl':'ltr'}" style="margin-top:16px">${step2}</div>
+    <div class="shahid-copy-row"><span>${esc(o.pass||'')}</span><button type="button" class="shahid-copy-btn" onclick="copyPlainText(${JSON.stringify(o.pass||'')})" title="Copy">📋</button></div>
+    <button type="button" class="shahid-reset-btn" id="shahid-get-reset-btn" onclick="fetchShahidResetLink()">${getLink}</button>
+    <div id="shahid-reset-status" style="font-size:12px;color:var(--text3);margin-top:8px;text-align:center"></div>
+    <div id="shahid-reset-link-wrap"></div>
+    <button type="button" class="btn-secondary" onclick="closeModal('shahid-fix-modal')" style="width:100%;margin-top:14px">${close}</button>`;
+  document.querySelector('#shahid-fix-modal .modal').dir=ar?'rtl':'ltr';
+}
+function copyPlainText(text){
+  navigator.clipboard.writeText(String(text||'')).then(()=>showToast(t('copied','✓ Copied!'))).catch(()=>showToast('Could not copy'));
+}
+async function fetchShahidResetLink(){
+  const status=document.getElementById('shahid-reset-status');
+  const wrap=document.getElementById('shahid-reset-link-wrap');
+  const btn=document.getElementById('shahid-get-reset-btn');
+  if(status)status.textContent=currentLang==='ar'?'جاري البحث عن الرابط...':'Looking for reset link...';
+  if(wrap)wrap.innerHTML='';
+  if(btn)btn.disabled=true;
+  try{
+    const params=new URLSearchParams(location.search);
+    const token=params.get('t');
+    let j;
+    if(token&&!authToken){
+      j=await rtApi('/links/shahid-reset-link',{method:'POST',body:JSON.stringify({token})});
+    }else{
+      if(!_shahidFixOrderId)throw new Error('Subscription not found');
+      j=await rtApi('/customer/shahid-reset-link',{method:'POST',body:JSON.stringify({orderId:_shahidFixOrderId})});
+    }
+    if(!j.link)throw new Error(j.message||'No reset link found yet');
+    if(wrap)wrap.innerHTML=`<a class="shahid-reset-link" href="${esc(j.link)}" target="_blank" rel="noopener">${esc(j.link)}</a>`;
+    if(status)status.textContent=currentLang==='ar'?'✓ تم العثور على الرابط — استخدم كلمة المرور الأصلية أعلاه':'✓ Reset link found — use the original password above';
+  }catch(e){
+    if(status)status.textContent=e.message||'No reset link found yet';
+  }finally{
+    if(btn)btn.disabled=false;
+  }
+}
 function subRow(o,forCustomer){
   let ex='';
   if(forCustomer)ex+=`<div class="sub-for-badge"><i class="ti ti-user" style="font-size:12px"></i> ${t('forSubCustomer','For')}: <strong>${esc(forCustomer.fname)} ${esc(forCustomer.lname)}</strong> · ${esc(forCustomer.code)} ${esc(forCustomer.phone)}</div>`;
@@ -2672,12 +2789,12 @@ function subRow(o,forCustomer){
   if(prof)ex+=`<div class="sub-cred">Profile: ${esc(prof)}</div>`;
   const ico=PRODUCT_ICONS[o.productId];
   const iconHtml=ico?`<img src="${ico}" width="40" height="40" style="border-radius:9px;object-fit:contain;background:#fff;padding:2px" onerror="this.outerHTML='<div style=\'width:40px;height:40px;border-radius:9px;background:${o.color};color:${o.tc};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700\'>${o.short}</div>'">`:`<div style="width:40px;height:40px;border-radius:9px;background:${o.color};color:${o.tc};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700">${o.short}</div>`;
+  const shahidBtns=isShahidOrder(o)?shahidActionButtons(o.id):'';
   return `<div class="sub-card"><div class="sub-icon" style="background:${ico?'#fff':o.color};overflow:hidden;padding:0">${iconHtml}</div>
     <div class="sub-info"><div class="sub-name">${esc(o.product)}</div><div class="sub-plan">${esc(o.plan)} · ${esc(o.date)}</div>
-    <div class="sub-cred"><span class="cust-sub-cred-line">📧 ${esc(o.email)}</span><span class="cust-sub-cred-line">🔑 ${esc(o.pass)}</span></div>${ex}</div>
+    <div class="sub-cred"><span class="cust-sub-cred-line">📧 ${esc(o.email)}</span><span class="cust-sub-cred-line">🔑 ${esc(o.pass)}</span></div>${ex}${shahidBtns}</div>
     <div class="sub-right"><div class="sub-price">${fmt(o.price)}</div><span class="active-badge">${t('active','Active')}</span>
-    
-    <button onclick="openSubOptions('${o.id}')" style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px;color:var(--text2);cursor:pointer;margin-top:4px;display:block;width:100%">••• ${t('options','Options')}</button>
+    <button onclick="openSubOptions(${JSON.stringify(o.id)})" style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px;color:var(--text2);cursor:pointer;margin-top:4px;display:block;width:100%">••• ${t('options','Options')}</button>
     </div></div>`;
 }
 function pendingSubRow(o){
@@ -2818,7 +2935,7 @@ const LANG={
     myProfile:'My Profile',fullName:'Full Name',telegramChatId:'Telegram Chat ID',telegramHint:'Get your ID from @userinfobot on Telegram',
     saveChanges:'💾 Save Changes',contactUs:'📞 Contact Us',accountSecurity:'🔐 Account security',memberSince:'Member since',
     changePassword:'🔑 Change password',currentPassword:'Current password',newPassword:'New password',confirmPassword:'Confirm new password',
-    updatePassword:'Update password',logoutAll:'🔐 Logout all devices',requestRenewal:'🔄 Request Renewal',reportIssue:'⚠️ Report Issue',
+    updatePassword:'Update password',logoutAll:'🔐 Logout all devices',requestRenewal:'🔄 Request Renewal',reportIssue:'⚠️ Report Issue',copyInfo:'Copy info',fixPassword:'Fix password',copied:'✓ Copied!',
     topupHelp:'To top up your wallet, contact support on WhatsApp with payment proof.',
     netflix:'Netflix',options:'Options',active:'Active',goToStore:'Go to store',noSubscriptions:'No subscriptions yet',noNetflixSubs:'No Netflix subscriptions yet.',forSubCustomer:'For',
     analytics:'Analytics',exportOrders:'Export orders',bulkImport:'Bulk import',
@@ -2841,7 +2958,7 @@ const LANG={
     myProfile:'ملفي الشخصي',fullName:'الاسم الكامل',telegramChatId:'معرّف تيليجرام',telegramHint:'احصل على معرّفك من @userinfobot على تيليجرام',
     saveChanges:'💾 حفظ التغييرات',contactUs:'📞 تواصل معنا',accountSecurity:'🔐 أمان الحساب',memberSince:'عضو منذ',
     changePassword:'🔑 تغيير كلمة المرور',currentPassword:'كلمة المرور الحالية',newPassword:'كلمة المرور الجديدة',confirmPassword:'تأكيد كلمة المرور',
-    updatePassword:'تحديث كلمة المرور',logoutAll:'🔐 تسجيل الخروج من جميع الأجهزة',requestRenewal:'🔄 طلب تجديد',reportIssue:'⚠️ الإبلاغ عن مشكلة',
+    updatePassword:'تحديث كلمة المرور',logoutAll:'🔐 تسجيل الخروج من جميع الأجهزة',requestRenewal:'🔄 طلب تجديد',reportIssue:'⚠️ الإبلاغ عن مشكلة',copyInfo:'نسخ المعلومات',fixPassword:'إصلاح كلمة المرور',copied:'✓ تم النسخ!',
     topupHelp:'لشحن المحفظة، تواصل مع الدعم على واتساب وأرسل إثبات الدفع.',
     netflix:'نتفليكس',options:'خيارات',active:'نشط',goToStore:'اذهب للمتجر',noSubscriptions:'لا توجد اشتراكات بعد',noNetflixSubs:'لا توجد اشتراكات نتفليكس بعد.',forSubCustomer:'لـ',
     analytics:'الإحصائيات',exportOrders:'تصدير الطلبات',bulkImport:'استيراد جماعي',
@@ -3508,7 +3625,7 @@ async function toggleStockBlock(skey,blocked){
 }
 function openAccModal(skey,label,focusAdd=false){curAccModalKey=skey;document.getElementById('acc-modal-title').textContent=label;renderAccModal(focusAdd);openModal('accounts-modal');}
 function renderAccModal(showForm=false){
-  const skey=curAccModalKey;const list=getAccounts(skey);let html='';
+  const skey=curAccModalKey;const list=getAccounts(skey);const isShahidStock=String(skey||'').startsWith('shahid__');let html='';
   if(list.length){
     html+=`<div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">${list.length} accounts (${availableCount(skey)} available)</div>
     <div class="acc-list">${list.map((a,i)=>`<div class="acc-item">
@@ -3532,12 +3649,17 @@ function renderAccModal(showForm=false){
       <input type="text" id="new-acc-profile-pin" placeholder="e.g. 1234" maxlength="6">
       <div style="font-size:11px;color:var(--text3);margin-top:4px">Fixed PIN you set for this profile. Customer will see it on their subscription link.</div>
     </div>
-  <div class="field" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px">
+  ${isShahidStock?`<div class="field" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px">
+      <label style="color:var(--orange)">🔒 Inbox password (Shahid reset emails — admin only)</label>
+      <input type="password" id="new-acc-inbox-pass" placeholder="Hotmail/Outlook/Gmail inbox password">
+      <div style="font-size:11px;color:var(--text3);margin-top:4px">Password to read the email inbox where Shahid reset links arrive. Not the Shahid account password above.</div>
+  </div>`:''}
+  ${isNetflixKey(skey)?`<div class="field" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px">
       <label style="color:var(--orange)">🔒 Main Gmail (for Netflix sign-in codes — never shown to customers)</label>
       <input type="email" id="new-acc-main-email" placeholder="Gmail address that receives Netflix codes">
       <input type="password" id="new-acc-main-pass" placeholder="Gmail app password" style="margin-top:6px">
       <div style="font-size:11px;color:var(--text3);margin-top:4px">Use a 16-character Gmail app password with IMAP enabled. Spaces are okay; they will be removed automatically.</div>
-    </div>
+  </div>`:''}
     <button class="inline-btn" onclick="addAccount()"><i class="ti ti-plus" style="font-size:13px;vertical-align:-2px;margin-right:4px"></i>Add to stock</button>
   </div>`;
   document.getElementById('acc-modal-body').innerHTML=html;
@@ -3589,11 +3711,12 @@ async function addAccount(){
   if(!accountStock[curAccModalKey])accountStock[curAccModalKey]=[];
   const mainEmail=document.getElementById('new-acc-main-email')?.value.trim()||'';
   const mainPass=(document.getElementById('new-acc-main-pass')?.value||'').replace(/\s+/g,'');
+  const inboxPass=document.getElementById('new-acc-inbox-pass')?.value.trim()||'';
   const profilePin=document.getElementById('new-acc-profile-pin')?.value.trim()||'';
   const aliasError=validateNetflixAliasForAdd(curAccModalKey,email,profilePin);
   if(aliasError){showToast('⚠️ '+aliasError);return;}
   const accKey=curAccModalKey+'__'+Date.now();
-  accountStock[curAccModalKey].push({email,pass,profileName,expiryDate,used:false,accKey,profilePin,mainEmail:mainEmail||''});
+  accountStock[curAccModalKey].push({email,pass,profileName,expiryDate,used:false,accKey,profilePin,mainEmail:mainEmail||'',...(inboxPass?{inboxPass}:{}),...(mainPass?{mainPass}:{}));
   await saveData();
   let gmailConfigured=false;
   // Save main email credentials to server for Netflix code monitoring
@@ -4205,6 +4328,14 @@ if(document.readyState==='loading'){
   init();
 }
 </script>
+<!-- SHAHID FIX PASSWORD MODAL -->
+<div class="modal-wrap" id="shahid-fix-modal" aria-hidden="true" onclick="closeModal('shahid-fix-modal')">
+  <div class="modal" onclick="event.stopPropagation()" style="max-width:420px;padding:20px">
+    <div class="modal-title" id="shahid-fix-title" style="margin-bottom:14px">Fix Shahid password</div>
+    <div id="shahid-fix-body"></div>
+  </div>
+</div>
+
 <!-- SUBSCRIPTION OPTIONS MODAL -->
 <div class="modal-wrap" id="sub-options-modal" aria-hidden="true" onclick="closeModal('sub-options-modal')">
   <div class="modal" onclick="event.stopPropagation()" style="max-width:340px">
@@ -4342,6 +4473,8 @@ if(document.readyState==='loading'){
           <span id="sublink-profile-pin" style="font-family:var(--mono);font-size:16px;font-weight:700;letter-spacing:4px;cursor:pointer" onclick="copyText(this)"></span>
         </div>
       </div>
+      <div id="sublink-shahid-actions" style="display:none;margin-bottom:16px;text-align:left"></div>
+
       <!-- Netflix TV Activation -->
       <div id="sublink-tv-section" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;margin-bottom:16px">
         <div style="font-size:11px;color:var(--text3);margin-bottom:10px;font-weight:600;letter-spacing:0.5px">📺 ACTIVATE ON TV</div>
