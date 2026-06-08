@@ -3315,26 +3315,79 @@ function getExpiryStatus(expiryDate){
   return{status:'ok',daysLeft,label:daysLeft+'d left',color:'var(--green)'};
 }
 
+function findUserOrderForRenew(user,orderId){
+  if(!user||!orderId)return null;
+  const direct=(user.orders||[]).find(o=>orderIdsMatch(o.id,orderId));
+  if(direct)return {order:direct,customer:null};
+  for(const c of user.myCustomers||[]){
+    const sub=(c.subs||[]).find(o=>orderIdsMatch(o.id,orderId));
+    if(sub)return {order:sub,customer:c};
+  }
+  return null;
+}
+function syncStockExpiryForOrder(order,newExpiry){
+  if(!order?.email||!newExpiry)return;
+  const targetEmail=String(order.email).trim().toLowerCase();
+  const targetKey=String(order.accKey||'');
+  Object.values(accountStock||{}).forEach(accs=>{
+    (accs||[]).forEach(acc=>{
+      if(!acc)return;
+      if(String(acc.email||'').trim().toLowerCase()!==targetEmail)return;
+      if(targetKey&&acc.accKey&&acc.accKey!==targetKey)return;
+      acc.expiryDate=newExpiry;
+    });
+  });
+}
 async function renewSubscription(userEmail, orderId){
   const newExpiry=prompt('Enter new expiry date (dd/mm/yyyy):');
   if(!newExpiry||!newExpiry.match(/\d{2}\/\d{2}\/\d{4}/)){showToast('Invalid date format');return;}
   const u=users.find(x=>x.email===userEmail);
   if(!u)return;
-  const o=u.orders.find(x=>x.id===orderId);
-  if(!o)return;
+  const found=findUserOrderForRenew(u,orderId);
+  if(!found?.order)return;
+  const o=found.order;
   o.expiryDate=newExpiry;
-  o.expiryReminderSent=false; // Reset so reminder sends again near new expiry
+  o.expiryReminderSent=false;
+  syncStockExpiryForOrder(o,newExpiry);
   await saveData();
   renderAdminExpiry();
   showToast('✅ Subscription renewed to '+newExpiry);
-  logActivity('Subscription renewed',userEmail+' · '+o.product+' → '+newExpiry);
-  // Notify customer
-  const cu=users.find(x=>x.email===userEmail);
-  if(cu?.tgChatId){
-    await sendTelegramToUser(cu.tgChatId,
-      `✅ <b>Subscription Renewed!</b>\n\n📺 ${o.product} · ${o.plan}\n📅 New expiry: ${newExpiry}\n\nEnjoy! 🎉`
+  const who=found.customer?`${found.customer.fname} ${found.customer.lname} (sub of ${userEmail})`:userEmail;
+  logActivity('Subscription renewed',who+' · '+o.product+' → '+newExpiry);
+  if(u.tgChatId){
+    const subNote=found.customer?`\n👥 ${found.customer.fname} ${found.customer.lname}`:'';
+    await sendTelegramToUser(u.tgChatId,
+      `✅ <b>Subscription Renewed!</b>\n\n📺 ${o.product} · ${o.plan}${subNote}\n📅 New expiry: ${newExpiry}\n\nEnjoy! 🎉`
     );
   }
+}
+function collectCustomerExpiryItems(){
+  const seen=new Set();
+  const custItems=[];
+  const add=(item,key)=>{
+    if(!key||seen.has(key))return;
+    seen.add(key);
+    custItems.push(item);
+  };
+  users.forEach(u=>{
+    (u.orders||[]).forEach(o=>{
+      if(!o.expiryDate)return;
+      add({
+        userEmail:u.email,userName:u.name,orderId:o.id,product:o.product,plan:o.plan,
+        expiryDate:o.expiryDate,daysLeft:daysLeft(o.expiryDate),subCustomer:null,email:o.email||''
+      },`${u.email}::${o.id}`);
+    });
+    (u.myCustomers||[]).forEach(c=>{
+      (c.subs||[]).forEach(o=>{
+        if(!o.expiryDate)return;
+        add({
+          userEmail:u.email,userName:u.name,orderId:o.id,product:o.product,plan:o.plan,
+          expiryDate:o.expiryDate,daysLeft:daysLeft(o.expiryDate),subCustomer:c,email:o.email||''
+        },`${u.email}::${o.id}`);
+      });
+    });
+  });
+  return custItems;
 }
 
 function renderAdminExpiry(){
@@ -3353,16 +3406,7 @@ function renderAdminExpiry(){
       }
     });
   });
-  // Also collect customer orders with expiry
-  let custItems=[];
-  users.forEach(u=>{
-    (u.orders||[]).forEach(o=>{
-      if(o.expiryDate){
-        const d=daysLeft(o.expiryDate);
-        custItems.push({userEmail:u.email,userName:u.name,orderId:o.id,product:o.product,plan:o.plan,expiryDate:o.expiryDate,daysLeft:d});
-      }
-    });
-  });
+  const custItems=collectCustomerExpiryItems();
 
   if(!items.length&&!custItems.length){el.innerHTML='<div class="empty-state"><i class="ti ti-clock"></i>No accounts with expiry dates added yet.</div>';return;}
   items.sort((a,b)=>(a.daysLeft??9999)-(b.daysLeft??9999));
@@ -3379,12 +3423,16 @@ function renderAdminExpiry(){
       else if(d<=3){cls='exp-warning-row';dText=`🔴 ${d}d left`;dColor='var(--red)';}
       else if(d<=7){dText=`🟡 ${d}d left`;dColor='var(--orange)';}
       else{dText=`✅ ${d}d left`;dColor='var(--green)';}
+      const who=item.subCustomer
+        ?`👤 ${esc(item.subCustomer.fname)} ${esc(item.subCustomer.lname)} · reseller: ${esc(item.userName)}`
+        :`👤 ${esc(item.userName)}`;
+      const emailNote=item.email?` · 📧 ${esc(item.email)}`:'';
       return `<div class="admin-row ${cls}">
         <div class="admin-info" style="flex:1">
-          <div class="admin-name">${item.product} · ${item.plan}</div>
-          <div class="admin-sub">👤 ${item.userName} · 📅 ${item.expiryDate} · <span style="color:${dColor}">${dText}</span></div>
+          <div class="admin-name">${esc(item.product)} · ${esc(item.plan)}</div>
+          <div class="admin-sub">${who}${emailNote} · 📅 ${esc(item.expiryDate)} · <span style="color:${dColor}">${dText}</span></div>
         </div>
-        <button onclick="renewSubscription('${item.userEmail}','${item.orderId}')" style="background:var(--blue-bg);color:var(--blue);border:1px solid var(--blue-border);border-radius:6px;padding:6px 10px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap">🔄 Renew</button>
+        <button ${jsOnClick('renewSubscription',item.userEmail,item.orderId)} style="background:var(--blue-bg);color:var(--blue);border:1px solid var(--blue-border);border-radius:6px;padding:6px 10px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap">🔄 Renew</button>
       </div>`;
     }).join('')}
   </div>`:''}
