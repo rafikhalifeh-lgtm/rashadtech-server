@@ -757,6 +757,7 @@ So your EmailJS template will receive the user email and verification code corre
           <div class="ftab" onclick="filterProd('arab',this)" data-cat="arab">Arab</div>
           <div class="ftab" onclick="filterProd('games',this)" data-cat="games">🎮 Games</div>
           <div class="ftab" onclick="filterProd('tools',this)" data-cat="tools">Tools</div>
+          <div class="ftab" onclick="filterProd('giftcards',this)" data-cat="giftcards">Gift Cards</div>
         </div>
         <div class="products-grid" id="products-grid"></div>
       </div>
@@ -1386,6 +1387,20 @@ const DURATIONS_NF_1U=[{key:'1m',label:'1 Month',price:1.5},{key:'3m',label:'3 M
 const DURATIONS_NF_FULL=Array.from({length:12},(_,i)=>({key:`${i+1}m`,label:`${i+1} Month${i>0?'s':''}`,price:(i+1)*7}));
 const DURATIONS_SH_1U=[{key:'1m',label:'1 Month',price:1.5},{key:'3m',label:'3 Months',price:2.4},{key:'1y',label:'1 Year',price:10}];
 const DURATIONS_SH_FULL=[{key:'1m',label:'1 Month',price:5},{key:'3m',label:'3 Months',price:11.5},{key:'1y',label:'1 Year',price:33}];
+const GIFT_CARD_US=[{key:'10',label:'$10',price:10.5},{key:'25',label:'$25',price:26},{key:'50',label:'$50',price:52},{key:'100',label:'$100',price:104}];
+const GIFT_CARD_UAE=[{key:'50',label:'50 AED',price:14},{key:'100',label:'100 AED',price:28},{key:'200',label:'200 AED',price:55},{key:'500',label:'500 AED',price:135}];
+const GIFT_CARD_KSA=[{key:'50',label:'50 SAR',price:14},{key:'100',label:'100 SAR',price:27},{key:'200',label:'200 SAR',price:54},{key:'500',label:'500 SAR',price:133}];
+const GIFT_CARD_EG=[{key:'200',label:'200 EGP',price:4},{key:'500',label:'500 EGP',price:10},{key:'1000',label:'1000 EGP',price:20}];
+const GIFT_CARD_UK=[{key:'10',label:'£10',price:13},{key:'25',label:'£25',price:32},{key:'50',label:'£50',price:63}];
+const GIFT_CARD_EU=[{key:'10',label:'€10',price:11},{key:'25',label:'€25',price:27},{key:'50',label:'€50',price:54}];
+const GIFT_CARD_REGIONS=[
+  {key:'us',name:'🇺🇸 United States',desc:'USD cards',durations:GIFT_CARD_US},
+  {key:'uae',name:'🇦🇪 UAE',desc:'AED cards',durations:GIFT_CARD_UAE},
+  {key:'ksa',name:'🇸🇦 Saudi Arabia',desc:'SAR cards',durations:GIFT_CARD_KSA},
+  {key:'eg',name:'🇪🇬 Egypt',desc:'EGP cards',durations:GIFT_CARD_EG},
+  {key:'uk',name:'🇬🇧 United Kingdom',desc:'GBP cards',durations:GIFT_CARD_UK},
+  {key:'eu',name:'🇪🇺 Europe',desc:'EUR cards',durations:GIFT_CARD_EU}
+];
 const PRODUCT_ICONS={
   netflix:'https://www.netflix.com/favicon.ico',
   shahid:'https://shahid.mbc.net/favicon.ico',
@@ -1414,7 +1429,11 @@ const PRODUCT_ICONS={
   chatgpt:'https://chat.openai.com/favicon.ico',
   canva:'https://www.canva.com/favicon.ico',
   linkedin:'https://www.linkedin.com/favicon.ico',
-  nordvpn:'https://nordvpn.com/favicon.ico',
+  roblox:'https://www.roblox.com/favicon.ico',
+  freefire:'https://ff.garena.com/favicon.ico',
+  itunes:'https://www.apple.com/favicon.ico',
+  googleplay:'https://play.google.com/favicon.ico',
+  watchit:'https://watchit.com/favicon.ico',
 };
 
 function prodIcon(p,size=32,radius=8){
@@ -1477,6 +1496,10 @@ const DEFAULT_PRODUCTS=[
     {name:'1 Month',desc:'Ultimate',price:5},{name:'3 Months',desc:'Ultimate',price:13},{name:'6 Months',desc:'Ultimate',price:24}]},
   {id:'psplus',name:'PlayStation Plus',short:'PS+',color:'#003087',tc:'#fff',cat:'games',badge:'new',desc:'PS4 & PS5 games',hasUserTypes:false,plans:[
     {name:'1 Month',desc:'Essential',price:4},{name:'3 Months',desc:'Essential',price:11},{name:'1 Year',desc:'Best value',price:35}]},
+  {id:'roblox',name:'Roblox',short:'RBL',color:'#E2231A',tc:'#fff',cat:'games',badge:'hot',desc:'Robux top-up',hasUserTypes:false,hasCustomOrder:true,customOrderType:'roblox',customOrderLabel:'Roblox Username',customOrderPlaceholder:'Enter your Roblox username',plans:[
+    {name:'400 Robux',desc:'Starter',price:5},{name:'800 Robux',desc:'Popular',price:10},{name:'1700 Robux',desc:'Value',price:20},{name:'4500 Robux',desc:'Best value',price:50},{name:'10000 Robux',desc:'Mega',price:100}]},
+  {id:'freefire',name:'Free Fire',short:'FF',color:'#FF6B00',tc:'#fff',cat:'games',badge:'hot',desc:'Diamonds top-up',hasUserTypes:false,hasCustomOrder:true,customOrderType:'freefire',customOrderLabel:'Free Fire Player ID',customOrderPlaceholder:'Enter your Free Fire Player ID',plans:[
+    {name:'100 Diamonds',desc:'Starter',price:1},{name:'310 Diamonds',desc:'Popular',price:3},{name:'520 Diamonds',desc:'Value',price:5},{name:'1060 Diamonds',desc:'Best value',price:10},{name:'2180 Diamonds',desc:'Pro',price:20},{name:'5600 Diamonds',desc:'Mega',price:50}]},
 
   // ── VIDEO (more) ──
   {id:'ytpremium',name:'YouTube Premium',short:'YT+',color:'#FF0000',tc:'#fff',cat:'video',badge:'hot',desc:'Ad-free YouTube & Music',hasUserTypes:false,plans:[
@@ -1489,8 +1512,14 @@ const DEFAULT_PRODUCTS=[
     {name:'1 Month',desc:'Pro access',price:3},{name:'3 Months',desc:'Pro access',price:8},{name:'1 Year',desc:'Best value',price:25}]},
   {id:'linkedin',name:'LinkedIn Premium',short:'in',color:'#0A66C2',tc:'#fff',cat:'tools',badge:'',desc:'Career & networking',hasUserTypes:false,plans:[
     {name:'1 Month',desc:'Premium',price:6},{name:'3 Months',desc:'Premium',price:16},{name:'1 Year',desc:'Best value',price:55}]},
-  {id:'nordvpn',name:'NordVPN',short:'VPN',color:'#4687FF',tc:'#fff',cat:'tools',badge:'',desc:'Secure VPN access',hasUserTypes:false,plans:[
-    {name:'1 Month',desc:'1 device',price:3},{name:'1 Year',desc:'Best value',price:18}]},
+
+  // ── ARAB (more) ──
+  {id:'watchit',name:'Watchit',short:'W+',color:'#6C2BD9',tc:'#fff',cat:'arab',badge:'new',desc:'Arabic movies & series',hasUserTypes:false,plans:[
+    {name:'1 Month',desc:'Full access',price:3},{name:'3 Months',desc:'Full access',price:8},{name:'1 Year',desc:'Best value',price:25}]},
+
+  // ── GIFT CARDS ──
+  {id:'itunes',name:'iTunes / App Store',short:'',color:'#555',tc:'#fff',cat:'giftcards',badge:'hot',desc:'App Store & iTunes codes by region',hasUserTypes:true,hasRegions:true,userTypes:JSON.parse(JSON.stringify(GIFT_CARD_REGIONS))},
+  {id:'googleplay',name:'Google Play',short:'GP',color:'#34A853',tc:'#fff',cat:'giftcards',badge:'hot',desc:'Google Play gift cards by region',hasUserTypes:true,hasRegions:true,userTypes:JSON.parse(JSON.stringify(GIFT_CARD_REGIONS))},
 ];
 let products=JSON.parse(JSON.stringify(DEFAULT_PRODUCTS));
 let _rtPriceCatalog=null;
@@ -1537,7 +1566,6 @@ const requestableServices=[
   {name:'Duolingo Super',icon:'🦉',color:'#58CC02'},
   {name:'Zoom Pro',icon:'📹',color:'#2D8CFF'},
   {name:'Grammarly Premium',icon:'✍️',color:'#15C39A'},
-  {name:'Free Fire Diamonds',icon:'💎',color:'#F5A623'},
 ];
 
 let accountStock={};
@@ -2525,13 +2553,15 @@ function renderBuyBody(){
     return;
   }
   if(p.hasUserTypes){
-    html+=`<div class="plan-section-label">Step 1 — User type</div><div class="user-type-grid">
+    const step1=p.hasRegions?'Region':'User type';
+    const step2=p.hasRegions?'Amount':'Duration';
+    html+=`<div class="plan-section-label">Step 1 — ${step1}</div><div class="user-type-grid">
       ${p.userTypes.map((ut,i)=>{
         return `<div class="utype-btn${selUT&&selUT.key===ut.key?' sel':''}" onclick="selUserType(${i})">
           <div class="utype-name">${ut.name}</div><div class="utype-desc">${ut.desc}</div>
         </div>`;}).join('')}</div>`;
     if(selUT){
-      html+=`<div class="plan-section-label" style="margin-top:2px">Step 2 — Duration</div>`;
+      html+=`<div class="plan-section-label" style="margin-top:2px">Step 2 — ${step2}</div>`;
       if(selUT.durations.length<=4){
         html+=`<div class="dur-grid" style="grid-template-columns:repeat(${selUT.durations.length},1fr)">
           ${selUT.durations.map((d,i)=>{
@@ -2555,7 +2585,7 @@ function renderBuyBody(){
     }
     const rD=selUT&&selDur;const rC=selUT&&selUT.hasCustom&&customDays>0;
     if(rD||rC)renderConfirm(html,p);
-    else{html+=`<button class="modal-buy-btn" disabled>Select user type and duration</button>`;document.getElementById('modal-body').innerHTML=html;}
+    else{html+=`<button class="modal-buy-btn" disabled>Select ${step1.toLowerCase()} and ${step2.toLowerCase()}</button>`;document.getElementById('modal-body').innerHTML=html;}
   } else {
     if(p.hasProfileName){
       html+=`<div class="plan-section-label">Step 1 — Your Anghami Profile Name</div>
@@ -2646,7 +2676,7 @@ function renderCustomOrderBody(p,html){
       html+=`<button class="modal-buy-btn" disabled>Enter token amount</button>`;
     }
   } else {
-    html+=`<div class="plan-section-label">Choose UC Amount</div>${(p.plans||[]).map((pl,i)=>`<div class="plan-row${selPlan&&selPlan.idx===i?' sel':''}" onclick="selPlanFn(${i})"><div><div class="plan-name">${pl.name}</div><div class="plan-desc">${pl.desc}</div></div><div style="text-align:right"><div class="plan-price">${fmt(pl.price)}</div></div></div>`).join('')}`;
+    html+=`<div class="plan-section-label">Choose ${p.customOrderType==='pubg'?'UC amount':'package'}</div>${(p.plans||[]).map((pl,i)=>`<div class="plan-row${selPlan&&selPlan.idx===i?' sel':''}" onclick="selPlanFn(${i})"><div><div class="plan-name">${pl.name}</div><div class="plan-desc">${pl.desc}</div></div><div style="text-align:right"><div class="plan-price">${fmt(pl.price)}</div></div></div>`).join('')}`;
     if(selPlan){
       const bal=currentUser.balance;const after=bal-selPlan.price;const ok=after>=0;
       html+=`<div style="height:1px;background:var(--border);margin:12px 0"></div>
@@ -3816,7 +3846,8 @@ const PRICE_CATEGORIES=[
   {key:'arab',label:'Arab'},
   {key:'music',label:'Music'},
   {key:'games',label:'Games'},
-  {key:'tools',label:'Tools'}
+  {key:'tools',label:'Tools'},
+  {key:'giftcards',label:'Gift Cards'}
 ];
 function adminPriceRow(label,key,value,type){
   const id='price-'+String(key).replace(/[^a-zA-Z0-9_-]/g,'-');

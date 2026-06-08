@@ -41,8 +41,21 @@ const SIMPLE_PLAN_PRODUCTS = [
   { id: 'chatgpt', plans: [5, 13, 45] },
   { id: 'canva', plans: [3, 8, 25] },
   { id: 'linkedin', plans: [6, 16, 55] },
-  { id: 'nordvpn', plans: [3, 18] }
+  { id: 'watchit', plans: [3, 8, 25] },
+  { id: 'roblox', plans: [5, 10, 20, 50, 100] },
+  { id: 'freefire', plans: [1, 3, 5, 10, 20, 50] }
 ];
+
+const GIFT_CARD_REGION_AMOUNTS = {
+  us: [{ key: '10', price: 10.5 }, { key: '25', price: 26 }, { key: '50', price: 52 }, { key: '100', price: 104 }],
+  uae: [{ key: '50', price: 14 }, { key: '100', price: 28 }, { key: '200', price: 55 }, { key: '500', price: 135 }],
+  ksa: [{ key: '50', price: 14 }, { key: '100', price: 27 }, { key: '200', price: 54 }, { key: '500', price: 133 }],
+  eg: [{ key: '200', price: 4 }, { key: '500', price: 10 }, { key: '1000', price: 20 }],
+  uk: [{ key: '10', price: 13 }, { key: '25', price: 32 }, { key: '50', price: 63 }],
+  eu: [{ key: '10', price: 11 }, { key: '25', price: 27 }, { key: '50', price: 54 }]
+};
+
+const GIFT_CARD_PRODUCTS = ['itunes', 'googleplay'];
 
 function stockKey(productId, userTypeKey, durationOrPlanKey) {
   return userTypeKey ? `${productId}__${userTypeKey}__${durationOrPlanKey}` : `${productId}__${durationOrPlanKey}`;
@@ -74,6 +87,14 @@ function buildDefaultPriceCatalog() {
   SIMPLE_PLAN_PRODUCTS.forEach(product => {
     product.plans.forEach((price, index) => {
       prices[stockKey(product.id, null, index)] = price;
+    });
+  });
+
+  GIFT_CARD_PRODUCTS.forEach(productId => {
+    Object.entries(GIFT_CARD_REGION_AMOUNTS).forEach(([regionKey, amounts]) => {
+      amounts.forEach(amt => {
+        prices[stockKey(productId, regionKey, amt.key)] = amt.price;
+      });
     });
   });
 

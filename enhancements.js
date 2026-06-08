@@ -424,7 +424,11 @@ function registerEnhancements(app, deps) {
       chatgpt: { name: 'ChatGPT Plus', short: 'GPT', color: '#10A37F', tc: '#fff', id: 'chatgpt' },
       canva: { name: 'Canva Pro', short: 'CV', color: '#00C4CC', tc: '#fff', id: 'canva' },
       linkedin: { name: 'LinkedIn Premium', short: 'in', color: '#0A66C2', tc: '#fff', id: 'linkedin' },
-      nordvpn: { name: 'NordVPN', short: 'VPN', color: '#4687FF', tc: '#fff', id: 'nordvpn' }
+      watchit: { name: 'Watchit', short: 'W+', color: '#6C2BD9', tc: '#fff', id: 'watchit' },
+      roblox: { name: 'Roblox', short: 'RBL', color: '#E2231A', tc: '#fff', id: 'roblox' },
+      freefire: { name: 'Free Fire', short: 'FF', color: '#FF6B00', tc: '#fff', id: 'freefire' },
+      itunes: { name: 'iTunes / App Store', short: '', color: '#555', tc: '#fff', id: 'itunes' },
+      googleplay: { name: 'Google Play', short: 'GP', color: '#34A853', tc: '#fff', id: 'googleplay' }
     };
     const base = names[id] || { name: id, short: id.slice(0, 2).toUpperCase(), color: '#555', tc: '#fff', id };
     let plan = parts.slice(1).join(' · ').replace(/__/g, ' · ') || 'Assigned';
