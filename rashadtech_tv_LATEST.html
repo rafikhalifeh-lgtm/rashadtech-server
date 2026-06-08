@@ -3716,7 +3716,7 @@ async function addAccount(){
   const aliasError=validateNetflixAliasForAdd(curAccModalKey,email,profilePin);
   if(aliasError){showToast('⚠️ '+aliasError);return;}
   const accKey=curAccModalKey+'__'+Date.now();
-  accountStock[curAccModalKey].push({email,pass,profileName,expiryDate,used:false,accKey,profilePin,mainEmail:mainEmail||'',...(inboxPass?{inboxPass}:{}),...(mainPass?{mainPass}:{}));
+  accountStock[curAccModalKey].push({email,pass,profileName,expiryDate,used:false,accKey,profilePin,mainEmail:mainEmail||'',...(inboxPass?{inboxPass}:{}),...(mainPass?{mainPass}:{})});
   await saveData();
   let gmailConfigured=false;
   // Save main email credentials to server for Netflix code monitoring
