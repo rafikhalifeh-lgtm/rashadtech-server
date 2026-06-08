@@ -3630,34 +3630,76 @@ async function resolveRequest(id){
 }
 
 // PRICES
+const PRICE_CATEGORIES=[
+  {key:'video',label:'Video'},
+  {key:'arab',label:'Arab'},
+  {key:'music',label:'Music'},
+  {key:'games',label:'Games'}
+];
 function adminPriceRow(label,key,value,type){
   const id='price-'+String(key).replace(/[^a-zA-Z0-9_-]/g,'-');
-  return `<div class="admin-row"><div class="admin-info"><div class="admin-name">${esc(label)}</div><div class="admin-sub" style="font-family:var(--mono);font-size:10px">${esc(key)}</div></div>
+  return `<div class="admin-row" data-price-product="${esc((key.split('__')[0]||'').toLowerCase())}"><div class="admin-info"><div class="admin-name">${esc(label)}</div><div class="admin-sub" style="font-family:var(--mono);font-size:10px">${esc(key)}</div></div>
     <input type="number" step="0.01" min="0" id="${id}" data-price-key="${esc(key)}"${type?` data-price-type="${type}"`:''} value="${value}" style="width:96px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg3);color:var(--text)"></div>`;
+}
+function adminPriceInputRow(label,inputId,value,extraAttrs){
+  return `<div class="admin-row" data-price-product="jawaker"><div class="admin-info"><div class="admin-name">${esc(label)}</div></div>
+    <input type="number" step="0.01" min="0" id="${inputId}" ${extraAttrs||''} value="${value}" style="width:96px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg3);color:var(--text)"></div>`;
+}
+function isJawakerProduct(p){return p&&(p.id==='jawaker'||p.customOrderType==='jawaker');}
+function renderJawakerPriceRows(){
+  const jaw=_rtPriceCatalog?.jawaker||{};
+  const per12k=Math.round((jaw.basePerToken??(1.5/12000))*12000*100)/100;
+  const tier50=Math.round((1-((jaw.tiers||[]).find(t=>t.min===50000)?.mult??0.96))*100);
+  const tier100=Math.round((1-((jaw.tiers||[]).find(t=>t.min===100000)?.mult??0.93))*100);
+  const tier500=Math.round((1-((jaw.tiers||[]).find(t=>t.min===500000)?.mult??0.9))*100);
+  const picks=[12000,50000,100000,250000,500000,1000000];
+  let html=adminPriceInputRow('Base price per 12,000 tokens','jawaker-base-12k',per12k);
+  html+=adminPriceInputRow('Discount at 50,000+ tokens (%)','jawaker-tier-50k',tier50,'data-jawaker-tier="50000"');
+  html+=adminPriceInputRow('Discount at 100,000+ tokens (%)','jawaker-tier-100k',tier100,'data-jawaker-tier="100000"');
+  html+=adminPriceInputRow('Discount at 500,000+ tokens (%)','jawaker-tier-500k',tier500,'data-jawaker-tier="500000"');
+  html+=`<div style="font-size:11px;color:var(--text3);padding:4px 0 8px;line-height:1.6">Store preview: ${picks.map(t=>`${t>=1000000?(t/1000000)+'M':t>=1000?(t/1000)+'K':t} = $${jawPrice(t)}`).join(' · ')}</div>`;
+  return html;
+}
+function renderProductPriceRows(p){
+  if(p.hasUserTypes){
+    return p.userTypes.map(ut=>{
+      let rows='';
+      if(ut.hasCustom)rows+=adminPriceRow(`${ut.name} — price per day`,`${p.id}__${ut.key}`,ut.customDayRate,'rate');
+      rows+=ut.durations.map(d=>adminPriceRow(`${ut.name} · ${d.label}`,sk(p.id,ut.key,d.key),d.price)).join('');
+      return rows;
+    }).join('');
+  }
+  if(isJawakerProduct(p))return renderJawakerPriceRows();
+  return (p.plans||[]).map((pl,i)=>adminPriceRow(pl.name,sk(p.id,null,i),pl.price)).join('');
+}
+function filterAdminPrices(){
+  const q=(document.getElementById('admin-prices-search')?.value||'').trim().toLowerCase();
+  document.querySelectorAll('#admin-prices-body [data-price-section]').forEach(section=>{
+    if(!q){section.style.display='';return;}
+    const text=section.textContent.toLowerCase();
+    section.style.display=text.includes(q)?'':'none';
+  });
 }
 function renderAdminPrices(){
   const el=document.getElementById('admin-prices-body');
   if(!el)return;
-  let html=`<div style="background:var(--blue-bg);border:1px solid var(--blue-border);border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px;color:var(--text2)">Completed purchases and wallet transactions are <b>not changed</b> when you save new prices here.</div>`;
-  products.forEach(p=>{
-    html+=`<div class="admin-section-title">${p.name}</div><div class="admin-panel">`;
-    if(p.hasUserTypes){
-      p.userTypes.forEach(ut=>{
-        if(ut.hasCustom)html+=adminPriceRow(`${ut.name} — price per day`,`${p.id}__${ut.key}`,ut.customDayRate,'rate');
-        ut.durations.forEach(d=>{html+=adminPriceRow(`${ut.name} · ${d.label}`,sk(p.id,ut.key,d.key),d.price);});
-      });
-    }else if(p.id==='jawaker'){
-      const jaw=_rtPriceCatalog?.jawaker||{};
-      const per12k=Math.round((jaw.basePerToken??(1.5/12000))*12000*100)/100;
-      html+=`<div class="admin-row"><div class="admin-info"><div class="admin-name">Jawaker — price per 12,000 tokens</div></div>
-        <input type="number" step="0.01" min="0" id="jawaker-base-12k" value="${per12k}" style="width:96px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg3);color:var(--text)"></div>`;
-    }else{
-      (p.plans||[]).forEach((pl,i)=>{html+=adminPriceRow(pl.name,sk(p.id,null,i),pl.price);});
-    }
-    html+='</div>';
+  let html=`<div style="background:var(--blue-bg);border:1px solid var(--blue-border);border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px;color:var(--text2)">Completed purchases and wallet transactions are <b>not changed</b> when you save new prices here.</div>
+    <input id="admin-prices-search" placeholder="🔍 Search products (e.g. Jawaker, Netflix)..." oninput="filterAdminPrices()" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg2);color:var(--text);margin-bottom:14px">`;
+  PRICE_CATEGORIES.forEach(cat=>{
+    const items=products.filter(p=>p.cat===cat.key);
+    if(!items.length)return;
+    html+=`<div class="admin-section-title" data-price-section="1">${cat.label}</div>`;
+    items.forEach(p=>{
+      html+=`<div data-price-section="1"><div class="admin-section-title" style="font-size:12px;margin-top:10px">${p.name}</div><div class="admin-panel">${renderProductPriceRows(p)||'<div style="font-size:12px;color:var(--text3);padding:8px">No editable prices</div>'}</div></div>`;
+    });
   });
   html+=`<button class="btn-primary" style="margin-top:14px" onclick="saveAdminPrices()">Save all prices</button>`;
   el.innerHTML=html;
+}
+function readJawakerTierMult(inputId,fallbackMult){
+  const pct=parseFloat(document.getElementById(inputId)?.value||'');
+  if(isNaN(pct)||pct<0)return fallbackMult;
+  return Math.max(0.01,Math.min(1,1-(pct/100)));
 }
 async function saveAdminPrices(){
   const prices={};
@@ -3669,7 +3711,14 @@ async function saveAdminPrices(){
     else prices[inp.dataset.priceKey]=v;
   });
   const jaw12k=parseFloat(document.getElementById('jawaker-base-12k')?.value||'');
-  const jawaker={basePerToken:(isNaN(jaw12k)?1.5:jaw12k)/12000,tiers:[{min:500000,mult:0.9},{min:100000,mult:0.93},{min:50000,mult:0.96}]};
+  const jawaker={
+    basePerToken:(isNaN(jaw12k)?1.5:jaw12k)/12000,
+    tiers:[
+      {min:500000,mult:readJawakerTierMult('jawaker-tier-500k',0.9)},
+      {min:100000,mult:readJawakerTierMult('jawaker-tier-100k',0.93)},
+      {min:50000,mult:readJawakerTierMult('jawaker-tier-50k',0.96)}
+    ]
+  };
   try{
     const r=await fetch(RT_SERVER+'/admin/prices',{method:'POST',headers:authHeaders(),body:JSON.stringify({prices,customDayRates,jawaker})});
     const j=await r.json();
