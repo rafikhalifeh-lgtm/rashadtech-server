@@ -419,7 +419,12 @@ function registerEnhancements(app, deps) {
       netflix: { name: 'Netflix', short: 'N', color: '#E50914', tc: '#fff', id: 'netflix' },
       shahid: { name: 'Shahid VIP', short: 'ش', color: '#1B75BC', tc: '#fff', id: 'shahid' },
       osn: { name: 'OSN+', short: 'OSN', color: '#111', tc: '#fff', id: 'osn' },
-      disney: { name: 'Disney+', short: 'D+', color: '#113CCF', tc: '#fff', id: 'disney' }
+      disney: { name: 'Disney+', short: 'D+', color: '#113CCF', tc: '#fff', id: 'disney' },
+      ytpremium: { name: 'YouTube Premium', short: 'YT+', color: '#FF0000', tc: '#fff', id: 'ytpremium' },
+      chatgpt: { name: 'ChatGPT Plus', short: 'GPT', color: '#10A37F', tc: '#fff', id: 'chatgpt' },
+      canva: { name: 'Canva Pro', short: 'CV', color: '#00C4CC', tc: '#fff', id: 'canva' },
+      linkedin: { name: 'LinkedIn Premium', short: 'in', color: '#0A66C2', tc: '#fff', id: 'linkedin' },
+      nordvpn: { name: 'NordVPN', short: 'VPN', color: '#4687FF', tc: '#fff', id: 'nordvpn' }
     };
     const base = names[id] || { name: id, short: id.slice(0, 2).toUpperCase(), color: '#555', tc: '#fff', id };
     let plan = parts.slice(1).join(' · ').replace(/__/g, ' · ') || 'Assigned';

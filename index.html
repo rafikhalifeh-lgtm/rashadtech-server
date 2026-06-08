@@ -756,6 +756,7 @@ So your EmailJS template will receive the user email and verification code corre
           <div class="ftab" onclick="filterProd('music',this)" data-cat="music">Music</div>
           <div class="ftab" onclick="filterProd('arab',this)" data-cat="arab">Arab</div>
           <div class="ftab" onclick="filterProd('games',this)" data-cat="games">🎮 Games</div>
+          <div class="ftab" onclick="filterProd('tools',this)" data-cat="tools">Tools</div>
         </div>
         <div class="products-grid" id="products-grid"></div>
       </div>
@@ -1409,6 +1410,11 @@ const PRODUCT_ICONS={
   pubg:'https://www.pubg.com/favicon.ico',
   xbox:'https://www.xbox.com/favicon.ico',
   psplus:'https://www.playstation.com/favicon.ico',
+  ytpremium:'https://www.youtube.com/favicon.ico',
+  chatgpt:'https://chat.openai.com/favicon.ico',
+  canva:'https://www.canva.com/favicon.ico',
+  linkedin:'https://www.linkedin.com/favicon.ico',
+  nordvpn:'https://nordvpn.com/favicon.ico',
 };
 
 function prodIcon(p,size=32,radius=8){
@@ -1471,6 +1477,20 @@ const DEFAULT_PRODUCTS=[
     {name:'1 Month',desc:'Ultimate',price:5},{name:'3 Months',desc:'Ultimate',price:13},{name:'6 Months',desc:'Ultimate',price:24}]},
   {id:'psplus',name:'PlayStation Plus',short:'PS+',color:'#003087',tc:'#fff',cat:'games',badge:'new',desc:'PS4 & PS5 games',hasUserTypes:false,plans:[
     {name:'1 Month',desc:'Essential',price:4},{name:'3 Months',desc:'Essential',price:11},{name:'1 Year',desc:'Best value',price:35}]},
+
+  // ── VIDEO (more) ──
+  {id:'ytpremium',name:'YouTube Premium',short:'YT+',color:'#FF0000',tc:'#fff',cat:'video',badge:'hot',desc:'Ad-free YouTube & Music',hasUserTypes:false,plans:[
+    {name:'1 Month',desc:'Individual',price:4},{name:'3 Months',desc:'Individual',price:10},{name:'1 Year',desc:'Best value',price:35}]},
+
+  // ── TOOLS ──
+  {id:'chatgpt',name:'ChatGPT Plus',short:'GPT',color:'#10A37F',tc:'#fff',cat:'tools',badge:'hot',desc:'GPT-4 · faster responses',hasUserTypes:false,plans:[
+    {name:'1 Month',desc:'Plus account',price:5},{name:'3 Months',desc:'Plus account',price:13},{name:'1 Year',desc:'Best value',price:45}]},
+  {id:'canva',name:'Canva Pro',short:'CV',color:'#00C4CC',tc:'#fff',cat:'tools',badge:'new',desc:'Design & templates',hasUserTypes:false,plans:[
+    {name:'1 Month',desc:'Pro access',price:3},{name:'3 Months',desc:'Pro access',price:8},{name:'1 Year',desc:'Best value',price:25}]},
+  {id:'linkedin',name:'LinkedIn Premium',short:'in',color:'#0A66C2',tc:'#fff',cat:'tools',badge:'',desc:'Career & networking',hasUserTypes:false,plans:[
+    {name:'1 Month',desc:'Premium',price:6},{name:'3 Months',desc:'Premium',price:16},{name:'1 Year',desc:'Best value',price:55}]},
+  {id:'nordvpn',name:'NordVPN',short:'VPN',color:'#4687FF',tc:'#fff',cat:'tools',badge:'',desc:'Secure VPN access',hasUserTypes:false,plans:[
+    {name:'1 Month',desc:'1 device',price:3},{name:'1 Year',desc:'Best value',price:18}]},
 ];
 let products=JSON.parse(JSON.stringify(DEFAULT_PRODUCTS));
 let _rtPriceCatalog=null;
@@ -1510,16 +1530,14 @@ async function loadPriceCatalog(){
 
 // Requestable services not yet in store
 const requestableServices=[
-  {name:'Shahid (Egypt)',icon:'🎬',color:'#555'},
-  {name:'Crunchyroll',icon:'🎌',color:'#F47521'},
-  {name:'HBO Max',icon:'🎬',color:'#5822A5'},
-  {name:'Paramount+',icon:'⭐',color:'#0064FF'},
-  {name:'YouTube Premium',icon:'▶️',color:'#FF0000'},
-  {name:'Deezer',icon:'🎵',color:'#A238FF'},
-  {name:'Tidal',icon:'🌊',color:'#000'},
-  {name:'beIN Sports',icon:'⚽',color:'#CC0000'},
-  {name:'StarzPlay',icon:'🌟',color:'#000'},
-  {name:'Jawwy TV',icon:'📡',color:'#E4007C'},
+  {name:'Shahid VIP Egypt',icon:'🎬',color:'#1B75BC'},
+  {name:'Microsoft 365',icon:'💼',color:'#D83B01'},
+  {name:'Adobe Creative Cloud',icon:'🎨',color:'#FF0000'},
+  {name:'Coursera Plus',icon:'🎓',color:'#0056D2'},
+  {name:'Duolingo Super',icon:'🦉',color:'#58CC02'},
+  {name:'Zoom Pro',icon:'📹',color:'#2D8CFF'},
+  {name:'Grammarly Premium',icon:'✍️',color:'#15C39A'},
+  {name:'Free Fire Diamonds',icon:'💎',color:'#F5A623'},
 ];
 
 let accountStock={};
@@ -3797,7 +3815,8 @@ const PRICE_CATEGORIES=[
   {key:'video',label:'Video'},
   {key:'arab',label:'Arab'},
   {key:'music',label:'Music'},
-  {key:'games',label:'Games'}
+  {key:'games',label:'Games'},
+  {key:'tools',label:'Tools'}
 ];
 function adminPriceRow(label,key,value,type){
   const id='price-'+String(key).replace(/[^a-zA-Z0-9_-]/g,'-');

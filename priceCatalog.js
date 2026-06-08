@@ -36,7 +36,12 @@ const SIMPLE_PLAN_PRODUCTS = [
   { id: 'ytmusic', plans: [4, 10, 30] },
   { id: 'pubg', plans: [1, 5, 10, 25, 50] },
   { id: 'xbox', plans: [5, 13, 24] },
-  { id: 'psplus', plans: [4, 11, 35] }
+  { id: 'psplus', plans: [4, 11, 35] },
+  { id: 'ytpremium', plans: [4, 10, 35] },
+  { id: 'chatgpt', plans: [5, 13, 45] },
+  { id: 'canva', plans: [3, 8, 25] },
+  { id: 'linkedin', plans: [6, 16, 55] },
+  { id: 'nordvpn', plans: [3, 18] }
 ];
 
 function stockKey(productId, userTypeKey, durationOrPlanKey) {
