@@ -1135,14 +1135,17 @@ app.get('/links/:token', async (req, res) => {
       if (!payload.subscription || Date.now() > Number(payload.expiresAt || 0)) {
         return res.status(404).json({ error: 'Subscription link not found or expired' });
       }
-      return res.json({ success: true, subscription: payload.subscription });
+      const data = await readJsonBinRaw().catch(() => ({}));
+      const subscription = enrichSubscriptionFromLiveOrder(data, payload.subscription, payload.owner);
+      return res.json({ success: true, subscription });
     } catch(e) {
       // Continue to legacy database-backed token lookup below.
     }
     const data = await readJsonBinRaw();
     const entry = data[LINK_TOKENS_KEY] && data[LINK_TOKENS_KEY][req.params.token];
     if (!entry || Date.now() > Number(entry.expiresAt || 0)) return res.status(404).json({ error: 'Subscription link not found or expired' });
-    res.json({ success: true, subscription: entry.subscription });
+    const subscription = enrichSubscriptionFromLiveOrder(data, entry.subscription, entry.owner);
+    res.json({ success: true, subscription });
   } catch(e) {
     console.error('Read link error:', e.message);
     res.status(500).json({ error: 'Could not load subscription link' });
@@ -1166,15 +1169,39 @@ function normalizeTgChatId(raw) {
   return match ? match[0] : s.replace(/\s+/g, '');
 }
 
+function orderIdsMatch(a, b) {
+  const x = String(a || '').trim();
+  const y = String(b || '').trim();
+  if (x === y) return true;
+  const nx = x.replace(/^#/, '');
+  const ny = y.replace(/^#/, '');
+  return Boolean(nx && nx === ny);
+}
+
 function findUserOrderRecord(user, orderId) {
   if (!user || !orderId) return { order: null, customer: null };
-  const direct = (user.orders || []).find(o => o.id === orderId);
+  const direct = (user.orders || []).find(o => orderIdsMatch(o.id, orderId));
   if (direct) return { order: direct, customer: null };
   for (const customer of user.myCustomers || []) {
-    const sub = (customer.subs || []).find(o => o.id === orderId);
+    const sub = (customer.subs || []).find(o => orderIdsMatch(o.id, orderId));
     if (sub) return { order: sub, customer };
   }
   return { order: null, customer: null };
+}
+
+function enrichSubscriptionFromLiveOrder(data, subscription, ownerEmail) {
+  if (!subscription || !subscription.id || !ownerEmail) return subscription;
+  const user = (data.users || []).find(u => normalizeEmail(u.email) === normalizeEmail(ownerEmail));
+  if (!user) return subscription;
+  const { order } = findUserOrderRecord(user, subscription.id);
+  if (!order) return subscription;
+  const profileName = orderProfileName(order);
+  return {
+    ...subscription,
+    profileName: profileName || subscription.profileName || '',
+    profilePin: order.profilePin || subscription.profilePin || '',
+    expiryDate: order.expiryDate || subscription.expiryDate || ''
+  };
 }
 
 function syncUserContact(user, { tgChatId, name } = {}) {
@@ -1276,6 +1303,39 @@ app.post('/customer/profile', async (req, res) => {
   } catch (e) {
     console.error('Profile save error:', e.message);
     res.status(500).json({ error: 'Could not save profile' });
+  }
+});
+
+app.post('/customer/subscription/update', async (req, res) => {
+  const session = requireSession(req, res, ['user']);
+  if (!session) return;
+  const { orderId, profileName, profilePin, removeProfilePin, note, autoRenew } = req.body || {};
+  if (!orderId) return res.status(400).json({ error: 'Order ID required' });
+  try {
+    const data = await readJsonBinRaw();
+    data.users = Array.isArray(data.users) ? data.users : [];
+    const user = data.users.find(u => normalizeEmail(u.email) === session.email);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    const { order } = findUserOrderRecord(user, orderId);
+    if (!order) return res.status(404).json({ error: 'Subscription not found' });
+    if (profileName !== undefined) {
+      const trimmed = String(profileName || '').trim();
+      if (trimmed) order.profileName = trimmed;
+      else delete order.profileName;
+    }
+    if (removeProfilePin) delete order.profilePin;
+    else if (profilePin !== undefined) {
+      const trimmed = String(profilePin || '').trim();
+      if (trimmed) order.profilePin = trimmed;
+      else delete order.profilePin;
+    }
+    if (note !== undefined) order.note = String(note || '').trim();
+    if (autoRenew !== undefined) order.autoRenew = Boolean(autoRenew);
+    await writeJsonBinRaw(data);
+    res.json({ success: true, order, user: sanitizeUser(user), data: safeDataForSession(data, session) });
+  } catch (e) {
+    console.error('Subscription update error:', e.message);
+    res.status(500).json({ error: e.message || 'Could not update subscription' });
   }
 });
 

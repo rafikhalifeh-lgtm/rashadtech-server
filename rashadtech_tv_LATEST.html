@@ -1161,15 +1161,27 @@ function userPurchaseSummary(u){
   const chipOrders=[...own,...assigned.map(x=>x.order)];
   return {own,assigned,total:own.length+assigned.length,chipOrders};
 }
+function orderIdsMatch(a,b){
+  const x=String(a||'').trim(),y=String(b||'').trim();
+  if(x===y)return true;
+  const nx=x.replace(/^#/,''),ny=y.replace(/^#/,'');
+  return Boolean(nx&&nx===ny);
+}
 function findUserOrder(orderId){
   if(!currentUser||!orderId)return null;
-  const direct=(currentUser.orders||[]).find(x=>x.id===orderId);
+  const direct=(currentUser.orders||[]).find(x=>orderIdsMatch(x.id,orderId));
   if(direct)return {order:direct,customer:null};
   for(const c of (currentUser.myCustomers||[])){
-    const sub=(c.subs||[]).find(x=>x.id===orderId);
+    const sub=(c.subs||[]).find(x=>orderIdsMatch(x.id,orderId));
     if(sub)return {order:sub,customer:c};
   }
   return null;
+}
+async function updateSubscription(orderId,fields){
+  const j=await rtApi('/customer/subscription/update',{method:'POST',body:JSON.stringify({orderId,...fields})});
+  if(j.data)applyDataSnapshot(j.data);
+  else if(j.user)currentUser=j.user;
+  return j.order;
 }
 async function deliverPurchaseTelegram(order,p,planLabel,price,forCustomer){
   if(!currentUser?.tgChatId||!order)return false;
@@ -1609,10 +1621,11 @@ async function subOptionAddNote(){
   if(!o)return;
   const note=prompt('Add a note to this subscription:'+(o.note?' Current: '+o.note:''));
   if(note===null)return;
-  o.note=note.trim();
-  await saveData();
-  renderSubs();
-  showToast('✅ Note saved');
+  try{
+    await updateSubscription(_currentSubId,{note:note.trim()});
+    renderSubs();
+    showToast('✅ Note saved');
+  }catch(e){showToast('⚠️ '+e.message);}
 }
 
 async function subOptionRenew(){
@@ -1664,12 +1677,13 @@ async function subOptionChangeProfile(){
   closeModal('sub-options-modal');
   const o=findUserOrder(_currentSubId)?.order;
   if(!o)return;
-  const name=prompt('Enter new profile name:'+(o.profileName?' Current: '+o.profileName:''));
+  const name=prompt('Enter new profile name:'+(orderProfileName(o)?' Current: '+orderProfileName(o):''));
   if(!name||!name.trim())return;
-  o.profileName=name.trim();
-  await saveData();
-  renderSubs();
-  showToast('✅ Profile name updated');
+  try{
+    await updateSubscription(_currentSubId,{profileName:name.trim()});
+    renderSubs();
+    showToast('✅ Profile name updated — use Generate Link for a fresh link with the new profile');
+  }catch(e){showToast('⚠️ '+e.message);}
 }
 
 async function subOptionChangePin(){
@@ -1678,10 +1692,11 @@ async function subOptionChangePin(){
   if(!o)return;
   const pin=prompt('Enter new PIN code:'+(o.profilePin?' Current: '+o.profilePin:''));
   if(!pin||!pin.trim())return;
-  o.profilePin=pin.trim();
-  await saveData();
-  renderSubs();
-  showToast('✅ PIN updated');
+  try{
+    await updateSubscription(_currentSubId,{profilePin:pin.trim()});
+    renderSubs();
+    showToast('✅ PIN updated');
+  }catch(e){showToast('⚠️ '+e.message);}
 }
 
 async function subOptionRemovePin(){
@@ -1689,20 +1704,23 @@ async function subOptionRemovePin(){
   const o=findUserOrder(_currentSubId)?.order;
   if(!o)return;
   if(!confirm('Remove PIN code for this subscription?'))return;
-  delete o.profilePin;
-  await saveData();
-  renderSubs();
-  showToast('✅ PIN removed');
+  try{
+    await updateSubscription(_currentSubId,{removeProfilePin:true});
+    renderSubs();
+    showToast('✅ PIN removed');
+  }catch(e){showToast('⚠️ '+e.message);}
 }
 
 async function subOptionAutoRenew(){
   closeModal('sub-options-modal');
   const o=findUserOrder(_currentSubId)?.order;
   if(!o)return;
-  o.autoRenew=!o.autoRenew;
-  await saveData();
-  renderSubs();
-  showToast(o.autoRenew?'✅ Auto-renewal enabled':'✅ Auto-renewal disabled');
+  try{
+    await updateSubscription(_currentSubId,{autoRenew:!o.autoRenew});
+    renderSubs();
+    const updated=findUserOrder(_currentSubId)?.order;
+    showToast(updated?.autoRenew?'✅ Auto-renewal enabled':'✅ Auto-renewal disabled');
+  }catch(e){showToast('⚠️ '+e.message);}
 }
 
 function filterSubs(){
@@ -1836,31 +1854,30 @@ function toggleCustomerSubs(custId){
 async function setSubCustProfileName(orderId, custId){
   const c=currentUser?.myCustomers.find(x=>x.id===custId);
   if(!c)return;
-  const s=c.subs?.find(x=>x.id===orderId);
+  const s=c.subs?.find(x=>orderIdsMatch(x.id,orderId));
   if(!s)return;
-  const current=s.profileName?`Current: "${s.profileName}"
+  const current=orderProfileName(s)?`Current: "${orderProfileName(s)}"
 
 `:'';
   const name=prompt(`${current}Enter Netflix profile name for ${c.fname}:`);
   if(!name||!name.trim())return;
-  s.profileName=name.trim();
-  await saveData();
-  renderMyCustomers();
-  showToast('✓ Profile name saved');
+  try{
+    await updateSubscription(s.id,{profileName:name.trim()});
+    renderMyCustomers();
+    renderSubs();
+    showToast('✓ Profile name saved');
+  }catch(e){showToast('⚠️ '+e.message);}
 }
 
 async function setProfileName(orderId){
   const name=prompt('Enter the Netflix profile name exactly as created:');
   if(!name||!name.trim())return;
   if(!currentUser)return;
-  // Find and update the order
-  const o=findUserOrder(orderId)?.order;
-  if(o){
-    o.profileName=name.trim();
-    await saveData();
+  try{
+    await updateSubscription(orderId,{profileName:name.trim()});
     renderSubs();
     showToast('✓ Profile name saved');
-  }
+  }catch(e){showToast('⚠️ '+e.message);}
 }
 async function copySubLink(orderId){
   // Find the order
@@ -1952,10 +1969,14 @@ async function checkSubLink(){
   _sublinkCodeEmail=found.codeEmail||found.email||found.mainEmail||null;
   _sublinkInboxEmail=found.inboxEmail||found.mainEmail||found.codeEmail||null;
   const subProf=orderProfileName(found);
+  const extraRow=document.getElementById('sublink-extra-row');
+  const profileRow=document.getElementById('sublink-profile-row');
   if(subProf){
-    document.getElementById('sublink-extra-row').style.display='flex';
-    document.getElementById('sublink-extra').textContent=subProf;
-    document.getElementById('sublink-profile-row').style.display='none';
+    if(extraRow){extraRow.style.display='flex';document.getElementById('sublink-extra').textContent=subProf;}
+    if(profileRow)profileRow.style.display='none';
+  }else{
+    if(extraRow)extraRow.style.display='none';
+    if(profileRow)profileRow.style.display='none';
   }
   if(found.expiryDate){document.getElementById('sublink-expiry-row').style.display='flex';document.getElementById('sublink-expiry').textContent=found.expiryDate;}
   if(found.profilePin){document.getElementById('sublink-pin-row').style.display='flex';document.getElementById('sublink-profile-pin').textContent=found.profilePin;}
