@@ -4551,7 +4551,7 @@ const RT_CHAT_I18N={
     name:'rashadtech Support',
     status:'Online — instant replies',
     placeholder:'Type a message...',
-    greeting:'Hi! I can help with purchases, subscriptions, Telegram delivery, wallet top-up, Netflix codes, TV activation, and sub-customers. 👋',
+    greeting:'Hi! I can help with purchases, subscriptions, Telegram delivery, wallet, Netflix codes, TV, Shahid fix password, and sub-customers. 👋',
     sensitive:'I can only help with customer store questions (buying, subscriptions, wallet, Telegram). For account administration or internal systems, please contact support on WhatsApp or Telegram.',
     fallback:'I\'m not sure about that. Try a quick topic below, or contact us:<br>• <b>WhatsApp: <a href="https://wa.me/96179306701" target="_blank">+96179306701</a></b><br>• <b>Telegram: <a href="https://t.me/Rashadtech" target="_blank">@Rashadtech</a></b><br>• <b>Bot: <a href="https://t.me/Rashadtech_bot" target="_blank">@Rashadtech_bot</a></b>',
     quick:[
@@ -4562,6 +4562,7 @@ const RT_CHAT_I18N={
       {label:'Watch on TV',q:'How to watch on TV?'},
       {label:'Top up wallet',q:'How do I top up my wallet?'},
       {label:'Sub-customers',q:'How do sub-customers work?'},
+      {label:'Shahid fix password',q:'Someone changed my Shahid password'},
       {label:'Contact support',q:'How do I contact support?'}
     ],
     faq:[
@@ -4593,8 +4594,12 @@ const RT_CHAT_I18N={
        a:'On a subscription card, tap <b>Options</b> → change profile name or PIN (for Netflix profiles).'},
       {q:['issue','problem','not working','broken','error','report','help','stuck'],
        a:'Open the subscription → <b>Options → Report Issue</b>. Describe the problem (login, code, TV, expired, playback). Support will contact you.'},
-      {q:['shahid','disney','osn','spotify','anghami','product','service'],
-       a:'All products are in the <b>Store</b> tab. Pick the service, select a plan, and buy with wallet balance. Delivery works the same as Netflix.'},
+      {q:['shahid password','fix password','password changed','wrong password','shahid reset','reset link','cannot login shahid','shahid login','fix shahid'],
+       a:'On <b>Shahid VIP</b> subscriptions in <b>My Subscriptions</b> use:<br>• <b>Copy info</b> — copy email & password<br>• <b>Report</b> — report a problem<br>• <b>Fix password</b> — if someone changed the Shahid password:<br>1) Open <b>Fix password</b> and read the <b>original password</b> shown (you must use this exact password)<br>2) Copy your Shahid email → open Shahid reset from the wizard → request password reset<br>3) Wait 1–2 minutes → tap <b>GET RESET LINK</b> → open the link and set the password back to the <b>original</b> one<br>⚠️ Do not use a different password — your account may be suspended.'},
+      {q:['shahid','shahid vip','mbc shahid'],
+       a:'Buy <b>Shahid VIP</b> from the <b>Store</b>. Credentials appear in <b>My Subscriptions</b>. Each Shahid card has <b>Copy info</b>, <b>Report</b>, and <b>Fix password</b>. If login fails because the password was changed, use <b>Fix password</b> (ask the chatbot: "Shahid password changed").'},
+      {q:['disney','osn','spotify','anghami','product','service'],
+       a:'All products are in the <b>Store</b> tab. Pick the service, select a plan, and buy with wallet balance. Credentials appear in <b>My Subscriptions</b> and on Telegram if Chat ID is set.'},
       {q:['arabic','language','عربي','english'],
        a:'Open <b>Profile</b> and use the language toggle (EN / AR) at the top of the profile page.'},
       {q:['contact','whatsapp','support','human','agent','talk'],
@@ -4605,7 +4610,7 @@ const RT_CHAT_I18N={
     name:'دعم rashadtech',
     status:'متصل — رد فوري',
     placeholder:'اكتب رسالة...',
-    greeting:'مرحباً! أستطيع مساعدتك في الشراء، الاشتراكات، تيليغرام، المحفظة، أكواد نتفليكس، التلفزيون، والعملاء الفرعيين. 👋',
+    greeting:'مرحباً! أستطيع مساعدتك في الشراء، الاشتراكات، تيليغرام، المحفظة، نتفليكس، شاهد، إصلاح كلمة المرور، والعملاء الفرعيين. 👋',
     sensitive:'أستطيع مساعدتك في أسئلة المتجر فقط (الشراء، الاشتراكات، المحفظة، تيليغرام). للإدارة الداخلية تواصل مع الدعم على واتساب أو تيليغرام.',
     fallback:'لم أفهم سؤالك. جرّب موضوعاً سريعاً أدناه، أو تواصل معنا:<br>• <b>واتساب: <a href="https://wa.me/96179306701" target="_blank">+96179306701</a></b><br>• <b>تيليغرام: <a href="https://t.me/Rashadtech" target="_blank">@Rashadtech</a></b><br>• <b>البوت: <a href="https://t.me/Rashadtech_bot" target="_blank">@Rashadtech_bot</a></b>',
     quick:[
@@ -4615,7 +4620,8 @@ const RT_CHAT_I18N={
       {label:'كود الدخول',q:'أحتاج كود دخول نتفليكس'},
       {label:'التلفزيون',q:'كيف أشاهد على التلفزيون؟'},
       {label:'شحن المحفظة',q:'كيف أشحن المحفظة؟'},
-      {label:'عملاء فرعيون',q:'كيف يعمل العملاء الفرعيون؟'},
+      {label:'عملاء فرعيون',q:'كيف يعمل العملاء الفرعيين؟'},
+      {label:'إصلاح شاهد',q:'تم تغيير كلمة مرور شاهد'},
       {label:'الدعم',q:'كيف أتواصل مع الدعم؟'}
     ],
     faq:[
@@ -4643,8 +4649,12 @@ const RT_CHAT_I18N={
        a:'<b>الملف الشخصي</b> لتغيير الاسم وChat ID وكلمة المرور واللغة (EN/AR).'},
       {q:['مشكلة','issue','report','لا يعمل','عطل'],
        a:'الاشتراك → <b>خيارات → الإبلاغ عن مشكلة</b>. صف المشكلة وسيتواصل معك الدعم.'},
-      {q:['شاهد','ديزني','سبوتيفاي','منتج','shahid','disney'],
-       a:'كل المنتجات في <b>المتجر</b>. اختر الخدمة والخطة واشترِ من رصيد المحفظة.'},
+      {q:['كلمة مرور شاهد','إصلاح كلمة المرور','fix password','تغيير كلمة المرور','شاهد لا يعمل','reset link','رابط تعيين','لا أستطيع الدخول شاهد'],
+       a:'في <b>اشتراكاتي</b> على اشتراك <b>شاهد VIP</b>:<br>• <b>نسخ المعلومات</b> — نسخ البريد وكلمة المرور<br>• <b>الإبلاغ</b> — الإبلاغ عن مشكلة<br>• <b>إصلاح كلمة المرور</b> — إذا غيّر أحد كلمة مرور شاهد:<br>1) افتح <b>إصلاح كلمة المرور</b> وانسخ <b>كلمة المرور الأصلية</b> المعروضة (يجب استخدامها بالضبط)<br>2) انسخ البريد → افتح صفحة إعادة التعيين من المعالج → اطلب إعادة تعيين من شاهد<br>3) انتظر 1–2 دقيقة → اضغط <b>GET RESET LINK</b> → افتح الرابط وضع نفس كلمة المرور الأصلية<br>⚠️ لا تستخدم كلمة مرور أخرى — قد يُوقَف الحساب.'},
+      {q:['شاهد','شاهد vip','shahid','mbc'],
+       a:'اشترِ <b>شاهد VIP</b> من <b>المتجر</b>. البيانات في <b>اشتراكاتي</b>. كل بطاقة شاهد فيها <b>نسخ المعلومات</b>، <b>الإبلاغ</b>، و<b>إصلاح كلمة المرور</b>. إذا فشل الدخول بسبب تغيير كلمة المرور، استخدم <b>إصلاح كلمة المرور</b>.'},
+      {q:['ديزني','سبوتيفاي','منتج','disney','osn'],
+       a:'كل المنتجات في <b>المتجر</b>. اختر الخدمة والخطة واشترِ من رصيد المحفظة. البيانات في <b>اشتراكاتي</b> وتيليغرام إذا أضفت Chat ID.'},
       {q:['دعم','واتساب','تواصل','contact','whatsapp'],
        a:'• <b>واتساب: <a href="https://wa.me/96179306701" target="_blank">+96179306701</a></b><br>• <b>تيليغرام: <a href="https://t.me/Rashadtech" target="_blank">@Rashadtech</a></b><br>• <b>البوت: <a href="https://t.me/Rashadtech_bot" target="_blank">@Rashadtech_bot</a></b>'}
     ]
@@ -4659,8 +4669,8 @@ function rtChatPack(){return RT_CHAT_I18N[rtChatLang()]||RT_CHAT_I18N.en;}
 
 function rtIsSensitiveQuery(q){
   const lower=String(q||'').toLowerCase();
-  return/\b(admin|stock|database|server|api|backend|jsonbin|render|bypass|hack|token|secret)\b/.test(lower)
-    ||/admin panel|admin password|admin access|how to access admin|user list|all customers|wallet of|internal/.test(lower);
+  return/\b(admin|stock|database|server|api|backend|jsonbin|render|bypass|hack|token|secret|imap|inbox)\b/.test(lower)
+    ||/admin panel|admin password|admin access|how to access admin|user list|all customers|wallet of|internal|inbox password|stock password|other customer|all passwords/.test(lower);
 }
 
 function rtSyncChatUI(){
