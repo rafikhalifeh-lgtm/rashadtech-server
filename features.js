@@ -139,11 +139,12 @@
   async function loadAdminEnhancements(){
     if(!isAdmin)return;
     try{
-      const [analytics, aliases, activity, settings]=await Promise.all([
+      const [analytics, aliases, activity, settings, priceLog]=await Promise.all([
         api('/admin/analytics').catch(()=>({analytics:{}})),
         api('/admin/netflix-aliases').catch(()=>({aliases:[]})),
         api('/admin/activity').catch(()=>({activity:[]})),
-        api('/site-settings').catch(()=>({settings:{}}))
+        api('/site-settings').catch(()=>({settings:{}})),
+        api('/admin/price-change-log').catch(()=>({log:[]}))
       ]);
       const dash=document.getElementById('dashboard-analytics');
       if(dash&&analytics.analytics){
@@ -161,7 +162,13 @@
       }
       const actEl=document.getElementById('admin-activity-server');
       if(actEl){
-        actEl.innerHTML=(activity.activity||[]).slice(0,20).map(x=>`<div style="font-size:11px;padding:6px 0;border-bottom:1px solid var(--border)"><b>${esc(x.action)}</b> — ${esc(x.details||'')} <span style="color:var(--text3)">${esc(x.time||'')}</span></div>`).join('')||'<div style="color:var(--text3)">No activity yet.</div>';
+        const priceRows=(priceLog.log||[]).slice(0,5).map(entry=>{
+          const when=entry.ts?new Date(entry.ts).toLocaleString():'';
+          const lines=(entry.changes||[]).slice(0,4).map(c=>`${esc(c.key)}: ${c.old??'—'} → ${c.new??'—'}`).join('<br>');
+          return `<div style="font-size:11px;padding:8px 0;border-bottom:1px solid var(--border)"><b>Price change</b> · ${esc(entry.actor||'admin')} · <span style="color:var(--text3)">${esc(when)}</span><div style="color:var(--text2);margin-top:4px">${lines||'Updated'}</div></div>`;
+        }).join('');
+        const activityRows=(activity.activity||[]).slice(0,15).map(x=>`<div style="font-size:11px;padding:6px 0;border-bottom:1px solid var(--border)"><b>${esc(x.action)}</b> — ${esc(x.details||'')} <span style="color:var(--text3)">${esc(x.time||'')}</span></div>`).join('');
+        actEl.innerHTML=(priceRows+activityRows)||'<div style="color:var(--text3)">No activity yet.</div>';
       }
       const promoInp=document.getElementById('admin-promo-banner');
       const refInp=document.getElementById('admin-referral-code');

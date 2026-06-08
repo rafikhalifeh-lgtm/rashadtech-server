@@ -2,8 +2,21 @@ const crypto = require('crypto');
 const {
   PRICE_CATALOG_KEY,
   getMergedCatalog,
+  mergePriceCatalog,
   buildCatalogPayload
 } = require('./priceCatalog');
+const {
+  markStockSold,
+  stampOrderDelivery,
+  pushStatusHistory,
+  findOwnerForStockAccount,
+  collectLowStockItems,
+  diffPriceCatalog,
+  pendingAgeMs
+} = require('./orderHelpers');
+
+const PRICE_CHANGE_LOG_KEY = 'priceChangeLog';
+const LOW_STOCK_THRESHOLD = 2;
 
 const SESSIONS_KEY = 'sessions';
 const ACTIVITY_LOG_KEY = 'activityLog';
@@ -131,6 +144,16 @@ function registerEnhancements(app, deps) {
   }
 
   function placeFulfilledOrder(user, pendingOrder, account) {
+    const assignedCustomer = pendingOrder.assignCustId !== null && pendingOrder.assignCustId !== undefined
+      ? (user.myCustomers || []).find(c => c.id === pendingOrder.assignCustId)
+      : null;
+    markStockSold(account, {
+      userEmail: user.email,
+      userName: user.name,
+      orderId: pendingOrder.id,
+      assignCustId: assignedCustomer ? assignedCustomer.id : null,
+      assignCustName: assignedCustomer ? `${assignedCustomer.fname || ''} ${assignedCustomer.lname || ''}`.trim() : ''
+    });
     const order = {
       id: pendingOrder.id,
       product: pendingOrder.product,
@@ -149,14 +172,11 @@ function registerEnhancements(app, deps) {
       accKey: account.accKey || '',
       mainEmail: account.mainEmail || ''
     };
-    if (pendingOrder.assignCustId !== null && pendingOrder.assignCustId !== undefined) {
-      const customer = (user.myCustomers || []).find(c => c.id === pendingOrder.assignCustId);
-      if (customer) {
-        order.profileName = order.profileName || customer.fname;
-        customer.subs = Array.isArray(customer.subs) ? customer.subs : [];
-        customer.subs.unshift(order);
-        return order;
-      }
+    if (assignedCustomer) {
+      order.profileName = order.profileName || assignedCustomer.fname;
+      assignedCustomer.subs = Array.isArray(assignedCustomer.subs) ? assignedCustomer.subs : [];
+      assignedCustomer.subs.unshift(order);
+      return order;
     }
     user.orders = Array.isArray(user.orders) ? user.orders : [];
     user.orders.unshift(order);
@@ -290,16 +310,156 @@ function registerEnhancements(app, deps) {
     try {
       const payload = buildCatalogPayload(req.body || {});
       const data = await readJsonBinRaw();
+      const previous = getMergedCatalog(data);
+      const changes = diffPriceCatalog(previous, payload);
       data[PRICE_CATALOG_KEY] = {
         ...payload,
         updatedAt: Date.now(),
         updatedBy: session.email
       };
+      if (changes.length) {
+        const log = Array.isArray(data[PRICE_CHANGE_LOG_KEY]) ? data[PRICE_CHANGE_LOG_KEY] : [];
+        log.unshift({
+          ts: Date.now(),
+          actor: session.email,
+          changes: changes.slice(0, 200)
+        });
+        data[PRICE_CHANGE_LOG_KEY] = log.slice(0, 100);
+      }
       await writeJsonBinRaw(data);
-      await appendActivity('Prices updated', `${Object.keys(payload.prices).length} plan prices`, session.email);
-      res.json({ success: true, catalog: getMergedCatalog(data) });
+      await appendActivity('Prices updated', `${changes.length || Object.keys(payload.prices).length} price change(s)`, session.email);
+      res.json({ success: true, catalog: getMergedCatalog(data), changes: changes.length });
     } catch (e) {
       res.status(500).json({ error: 'Could not save prices' });
+    }
+  });
+
+  app.get('/admin/price-change-log', async (req, res) => {
+    const session = requireSession(req, res, ['admin']);
+    if (!session) return;
+    try {
+      const data = await readJsonBinRaw();
+      res.json({ success: true, log: (data[PRICE_CHANGE_LOG_KEY] || []).slice(0, 50) });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/admin/assign-stock', async (req, res) => {
+    const session = requireSession(req, res, ['admin']);
+    if (!session) return;
+    const { skey, accKey, userEmail, assignCustId, notifyTelegram } = req.body || {};
+    if (!skey || !accKey || !userEmail) return res.status(400).json({ error: 'skey, accKey, and userEmail are required' });
+    try {
+      const data = await readJsonBinRaw();
+      data.stock = data.stock || {};
+      data.users = Array.isArray(data.users) ? data.users : [];
+      const accounts = data.stock[skey] || [];
+      const acc = accounts.find(a => a && a.accKey === accKey && !a.used);
+      if (!acc) return res.status(404).json({ error: 'Available stock account not found' });
+      const user = data.users.find(u => normalizeEmail(u.email) === normalizeEmail(userEmail));
+      if (!user) return res.status(404).json({ error: 'Customer not found' });
+      const assignedCustomer = assignCustId != null
+        ? (user.myCustomers || []).find(c => c.id === assignCustId)
+        : null;
+      const parts = String(skey).split('__');
+      const prod = productsLabelFromKey(parts);
+      const dateStr = new Date().toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+      const orderId = '#' + (Math.floor(Math.random() * 90000 + 10000));
+      markStockSold(acc, {
+        userEmail: user.email,
+        userName: user.name,
+        orderId,
+        assignCustId: assignedCustomer ? assignedCustomer.id : null,
+        assignCustName: assignedCustomer ? `${assignedCustomer.fname || ''} ${assignedCustomer.lname || ''}`.trim() : ''
+      });
+      const order = {
+        id: orderId,
+        product: prod.name,
+        short: prod.short,
+        color: prod.color,
+        tc: prod.tc,
+        productId: prod.id,
+        plan: prod.plan,
+        price: 0,
+        email: acc.email,
+        pass: acc.pass,
+        date: dateStr,
+        expiryDate: acc.expiryDate || null,
+        profileName: accountProfileName(acc) || (assignedCustomer ? assignedCustomer.fname : ''),
+        profilePin: acc.profilePin || '',
+        accKey: acc.accKey || '',
+        mainEmail: acc.mainEmail || '',
+        assignedByAdmin: true
+      };
+      if (assignedCustomer) {
+        assignedCustomer.subs = Array.isArray(assignedCustomer.subs) ? assignedCustomer.subs : [];
+        assignedCustomer.subs.unshift(order);
+      } else {
+        user.orders = Array.isArray(user.orders) ? user.orders : [];
+        user.orders.unshift(order);
+      }
+      let telegramSent = false;
+      if (notifyTelegram !== false && user.tgChatId) {
+        telegramSent = true;
+        await sendTG(user.tgChatId, `✅ <b>Subscription assigned</b>\n\n📦 ${order.product} · ${order.plan}\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>${order.expiryDate ? `\n📅 Expires: ${order.expiryDate}` : ''}`, 'HTML').catch(() => {});
+      }
+      stampOrderDelivery(order, telegramSent);
+      await writeJsonBinRaw(data);
+      await appendActivity('Stock assigned', `${user.email} · ${order.product}`, session.email);
+      res.json({ success: true, order, user: sanitizeUser(user), data: safeDataForSession(data, session) });
+    } catch (e) {
+      res.status(500).json({ error: e.message || 'Could not assign stock' });
+    }
+  });
+
+  function productsLabelFromKey(parts) {
+    const id = parts[0] || 'subscription';
+    const names = {
+      netflix: { name: 'Netflix', short: 'N', color: '#E50914', tc: '#fff', id: 'netflix' },
+      shahid: { name: 'Shahid VIP', short: 'ش', color: '#1B75BC', tc: '#fff', id: 'shahid' },
+      osn: { name: 'OSN+', short: 'OSN', color: '#111', tc: '#fff', id: 'osn' },
+      disney: { name: 'Disney+', short: 'D+', color: '#113CCF', tc: '#fff', id: 'disney' }
+    };
+    const base = names[id] || { name: id, short: id.slice(0, 2).toUpperCase(), color: '#555', tc: '#fff', id };
+    let plan = parts.slice(1).join(' · ').replace(/__/g, ' · ') || 'Assigned';
+    return { ...base, plan };
+  }
+
+  function accountProfileName(acc) {
+    return String(acc?.profileName || acc?.extra || '').trim();
+  }
+
+  app.post('/admin/game-order-status', async (req, res) => {
+    const session = requireSession(req, res, ['admin']);
+    if (!session) return;
+    const { orderId, status } = req.body || {};
+    const allowed = ['pending', 'processing', 'done', 'cancelled'];
+    if (!orderId || !allowed.includes(status)) return res.status(400).json({ error: 'Invalid order or status' });
+    try {
+      const data = await readJsonBinRaw();
+      data.gameorders = Array.isArray(data.gameorders) ? data.gameorders : [];
+      const order = data.gameorders.find(o => o && o.id === orderId);
+      if (!order) return res.status(404).json({ error: 'Game order not found' });
+      pushStatusHistory(order, status);
+      if (status === 'done') order.fulfilledAt = Date.now();
+      const user = (data.users || []).find(u => normalizeEmail(u.email) === normalizeEmail(order.userEmail));
+      if (user && Array.isArray(user.transactions)) {
+        user.transactions.forEach(t => {
+          if (t.orderId === order.id) t.pending = status !== 'done';
+        });
+      }
+      if (status === 'processing' && user?.tgChatId) {
+        await sendTG(user.tgChatId, `🎮 <b>Order processing</b>\n\n${order.product} · ${order.plan}\n🆔 ${order.playerId}\n\nWe are working on your order now.`, 'HTML').catch(() => {});
+      }
+      if (status === 'done' && user?.tgChatId) {
+        await sendTG(user.tgChatId, `✅ <b>Order complete!</b>\n\n${order.product} · ${order.plan}\n🆔 ${order.playerId}\n\nThank you for your order! 🎉`, 'HTML').catch(() => {});
+      }
+      await writeJsonBinRaw(data);
+      await appendActivity('Game order updated', `${orderId} → ${status}`, session.email);
+      res.json({ success: true, order, data: safeDataForSession(data, session) });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
     }
   });
 
@@ -332,6 +492,16 @@ function registerEnhancements(app, deps) {
       }
       const purchases = users.reduce((sum, u) => sum + (Array.isArray(u.orders) ? u.orders.length : 0), 0);
       const revenue = users.reduce((sum, u) => sum + (Array.isArray(u.transactions) ? u.transactions.filter(t => t.type === 'purchase').reduce((s, t) => s + Number(t.amount || 0), 0) : 0), 0);
+      let oldestPendingMs = 0;
+      let oldestPending = null;
+      pending.forEach(po => {
+        const age = pendingAgeMs(po);
+        if (age > oldestPendingMs) {
+          oldestPendingMs = age;
+          oldestPending = { id: po.id, product: po.product, plan: po.plan, userName: po.userName, ageMs: age };
+        }
+      });
+      const lowStock = collectLowStockItems(stock, LOW_STOCK_THRESHOLD);
       res.json({
         success: true,
         analytics: {
@@ -339,6 +509,10 @@ function registerEnhancements(app, deps) {
           purchases,
           revenue,
           pending: pending.length,
+          oldestPendingMs,
+          oldestPending,
+          pendingSlaBreached: oldestPendingMs > 24 * 60 * 60 * 1000,
+          lowStockCount: lowStock.length,
           stockAccounts,
           stockAvailable,
           topupRequests: Array.isArray(data.topupreqs) ? data.topupreqs.length : 0,
@@ -487,17 +661,25 @@ function registerEnhancements(app, deps) {
       if (!acc) return res.status(409).json({ error: 'No stock available for this plan' });
       const aliasError = validateNetflixAliasPurchase(data, po.skey, acc);
       if (aliasError) return res.status(409).json({ error: aliasError });
-      acc.used = true;
       const user = data.users.find(u => normalizeEmail(u.email) === normalizeEmail(po.userEmail));
       const order = user ? placeFulfilledOrder(user, po, acc) : null;
+      pushStatusHistory(po, 'fulfilled');
       data.pending.splice(idx, 1);
-      await writeJsonBinRaw(data);
       const tgId = String(user?.tgChatId || po.userTgChatId || '').trim();
+      let telegramSent = false;
       if (tgId) {
+        telegramSent = true;
         const assignNote = po.assignCustId != null ? ' (sub-customer order)' : '';
         await sendTG(tgId, `✅ <b>Your ${po.product} is ready!</b>${assignNote}\n\n📋 ${po.plan}\n📧 <code>${acc.email}</code>\n🔑 <code>${acc.pass}</code>${acc.profilePin ? `\n🔢 PIN: <code>${acc.profilePin}</code>` : ''}`, 'HTML').catch(() => {});
         if (user && !user.tgChatId) user.tgChatId = tgId;
       }
+      if (order) stampOrderDelivery(order, telegramSent);
+      if (user && Array.isArray(user.transactions)) {
+        user.transactions.forEach(t => {
+          if (t.orderId === po.id) t.pending = false;
+        });
+      }
+      await writeJsonBinRaw(data);
       await appendActivity('Pending order fulfilled', orderId, session.email);
       res.json({ success: true, order, user: sanitizeUser(user), data: safeDataForSession(data, { role: 'admin' }) });
     } catch (e) {
@@ -525,6 +707,7 @@ function registerEnhancements(app, deps) {
   let lastRenewalAlertDay = '';
   let lastExpiryCustomerDay = '';
   let lastBackupNotifyDay = '';
+  let lastLowStockAlertDay = '';
 
   async function runRenewalAlerts() {
     try {
@@ -565,6 +748,24 @@ function registerEnhancements(app, deps) {
     }
   }
 
+  async function runLowStockAlerts() {
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      if (lastLowStockAlertDay === today) return;
+      const data = await readJsonBinRaw();
+      const items = collectLowStockItems(data.stock, LOW_STOCK_THRESHOLD);
+      if (!items.length) return;
+      const lines = items.slice(0, 20).map(item => {
+        const label = item.key.replace(/__/g, ' · ');
+        return item.empty ? `❌ ${label} — OUT OF STOCK` : `⚠️ ${label} — ${item.available} left`;
+      });
+      await sendTG(TG_ADMIN, `📦 <b>Low stock alert</b>\n\n${lines.join('\n')}\n\nAdd stock in Admin → Stock.`, 'HTML').catch(() => {});
+      lastLowStockAlertDay = today;
+    } catch (e) {
+      console.error('Low stock alert error:', e.message);
+    }
+  }
+
   async function runDailyBackupSummary() {
     try {
       const today = new Date().toISOString().slice(0, 10);
@@ -587,6 +788,7 @@ function registerEnhancements(app, deps) {
     runRenewalAlerts().catch(() => {});
     runCustomerExpiryAlerts().catch(() => {});
     runDailyBackupSummary().catch(() => {});
+    runLowStockAlerts().catch(() => {});
   }, 60 * 60 * 1000);
 
   setInterval(() => {

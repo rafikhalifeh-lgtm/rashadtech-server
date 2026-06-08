@@ -11,6 +11,12 @@ const {
   resolvePurchasePrice,
   pricesMatch
 } = require('./priceCatalog');
+const {
+  markStockSold,
+  stampOrderDelivery,
+  initPendingOrder,
+  initGameOrder
+} = require('./orderHelpers');
 
 const app = express();
 const ALLOWED_ORIGINS = new Set([
@@ -1520,16 +1526,16 @@ app.post('/purchase', async (req, res) => {
       const assignedCustomer = assignCustId !== null && assignCustId !== undefined
         ? (user.myCustomers || []).find(c => c.id === assignCustId)
         : null;
-      const pendingOrder = {
+      const pendingOrder = initPendingOrder({
         id:'#'+(Math.floor(Math.random()*90000+10000)),
         userEmail:user.email,userName:user.name,userTgChatId:user.tgChatId||'',
         product:product.name,short:product.short,color:product.color,tc:product.tc,
         productId:product.id,plan:planLabel,price:Number(price),skey,date:dateStr,
         ...(assignedCustomer ? { assignCustId, profileName: extraFields?.profileName || assignedCustomer.fname } : {}),
         ...(extraFields||{})
-      };
+      });
       data.pending.unshift(pendingOrder);
-      user.transactions.unshift({type:'purchase',label:'Bought '+product.name+' · '+planLabel,amount:Number(price),balance:user.balance,date:dateStr});
+      user.transactions.unshift({type:'purchase',label:'Bought '+product.name+' · '+planLabel,amount:Number(price),balance:user.balance,date:dateStr,pending:true,orderId:pendingOrder.id});
       await writeJsonBinRaw(data);
       const telegramSent = await notifyPurchasePending(user, product, planLabel, price, assignCustId);
       return res.json({ success:true, pending:true, telegramSent, user:sanitizeUser(user), order:pendingOrder, data:safeDataForSession(data, session) });
@@ -1539,9 +1545,19 @@ app.post('/purchase', async (req, res) => {
     if (aliasError) return res.status(409).json({ error: aliasError });
 
     user.balance = Number(user.balance || 0) - Number(price);
-    acc.used = true;
+    const orderId = '#'+ (Math.floor(Math.random()*90000+10000));
+    const assignedCustomer = assignCustId !== null && assignCustId !== undefined
+      ? (user.myCustomers||[]).find(c => c.id === assignCustId)
+      : null;
+    markStockSold(acc, {
+      userEmail: user.email,
+      userName: user.name,
+      orderId,
+      assignCustId: assignedCustomer ? assignedCustomer.id : null,
+      assignCustName: assignedCustomer ? `${assignedCustomer.fname || ''} ${assignedCustomer.lname || ''}`.trim() : ''
+    });
     const order = {
-      id:'#'+(Math.floor(Math.random()*90000+10000)),
+      id: orderId,
       product:product.name,short:product.short,color:product.color,tc:product.tc,
       productId:product.id,plan:planLabel,price:Number(price),
       email:acc.email,pass:acc.pass,date:dateStr,expiryDate:acc.expiryDate||null,
@@ -1550,16 +1566,10 @@ app.post('/purchase', async (req, res) => {
       ...(acc.profilePin?{profilePin:acc.profilePin}:{}),
       accKey:acc.accKey||'',mainEmail:acc.mainEmail||''
     };
-    if (assignCustId !== null && assignCustId !== undefined) {
-      const customer = (user.myCustomers||[]).find(c => c.id === assignCustId);
-      if (customer) {
-        order.profileName = order.profileName || customer.fname;
-        customer.subs = Array.isArray(customer.subs) ? customer.subs : [];
-        customer.subs.unshift(order);
-      } else {
-        user.orders = Array.isArray(user.orders) ? user.orders : [];
-        user.orders.unshift(order);
-      }
+    if (assignedCustomer) {
+      order.profileName = order.profileName || assignedCustomer.fname;
+      assignedCustomer.subs = Array.isArray(assignedCustomer.subs) ? assignedCustomer.subs : [];
+      assignedCustomer.subs.unshift(order);
     } else {
       user.orders = Array.isArray(user.orders) ? user.orders : [];
       user.orders.unshift(order);
@@ -1567,6 +1577,8 @@ app.post('/purchase', async (req, res) => {
     user.transactions.unshift({type:'purchase',label:'Bought '+product.name+' · '+planLabel,amount:Number(price),balance:user.balance,date:dateStr});
     await writeJsonBinRaw(data);
     const telegramSent = await notifyPurchaseFulfilled(user, product, planLabel, price, order, assignCustId);
+    stampOrderDelivery(order, telegramSent);
+    await writeJsonBinRaw(data);
     res.json({ success:true, pending:false, telegramSent, user:sanitizeUser(user), order, data:safeDataForSession(data, session) });
   } catch(e) {
     console.error('Purchase error:', e.message);

@@ -318,6 +318,14 @@ input,button,select,textarea{font-family:var(--font)}
 .expiry-plan{font-size:12px;color:var(--text2)}
 .expiry-cred{font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:3px}
 .expiry-right{text-align:right;flex-shrink:0}
+.order-timeline{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.order-step{font-size:10px;padding:4px 8px;border-radius:999px;border:1px solid var(--border);color:var(--text3);background:var(--bg3)}
+.order-step.done{border-color:var(--green-border);color:var(--green);background:var(--green-bg)}
+.order-step.current{border-color:var(--orange-border);color:var(--orange);background:var(--orange-bg)}
+.game-track{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.game-step{font-size:10px;padding:4px 8px;border-radius:999px;border:1px solid var(--border);color:var(--text3)}
+.game-step.on{border-color:var(--blue-border);color:var(--blue);background:var(--blue-bg);font-weight:700}
+.delivery-proof{font-size:10px;color:var(--green);margin-top:6px}
 .days-left{font-size:22px;font-weight:700;line-height:1}
 .days-label{font-size:11px;color:var(--text2);margin-top:2px}
 .exp-date{font-size:11px;color:var(--text3);margin-top:4px}
@@ -758,6 +766,11 @@ So your EmailJS template will receive the user email and verification code corre
           <input type="text" id="subs-search" placeholder="🔍 Search subscriptions..." oninput="filterSubs()" style="width:100%;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg2);color:var(--text);font-size:14px;box-sizing:border-box">
         </div>
         <div class="subs-list" id="subs-list"><div class="empty-state"><i class="ti ti-device-tv"></i>No subscriptions yet.<br><br><button onclick="switchTab('store',null)" style="background:var(--red);color:#fff;border:none;border-radius:var(--radius-sm);padding:8px 18px;font-size:12px;font-weight:600;cursor:pointer;margin-top:8px">Go to store</button></div></div>
+        <div style="margin-top:18px">
+          <div class="pg-title" style="font-size:16px;margin-bottom:4px">🎮 Game orders</div>
+          <div class="pg-sub" style="margin-bottom:8px">Track Jawaker / PUBG order status</div>
+          <div id="game-orders-list"><div class="empty-state" style="padding:20px"><i class="ti ti-device-gamepad"></i>No game orders yet.</div></div>
+        </div>
       </div>
       <div id="tab-netflix" class="tab-pane">
         <div class="pg-title" data-t="netflix">Netflix</div>
@@ -892,6 +905,7 @@ So your EmailJS template will receive the user email and verification code corre
         <div class="pg-title">📊 Dashboard</div>
         <div class="pg-sub">Business overview</div>
         <div id="dashboard-stats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:12px"></div>
+        <div id="dashboard-pending-sla" class="card" style="padding:14px;margin-bottom:12px;display:none"></div>
         <div class="card" style="padding:16px;margin-bottom:12px">
           <div style="font-size:13px;font-weight:600;margin-bottom:10px">📈 Revenue (Last 6 Months)</div>
           <canvas id="revenue-chart" height="120" style="width:100%;display:block"></canvas>
@@ -1190,6 +1204,56 @@ function orderIdsMatch(a,b){
   const nx=x.replace(/^#/,''),ny=y.replace(/^#/,'');
   return Boolean(nx&&nx===ny);
 }
+function formatTs(ts){
+  if(!ts)return '';
+  try{return new Date(ts).toLocaleString('en-GB',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});}catch(e){return '';}
+}
+function pendingAgeLabel(o){
+  const ms=o?.createdAt?Date.now()-Number(o.createdAt):0;
+  if(!ms)return '';
+  const hrs=Math.floor(ms/3600000);
+  if(hrs<1)return `${Math.max(1,Math.floor(ms/60000))}m waiting`;
+  if(hrs<24)return `${hrs}h waiting`;
+  return `${Math.floor(hrs/24)}d waiting`;
+}
+function pendingTimelineHtml(o){
+  const cur=o?.status||'awaiting_stock';
+  const steps=[
+    {k:'placed',l:typeof currentLang!=='undefined'&&currentLang==='ar'?'تم الدفع':'Paid'},
+    {k:'awaiting_stock',l:typeof currentLang!=='undefined'&&currentLang==='ar'?'بانتظار المخزون':'Waiting for stock'},
+    {k:'fulfilled',l:typeof currentLang!=='undefined'&&currentLang==='ar'?'تم التسليم':'Delivered'}
+  ];
+  const order=['placed','awaiting_stock','fulfilled'];
+  const idx=Math.max(0,order.indexOf(cur));
+  return `<div class="order-timeline">${steps.map((s,i)=>`<span class="order-step ${i<idx?'done':s.k===cur?'current':''}">${s.l}</span>`).join('')}</div>`;
+}
+function gameStatusTrack(status){
+  const cur=status||'pending';
+  const steps=[{k:'pending',l:'Pending'},{k:'processing',l:'Processing'},{k:'done',l:'Done'}];
+  return `<div class="game-track">${steps.map(s=>`<span class="game-step ${s.k===cur?'on':''}">${s.l}</span>`).join('')}</div>`;
+}
+function findStockOwnerClient(acc){
+  if(acc?.soldTo?.userEmail)return acc.soldTo;
+  const targetEmail=String(acc?.email||'').trim().toLowerCase();
+  const targetKey=String(acc?.accKey||'');
+  for(const u of users){
+    for(const o of u.orders||[]){
+      if(targetKey&&o.accKey===targetKey)return{userEmail:u.email,userName:u.name,orderId:o.id,assignCustId:null};
+      if(!targetKey&&String(o.email||'').trim().toLowerCase()===targetEmail)return{userEmail:u.email,userName:u.name,orderId:o.id,assignCustId:null};
+    }
+    for(const c of u.myCustomers||[]){
+      for(const o of c.subs||[]){
+        if(targetKey&&o.accKey===targetKey)return{userEmail:u.email,userName:u.name,orderId:o.id,assignCustId:c.id,assignCustName:`${c.fname||''} ${c.lname||''}`.trim()};
+        if(!targetKey&&String(o.email||'').trim().toLowerCase()===targetEmail)return{userEmail:u.email,userName:u.name,orderId:o.id,assignCustId:c.id,assignCustName:`${c.fname||''} ${c.lname||''}`.trim()};
+      }
+    }
+  }
+  return null;
+}
+function jumpToCustomer(userEmail){
+  switchAdminTab('customers',null);
+  setTimeout(()=>{const inp=document.getElementById('admin-cust-search');if(inp){inp.value=userEmail||'';renderAdminCustomers();}},250);
+}
 function findUserOrder(orderId){
   if(!currentUser||!orderId)return null;
   const direct=(currentUser.orders||[]).find(x=>orderIdsMatch(x.id,orderId));
@@ -1219,7 +1283,9 @@ async function deliverPurchaseTelegram(order,p,planLabel,price,forCustomer){
   if(order.expiryDate)custCred+=`\n⏰ Expires: ${order.expiryDate}`;
   if(order.profilePin)custCred+=`\n🔢 PIN: <code>${order.profilePin}</code>`;
   custCred+=`\n\n🔗 <b>Subscription link:</b>\n${subLink}\n\nEnjoy! 🌟`;
-  return sendTelegramToUser(currentUser.tgChatId,custCred);
+  const ok=await sendTelegramToUser(currentUser.tgChatId,custCred);
+  if(ok){const now=Date.now();order.deliveredAt=now;order.telegramDeliveredAt=now;}
+  return ok;
 }
 
 function applyDataSnapshot(data){
@@ -2289,7 +2355,7 @@ function enterApp(){
   // Save session — expires in 8 hours
   const session={email:currentUser.email,ts:Date.now()};
   try{localStorage.setItem('rt_session',JSON.stringify(session));}catch(e){}
-  updateBal();renderProducts('all');renderAmounts();renderSubs();renderTx();renderMyCustomers();renderReqChips();renderMyRequests();renderExpiryTracker();
+  updateBal();renderProducts('all');renderAmounts();renderSubs();renderTx();renderMyCustomers();renderReqChips();renderMyRequests();renderExpiryTracker();renderMyGameOrders();
 }
 function doLogout(){
   currentUser=null;isAdmin=false;
@@ -2597,9 +2663,9 @@ async function submitCustomOrder(){
     if(Array.isArray(_jbCache.gameorders))go=_jbCache.gameorders;
   }catch(e){}
   if(!_jbCache)_jbCache={};
-  go.unshift({id:orderId,type:p.customOrderType,product:p.name,short:p.short,color:p.color,playerId:customOrderId,plan:planLabel,price,userEmail:currentUser.email,userName:currentUser.name,userTgChatId:currentUser.tgChatId||'',date:dateStr,status:'pending'});
+  go.unshift({id:orderId,type:p.customOrderType,product:p.name,short:p.short,color:p.color,playerId:customOrderId,plan:planLabel,price,userEmail:currentUser.email,userName:currentUser.name,userTgChatId:currentUser.tgChatId||'',date:dateStr,status:'pending',createdAt:Date.now(),statusHistory:[{stage:'pending',at:Date.now()}]});
   try{_jbCache.gameorders=go;await jbWrite(_jbCache);}catch(e){console.warn('game order save error:',e);}
-  await saveData();updateBal();renderTx();closeModal('buy-modal');showToast('✓ Order placed!');
+  await saveData();updateBal();renderTx();renderMyGameOrders();closeModal('buy-modal');showToast('✓ Order placed!');
   if(currentUser.tgChatId)await sendTelegramToUser(currentUser.tgChatId,`⏳ <b>Order Received!</b>\n\n🎮 <b>${p.name}</b>\n📋 ${planLabel}\n🆔 Player ID: <code>${customOrderId}</code>\n💵 ${fmt(price)}\n\nYour order is being processed. We will notify you here once it's done! 🙏`);
   await sendTelegram(`🎮 <b>New Game Order ${orderId}</b>\n\n📦 ${p.name}\n📋 ${planLabel}\n🆔 Player ID: <code>${customOrderId}</code>\n💵 ${fmt(price)}\n👤 ${currentUser.name} (${currentUser.email})\n📅 ${dateStr}\n\nGo to Admin → Game Orders to fulfill.`);
   customOrderId='';customOrderAmt=0;selPlan=null;
@@ -2668,8 +2734,10 @@ async function confirmPurchase(){
       if(!_jbCache)_jbCache=await jbRead();
       if(_jbCache.pending&&Array.isArray(_jbCache.pending))pending=_jbCache.pending;
     }catch(e){}
-    const newPendingOrder={id:'#'+(Math.floor(Math.random()*90000+10000)),userEmail:currentUser.email,userName:currentUser.name,userTgChatId:currentUser.tgChatId||'',product:p.name,short:p.short,color:p.color,tc:p.tc,productId:p.id,plan:planLabel,price,skey,date:dateStr,...extraFields};
+    const newPendingOrder={id:'#'+(Math.floor(Math.random()*90000+10000)),userEmail:currentUser.email,userName:currentUser.name,userTgChatId:currentUser.tgChatId||'',product:p.name,short:p.short,color:p.color,tc:p.tc,productId:p.id,plan:planLabel,price,skey,date:dateStr,createdAt:Date.now(),status:'awaiting_stock',statusHistory:[{stage:'placed',at:Date.now()},{stage:'awaiting_stock',at:Date.now()}],...extraFields};
     pending.unshift(newPendingOrder);
+    currentUser.transactions[0].pending=true;
+    currentUser.transactions[0].orderId=newPendingOrder.id;
     try{_jbCache.pending=pending;await jbWrite(_jbCache);}catch(e){console.warn('pending save error:',e);}
     await saveData();updateBal();renderSubs();renderTx();
     closeModal('buy-modal');
@@ -2837,9 +2905,10 @@ function subRow(o,forCustomer){
   const ico=PRODUCT_ICONS[o.productId];
   const iconHtml=ico?`<img src="${ico}" width="40" height="40" style="border-radius:9px;object-fit:contain;background:#fff;padding:2px" onerror="this.outerHTML='<div style=\'width:40px;height:40px;border-radius:9px;background:${o.color};color:${o.tc};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700\'>${o.short}</div>'">`:`<div style="width:40px;height:40px;border-radius:9px;background:${o.color};color:${o.tc};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700">${o.short}</div>`;
   const shahidBtns=isShahidOrder(o)?shahidActionButtons(o.id):'';
+  const deliveryNote=o.telegramDeliveredAt?`<div class="delivery-proof">✓ Delivered to Telegram · ${esc(formatTs(o.telegramDeliveredAt))}</div>`:(o.deliveredAt?`<div class="delivery-proof">✓ Delivered · ${esc(formatTs(o.deliveredAt))}</div>`:'');
   return `<div class="sub-card"><div class="sub-icon" style="background:${ico?'#fff':o.color};overflow:hidden;padding:0">${iconHtml}</div>
     <div class="sub-info"><div class="sub-name">${esc(o.product)}</div><div class="sub-plan">${esc(o.plan)} · ${esc(o.date)}</div>
-    <div class="sub-cred"><span class="cust-sub-cred-line">📧 ${esc(o.email)}</span><span class="cust-sub-cred-line">🔑 ${esc(o.pass)}</span></div>${ex}${shahidBtns}</div>
+    <div class="sub-cred"><span class="cust-sub-cred-line">📧 ${esc(o.email)}</span><span class="cust-sub-cred-line">🔑 ${esc(o.pass)}</span></div>${deliveryNote}${ex}${shahidBtns}</div>
     <div class="sub-right"><div class="sub-price">${fmt(o.price)}</div><span class="active-badge">${t('active','Active')}</span>
     <button ${jsOnClick('openSubOptions',o.id)} style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px;color:var(--text2);cursor:pointer;margin-top:4px;display:block;width:100%">••• ${t('options','Options')}</button>
     </div></div>`;
@@ -2856,10 +2925,25 @@ function pendingSubRow(o){
       ${forBadge}
       <div class="sub-name">${esc(o.product||'Subscription')} <span style="font-size:11px;color:var(--orange);font-weight:700">PENDING</span></div>
       <div class="sub-plan">${esc(o.plan||'')}</div>
-      <div style="font-size:11px;color:var(--text3);margin-top:4px">Order ${esc(o.id||'')} · ${esc(o.date||'')}</div>
-      <div style="font-size:11px;color:var(--orange);margin-top:4px">Credentials will appear here once admin fulfills your order.</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:4px">Order ${esc(o.id||'')} · ${esc(o.date||'')}${pendingAgeLabel(o)?` · ${pendingAgeLabel(o)}`:''}</div>
+      ${pendingTimelineHtml(o)}
+      <div style="font-size:11px;color:var(--orange);margin-top:6px">Credentials will appear here once your order is fulfilled.</div>
     </div>
   </div>`;
+}
+function renderMyGameOrders(){
+  const el=document.getElementById('game-orders-list');
+  if(!el||!currentUser)return;
+  const go=(Array.isArray(_jbCache?.gameorders)?_jbCache.gameorders:[]).filter(o=>o&&normEmail(o.userEmail)===normEmail(currentUser.email));
+  if(!go.length){el.innerHTML='<div class="empty-state" style="padding:20px"><i class="ti ti-device-gamepad"></i>No game orders yet.</div>';return;}
+  el.innerHTML=go.map(o=>`<div class="sub-row" style="margin-bottom:8px">
+    <div class="sub-info" style="flex:1">
+      <div class="sub-name">${esc(o.product)} · ${esc(o.plan)}</div>
+      <div class="sub-plan">ID: ${esc(o.playerId)} · ${esc(o.date||'')}</div>
+      ${gameStatusTrack(o.status)}
+    </div>
+    <div class="sub-right"><div class="sub-price">${fmt(o.price)}</div></div>
+  </div>`).join('');
 }
 function renderSubs(){
   if(!currentUser)return;
@@ -2873,6 +2957,7 @@ function renderSubs(){
     return;
   }
   el.innerHTML=[...pending.map(pendingSubRow),...orders.map(o=>subRow(o)),...assigned.map(({order,customer})=>subRow(order,customer))].join('');
+  renderMyGameOrders();
   const nfPending=pending.filter(o=>o.productId==='netflix');
   const nfOwn=orders.filter(o=>o.productId==='netflix');
   const nfAssigned=assigned.filter(({order})=>order.productId==='netflix');
@@ -3189,6 +3274,30 @@ async function renderDashboard(){
       </div>`).join('');
   }
   renderBackups();
+  renderPendingSlaCard();
+}
+async function renderPendingSlaCard(){
+  const el=document.getElementById('dashboard-pending-sla');
+  if(!el||!isAdmin)return;
+  try{
+    const r=await fetch(RT_SERVER+'/admin/analytics',{headers:authHeaders()});
+    const j=await r.json();
+    const a=j.analytics||{};
+    const pendingCount=Number(a.pending||0);
+    if(!pendingCount){el.style.display='none';return;}
+    const hrs=Math.floor(Number(a.oldestPendingMs||0)/3600000);
+    const breached=Boolean(a.pendingSlaBreached);
+    const oldest=a.oldestPending||{};
+    el.style.display='block';
+    el.style.borderColor=breached?'var(--red-border)':'var(--orange-border)';
+    el.style.background=breached?'var(--red-bg)':'var(--orange-bg)';
+    el.innerHTML=`<div style="font-size:13px;font-weight:700;margin-bottom:6px;color:${breached?'var(--red)':'var(--orange)'}">⏳ Pending orders SLA</div>
+      <div style="font-size:12px;line-height:1.6">
+        <b>${pendingCount}</b> waiting · oldest <b>${hrs}h</b>${breached?' · <span style="color:var(--red);font-weight:700">OVER 24h</span>':''}
+        ${oldest.product?`<div style="margin-top:4px;color:var(--text2)">${esc(oldest.product)} · ${esc(oldest.plan||'')} · ${esc(oldest.userName||'')}</div>`:''}
+      </div>
+      <button onclick="switchAdminTab('pending',null)" style="margin-top:8px;padding:6px 10px;border:1px solid var(--border);background:#fff;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600">Open pending orders</button>`;
+  }catch(e){el.style.display='none';}
 }
 
 function backupSummaryText(summary){
@@ -3402,7 +3511,7 @@ function renderAdminExpiry(){
         const parts=key.split('__');
         const prod=products.find(p=>p.id===parts[0]);
         const prodName=prod?prod.name:parts[0];
-        items.push({key,idx:i,email:a.email,pass:a.pass,expiryDate:a.expiryDate,used:a.used,prodName,daysLeft:d});
+        items.push({key,idx:i,email:a.email,pass:a.pass,expiryDate:a.expiryDate,used:a.used,prodName,daysLeft:d,account:a});
       }
     });
   });
@@ -3446,12 +3555,18 @@ function renderAdminExpiry(){
       else if(d<=3){cls='exp-warning-row';dText=`🔴 ${d}d left`;}
       else if(d<=7){dText=`🟡 ${d}d left`;}
       else{dText=`✅ ${d}d left`;}
+      const owner=item.used?findStockOwnerClient(item.account):null;
+      const ownerBtn=owner?`<button ${jsOnClick('jumpToCustomer',owner.userEmail)} style="background:var(--blue-bg);color:var(--blue);border:1px solid var(--blue-border);border-radius:6px;padding:6px 10px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap">👤 Customer</button>`:'';
+      const ownerNote=owner?(owner.assignCustName?` · ${esc(owner.assignCustName)}`:''):'';
       return `<div class="admin-row ${cls}">
-        <div class="admin-info">
-          <div class="admin-name">${item.prodName} — <span style="font-family:var(--mono);font-size:12px">${item.email}</span></div>
-          <div class="admin-sub">Expires: ${item.expiryDate} · ${dText} · ${item.used?'<span style="color:var(--text3)">Used</span>':'<span style="color:var(--green)">Available</span>'}</div>
+        <div class="admin-info" style="flex:1">
+          <div class="admin-name">${item.prodName} — <span style="font-family:var(--mono);font-size:12px">${esc(item.email)}</span></div>
+          <div class="admin-sub">Expires: ${esc(item.expiryDate)} · ${dText} · ${item.used?`<span style="color:var(--text3)">Used${owner?` · ${esc(owner.userName||owner.userEmail)}${ownerNote}`:''}</span>`:'<span style="color:var(--green)">Available</span>'}</div>
         </div>
-        <div style="font-size:13px;font-weight:600;color:${d!==null&&d<=3?'var(--red)':d!==null&&d<=7?'var(--orange)':'var(--text2)'}">${d!==null?d+'d':''}</div>
+        <div style="display:flex;align-items:center;gap:8px">
+          ${ownerBtn}
+          <div style="font-size:13px;font-weight:600;color:${d!==null&&d<=3?'var(--red)':d!==null&&d<=7?'var(--orange)':'var(--text2)'}">${d!==null?d+'d':''}</div>
+        </div>
       </div>`;
     }).join('')}
   </div>`:''}`;
@@ -3826,14 +3941,15 @@ function renderAccModal(showForm=false){
   const skey=curAccModalKey;const list=getAccounts(skey);const isShahidStock=String(skey||'').startsWith('shahid__');const needsGmail=isNetflixKey(skey)||isShahidStock;let html='';
   if(list.length){
     html+=`<div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">${list.length} accounts (${availableCount(skey)} available)</div>
-    <div class="acc-list">${list.map((a,i)=>`<div class="acc-item">
+    <div class="acc-list">${list.map((a,i)=>{const owner=a.used?findStockOwnerClient(a):null;return `<div class="acc-item">
       <div class="acc-item-info"><div class="acc-email">${a.email}</div><div class="acc-pass">${a.pass}</div>
       ${accountProfileName(a)?`<div class="acc-extra">👤 Profile: ${esc(accountProfileName(a))}</div>`:''}
       ${a.expiryDate?`<div class="acc-extra" style="color:${daysLeft(a.expiryDate)!==null&&daysLeft(a.expiryDate)<=7?'var(--orange)':'var(--text3)'}">⏰ Expires: ${a.expiryDate}${daysLeft(a.expiryDate)!==null?' ('+daysLeft(a.expiryDate)+'d)':''}</div>`:''}
       </div>
       <span class="acc-badge ${a.used?'acc-used':'acc-avail'}">${a.used?'Used':'Available'}</span>
+      ${!a.used?`<button class="view-btn" onclick="assignStockAccount(${i})" title="Assign to customer">Assign</button>`:(owner?`<button class="view-btn" ${jsOnClick('jumpToCustomer',owner.userEmail)}>Customer</button>`:'')}
       <button class="del-btn" onclick="delAccount(${i})" title="${a.used?'Remove sold account':'Delete account'}"><i class="ti ti-trash" style="font-size:13px"></i></button>
-    </div>`).join('')}</div><div style="height:1px;background:var(--border);margin:14px 0"></div>`;
+    </div>`;}).join('')}</div><div style="height:1px;background:var(--border);margin:14px 0"></div>`;
   } else {
     html+=`<div class="empty-state" style="padding:24px"><i class="ti ti-inbox"></i>No accounts added yet.</div><div style="height:1px;background:var(--border);margin:14px 0"></div>`;
   }
@@ -3880,6 +3996,27 @@ function validateNetflixAliasForAdd(skey,email,pin){
   if(isNetflixOneUserKey(skey)&&oneCount>=5)return 'This Netflix alias already has 5 one-user profile slots.';
   if(isNetflixOneUserKey(skey)&&pin&&rows.some(r=>isNetflixOneUserKey(r.key)&&String(r.account.profilePin||'')===String(pin)))return 'This PIN is already used for this Netflix alias. Use a different profile PIN.';
   return '';
+}
+async function assignStockAccount(idx){
+  const acc=accountStock[curAccModalKey]?.[idx];
+  if(!acc||acc.used){showToast('Account not available');return;}
+  const userEmail=prompt('Customer email to assign this account to:');
+  if(!userEmail)return;
+  const u=users.find(x=>normEmail(x.email)===normEmail(userEmail));
+  let assignCustId=null;
+  if(u&&(u.myCustomers||[]).length){
+    const names=u.myCustomers.map(c=>`${c.fname} ${c.lname} (id ${c.id})`).join('\n');
+    const pick=prompt(`Optional sub-customer id (leave empty for direct assign):\n${names}`);
+    if(pick&&String(pick).trim())assignCustId=Number(pick)||null;
+  }
+  try{
+    const r=await fetch(RT_SERVER+'/admin/assign-stock',{method:'POST',headers:authHeaders(),body:JSON.stringify({skey:curAccModalKey,accKey:acc.accKey,userEmail,assignCustId})});
+    const j=await r.json();
+    if(!r.ok||!j.success)throw new Error(j.error||'Assign failed');
+    applyDataSnapshot(j.data||_jbCache);
+    renderAccModal(false);renderStockPanels();renderAdminExpiry();renderAdminCustomers();
+    showToast('✓ Account assigned to customer');
+  }catch(e){showToast('⚠️ '+e.message);}
 }
 async function delAccount(idx){
   const acc=accountStock[curAccModalKey]?.[idx];
@@ -3943,14 +4080,26 @@ async function autoFulfillPending(skey){
   for(const po of waiting){
     const acc=getNextAcc(skey);
     if(!acc)break;
-    const idx=getAccounts(skey).indexOf(acc);markUsed(skey,idx);
+    const idx=getAccounts(skey).indexOf(acc);
     const u=users.find(x=>x.email===po.userEmail);
     const fu=freshUsers.find(x=>x.email===po.userEmail);
-    if(u)u.orders.unshift({id:po.id,product:po.product,short:po.short,color:po.color,tc:po.tc,productId:po.productId,plan:po.plan,price:po.price,email:acc.email,pass:acc.pass,date:po.date,expiryDate:acc.expiryDate||null,profileName:po.profileName||accountProfileName(acc)||'',...(acc.profilePin?{profilePin:acc.profilePin}:{}),accKey:acc.accKey||'',mainEmail:acc.mainEmail||''});
+    const assignedCustomer=po.assignCustId!=null?u?.myCustomers?.find(c=>c.id===po.assignCustId):null;
+    acc.used=true;
+    acc.soldTo={userEmail:po.userEmail,userName:po.userName,orderId:po.id,assignCustId:assignedCustomer?.id||null,assignCustName:assignedCustomer?`${assignedCustomer.fname||''} ${assignedCustomer.lname||''}`.trim():'',at:Date.now()};
+    const order={id:po.id,product:po.product,short:po.short,color:po.color,tc:po.tc,productId:po.productId,plan:po.plan,price:po.price,email:acc.email,pass:acc.pass,date:po.date,expiryDate:acc.expiryDate||null,profileName:po.profileName||accountProfileName(acc)||'',...(acc.profilePin?{profilePin:acc.profilePin}:{}),accKey:acc.accKey||'',mainEmail:acc.mainEmail||''};
+    if(u){
+      if(assignedCustomer){
+        order.profileName=order.profileName||assignedCustomer.fname;
+        assignedCustomer.subs=assignedCustomer.subs||[];
+        assignedCustomer.subs.unshift(order);
+      }else u.orders.unshift(order);
+    }
     pending.splice(pending.indexOf(po),1);
     fulfilled++;
     // Use freshest tgChatId
     const tgId=fu?.tgChatId||u?.tgChatId||po.userTgChatId||'';
+    if(u&&order){order.deliveredAt=Date.now();if(tgId)order.telegramDeliveredAt=Date.now();}
+    if(u&&Array.isArray(u.transactions))u.transactions.forEach(t=>{if(t.orderId===po.id)t.pending=false;});
     if(tgId){
       const linkData={id:po.id,product:po.product,short:po.short,color:po.color,tc:po.tc,productId:po.productId,plan:po.plan,email:acc.email,pass:acc.pass,expiryDate:acc.expiryDate||'',profileName:po.profileName||'',profilePin:acc.profilePin||'',accKey:acc.accKey||'',mainEmail:acc.mainEmail||'',codeEmail:acc.email,inboxEmail:acc.mainEmail||acc.email,linkExpiry:Date.now()+(90*24*60*60*1000)};
       const subLink=await createSubLinkUrl(linkData);
@@ -4139,14 +4288,19 @@ async function withdrawWallet(i){
 function renderAdminPendingHtml(pending){
   const el=document.getElementById('admin-pending-list');if(!el)return;
   if(!pending.length){el.innerHTML='<div class="empty-state" style="padding:32px">No pending orders. 🎉</div>';return;}
-  el.innerHTML=pending.map((po,i)=>`<div class="admin-wallet-row">
+  el.innerHTML=pending.map((po,i)=>{
+    const age=pendingAgeLabel(po);
+    const breached=(po.createdAt?(Date.now()-po.createdAt):0)>24*60*60*1000;
+    return `<div class="admin-wallet-row" style="${breached?'border:1px solid var(--red-border);background:var(--red-bg)':''}">
     <div class="admin-icon" style="background:${po.color||'#333'};color:${po.tc||'#fff'};font-size:10px;font-weight:700;width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0">${po.short||'?'}</div>
-    <div class="aw-info" style="flex:1"><div class="aw-name">${po.product} · ${po.plan}</div>
-    <div class="aw-email">👤 ${po.userName} · 📧 ${po.userEmail} · 💵 ${fmt(po.price)} · 📅 ${po.date}</div>
-    ${po.userTgChatId?`<div class="aw-email" style="color:var(--blue)">💬 TG: ${po.userTgChatId}</div>`:''}</div>
+    <div class="aw-info" style="flex:1"><div class="aw-name">${esc(po.product)} · ${esc(po.plan)}</div>
+    <div class="aw-email">👤 ${esc(po.userName)} · 📧 ${esc(po.userEmail)} · 💵 ${fmt(po.price)} · 📅 ${esc(po.date)}${age?` · ${age}`:''}</div>
+    ${pendingTimelineHtml(po)}
+    ${po.userTgChatId?`<div class="aw-email" style="color:var(--blue)">💬 TG: ${esc(po.userTgChatId)}</div>`:''}</div>
     <button class="aabtn" onclick="manualFulfillPending(${i})">✓ Fulfill</button>
-    <button class="aabtn" style="background:var(--red-bg);color:var(--red);border-color:var(--red-border)" onclick="cancelPendingOrder('${po.id}')">✕ Cancel & Refund</button>
-  </div>`).join('');
+    <button class="aabtn" style="background:var(--red-bg);color:var(--red);border-color:var(--red-border)" ${jsOnClick('cancelPendingOrder',po.id)}>✕ Cancel & Refund</button>
+  </div>`;
+  }).join('');
 }
 async function renderAdminPending(){
   const el=document.getElementById('admin-pending-list');
@@ -4155,17 +4309,21 @@ async function renderAdminPending(){
   try{if(_jbCache&&_jbCache.pending)pending=_jbCache.pending;else{_jbCache=await jbRead();if(_jbCache.pending)pending=_jbCache.pending;}}catch(e){}
   try{_jbCache=await jbRead();if(_jbCache&&_jbCache.pending)pending=_jbCache.pending;}catch(e){}
   if(!pending.length){el.innerHTML='<div class="empty-state" style="padding:32px">No pending orders. 🎉</div>';return;}
-  el.innerHTML=pending.map((po,i)=>`
-    <div class="admin-wallet-row">
+  el.innerHTML=pending.map((po,i)=>{
+    const age=pendingAgeLabel(po);
+    const breached=(po.createdAt?(Date.now()-po.createdAt):0)>24*60*60*1000;
+    return `<div class="admin-wallet-row" style="${breached?'border:1px solid var(--red-border);background:var(--red-bg)':''}">
       <div class="admin-icon" style="background:${po.color||'#333'};color:${po.tc||'#fff'};font-size:10px;font-weight:700;width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0">${po.short||'?'}</div>
       <div class="aw-info" style="flex:1">
-        <div class="aw-name">${po.product} · ${po.plan}</div>
-        <div class="aw-email">👤 ${po.userName} · 📧 ${po.userEmail} · 💵 ${fmt(po.price)} · 📅 ${po.date}</div>
-        ${po.userTgChatId?`<div class="aw-email" style="color:var(--blue)">💬 TG: ${po.userTgChatId}</div>`:''}
+        <div class="aw-name">${esc(po.product)} · ${esc(po.plan)} ${breached?'<span style="color:var(--red);font-weight:700">· SLA 24h+</span>':''}</div>
+        <div class="aw-email">👤 ${esc(po.userName)} · 📧 ${esc(po.userEmail)} · 💵 ${fmt(po.price)} · 📅 ${esc(po.date)}${age?` · ${age}`:''}</div>
+        ${pendingTimelineHtml(po)}
+        ${po.userTgChatId?`<div class="aw-email" style="color:var(--blue)">💬 TG: ${esc(po.userTgChatId)}</div>`:''}
       </div>
       <button class="aabtn" onclick="manualFulfillPending(${i})">✓ Fulfill</button>
-      <button class="aabtn" style="background:var(--red-bg);color:var(--red);border-color:var(--red-border)" onclick="cancelPendingOrder('${po.id}')">✕ Cancel & Refund</button>
-    </div>`).join('');
+      <button class="aabtn" style="background:var(--red-bg);color:var(--red);border-color:var(--red-border)" ${jsOnClick('cancelPendingOrder',po.id)}>✕ Cancel & Refund</button>
+    </div>`;
+  }).join('');
 }
 async function cancelPendingOrder(orderId){
   const reason=prompt('Reason for canceling this pending order (optional):')||'';
@@ -4229,37 +4387,32 @@ function renderGameOrdersHtml(el,go){
     <div class="admin-wallet-row" style="${o.status==='done'?'opacity:0.55':''}">
       <div class="admin-icon" style="background:${o.color||'#333'};color:#fff;font-size:10px;font-weight:700;width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0">${o.short||'G'}</div>
       <div class="aw-info" style="flex:1">
-        <div class="aw-name">${o.product} · ${o.plan}</div>
-        <div class="aw-email">🆔 ${o.playerId} · 👤 ${o.userName} · 💵 ${fmt(o.price)} · ${o.date}</div>
-        <div class="aw-email" style="color:${o.status==='done'?'var(--green)':'var(--orange)'}">● ${o.status==='done'?'Done':'Pending'} · ${o.id}</div>
+        <div class="aw-name">${esc(o.product)} · ${esc(o.plan)}</div>
+        <div class="aw-email">🆔 ${esc(o.playerId)} · 👤 ${esc(o.userName)} · 💵 ${fmt(o.price)} · ${esc(o.date)}</div>
+        ${gameStatusTrack(o.status)}
       </div>
-      ${o.status==='pending'?`<button class="aabtn" onclick="fulfillGameOrder(${i})">✓ Done</button>`:`<span style="font-size:11px;background:var(--green-bg);color:var(--green);border:1px solid var(--green-border);padding:3px 9px;border-radius:4px;font-weight:600">✓ Done</span>`}
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        ${o.status==='pending'?`<button class="aabtn" onclick="setGameOrderStatus(${i},'processing')">Processing</button>`:''}
+        ${o.status!=='done'?`<button class="aabtn" onclick="setGameOrderStatus(${i},'done')">✓ Done</button>`:`<span style="font-size:11px;background:var(--green-bg);color:var(--green);border:1px solid var(--green-border);padding:3px 9px;border-radius:4px;font-weight:600">✓ Done</span>`}
+      </div>
     </div>`).join('');
 }
-async function fulfillGameOrder(i){
+async function setGameOrderStatus(i,status){
   await refreshFromFirebase();
-  let go=Array.isArray(_jbCache?.gameorders)?_jbCache.gameorders:[];
-  if(!go[i]||go[i].status==='done'){showToast('Already fulfilled');return;}
+  const go=Array.isArray(_jbCache?.gameorders)?_jbCache.gameorders:[];
   const o=go[i];
-  go[i].status='done';
-  try{}catch(e){}
-  try{if(!_jbCache)_jbCache=await jbRead();_jbCache.gameorders=go;await jbWrite(_jbCache);}catch(e){}
-  // Update customer transaction to remove pending flag
-  const u=users.find(x=>x.email===o.userEmail);
-  if(u){
-    const tx=u.transactions.find(t=>t.orderId===o.id);
-    if(tx){tx.pending=false;tx.label=tx.label.replace(' (pending)','');}
-    await saveData();
-    if(currentUser&&currentUser.email===u.email){currentUser=u;renderTx();}
-  }
-  renderGameOrders();
-  showToast(`✓ Order ${o.id} marked as done!`);
-  // Notify customer
-  if(o.userTgChatId){
-    await sendTelegramToUser(o.userTgChatId,`✅ <b>Your Order is Done!</b>\n\n🎮 <b>${o.product}</b>\n📋 ${o.plan}\n🆔 Player ID: <code>${o.playerId}</code>\n💵 ${fmt(o.price)}\n\nYour account has been charged. Enjoy! 🎉`);
-  }
-  await sendTelegram(`✅ Game order fulfilled: ${o.product} · ${o.plan} for ${o.userName} (ID: ${o.playerId})`);
+  if(!o)return;
+  try{
+    const r=await fetch(RT_SERVER+'/admin/game-order-status',{method:'POST',headers:authHeaders(),body:JSON.stringify({orderId:o.id,status})});
+    const j=await r.json();
+    if(!r.ok||!j.success)throw new Error(j.error||'Could not update status');
+    applyDataSnapshot(j.data||_jbCache);
+    renderGameOrders();
+    if(currentUser&&normEmail(currentUser.email)===normEmail(o.userEmail)){renderMyGameOrders();renderTx();}
+    showToast(status==='done'?'✓ Game order completed':'✓ Status updated');
+  }catch(e){showToast('⚠️ '+e.message);}
 }
+async function fulfillGameOrder(i){return setGameOrderStatus(i,'done');}
 function renderTopupRequests(){
   const el=document.getElementById('topupreqs-list');
   if(!el)return;
