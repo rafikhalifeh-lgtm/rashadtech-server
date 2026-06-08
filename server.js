@@ -14,8 +14,7 @@ const {
 const {
   markStockSold,
   stampOrderDelivery,
-  initPendingOrder,
-  initGameOrder
+  initPendingOrder
 } = require('./orderHelpers');
 
 const app = express();

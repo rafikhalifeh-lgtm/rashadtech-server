@@ -4,10 +4,8 @@
   "description": "RashadTech TV streaming store backend",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
-  },
-  "devDependencies": {
-    "netlify-cli": "^26.1.0"
+    "start": "node server.js",
+    "build": "npm ci --omit=dev"
   },
   "dependencies": {
     "@netlify/blobs": "^10.7.9",
