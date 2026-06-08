@@ -1,7 +1,0 @@
-services:
-  - type: web
-    name: rashadtech-server
-    runtime: node
-    buildCommand: npm ci --omit=dev
-    startCommand: npm start
-    healthCheckPath: /ping
