@@ -3008,7 +3008,10 @@ async function renderDashboard(){
 
 function backupSummaryText(summary){
   summary=summary||{};
-  return `${summary.users||0} users · ${summary.stockAccounts||0} stock · ${summary.pending||0} pending · ${summary.gameorders||0} games`;
+  const avail=summary.stockAccounts||0;
+  const sold=summary.stockSold||0;
+  const stockTxt=sold?`${avail} avail (${sold} sold)`:`${avail} stock`;
+  return `${summary.users||0} users · ${stockTxt} · ${summary.pending||0} pending · ${summary.gameorders||0} games`;
 }
 function backupAgeText(ts){
   if(!ts)return 'unknown';

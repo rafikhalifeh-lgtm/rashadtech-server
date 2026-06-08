@@ -399,12 +399,28 @@ async function writeNetlifyDb(data) {
   });
 }
 
+function countStockStats(stock) {
+  let available = 0;
+  let sold = 0;
+  for (const accs of Object.values(stock || {})) {
+    if (!Array.isArray(accs)) continue;
+    for (const a of accs) {
+      if (a && a.used) sold++;
+      else available++;
+    }
+  }
+  return { available, sold, total: available + sold };
+}
+
 function backupSummary(data) {
   const stock = data && data.stock ? data.stock : {};
+  const stockStats = countStockStats(stock);
   return {
     users: Array.isArray(data && data.users) ? data.users.length : 0,
     stockKeys: Object.keys(stock).length,
-    stockAccounts: Object.values(stock).reduce((sum, accounts) => sum + (Array.isArray(accounts) ? accounts.length : 0), 0),
+    stockAccounts: stockStats.available,
+    stockSold: stockStats.sold,
+    stockTotal: stockStats.total,
     pending: Array.isArray(data && data.pending) ? data.pending.length : 0,
     gameorders: Array.isArray(data && data.gameorders) ? data.gameorders.length : 0,
     topupreqs: Array.isArray(data && data.topupreqs) ? data.topupreqs.length : 0
@@ -1891,6 +1907,7 @@ rtEnhancements = registerEnhancements(app, {
   createGmailClient,
   readBackupManifest,
   createBackupSnapshot,
+  countStockStats,
   sessions,
   SESSION_TTL_MS
 });

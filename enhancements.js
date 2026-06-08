@@ -34,6 +34,7 @@ function registerEnhancements(app, deps) {
     createGmailClient,
     readBackupManifest,
     createBackupSnapshot,
+    countStockStats,
     sessions,
     SESSION_TTL_MS
   } = deps;
@@ -527,7 +528,11 @@ function registerEnhancements(app, deps) {
       const data = await readJsonBinRaw();
       const backup = await createBackupSnapshot(data, 'daily-auto').catch(() => null);
       const backups = await readBackupManifest().catch(() => []);
-      await sendTG(TG_ADMIN, `🛡️ <b>Daily backup OK</b>\nUsers: ${(data.users || []).length}\nStock accounts: ${Object.values(data.stock || {}).reduce((s, a) => s + (Array.isArray(a) ? a.length : 0), 0)}\nPending: ${(data.pending || []).length}\nBackups stored: ${backups.length}${backup ? `\nLatest: ${backup.id}` : ''}`, 'HTML').catch(() => {});
+      const stock = (typeof countStockStats === 'function' ? countStockStats : () => ({ available: 0, sold: 0, total: 0 }))(data.stock);
+      const stockLine = stock.sold
+        ? `Stock available: ${stock.available} (${stock.sold} sold · ${stock.total} total)`
+        : `Stock available: ${stock.available}`;
+      await sendTG(TG_ADMIN, `🛡️ <b>Daily backup OK</b>\nUsers: ${(data.users || []).length}\n${stockLine}\nPending: ${(data.pending || []).length}\nBackups stored: ${backups.length}${backup ? `\nLatest: ${backup.id}` : ''}`, 'HTML').catch(() => {});
       lastBackupNotifyDay = today;
     } catch (e) {
       console.error('Daily backup summary error:', e.message);
