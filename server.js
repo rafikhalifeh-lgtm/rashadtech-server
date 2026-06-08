@@ -721,15 +721,15 @@ function findStockAccountForOrder(data, order) {
   return null;
 }
 
-function resolveShahidInboxCredentials(data, order) {
+function isGmailAddress(email) {
+  const domain = String(email || '').split('@')[1] || '';
+  return /^(gmail|googlemail)\.com$/i.test(domain);
+}
+
+function resolveShahidInboxEmail(data, order) {
   const stockAcc = findStockAccountForOrder(data, order);
-  const inboxEmail = normalizeEmail(
-    order.mainEmail || (stockAcc && stockAcc.mainEmail) || order.email
-  );
-  const inboxPass = String(
-    order.inboxPass || (stockAcc && stockAcc.inboxPass) || (stockAcc && stockAcc.mainPass) || ''
-  ).replace(/\s+/g, '').trim();
-  return { inboxEmail, inboxPass, accountEmail: normalizeEmail(order.email) };
+  const inboxEmail = normalizeEmail(order.mainEmail || (stockAcc && stockAcc.mainEmail) || '');
+  return { inboxEmail, accountEmail: normalizeEmail(order.email) };
 }
 
 function safeDataForSession(data, session) {
@@ -1538,8 +1538,7 @@ app.post('/purchase', async (req, res) => {
       ...(extraFields||{}),
       ...(accountProfileName(acc) ? { profileName: accountProfileName(acc) } : {}),
       ...(acc.profilePin?{profilePin:acc.profilePin}:{}),
-      accKey:acc.accKey||'',mainEmail:acc.mainEmail||'',
-      ...(acc.inboxPass ? { inboxPass: acc.inboxPass } : {})
+      accKey:acc.accKey||'',mainEmail:acc.mainEmail||''
     };
     if (assignCustId !== null && assignCustId !== undefined) {
       const customer = (user.myCustomers||[]).find(c => c.id === assignCustId);
@@ -1865,14 +1864,8 @@ app.post('/add-account', (req, res) => res.json({ success: true }));
 
 // ── IMAP EMAIL POLLING FOR NETFLIX CODES ──────────────────────────────
 function getImapSettings(email) {
-  const domain = String(email || '').split('@')[1] || '';
-  if (/^(gmail|googlemail)\.com$/i.test(domain)) {
-    return { host: 'imap.gmail.com', port: 993, secure: true };
-  }
-  if (/^(hotmail|outlook|live|msn)\.com$/i.test(domain)) {
-    return { host: 'outlook.office365.com', port: 993, secure: true };
-  }
-  return null;
+  if (!isGmailAddress(email)) return null;
+  return { host: 'imap.gmail.com', port: 993, secure: true };
 }
 
 function createImapClient(email, password) {
@@ -1929,71 +1922,43 @@ function extractShahidResetLink(parsedEmail) {
   return { link: preferred || shahidUrls[0] };
 }
 
-async function scanInboxForShahidReset(inboxEmail, inboxPass, accountEmail) {
-  const client = createImapClient(inboxEmail, inboxPass);
-  await client.connect();
-  try {
-    const lock = await client.getMailboxLock('INBOX');
-    try {
-      const since = new Date(Date.now() - EMAIL_LOOKBACK_MS);
-      const messages = (await client.search({ since }, { uid: true }) || [])
-        .sort((a, b) => Number(b) - Number(a))
-        .slice(0, 40);
-      for await (const message of client.fetch(messages, { uid: true, source: true }, { uid: true })) {
-        if (!message.source) continue;
-        const parsed = await simpleParser(message.source);
-        const recipients = collectEmailRecipients(parsed, inboxEmail);
-        if (accountEmail && !recipients.includes(accountEmail) && normalizeEmail(inboxEmail) !== accountEmail) continue;
-        const result = extractShahidResetLink(parsed);
-        if (result && result.link) return result.link;
-      }
-    } finally {
-      lock.release();
-    }
-  } finally {
-    if (client.usable) {
-      try { await client.logout(); } catch (e) {}
-    }
-  }
-  return null;
-}
-
 async function fetchShahidResetLinkForOrder(data, order) {
-  const { inboxEmail, inboxPass, accountEmail } = resolveShahidInboxCredentials(data, order);
+  const { inboxEmail, accountEmail } = resolveShahidInboxEmail(data, order);
   const cacheKey = accountEmail || inboxEmail;
   const cached = latestShahidResetLinks[cacheKey];
   if (cached && Date.now() - cached.timestamp < SHAHID_RESET_TTL_MS) {
     return { success: true, link: cached.link };
   }
 
-  let link = null;
-  await loadGmailMonitors();
-  if (inboxEmail && monitoredEmails[inboxEmail]) {
-    await fetchMonitoredInboxes(inboxEmail);
-    const refreshed = latestShahidResetLinks[cacheKey];
-    if (refreshed && Date.now() - refreshed.timestamp < SHAHID_RESET_TTL_MS) {
-      return { success: true, link: refreshed.link };
-    }
+  if (!inboxEmail || !isGmailAddress(inboxEmail)) {
+    return {
+      success: false,
+      message: 'Gmail inbox is not configured for this Shahid account. Please contact support on WhatsApp or Telegram.'
+    };
   }
 
-  if (inboxEmail && inboxPass) {
-    try {
-      link = await scanInboxForShahidReset(inboxEmail, inboxPass, accountEmail);
-      if (link) {
-        latestShahidResetLinks[cacheKey] = { link, timestamp: Date.now() };
-        delete notifiedShahidReset[cacheKey];
-        return { success: true, link };
-      }
-    } catch (e) {
-      console.log('Shahid inbox scan error for', inboxEmail, e.message);
-    }
+  await loadGmailMonitors();
+  if (!monitoredEmails[inboxEmail]) {
+    return {
+      success: false,
+      message: 'Gmail monitoring is not set up for this account yet. Please contact support — we will configure the Gmail inbox.'
+    };
+  }
+
+  await fetchMonitoredInboxes(inboxEmail);
+  const refreshed = latestShahidResetLinks[cacheKey];
+  if (refreshed && Date.now() - refreshed.timestamp < SHAHID_RESET_TTL_MS) {
+    return { success: true, link: refreshed.link };
   }
 
   if (!notifiedShahidReset[cacheKey] || Date.now() - notifiedShahidReset[cacheKey] > 5 * 60 * 1000) {
     notifiedShahidReset[cacheKey] = Date.now();
+    const monitorHint = monitoredEmails[inboxEmail]
+      ? ''
+      : `\n⚠️ Add Gmail <code>${inboxEmail}</code> in Admin stock with a 16-character app password.`;
     await sendTG(
       TG_ADMIN,
-      `🔔 <b>Shahid reset link requested</b>\n📧 Account: <code>${order.email}</code>\n📥 Inbox: <code>${inboxEmail || 'not configured'}</code>\n⚠️ No reset email found yet. Ask customer to request reset on Shahid first.`,
+      `🔔 <b>Shahid reset link requested</b>\n📧 Shahid email: <code>${order.email}</code>\n📥 Gmail inbox: <code>${inboxEmail}</code>${monitorHint}\n⚠️ No reset email found yet. Customer should request reset on Shahid first.`,
       'HTML'
     ).catch(() => {});
   }
@@ -2129,6 +2094,12 @@ app.post('/setup-gmail', async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
   const key = normalizeEmail(email);
+  if (!isGmailAddress(key)) {
+    return res.status(400).json({
+      success: false,
+      error: 'Only Gmail addresses are supported. Use the Gmail inbox that receives Netflix codes or Shahid reset emails.'
+    });
+  }
   const appPassword = normalizeGmailPassword(password);
   if (appPassword.length < 16) {
     return res.status(400).json({
@@ -2143,8 +2114,8 @@ app.post('/setup-gmail', async (req, res) => {
     const lastUid = previous ? Number(previous.lastUid || 0) : currentMaxUid;
     monitoredEmails[key] = { user: key, pass: appPassword, lastUid, lastCheckedAt: Date.now() };
     await persistGmailMonitors();
-    await sendTG(TG_ADMIN, `📧 Added Gmail monitoring: <code>${key}</code>\nWill capture new Netflix codes automatically.`, 'HTML').catch(() => {});
-    res.json({ success: true, message: 'Gmail added for Netflix code monitoring', gmailConfigured: true, email: key });
+    await sendTG(TG_ADMIN, `📧 Added Gmail monitoring: <code>${key}</code>\nWill capture Netflix sign-in codes and Shahid reset links automatically.`, 'HTML').catch(() => {});
+    res.json({ success: true, message: 'Gmail added for Netflix codes and Shahid reset links', gmailConfigured: true, email: key });
   } catch(e) {
     const friendlyError = describeGmailError(e);
     console.log('Gmail setup error for', key, e && (e.message || e));

@@ -3628,7 +3628,7 @@ async function toggleStockBlock(skey,blocked){
 }
 function openAccModal(skey,label,focusAdd=false){curAccModalKey=skey;document.getElementById('acc-modal-title').textContent=label;renderAccModal(focusAdd);openModal('accounts-modal');}
 function renderAccModal(showForm=false){
-  const skey=curAccModalKey;const list=getAccounts(skey);const isShahidStock=String(skey||'').startsWith('shahid__');let html='';
+  const skey=curAccModalKey;const list=getAccounts(skey);const isShahidStock=String(skey||'').startsWith('shahid__');const needsGmail=isNetflixKey(skey)||isShahidStock;let html='';
   if(list.length){
     html+=`<div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">${list.length} accounts (${availableCount(skey)} available)</div>
     <div class="acc-list">${list.map((a,i)=>`<div class="acc-item">
@@ -3652,16 +3652,11 @@ function renderAccModal(showForm=false){
       <input type="text" id="new-acc-profile-pin" placeholder="e.g. 1234" maxlength="6">
       <div style="font-size:11px;color:var(--text3);margin-top:4px">Fixed PIN you set for this profile. Customer will see it on their subscription link.</div>
     </div>
-  ${isShahidStock?`<div class="field" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px">
-      <label style="color:var(--orange)">🔒 Inbox password (Shahid reset emails — admin only)</label>
-      <input type="password" id="new-acc-inbox-pass" placeholder="Hotmail/Outlook/Gmail inbox password">
-      <div style="font-size:11px;color:var(--text3);margin-top:4px">Password to read the email inbox where Shahid reset links arrive. Not the Shahid account password above.</div>
-  </div>`:''}
-  ${isNetflixKey(skey)?`<div class="field" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px">
-      <label style="color:var(--orange)">🔒 Main Gmail (for Netflix sign-in codes — never shown to customers)</label>
-      <input type="email" id="new-acc-main-email" placeholder="Gmail address that receives Netflix codes">
+  ${needsGmail?`<div class="field" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px">
+      <label style="color:var(--orange)">🔒 Main Gmail (${isShahidStock?'for Shahid reset emails':'for Netflix sign-in codes'} — admin only, never shown to customers)</label>
+      <input type="email" id="new-acc-main-email" placeholder="${isShahidStock?'Gmail inbox that receives Shahid reset emails':'Gmail address that receives Netflix codes'}">
       <input type="password" id="new-acc-main-pass" placeholder="Gmail app password" style="margin-top:6px">
-      <div style="font-size:11px;color:var(--text3);margin-top:4px">Use a 16-character Gmail app password with IMAP enabled. Spaces are okay; they will be removed automatically.</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:4px">Gmail only. Use a 16-character app password with IMAP enabled. Spaces are okay; they will be removed automatically.</div>
   </div>`:''}
     <button class="inline-btn" onclick="addAccount()"><i class="ti ti-plus" style="font-size:13px;vertical-align:-2px;margin-right:4px"></i>Add to stock</button>
   </div>`;
@@ -3714,15 +3709,16 @@ async function addAccount(){
   if(!accountStock[curAccModalKey])accountStock[curAccModalKey]=[];
   const mainEmail=document.getElementById('new-acc-main-email')?.value.trim()||'';
   const mainPass=(document.getElementById('new-acc-main-pass')?.value||'').replace(/\s+/g,'');
-  const inboxPass=document.getElementById('new-acc-inbox-pass')?.value.trim()||'';
   const profilePin=document.getElementById('new-acc-profile-pin')?.value.trim()||'';
+  const isShahidStock=String(curAccModalKey||'').startsWith('shahid__');
+  if(isShahidStock&&mainEmail&&!/@(gmail|googlemail)\.com$/i.test(mainEmail)){showToast('⚠️ Shahid reset links require a Gmail inbox');return;}
   const aliasError=validateNetflixAliasForAdd(curAccModalKey,email,profilePin);
   if(aliasError){showToast('⚠️ '+aliasError);return;}
   const accKey=curAccModalKey+'__'+Date.now();
-  accountStock[curAccModalKey].push({email,pass,profileName,expiryDate,used:false,accKey,profilePin,mainEmail:mainEmail||'',...(inboxPass?{inboxPass}:{}),...(mainPass?{mainPass}:{})});
+  accountStock[curAccModalKey].push({email,pass,profileName,expiryDate,used:false,accKey,profilePin,mainEmail:mainEmail||'',...(mainPass?{mainPass}:{})});
   await saveData();
   let gmailConfigured=false;
-  // Save main email credentials to server for Netflix code monitoring
+  // Register Gmail inbox on server (Netflix codes + Shahid reset links)
   if(mainEmail&&mainPass){
     try{
       const setupRes=await fetch(`${RT_SERVER}/setup-gmail`,{
