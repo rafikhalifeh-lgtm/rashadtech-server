@@ -13,6 +13,19 @@ function markStockSold(account, soldTo) {
   }
 }
 
+function markLinkedStockSold(stock, account, soldTo) {
+  if (!account) return;
+  markStockSold(account, soldTo);
+  const linkedKey = String(account.accKey || '');
+  if (!linkedKey.startsWith('nfprof__') || !stock) return;
+  Object.entries(stock).forEach(([skey, accounts]) => {
+    if (!/^netflix__1user__/.test(skey)) return;
+    (accounts || []).forEach(acc => {
+      if (acc && acc !== account && acc.accKey === linkedKey) markStockSold(acc, soldTo);
+    });
+  });
+}
+
 function stampOrderDelivery(order, telegramSent) {
   const now = Date.now();
   order.deliveredAt = now;
@@ -168,6 +181,7 @@ function diffPriceCatalog(previous, next) {
 
 module.exports = {
   markStockSold,
+  markLinkedStockSold,
   stampOrderDelivery,
   pushStatusHistory,
   initPendingOrder,

@@ -6,7 +6,7 @@ const {
   buildCatalogPayload
 } = require('./priceCatalog');
 const {
-  markStockSold,
+  markLinkedStockSold,
   stampOrderDelivery,
   pushStatusHistory,
   findOwnerForStockAccount,
@@ -366,7 +366,7 @@ function registerEnhancements(app, deps) {
       const prod = productsLabelFromKey(parts);
       const dateStr = new Date().toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
       const orderId = '#' + (Math.floor(Math.random() * 90000 + 10000));
-      markStockSold(acc, {
+      markLinkedStockSold(data.stock, acc, {
         userEmail: user.email,
         userName: user.name,
         orderId,

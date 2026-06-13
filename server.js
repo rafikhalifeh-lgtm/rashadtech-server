@@ -13,6 +13,7 @@ const {
 } = require('./priceCatalog');
 const {
   markStockSold,
+  markLinkedStockSold,
   stampOrderDelivery,
   initPendingOrder
 } = require('./orderHelpers');
@@ -1548,7 +1549,7 @@ app.post('/purchase', async (req, res) => {
     const assignedCustomer = assignCustId !== null && assignCustId !== undefined
       ? (user.myCustomers||[]).find(c => c.id === assignCustId)
       : null;
-    markStockSold(acc, {
+    markLinkedStockSold(data.stock, acc, {
       userEmail: user.email,
       userName: user.name,
       orderId,
