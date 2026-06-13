@@ -143,11 +143,11 @@ function registerEnhancements(app, deps) {
     return alerts.sort((a, b) => a.days - b.days);
   }
 
-  function placeFulfilledOrder(user, pendingOrder, account) {
+  function placeFulfilledOrder(user, pendingOrder, account, stock) {
     const assignedCustomer = pendingOrder.assignCustId !== null && pendingOrder.assignCustId !== undefined
       ? (user.myCustomers || []).find(c => c.id === pendingOrder.assignCustId)
       : null;
-    markStockSold(account, {
+    markLinkedStockSold(stock, account, {
       userEmail: user.email,
       userName: user.name,
       orderId: pendingOrder.id,
@@ -674,7 +674,7 @@ function registerEnhancements(app, deps) {
       const aliasError = validateNetflixAliasPurchase(data, po.skey, acc);
       if (aliasError) return res.status(409).json({ error: aliasError });
       const user = data.users.find(u => normalizeEmail(u.email) === normalizeEmail(po.userEmail));
-      const order = user ? placeFulfilledOrder(user, po, acc) : null;
+      const order = user ? placeFulfilledOrder(user, po, acc, data.stock) : null;
       pushStatusHistory(po, 'fulfilled');
       data.pending.splice(idx, 1);
       const tgId = String(user?.tgChatId || po.userTgChatId || '').trim();
