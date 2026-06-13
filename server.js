@@ -850,6 +850,21 @@ function isNetflixOneUserStockKey(skey) {
   return /^netflix__1user__/.test(String(skey || ''));
 }
 
+function customDayBlockKeyFromSkey(skey) {
+  const parts = String(skey || '').split('__');
+  if (parts.length < 2) return null;
+  return `${parts[0]}__${parts[1]}__custom`;
+}
+
+function purchaseBlockKey(skey, customDays) {
+  const days = Number(customDays || 0);
+  if (days > 0) {
+    const customKey = customDayBlockKeyFromSkey(skey);
+    if (customKey) return customKey;
+  }
+  return skey;
+}
+
 function netflixAliasUsage(data, aliasEmail) {
   const alias = normalizeEmail(aliasEmail);
   const usage = { oneUser: 0, full: 0 };
@@ -1513,7 +1528,7 @@ app.post('/purchase', async (req, res) => {
     if (!user) return res.status(404).json({ error: 'User not found' });
     syncUserContact(user, { tgChatId });
     if (user.banned) return res.status(403).json({ error: 'Your account has been suspended. Contact support.' });
-    if (data.stockBlocks[skey]) return res.status(403).json({ error: 'This plan is temporarily unavailable.' });
+    if (data.stockBlocks[purchaseBlockKey(skey, customDays)]) return res.status(403).json({ error: 'This plan is temporarily unavailable.' });
     if (Number(user.balance || 0) < Number(price)) return res.status(400).json({ error: 'Insufficient balance' });
 
     const dateStr = new Date().toLocaleString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });

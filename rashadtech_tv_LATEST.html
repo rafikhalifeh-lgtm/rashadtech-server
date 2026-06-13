@@ -1579,6 +1579,8 @@ let accountStock={};
 const sk=(p,u,d)=>u?`${p}__${u}__${d}`:`${p}__${d}`;
 const getAccounts=k=>accountStock[k]||[];
 const isStockBlocked=k=>Boolean(_jbCache?.stockBlocks?.[k]);
+function customDayBlockKey(productId,userTypeKey){return sk(productId,userTypeKey,'custom');}
+function isCustomDaysBlocked(p,ut){return Boolean(p&&ut&&ut.hasCustom&&isStockBlocked(customDayBlockKey(p.id,ut.key)));}
 const availableCount=k=>getAccounts(k).filter(a=>!a.used).length;
 const totalCount=k=>getAccounts(k).length;
 const getNextAcc=k=>getAccounts(k).find(a=>!a.used)||null;
@@ -2538,7 +2540,11 @@ function getProductAvail(p){
 }
 function hasUnblockedPlan(p){
   if(p.hasCustomOrder)return true;
-  if(p.hasUserTypes)return p.userTypes.some(ut=>ut.durations.some(d=>!isStockBlocked(sk(p.id,ut.key,d.key))));
+  if(p.hasUserTypes)return p.userTypes.some(ut=>{
+    if(ut.durations.some(d=>!isStockBlocked(sk(p.id,ut.key,d.key))))return true;
+    if(ut.hasCustom&&!isCustomDaysBlocked(p,ut)&&!isStockBlocked(sk(p.id,ut.key,'1m'))&&availableCount(sk(p.id,ut.key,'1m'))>0)return true;
+    return false;
+  });
   return (p.plans||[]).some((_,i)=>!isStockBlocked(sk(p.id,null,i)));
 }
 function renderProducts(cat){
@@ -2600,11 +2606,15 @@ function renderBuyBody(){
               <div><div class="plan-price">${blocked?'Blocked':fmt(d.price)}</div></div>
             </div>`;}).join('')}</div>`;
       }
-      if(selUT.hasCustom){html+=`<div class="plan-section-label">Or — Custom ($${selUT.customDayRate}/day)</div>
-        <div class="custom-dur-row"><i class="ti ti-calendar" style="font-size:15px;color:var(--text2)"></i>
-        <input type="number" id="custom-days-inp" min="1" max="365" placeholder="Days" value="${customDays||''}" oninput="setCustomDays(this.value)">
+      if(selUT.hasCustom){
+        const customBlocked=isCustomDaysBlocked(p,selUT);
+        html+=`<div class="plan-section-label">Or — Custom ($${selUT.customDayRate}/day)</div>
+        <div class="custom-dur-row" style="${customBlocked?'opacity:.45':''}"><i class="ti ti-calendar" style="font-size:15px;color:var(--text2)"></i>
+        <input type="number" id="custom-days-inp" min="1" max="365" placeholder="${customBlocked?'Blocked':'Days'}" value="${customDays||''}" oninput="setCustomDays(this.value)" ${customBlocked?'disabled':''}>
         <span style="font-size:13px;color:var(--text2)">days</span>
-        <span style="font-size:14px;font-weight:700;margin-left:auto">${customDays>0?fmt(customDays*selUT.customDayRate):''}</span></div>`;}
+        <span style="font-size:14px;font-weight:700;margin-left:auto">${customBlocked?'Blocked':(customDays>0?fmt(customDays*selUT.customDayRate):'')}</span></div>`;
+        if(customBlocked)html+=`<div style="font-size:11px;color:var(--red);margin-bottom:10px">Custom days are temporarily unavailable.</div>`;
+      }
     }
     const rD=selUT&&selDur;const rC=selUT&&selUT.hasCustom&&customDays>0;
     if(rD||rC)renderConfirm(html,p);
@@ -2640,7 +2650,7 @@ function renderConfirm(html,p){
   else if(selPlan){price=selPlan.price;label=selPlan.name;}
   const bal=currentUser?currentUser.balance:0;const after=bal-price;const ok=after>=0;
   const selectedKey=p.hasUserTypes&&selUT&&selDur?sk(p.id,selUT.key,selDur.key):(!p.hasUserTypes&&selPlan?sk(p.id,null,selPlan.idx):null);
-  const blocked=selectedKey&&isStockBlocked(selectedKey);
+  const blocked=(p.hasUserTypes&&selUT&&selUT.hasCustom&&customDays>0)?isCustomDaysBlocked(p,selUT):(selectedKey&&isStockBlocked(selectedKey));
   html+=`<div class="divider"></div>
   <div class="confirm-row"><span class="cl">Plan</span><span class="cv">${label}</span></div>
   <div class="confirm-row"><span class="cl">Your balance</span><span class="cv">${fmt(bal)}</span></div>
@@ -2654,7 +2664,7 @@ function renderConfirm(html,p){
 function selUserType(i){selUT=curProd.userTypes[i];selDur=null;customDays=0;renderBuyBody();}
 function selDuration(i){const d=selUT.durations[i];if(isStockBlocked(sk(curProd.id,selUT.key,d.key)))return;selDur=d;customDays=0;renderBuyBody();}
 function selPlanFn(i){if(isStockBlocked(sk(curProd.id,null,i)))return;selPlan={idx:i,...curProd.plans[i]};renderBuyBody();}
-function setCustomDays(v){customDays=parseInt(v)||0;selDur=null;renderBuyBody();}
+function setCustomDays(v){const n=parseInt(v)||0;if(n>0&&curProd&&selUT&&isCustomDaysBlocked(curProd,selUT))return;customDays=n;selDur=null;renderBuyBody();}
 
 // ── CUSTOM ORDER (Jawaker / PUBG / Roblox) ──
 let customOrderId='', customOrderPassword='', customOrderAmt=0;
@@ -2764,7 +2774,10 @@ async function confirmPurchase(){
   const p=curProd;let price,planLabel,skey,extraFields={};
   if(p.hasUserTypes){
     if(selDur){price=selDur.price;planLabel=`${selUT.name} · ${selDur.label}`;skey=sk(p.id,selUT.key,selDur.key);}
-    else if(selUT.hasCustom&&customDays>0){price=customDays*selUT.customDayRate;planLabel=`${selUT.name} · ${customDays} days`;skey=sk(p.id,selUT.key,'1m');}
+    else if(selUT.hasCustom&&customDays>0){
+      if(isCustomDaysBlocked(p,selUT)){showToast('Custom days are temporarily unavailable');return;}
+      price=customDays*selUT.customDayRate;planLabel=`${selUT.name} · ${customDays} days`;skey=sk(p.id,selUT.key,'1m');
+    }
     else{showToast('Please select a duration');return;}
   } else {
     if(!selPlan){showToast('Please select a plan');return;}
@@ -3989,7 +4002,8 @@ function renderStockPanels(){
   document.getElementById('stock-panels').innerHTML=products.map(p=>`<div class="admin-section-title">${p.name}</div><div class="admin-panel">${renderStockRows(p)}</div>`).join('');
 }
 function renderStockRows(p){
-  if(p.hasUserTypes){return p.userTypes.map(ut=>ut.durations.map(d=>{
+  if(p.hasUserTypes){return p.userTypes.map(ut=>{
+    let rows=ut.durations.map(d=>{
     const skey=sk(p.id,ut.key,d.key);const av=availableCount(skey);const tot=totalCount(skey);const [sl,sc]=stockLabel(av);
     const blocked=isStockBlocked(skey);
     return `<div class="admin-row"><div class="admin-icon" style="background:${p.color};overflow:hidden">${prodIcon(p,34,8)}</div>
@@ -4000,7 +4014,23 @@ function renderStockRows(p){
         <button class="view-btn" onclick="openAccModal('${skey}','${p.name} — ${ut.name} · ${d.label}')">View</button>
         <button class="add-acc-btn" onclick="openAccModal('${skey}','${p.name} — ${ut.name} · ${d.label}',true)"><i class="ti ti-plus" style="font-size:11px;vertical-align:-1px"></i> Add</button>
       </div></div>`;
-  }).join('')).join('');}
+  }).join('');
+    if(ut.hasCustom){
+      const customKey=customDayBlockKey(p.id,ut.key);
+      const stockKey=sk(p.id,ut.key,'1m');
+      const av=availableCount(stockKey);const tot=totalCount(stockKey);const [sl,sc]=stockLabel(av);
+      const blocked=isStockBlocked(customKey);
+      rows+=`<div class="admin-row"><div class="admin-icon" style="background:${p.color};overflow:hidden">${prodIcon(p,34,8)}</div>
+      <div class="admin-info"><div class="admin-name">${ut.name} · Custom days</div>
+      <div class="admin-sub">$${ut.customDayRate}/day · uses 1 Month stock · <span class="spill ${sc}" style="padding:1px 6px">${sl}</span> &nbsp;·&nbsp; ${tot} total ${blocked?'&nbsp;·&nbsp;<span style="color:var(--red);font-weight:700">BLOCKED</span>':''}</div></div>
+      <div class="admin-actions">
+        <button class="view-btn" style="${blocked?'color:var(--green)':'color:var(--red)'}" onclick="toggleStockBlock('${customKey}',${blocked?'false':'true'})">${blocked?'Unblock':'Block'}</button>
+        <button class="view-btn" onclick="openAccModal('${stockKey}','${p.name} — ${ut.name} · 1 Month')">View</button>
+        <button class="add-acc-btn" onclick="openAccModal('${stockKey}','${p.name} — ${ut.name} · 1 Month',true)"><i class="ti ti-plus" style="font-size:11px;vertical-align:-1px"></i> Add</button>
+      </div></div>`;
+    }
+    return rows;
+  }).join('');}
   return(p.plans||[]).map((pl,i)=>{
     const skey=sk(p.id,null,i);const av=availableCount(skey);const tot=totalCount(skey);const [sl,sc]=stockLabel(av);
     const blocked=isStockBlocked(skey);
