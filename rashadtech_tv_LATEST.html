@@ -2215,56 +2215,69 @@ function generateOTP(){return String(Math.floor(100000+Math.random()*900000));}
 const EMAILJS_SERVICE_ID  = 'service_g05xq5o';
 const EMAILJS_TEMPLATE_ID = 'template_e0h7eia';
 const EMAILJS_PUBLIC_KEY  = 'LyKu6ZB_y6qoFh7Ef';
+if(typeof emailjs!=='undefined'&&EMAILJS_PUBLIC_KEY&&EMAILJS_PUBLIC_KEY!=='YOUR_PUBLIC_KEY'){
+  emailjs.init({ publicKey: EMAILJS_PUBLIC_KEY });
+}
 
 async function sendOTPEmail(toEmail, otpCode, userName){
-  // If EmailJS not configured yet, fall back to demo mode
   if(EMAILJS_SERVICE_ID==='YOUR_SERVICE_ID'){
-    showToast(`⚠️ EmailJS not set up — Demo OTP: ${otpCode}`);
+    showToast(`⚠️ EmailJS not set up — contact support`);
     sendTelegram(`📧 <b>OTP (demo mode)</b>\nEmail: ${toEmail}\nCode: <code>${otpCode}</code>`);
     return false;
   }
   try{
-    const res = await emailjs.send(
-      EMAILJS_SERVICE_ID,
-      EMAILJS_TEMPLATE_ID,
-      {
-        // Multiple field aliases for maximum EmailJS compatibility
-        to_email: toEmail,
-        email: toEmail,
-        user_email: toEmail,
-        recipient: toEmail,
-        to_name: userName || toEmail,
-        user_name: userName || toEmail,
-        from_name: 'rashadtech.tv',
-        otp_code: otpCode,
-        verification_code: otpCode,
-        passcode: otpCode,
-        code: otpCode,
-        otp: otpCode,
-        reset_code: otpCode,
-        message: `Your rashadtech.tv verification code is ${otpCode}. It expires in 10 minutes.`,
-        reply_to: toEmail,
-      },
-      EMAILJS_PUBLIC_KEY
-    );
-    if(res.status===200){
+    const params={
+      to_email: toEmail,
+      email: toEmail,
+      user_email: toEmail,
+      recipient: toEmail,
+      to_name: userName || toEmail,
+      user_name: userName || toEmail,
+      from_name: 'rashadtech.tv',
+      otp_code: otpCode,
+      verification_code: otpCode,
+      passcode: otpCode,
+      code: otpCode,
+      otp: otpCode,
+      reset_code: otpCode,
+      message: `Your rashadtech.tv verification code is ${otpCode}. It expires in 10 minutes.`,
+      reply_to: toEmail,
+    };
+    const res=typeof emailjs.send==='function'
+      ? await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, params)
+      : null;
+    if(res&&(res.status===200||res.text==='OK')){
       showToast(`✓ Verification code sent to ${toEmail}`);
       return true;
     }
-    throw new Error('EmailJS status: '+res.status);
-  } catch(e){
+    throw new Error(res?'EmailJS status: '+res.status:'EmailJS unavailable');
+  }catch(e){
     console.error('EmailJS error:',e);
-    // Fallback to Telegram notification so admin can manually share code
     sendTelegram(`📧 <b>OTP (email failed)</b>\nEmail: ${toEmail}\nCode: <code>${otpCode}</code>\n⚠️ Email failed: ${e.message||e}`);
-    showToast(`Email failed — check Telegram if you added your Chat ID`);
     return false;
   }
 }
 
 async function deliverClientOtpEmail(payload){
-  if(!payload?.clientEmailRequired||!payload?.otp||!payload?.email)return payload;
-  await sendOTPEmail(payload.email,payload.otp,payload.name||payload.email);
-  return payload;
+  if(!payload?.otp||!payload?.email)return { ...(payload||{}), emailDelivered:false };
+  if(payload.emailSent)return { ...payload, emailDelivered:true };
+  if(!payload.clientEmailRequired)return { ...payload, emailDelivered:false };
+  const emailDelivered=await sendOTPEmail(payload.email,payload.otp,payload.name||payload.email);
+  return { ...payload, emailDelivered:Boolean(emailDelivered) };
+}
+
+function signupCodeDelivered(payload){
+  return Boolean(payload?.emailSent||payload?.emailDelivered||payload?.telegramSent);
+}
+
+function signupVerifyMessage(payload,email){
+  if(payload?.telegramSent&&!payload?.emailSent&&!payload?.emailDelivered){
+    return 'We sent a 6-digit code to your Telegram. Enter it below.';
+  }
+  if(payload?.emailSent||payload?.emailDelivered){
+    return `We sent a 6-digit code to ${email}. Check your inbox and spam folder.`;
+  }
+  return `Enter the 6-digit verification code for ${email}.`;
 }
 
 async function simulateSendOTP(email, code, name){
@@ -2326,17 +2339,21 @@ async function doSignup(){
     return;
   }
   const tgid=document.getElementById('su-tgid')?.value.trim()||'';
+  let deliveryResult=null;
   try{
     const r=await fetch(RT_SERVER+'/auth/signup-start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:n,email:e,tgChatId:tgid})});
-    const j=await deliverClientOtpEmail(await r.json().catch(()=>({})));
-    if(!r.ok||!j.success)throw new Error(j.error||'Could not send verification code.');
+    deliveryResult=await deliverClientOtpEmail(await r.json().catch(()=>({})));
+    if(!r.ok||!deliveryResult.success)throw new Error(deliveryResult.error||'Could not send verification code.');
+    if(!signupCodeDelivered(deliveryResult)){
+      throw new Error('Could not send verification code. Add your Telegram Chat ID on signup, or contact support on WhatsApp +96179306701.');
+    }
   }catch(ex){
     err.textContent=ex.message||'Could not send verification code.';
     err.style.display='block';
     return;
   }
   pendingSignupData={name:n,email:e,pass:p,tgChatId:tgid};
-  document.getElementById('verify-desc').textContent=`We sent a 6-digit code to ${e}.`;
+  document.getElementById('verify-desc').textContent=signupVerifyMessage(deliveryResult,e);
   clearOTP('otp');document.getElementById('verify-err').style.display='none';document.getElementById('verify-ok').style.display='none';
   showView('verify');
 }
@@ -2362,9 +2379,13 @@ async function verifyOTP(){
 function resendOTP(){
   if(!pendingSignupData)return;
   fetch(RT_SERVER+'/auth/signup-start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:pendingSignupData.name,email:pendingSignupData.email,tgChatId:pendingSignupData.tgChatId||''})})
-    .then(r=>r.json().then(j=>deliverClientOtpEmail(j).then(()=>{if(!r.ok||!j.success)throw new Error(j.error||'Could not resend code');})))
-    .then(()=>{document.getElementById('verify-ok').style.display='block';})
-    .catch(()=>{document.getElementById('verify-err').textContent='Could not resend code';document.getElementById('verify-err').style.display='block';});
+    .then(r=>r.json().then(j=>deliverClientOtpEmail(j).then(delivered=>{
+      if(!r.ok||!delivered.success)throw new Error(delivered.error||'Could not resend code');
+      if(!signupCodeDelivered(delivered))throw new Error('Could not resend code. Add Telegram Chat ID or contact support.');
+      document.getElementById('verify-desc').textContent=signupVerifyMessage(delivered,pendingSignupData.email);
+    })))
+    .then(()=>{document.getElementById('verify-ok').style.display='block';document.getElementById('verify-err').style.display='none';})
+    .catch(ex=>{document.getElementById('verify-err').textContent=ex.message||'Could not resend code';document.getElementById('verify-err').style.display='block';});
 }
 async function sendResetCode(){
   const e=document.getElementById('forgot-email').value.trim();

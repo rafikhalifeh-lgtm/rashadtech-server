@@ -189,13 +189,16 @@ function emailJsTemplateParams(email, otp, name) {
 }
 
 async function sendOtpEmail(email, otp, name) {
+  if (!EMAILJS_PRIVATE_KEY) {
+    throw new Error('Server email delivery is not configured (EMAILJS_PRIVATE_KEY missing)');
+  }
   const payload = {
     service_id: EMAILJS_SERVICE_ID,
     template_id: EMAILJS_TEMPLATE_ID,
     user_id: EMAILJS_PUBLIC_KEY,
+    accessToken: EMAILJS_PRIVATE_KEY,
     template_params: emailJsTemplateParams(email, otp, name)
   };
-  if (EMAILJS_PRIVATE_KEY) payload.accessToken = EMAILJS_PRIVATE_KEY;
   const r = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -210,11 +213,15 @@ async function sendOtpEmail(email, otp, name) {
 async function deliverOtp({ email, otp, name, tgChatId, purpose }) {
   let emailSent = false;
   let telegramSent = false;
-  try {
-    await sendOtpEmail(email, otp, name);
-    emailSent = true;
-  } catch(e) {
-    console.error(`${purpose || 'OTP'} email delivery error:`, e.message);
+  if (EMAILJS_PRIVATE_KEY) {
+    try {
+      await sendOtpEmail(email, otp, name);
+      emailSent = true;
+    } catch(e) {
+      console.error(`${purpose || 'OTP'} email delivery error:`, e.message);
+    }
+  } else {
+    console.warn(`${purpose || 'OTP'}: server email skipped — set EMAILJS_PRIVATE_KEY on Render and enable server API in EmailJS dashboard`);
   }
   if (tgChatId) {
     try {
@@ -224,7 +231,6 @@ async function deliverOtp({ email, otp, name, tgChatId, purpose }) {
       console.error(`${purpose || 'OTP'} Telegram delivery error:`, e.message);
     }
   }
-  // Browser EmailJS fallback handles delivery when server email fails.
   return {
     emailSent,
     telegramSent,
@@ -1057,7 +1063,11 @@ app.post('/auth/signup-start', async (req, res) => {
     }
     res.json({
       success: true,
-      message: delivery.clientEmailRequired ? 'Verification code ready — check your email shortly' : 'Verification code sent',
+      message: delivery.emailSent
+        ? 'Verification code sent to your email'
+        : delivery.telegramSent
+          ? 'Verification code sent to your Telegram'
+          : 'Complete email delivery from your browser',
       emailSent: delivery.emailSent,
       telegramSent: delivery.telegramSent,
       clientEmailRequired: delivery.clientEmailRequired,
