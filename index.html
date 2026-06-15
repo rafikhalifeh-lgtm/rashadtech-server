@@ -601,9 +601,9 @@ So your EmailJS template will receive the user email and verification code corre
     <div id="view-login">
       <div class="auth-title">Welcome back</div><div class="auth-desc">Sign in to your account</div>
       <div class="err-msg" id="login-err">Invalid email or password.</div>
-      <form onsubmit="doLogin();return false;" autocomplete="on">
-      <div class="field"><label>Email</label><input type="email" id="login-email" placeholder="you@email.com" autocomplete="email"></div>
-      <div class="field"><label>Password</label><input type="password" id="login-pass" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+      <form id="login-form" novalidate onsubmit="event.preventDefault();doLogin();" autocomplete="on">
+      <div class="field"><label for="login-email">Email</label><input type="text" inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false" name="email" id="login-email" placeholder="you@email.com" autocomplete="username email"></div>
+      <div class="field"><label for="login-pass">Password</label><input type="password" name="password" id="login-pass" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter'){event.preventDefault();doLogin();}">
       <a class="forgot-link" onclick="showView('forgot')">Forgot password?</a></div>
       <button type="submit" class="btn-primary">Sign in</button>
       </form>
@@ -2304,9 +2304,24 @@ function clearOTP(pfx){[0,1,2,3,4,5].forEach(i=>{const el=document.getElementByI
 
 function showView(v){['login','signup','verify','forgot','reset','admin'].forEach(x=>{const el=document.getElementById('view-'+x);if(el)el.style.display=x===v?'block':'none';});}
 async function doLogin(){
-  const e=document.getElementById('login-email').value.trim();
-  const p=document.getElementById('login-pass').value;
+  const emailEl=document.getElementById('login-email');
+  const passEl=document.getElementById('login-pass');
+  const e=(emailEl?.value||'').trim().toLowerCase();
+  const p=passEl?.value||'';
   const err=document.getElementById('login-err');
+  if(!e||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)){
+    err.textContent='Please enter a valid email address.';
+    err.style.display='block';
+    emailEl?.focus();
+    return;
+  }
+  if(!p){
+    err.textContent='Please enter your password.';
+    err.style.display='block';
+    passEl?.focus();
+    return;
+  }
+  err.style.display='none';
   try{
     const r=await fetch(RT_SERVER+'/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:e,password:p})});
     const j=await r.json();

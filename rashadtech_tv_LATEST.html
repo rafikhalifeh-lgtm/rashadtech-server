@@ -601,9 +601,9 @@ So your EmailJS template will receive the user email and verification code corre
     <div id="view-login">
       <div class="auth-title">Welcome back</div><div class="auth-desc">Sign in to your account</div>
       <div class="err-msg" id="login-err">Invalid email or password.</div>
-      <form onsubmit="doLogin();return false;" autocomplete="on">
-      <div class="field"><label>Email</label><input type="email" id="login-email" placeholder="you@email.com" autocomplete="email"></div>
-      <div class="field"><label>Password</label><input type="password" id="login-pass" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+      <form id="login-form" novalidate onsubmit="event.preventDefault();doLogin();" autocomplete="on">
+      <div class="field"><label for="login-email">Email</label><input type="text" inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false" name="email" id="login-email" placeholder="you@email.com" autocomplete="username email"></div>
+      <div class="field"><label for="login-pass">Password</label><input type="password" name="password" id="login-pass" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter'){event.preventDefault();doLogin();}">
       <a class="forgot-link" onclick="showView('forgot')">Forgot password?</a></div>
       <button type="submit" class="btn-primary">Sign in</button>
       </form>
