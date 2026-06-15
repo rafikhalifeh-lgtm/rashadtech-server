@@ -46,32 +46,6 @@
     (u.orders=u.orders||[]).unshift(order);return order;
   };
 
-  const _autoFulfill=window.autoFulfillPending;
-  if(typeof _autoFulfill==='function'){
-    window.autoFulfillPending=async function(skey){
-      let pending=[];try{if(_jbCache&&_jbCache.pending)pending=_jbCache.pending;else{_jbCache=await jbRead();if(_jbCache.pending)pending=_jbCache.pending;}}catch(e){}
-      const waiting=pending.filter(po=>po.skey===skey);if(!waiting.length)return;
-      let fulfilled=0;
-      for(const po of [...waiting]){
-        const acc=getNextAcc(skey);if(!acc)break;
-        const idx=getAccounts(skey).indexOf(acc);markUsed(skey,idx);
-        const u=users.find(x=>x.email===po.userEmail);
-        if(u)placeFulfilledOrder(u,po,acc);
-        pending.splice(pending.findIndex(x=>x.id===po.id),1);fulfilled++;
-        const tgId=u?.tgChatId||po.userTgChatId||'';
-        if(tgId){
-          const linkData={id:po.id,product:po.product,short:po.short,color:po.color,tc:po.tc,productId:po.productId,plan:po.plan,email:acc.email,pass:acc.pass,expiryDate:acc.expiryDate||'',profileName:po.profileName||'',profilePin:acc.profilePin||'',accKey:acc.accKey||'',mainEmail:acc.mainEmail||'',codeEmail:acc.email,inboxEmail:acc.mainEmail||acc.email};
-          const subLink=await createSubLinkUrl(linkData);
-          let msg=`✅ <b>Your ${po.product} is ready!</b>\n\n📋 ${po.plan}\n📧 <code>${acc.email}</code>\n🔑 <code>${acc.pass}</code>`;
-          if(acc.profilePin)msg+=`\n🔢 PIN: <code>${acc.profilePin}</code>`;
-          msg+=`\n\n🔗 ${subLink}`;
-          await sendTelegramToUser(tgId,msg);
-        }
-      }
-      if(fulfilled>0){try{if(!_jbCache)_jbCache=await jbRead();_jbCache.pending=pending;await jbWrite(_jbCache);}catch(e){}await saveData();showToast(`✓ Auto-fulfilled ${fulfilled} pending`);renderAdminPending();}
-    };
-  }
-
   const _manualFulfill=window.manualFulfillPending;
   window.manualFulfillPending=async function(i){
     try{

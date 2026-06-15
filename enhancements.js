@@ -54,8 +54,12 @@ function registerEnhancements(app, deps) {
     createBackupSnapshot,
     countStockStats,
     sessions,
-    SESSION_TTL_MS
+    SESSION_TTL_MS,
+    findUserOrderRecord,
+    notifyPurchaseFulfilled
   } = deps;
+
+  const activeFulfillOrders = new Set();
 
   async function appendActivity(action, details, actor = 'system') {
     try {
@@ -660,6 +664,10 @@ function registerEnhancements(app, deps) {
     if (!session) return;
     const { orderId } = req.body || {};
     if (!orderId) return res.status(400).json({ error: 'Order ID required' });
+    if (activeFulfillOrders.has(orderId)) {
+      return res.status(409).json({ error: 'This order is already being fulfilled' });
+    }
+    activeFulfillOrders.add(orderId);
     try {
       const data = await readJsonBinRaw();
       data.pending = Array.isArray(data.pending) ? data.pending : [];
@@ -668,22 +676,41 @@ function registerEnhancements(app, deps) {
       const idx = data.pending.findIndex(o => o.id === orderId);
       if (idx < 0) return res.status(404).json({ error: 'Pending order not found' });
       const po = data.pending[idx];
+      const user = data.users.find(u => normalizeEmail(u.email) === normalizeEmail(po.userEmail));
+      const existing = user ? findUserOrderRecord(user, po.id).order : null;
+      if (existing && existing.email && !existing.pending) {
+        data.pending.splice(idx, 1);
+        await writeJsonBinRaw(data);
+        return res.json({ success: true, order: existing, alreadyFulfilled: true, user: sanitizeUser(user), data: safeDataForSession(data, { role: 'admin' }) });
+      }
+      const hasCharge = user && Array.isArray(user.transactions) && user.transactions.some(t => t.orderId === po.id);
+      if (!hasCharge) {
+        data.pending.splice(idx, 1);
+        await writeJsonBinRaw(data);
+        await appendActivity('Removed orphan pending order', orderId, session.email);
+        return res.json({ success: true, removedOrphan: true, alreadyFulfilled: true, user: sanitizeUser(user), data: safeDataForSession(data, { role: 'admin' }) });
+      }
       const accounts = data.stock[po.skey] || [];
       const acc = accounts.find(a => !a.used);
       if (!acc) return res.status(409).json({ error: 'No stock available for this plan' });
       const aliasError = validateNetflixAliasPurchase(data, po.skey, acc);
       if (aliasError) return res.status(409).json({ error: aliasError });
-      const user = data.users.find(u => normalizeEmail(u.email) === normalizeEmail(po.userEmail));
       const order = user ? placeFulfilledOrder(user, po, acc, data.stock) : null;
       pushStatusHistory(po, 'fulfilled');
       data.pending.splice(idx, 1);
-      const tgId = String(user?.tgChatId || po.userTgChatId || '').trim();
       let telegramSent = false;
-      if (tgId) {
-        telegramSent = true;
-        const assignNote = po.assignCustId != null ? ' (sub-customer order)' : '';
-        await sendTG(tgId, `✅ <b>Your ${po.product} is ready!</b>${assignNote}\n\n📋 ${po.plan}\n📧 <code>${acc.email}</code>\n🔑 <code>${acc.pass}</code>${acc.profilePin ? `\n🔢 PIN: <code>${acc.profilePin}</code>` : ''}`, 'HTML').catch(() => {});
-        if (user && !user.tgChatId) user.tgChatId = tgId;
+      if (user && order && !order.telegramDeliveredAt) {
+        const product = { name: po.product, short: po.short, color: po.color, tc: po.tc, id: po.productId };
+        if (typeof notifyPurchaseFulfilled === 'function') {
+          telegramSent = await notifyPurchaseFulfilled(user, product, po.plan, po.price, order, po.assignCustId);
+        } else {
+          const tgId = String(user.tgChatId || po.userTgChatId || '').trim();
+          if (tgId) {
+            telegramSent = true;
+            await sendTG(tgId, `✅ <b>Your ${po.product} is ready!</b>\n\n📋 ${po.plan}\n📧 <code>${acc.email}</code>\n🔑 <code>${acc.pass}</code>${acc.profilePin ? `\n🔢 PIN: <code>${acc.profilePin}</code>` : ''}`, 'HTML').catch(() => {});
+            if (!user.tgChatId) user.tgChatId = tgId;
+          }
+        }
       }
       if (order) stampOrderDelivery(order, telegramSent);
       if (user && Array.isArray(user.transactions)) {
@@ -696,6 +723,8 @@ function registerEnhancements(app, deps) {
       res.json({ success: true, order, user: sanitizeUser(user), data: safeDataForSession(data, { role: 'admin' }) });
     } catch (e) {
       res.status(500).json({ error: e.message });
+    } finally {
+      activeFulfillOrders.delete(orderId);
     }
   });
 

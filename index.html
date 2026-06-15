@@ -602,7 +602,7 @@ So your EmailJS template will receive the user email and verification code corre
       <div class="auth-title">Welcome back</div><div class="auth-desc">Sign in to your account</div>
       <div class="err-msg" id="login-err">Invalid email or password.</div>
       <form id="login-form" novalidate onsubmit="event.preventDefault();doLogin();" autocomplete="on">
-      <div class="field"><label for="login-email">Email</label><input type="text" inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false" name="email" id="login-email" placeholder="you@email.com" autocomplete="username email"></div>
+      <div class="field"><label for="login-email">Email</label><input type="email" inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false" name="email" id="login-email" placeholder="you@email.com" autocomplete="username email"></div>
       <div class="field"><label for="login-pass">Password</label><input type="password" name="password" id="login-pass" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter'){event.preventDefault();doLogin();}">
       <a class="forgot-link" onclick="showView('forgot')">Forgot password?</a></div>
       <button type="submit" class="btn-primary">Sign in</button>
@@ -2303,11 +2303,17 @@ function getOTP(pfx){return[0,1,2,3,4,5].map(i=>document.getElementById(pfx+i)?.
 function clearOTP(pfx){[0,1,2,3,4,5].forEach(i=>{const el=document.getElementById(pfx+i);if(el)el.value='';});}
 
 function showView(v){['login','signup','verify','forgot','reset','admin'].forEach(x=>{const el=document.getElementById('view-'+x);if(el)el.style.display=x===v?'block':'none';});}
+let loginInFlight=false;
 async function doLogin(){
+  if(loginInFlight)return;
+  const form=document.getElementById('login-form');
   const emailEl=document.getElementById('login-email');
   const passEl=document.getElementById('login-pass');
-  const e=(emailEl?.value||'').trim().toLowerCase();
-  const p=passEl?.value||'';
+  emailEl?.blur();passEl?.blur();
+  await new Promise(r=>setTimeout(r,30));
+  const fd=form?new FormData(form):null;
+  const e=String((fd&&fd.get('email'))||emailEl?.value||'').replace(/\u00a0/g,' ').trim().toLowerCase();
+  const p=String((fd&&fd.get('password'))||passEl?.value||'').replace(/\u00a0/g,' ').trim();
   const err=document.getElementById('login-err');
   if(!e||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)){
     err.textContent='Please enter a valid email address.';
@@ -2322,6 +2328,7 @@ async function doLogin(){
     return;
   }
   err.style.display='none';
+  loginInFlight=true;
   try{
     const r=await fetch(RT_SERVER+'/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:e,password:p})});
     const j=await r.json();
@@ -2333,7 +2340,7 @@ async function doLogin(){
     err.style.display='none';logActivity('Customer login',currentUser.email);enterApp();
   }catch(ex){
     err.textContent=ex.message||'Invalid email or password.';err.style.display='block';
-  }
+  }finally{loginInFlight=false;}
 }
 async function doSignup(){
   const n=document.getElementById('su-name').value.trim();
@@ -2459,10 +2466,10 @@ function enterApp(){
   document.getElementById('page-app').classList.add('active');
   document.getElementById('topbar-av').textContent=currentUser.name.charAt(0).toUpperCase();
   document.getElementById('unverified-chip').style.display=currentUser.verified?'none':'inline-flex';
-  // Save session — expires in 8 hours
   const session={email:currentUser.email,ts:Date.now()};
   try{localStorage.setItem('rt_session',JSON.stringify(session));}catch(e){}
-  updateBal();renderProducts('all');renderAmounts();renderSubs();renderTx();renderMyCustomers();renderReqChips();renderMyRequests();renderExpiryTracker();renderMyGameOrders();
+  loadPriceCatalog().then(()=>renderProducts('all'));
+  updateBal();renderAmounts();renderSubs();renderTx();renderMyCustomers();renderReqChips();renderMyRequests();renderExpiryTracker();renderMyGameOrders();
 }
 function doLogout(){
   currentUser=null;isAdmin=false;
@@ -2805,7 +2812,10 @@ async function submitCustomOrder(){
 }
 
 
+let purchaseInFlight=false;
+
 async function confirmPurchase(){
+  if(purchaseInFlight){showToast('Purchase already processing…');return;}
   // Always reload fresh stock from localStorage before purchasing
   const p=curProd;let price,planLabel,skey,extraFields={};
   if(p.hasUserTypes){
@@ -2831,6 +2841,7 @@ async function confirmPurchase(){
   const freshUser=users.find(x=>x.email===currentUser.email);
   if(freshUser?.banned){showToast('⚠️ Your account has been suspended. Contact support.');return;}
   if(!isAdmin){
+    purchaseInFlight=true;
     try{
       const assignedCustomer=assignCustId!=null?currentUser.myCustomers?.find(x=>x.id===assignCustId):null;
       const r=await fetch(RT_SERVER+'/purchase',{
@@ -2852,10 +2863,9 @@ async function confirmPurchase(){
       if(j.pending&&!j.telegramSent&&currentUser.tgChatId){
         const assignNote=assignedCustomer?`\n👥 For: ${assignedCustomer.fname} ${assignedCustomer.lname}`:'';
         await sendTelegramToUser(currentUser.tgChatId,`✅ <b>Purchase Confirmed!</b>\n\n📦 ${p.name} · ${planLabel}\n💵 ${fmt(price)}\n💰 New balance: ${fmt(currentUser.balance)}${assignNote}\n\n⏳ Your account credentials will be delivered to you here shortly. Thank you for your patience!`);
-      }else if(j.order&&!j.pending&&!j.telegramSent){
-        await deliverPurchaseTelegram(j.order,p,planLabel,price,assignedCustomer);
       }
     }catch(e){showToast('⚠️ '+e.message);}
+    finally{purchaseInFlight=false;}
     return;
   }
   const acc=getNextAcc(skey);
@@ -4025,6 +4035,8 @@ async function saveAdminPrices(){
     const j=await r.json();
     if(!r.ok||!j.success)throw new Error(j.error||'Save failed');
     applyPriceCatalog(j.catalog);
+    if(!_jbCache)_jbCache={};
+    _jbCache.priceCatalog={prices,customDayRates,jawaker,updatedAt:Date.now(),updatedBy:currentUser?.email||'admin'};
     renderAdminPrices();renderStockPanels();
     const activeCat=document.querySelector('.ftab.active')?.dataset?.cat||'all';
     if(document.getElementById('page-app')?.classList.contains('active'))renderProducts(activeCat);
@@ -4348,56 +4360,32 @@ async function addAccount(){
 }
 
 async function autoFulfillPending(skey){
-  // Load latest pending from Firebase
   let pending=[];
-  
-  try{if(_jbCache&&_jbCache.pending)pending=_jbCache.pending;else{_jbCache=await jbRead();if(_jbCache.pending)pending=_jbCache.pending;}}catch(e){}
-  let freshUsers=users;
-  try{if(_jbCache&&_jbCache.users&&_jbCache.users.length>0)freshUsers=_jbCache.users;}catch(e){}
+  try{
+    if(!_jbCache)_jbCache=await jbRead();
+    pending=Array.isArray(_jbCache?.pending)?[..._jbCache.pending]:[];
+  }catch(e){return;}
   const waiting=pending.filter(po=>po.skey===skey);
   if(!waiting.length)return;
   let fulfilled=0;
   for(const po of waiting){
-    const acc=getNextAcc(skey);
-    if(!acc)break;
-    const idx=getAccounts(skey).indexOf(acc);
-    const u=users.find(x=>x.email===po.userEmail);
-    const fu=freshUsers.find(x=>x.email===po.userEmail);
-    const assignedCustomer=po.assignCustId!=null?u?.myCustomers?.find(c=>c.id===po.assignCustId):null;
-    const soldTo={userEmail:po.userEmail,userName:po.userName,orderId:po.id,assignCustId:assignedCustomer?.id||null,assignCustName:assignedCustomer?`${assignedCustomer.fname||''} ${assignedCustomer.lname||''}`.trim():'',at:Date.now()};
-    markLinkedStockSoldClient(acc,soldTo);
-    const order={id:po.id,product:po.product,short:po.short,color:po.color,tc:po.tc,productId:po.productId,plan:po.plan,price:po.price,email:acc.email,pass:acc.pass,date:po.date,expiryDate:acc.expiryDate||null,profileName:po.profileName||accountProfileName(acc)||'',...(acc.profilePin?{profilePin:acc.profilePin}:{}),accKey:acc.accKey||'',mainEmail:acc.mainEmail||''};
-    if(u){
-      if(assignedCustomer){
-        order.profileName=order.profileName||assignedCustomer.fname;
-        assignedCustomer.subs=assignedCustomer.subs||[];
-        assignedCustomer.subs.unshift(order);
-      }else u.orders.unshift(order);
-    }
-    pending.splice(pending.indexOf(po),1);
-    fulfilled++;
-    // Use freshest tgChatId
-    const tgId=fu?.tgChatId||u?.tgChatId||po.userTgChatId||'';
-    if(u&&order){order.deliveredAt=Date.now();if(tgId)order.telegramDeliveredAt=Date.now();}
-    if(u&&Array.isArray(u.transactions))u.transactions.forEach(t=>{if(t.orderId===po.id)t.pending=false;});
-    if(tgId){
-      const linkData={id:po.id,product:po.product,short:po.short,color:po.color,tc:po.tc,productId:po.productId,plan:po.plan,email:acc.email,pass:acc.pass,expiryDate:acc.expiryDate||'',profileName:po.profileName||'',profilePin:acc.profilePin||'',accKey:acc.accKey||'',mainEmail:acc.mainEmail||'',codeEmail:acc.email,inboxEmail:acc.mainEmail||acc.email,linkExpiry:Date.now()+(90*24*60*60*1000)};
-      const subLink=await createSubLinkUrl(linkData);
-      let msg=`✅ <b>Your ${po.product} is ready!</b>\n\n📋 ${po.plan}\n\n🔐 <b>Credentials:</b>\n📧 Email: <code>${acc.email}</code>\n🔑 Password: <code>${acc.pass}</code>`;
-      if(accountProfileName(acc))msg+=`\n👤 Profile: <code>${accountProfileName(acc)}</code>`;
-      if(acc.expiryDate)msg+=`\n⏰ Expires: ${acc.expiryDate}`;
-      if(acc.profilePin)msg+=`\n🔢 PIN: <code>${acc.profilePin}</code>`;
-      msg+=`\n\n🔗 <b>Your subscription link:</b>\n${subLink}\n\nEnjoy! 🌟`;
-      await sendTelegramToUser(tgId,msg);
-    }
-    await sendTelegram(`✅ Auto-fulfilled: ${po.product} · ${po.plan} → ${po.userName}${tgId?'':' ⚠️ No TG ID'}`);
+    try{
+      const r=await fetch(RT_SERVER+'/admin/fulfill-pending',{method:'POST',headers:authHeaders(),body:JSON.stringify({orderId:po.id})});
+      const j=await r.json();
+      if(!r.ok||!j.success)break;
+      if(j.data)applyDataSnapshot(j.data);
+      else if(j.user){
+        const idx=users.findIndex(x=>normEmail(x.email)===normEmail(j.user.email));
+        if(idx>=0)users[idx]=j.user;
+      }
+      if(_jbCache&&Array.isArray(j.data?.pending))_jbCache.pending=j.data.pending;
+      if(!j.alreadyFulfilled)fulfilled++;
+    }catch(e){console.warn('autoFulfill',po.id,e.message);break;}
   }
   if(fulfilled>0){
-    try{}catch(e){}
-    try{if(!_jbCache)_jbCache=await jbRead();_jbCache.pending=pending;await jbWrite(_jbCache);}catch(e){}
-    await saveData();
     showToast(`✓ Auto-fulfilled ${fulfilled} pending order${fulfilled>1?'s':''}!`);
     renderAdminPending();
+    renderStockPanels();
   }
 }
 function renderAdminCustomers(){

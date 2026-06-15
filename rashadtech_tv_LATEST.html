@@ -2852,8 +2852,6 @@ async function confirmPurchase(){
       if(j.pending&&!j.telegramSent&&currentUser.tgChatId){
         const assignNote=assignedCustomer?`\n👥 For: ${assignedCustomer.fname} ${assignedCustomer.lname}`:'';
         await sendTelegramToUser(currentUser.tgChatId,`✅ <b>Purchase Confirmed!</b>\n\n📦 ${p.name} · ${planLabel}\n💵 ${fmt(price)}\n💰 New balance: ${fmt(currentUser.balance)}${assignNote}\n\n⏳ Your account credentials will be delivered to you here shortly. Thank you for your patience!`);
-      }else if(j.order&&!j.pending&&!j.telegramSent){
-        await deliverPurchaseTelegram(j.order,p,planLabel,price,assignedCustomer);
       }
     }catch(e){showToast('⚠️ '+e.message);}
     return;

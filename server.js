@@ -9,7 +9,8 @@ const { registerEnhancements } = require('./enhancements');
 const {
   getMergedCatalog,
   resolvePurchasePrice,
-  pricesMatch
+  pricesMatch,
+  PRICE_CATALOG_KEY
 } = require('./priceCatalog');
 const {
   markStockSold,
@@ -99,6 +100,7 @@ let dbLastSyncAttempt = 0;
 let netlifyStorePromise = null;
 let signupOtps = new Map();
 let resetOtps = new Map();
+const activePurchases = new Set();
 
 function rateLimit(name, limit, windowMs) {
   return (req, res, next) => {
@@ -118,7 +120,14 @@ function rateLimit(name, limit, windowMs) {
 }
 
 function normalizeEmail(email) {
-  return String(email || '').trim().toLowerCase();
+  return String(email || '')
+    .replace(/\u00a0/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function normalizeLoginPassword(password) {
+  return String(password || '').replace(/\u00a0/g, ' ').trim();
 }
 
 function uniqueNormalizedEmails(values) {
@@ -824,9 +833,39 @@ function preserveSensitiveFields(existing, incoming) {
       };
     });
   }
-  if (existing && existing[GMAIL_MONITORS_KEY]) next[GMAIL_MONITORS_KEY] = existing[GMAIL_MONITORS_KEY];
-  if (existing && existing[LINK_TOKENS_KEY] && !next[LINK_TOKENS_KEY]) next[LINK_TOKENS_KEY] = existing[LINK_TOKENS_KEY];
-  if (existing && existing[BACKUPS_KEY]) next[BACKUPS_KEY] = existing[BACKUPS_KEY];
+  const preserveKeys = [
+    GMAIL_MONITORS_KEY,
+    LINK_TOKENS_KEY,
+    BACKUPS_KEY,
+    PRICE_CATALOG_KEY,
+    'priceChangeLog',
+    'siteSettings',
+    'activityLog',
+    'revokedLinks',
+    'sessions'
+  ];
+  preserveKeys.forEach(key => {
+    if (existing && existing[key] !== undefined && (next[key] === undefined || next[key] === null)) {
+      next[key] = existing[key];
+    }
+  });
+  const existingCatalog = existing && existing[PRICE_CATALOG_KEY];
+  const incomingCatalog = next[PRICE_CATALOG_KEY];
+  if (existingCatalog) {
+    const existingTs = Number(existingCatalog.updatedAt || 0);
+    const incomingTs = Number(incomingCatalog && incomingCatalog.updatedAt || 0);
+    if (!incomingCatalog || !incomingTs || incomingTs < existingTs) {
+      next[PRICE_CATALOG_KEY] = existingCatalog;
+    }
+  }
+  if (existing && existing.stock && incoming && incoming.stock) {
+    next.stock = { ...existing.stock, ...incoming.stock };
+  } else if (existing && existing.stock && (!incoming || !incoming.stock)) {
+    next.stock = existing.stock;
+  }
+  if (existing && Array.isArray(existing.pending) && (!incoming || !Array.isArray(incoming.pending))) {
+    next.pending = existing.pending;
+  }
   return next;
 }
 
@@ -1015,16 +1054,17 @@ app.post('/db/write', async (req, res) => {
 
 app.post('/auth/login', async (req, res) => {
   const { email, password } = req.body;
+  const cleanPassword = normalizeLoginPassword(password);
   try {
     const data = await readJsonBinRaw();
     const user = (data.users || []).find(u => normalizeEmail(u.email) === normalizeEmail(email));
     if (!user) return res.status(401).json({ error: 'Invalid email or password' });
     const recoveredPassword = recoverMissingPasswordFromBackups(data, user);
     if (!user.pass) return res.status(401).json({ error: 'This account needs a password reset. Please use Forgot password.' });
-    if (!verifyPassword(password, user.pass)) return res.status(401).json({ error: 'Invalid email or password' });
+    if (!verifyPassword(cleanPassword, user.pass)) return res.status(401).json({ error: 'Invalid email or password' });
     if (user.banned) return res.status(403).json({ error: 'Your account has been suspended. Please contact support.' });
     if (recoveredPassword || !String(user.pass || '').startsWith(PASSWORD_HASH_PREFIX)) {
-      user.pass = hashPassword(password);
+      user.pass = hashPassword(cleanPassword);
       await writeJsonBinRaw(data);
     }
     const token = createSession('user', user.email);
@@ -1312,6 +1352,7 @@ async function notifyPurchasePending(user, product, planLabel, price, assignCust
 }
 
 async function notifyPurchaseFulfilled(user, product, planLabel, price, order, assignCustId) {
+  if (order && order.telegramDeliveredAt) return true;
   const assignedCustomer = assignCustId !== null && assignCustId !== undefined
     ? (user.myCustomers || []).find(c => c.id === assignCustId)
     : null;
@@ -1521,8 +1562,16 @@ app.post('/customer/resend-subscription', async (req, res) => {
 app.post('/purchase', async (req, res) => {
   const session = requireSession(req, res, ['user']);
   if (!session) return;
+  const lockKey = normalizeEmail(session.email);
+  if (activePurchases.has(lockKey)) {
+    return res.status(409).json({ error: 'Purchase already processing. Please wait a moment and try again.' });
+  }
+  activePurchases.add(lockKey);
   const { product, planLabel, price, skey, extraFields, assignCustId, tgChatId, customDays } = req.body;
-  if (!product || !planLabel || !skey || !Number(price)) return res.status(400).json({ error: 'Invalid purchase' });
+  if (!product || !planLabel || !skey || !Number(price)) {
+    activePurchases.delete(lockKey);
+    return res.status(400).json({ error: 'Invalid purchase' });
+  }
   try {
     const data = await readJsonBinRaw();
     const catalog = getMergedCatalog(data);
@@ -1599,6 +1648,12 @@ app.post('/purchase', async (req, res) => {
       user.orders = Array.isArray(user.orders) ? user.orders : [];
       user.orders.unshift(order);
     }
+    // Remove ghost pending rows that already have a fulfilled order (prevents double delivery).
+    data.pending = (data.pending || []).filter(po => {
+      if (normalizeEmail(po.userEmail) !== lockKey) return true;
+      const existing = findUserOrderRecord(user, po.id).order;
+      return !(existing && existing.email && !existing.pending);
+    });
     user.transactions.unshift({type:'purchase',label:'Bought '+product.name+' · '+planLabel,amount:Number(price),balance:user.balance,date:dateStr});
     await writeJsonBinRaw(data);
     const telegramSent = await notifyPurchaseFulfilled(user, product, planLabel, price, order, assignCustId);
@@ -1608,6 +1663,8 @@ app.post('/purchase', async (req, res) => {
   } catch(e) {
     console.error('Purchase error:', e.message);
     res.status(500).json({ error: 'Purchase failed' });
+  } finally {
+    activePurchases.delete(lockKey);
   }
 });
 
@@ -2217,7 +2274,9 @@ rtEnhancements = registerEnhancements(app, {
   createBackupSnapshot,
   countStockStats,
   sessions,
-  SESSION_TTL_MS
+  SESSION_TTL_MS,
+  findUserOrderRecord,
+  notifyPurchaseFulfilled
 });
 
 // ── START ──────────────────────────────────────────────────────────────
