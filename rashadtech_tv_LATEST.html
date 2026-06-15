@@ -2304,9 +2304,24 @@ function clearOTP(pfx){[0,1,2,3,4,5].forEach(i=>{const el=document.getElementByI
 
 function showView(v){['login','signup','verify','forgot','reset','admin'].forEach(x=>{const el=document.getElementById('view-'+x);if(el)el.style.display=x===v?'block':'none';});}
 async function doLogin(){
-  const e=document.getElementById('login-email').value.trim();
-  const p=document.getElementById('login-pass').value;
+  const emailEl=document.getElementById('login-email');
+  const passEl=document.getElementById('login-pass');
+  const e=(emailEl?.value||'').trim().toLowerCase();
+  const p=passEl?.value||'';
   const err=document.getElementById('login-err');
+  if(!e||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)){
+    err.textContent='Please enter a valid email address.';
+    err.style.display='block';
+    emailEl?.focus();
+    return;
+  }
+  if(!p){
+    err.textContent='Please enter your password.';
+    err.style.display='block';
+    passEl?.focus();
+    return;
+  }
+  err.style.display='none';
   try{
     const r=await fetch(RT_SERVER+'/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:e,password:p})});
     const j=await r.json();
