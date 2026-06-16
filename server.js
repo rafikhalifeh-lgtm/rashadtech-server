@@ -638,8 +638,8 @@ async function syncDbToJsonBin(force = false) {
   }
 }
 
-async function readJsonBinRaw() {
-  if (dbCache) return cloneData(dbCache);
+async function readJsonBinRaw(options = {}) {
+  if (dbCache && !options.forceRefresh) return cloneData(dbCache);
   let data = null;
   try {
     data = await readNetlifyDb();
@@ -648,6 +648,15 @@ async function readJsonBinRaw() {
   }
   if (!data) data = readFallbackDb();
   data = markEmergencyDb(data, NETLIFY_SITE_ID && NETLIFY_BLOBS_TOKEN ? 'Netlify Blobs primary database' : 'Primary server file database', !(NETLIFY_SITE_ID && NETLIFY_BLOBS_TOKEN));
+  const loaded = data;
+  const recovered = recoverSettingsFromBackups(loaded);
+  data = recovered.data;
+  if (recovered.changed && !options.skipRecoverWrite) {
+    console.log('Recovered prices/stock blocks from backup snapshot');
+    await writeJsonBinRaw(data, { backupReason: 'auto-recover-settings', backupSource: loaded }).catch(e => {
+      console.error('Auto-recover write error:', e.message);
+    });
+  }
   setDbCache(data, false);
   writeFallbackDb(data);
   return cloneData(dbCache);
@@ -821,6 +830,54 @@ function mergeUserWrite(existing, incoming, session) {
   return next;
 }
 
+function catalogRichness(catalog) {
+  if (!catalog || typeof catalog !== 'object') return 0;
+  return Object.keys(catalog.prices || {}).length
+    + Object.keys(catalog.customDayRates || {}).length
+    + (catalog.jawaker && catalog.jawaker.basePerToken ? 1 : 0);
+}
+
+function stockBlockCount(blocks) {
+  return Object.keys(blocks || {}).length;
+}
+
+function recoverSettingsFromBackups(data) {
+  const result = { ...(data || {}) };
+  const backups = Array.isArray(result[BACKUPS_KEY]) ? result[BACKUPS_KEY] : [];
+  const sources = [result, ...backups.map(backup => backup && backup.data).filter(Boolean)];
+
+  let bestCatalog = result[PRICE_CATALOG_KEY];
+  let bestCatalogScore = catalogRichness(bestCatalog);
+  let bestBlocks = result.stockBlocks || {};
+  let bestBlockScore = stockBlockCount(bestBlocks);
+
+  sources.forEach(source => {
+    const catalog = source[PRICE_CATALOG_KEY];
+    const catalogScore = catalogRichness(catalog);
+    if (catalogScore > bestCatalogScore) {
+      bestCatalog = catalog;
+      bestCatalogScore = catalogScore;
+    }
+    const blocks = source.stockBlocks || {};
+    const blockScore = stockBlockCount(blocks);
+    if (blockScore > bestBlockScore) {
+      bestBlocks = blocks;
+      bestBlockScore = blockScore;
+    }
+  });
+
+  let changed = false;
+  if (bestCatalogScore > catalogRichness(result[PRICE_CATALOG_KEY])) {
+    result[PRICE_CATALOG_KEY] = bestCatalog;
+    changed = true;
+  }
+  if (bestBlockScore > stockBlockCount(result.stockBlocks)) {
+    result.stockBlocks = bestBlocks;
+    changed = true;
+  }
+  return { data: result, changed };
+}
+
 function preserveSensitiveFields(existing, incoming) {
   const next = { ...(incoming || {}) };
   const existingUsers = Array.isArray(existing && existing.users) ? existing.users : [];
@@ -842,7 +899,8 @@ function preserveSensitiveFields(existing, incoming) {
     'siteSettings',
     'activityLog',
     'revokedLinks',
-    'sessions'
+    'sessions',
+    'gameorders'
   ];
   preserveKeys.forEach(key => {
     if (existing && existing[key] !== undefined && (next[key] === undefined || next[key] === null)) {
@@ -852,10 +910,19 @@ function preserveSensitiveFields(existing, incoming) {
   const existingCatalog = existing && existing[PRICE_CATALOG_KEY];
   const incomingCatalog = next[PRICE_CATALOG_KEY];
   if (existingCatalog) {
+    const existingRich = catalogRichness(existingCatalog);
+    const incomingRich = catalogRichness(incomingCatalog);
     const existingTs = Number(existingCatalog.updatedAt || 0);
     const incomingTs = Number(incomingCatalog && incomingCatalog.updatedAt || 0);
-    if (!incomingCatalog || !incomingTs || incomingTs < existingTs) {
+    if (!incomingCatalog || incomingRich < existingRich || !incomingTs || incomingTs < existingTs) {
       next[PRICE_CATALOG_KEY] = existingCatalog;
+    }
+  }
+  if (existing && existing.stockBlocks) {
+    if (!incoming || incoming.stockBlocks === undefined || incoming.stockBlocks === null) {
+      next.stockBlocks = existing.stockBlocks;
+    } else {
+      next.stockBlocks = { ...existing.stockBlocks, ...incoming.stockBlocks };
     }
   }
   if (existing && existing.stock && incoming && incoming.stock) {
@@ -865,6 +932,9 @@ function preserveSensitiveFields(existing, incoming) {
   }
   if (existing && Array.isArray(existing.pending) && (!incoming || !Array.isArray(incoming.pending))) {
     next.pending = existing.pending;
+  }
+  if (existing && Array.isArray(existing.gameorders) && (!incoming || !Array.isArray(incoming.gameorders))) {
+    next.gameorders = existing.gameorders;
   }
   return next;
 }
@@ -1049,6 +1119,36 @@ app.post('/db/write', async (req, res) => {
   } catch(e) {
     console.error('DB write error:', e.message);
     res.status(503).json({ error: 'Database is unavailable. Nothing was saved.' });
+  }
+});
+
+app.post('/admin/recover-settings', async (req, res) => {
+  const session = requireSession(req, res, ['admin']);
+  if (!session) return;
+  try {
+    const data = await readJsonBinRaw({ forceRefresh: true, skipRecoverWrite: true });
+    const recovered = recoverSettingsFromBackups(data);
+    if (!recovered.changed) {
+      return res.json({
+        success: true,
+        recovered: false,
+        catalog: getMergedCatalog(data),
+        stockBlocks: data.stockBlocks || {},
+        data: safeDataForSession(data, { role: 'admin' })
+      });
+    }
+    await writeJsonBinRaw(recovered.data, { backupReason: 'manual-recover-settings', backupSource: data });
+    setDbCache(recovered.data, false);
+    res.json({
+      success: true,
+      recovered: true,
+      catalog: getMergedCatalog(recovered.data),
+      stockBlocks: recovered.data.stockBlocks || {},
+      data: safeDataForSession(recovered.data, { role: 'admin' })
+    });
+  } catch (e) {
+    console.error('Recover settings error:', e.message);
+    res.status(500).json({ error: 'Could not recover settings from backup' });
   }
 });
 

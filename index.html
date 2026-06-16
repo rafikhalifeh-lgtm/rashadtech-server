@@ -2449,9 +2449,19 @@ async function doAdminLogin(){
     localStorage.setItem('rt_auth_token',authToken);localStorage.setItem('rt_auth_role',authRole);
     try{localStorage.setItem('rt_admin_session',JSON.stringify({ts:Date.now()}));}catch(e){}
     applyDataSnapshot(j.data||{});
+    try{
+      const rr=await fetch(RT_SERVER+'/admin/recover-settings',{method:'POST',headers:authHeaders(),body:'{}'});
+      const rj=await rr.json();
+      if(rr.ok&&rj.success){
+        if(rj.data)applyDataSnapshot(rj.data);
+        if(rj.catalog)applyPriceCatalog(rj.catalog);
+        if(rj.recovered)showToast('✓ Restored your prices and blocked plans from backup');
+      }
+    }catch(e){console.warn('recover settings',e);}
     document.getElementById('admin-err').style.display='none';logActivity('Admin login');
     document.getElementById('page-auth').classList.remove('active');
     document.getElementById('page-admin').classList.add('active');
+    await loadPriceCatalog();
     renderStockPanels();renderAdminCustomers();renderWallets();renderAdminRequests();renderAdminExpiry();renderNetflixRenewalAlerts();renderTopupRequests();renderGameOrders();renderAdminPending();
     refreshAdminBackupStatus();
     if(!window._adminBackupPoll)window._adminBackupPoll=setInterval(refreshAdminBackupStatus,5*60*1000);
@@ -4729,15 +4739,16 @@ async function creditTopupReq(i){
 }
 async function saveData(){
   if(!dataLoaded)return;
-  // Allow saving even if empty — but only if something was explicitly cleared
-  // Write all data to JSONBin in one call
   try{
-    // Preserve pending and gameorders (managed separately)
     const pending=_jbCache?.pending||[];
     const gameorders=_jbCache?.gameorders||[];
+    const stockBlocks=_jbCache?.stockBlocks;
+    const priceCatalog=_jbCache?.priceCatalog;
     _jbCache={
       users,stock:accountStock,requests:globalRequests,
-      topupreqs:topupRequests,pending,gameorders
+      topupreqs:topupRequests,pending,gameorders,
+      ...(stockBlocks?{stockBlocks}:{}),
+      ...(priceCatalog?{priceCatalog}:{})
     };
     await jbWrite(_jbCache);
   }catch(e){console.warn('save error:',e);}
