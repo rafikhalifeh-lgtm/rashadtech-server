@@ -10,7 +10,9 @@ const {
   getMergedCatalog,
   resolvePurchasePrice,
   pricesMatch,
-  PRICE_CATALOG_KEY
+  PRICE_CATALOG_KEY,
+  countCustomPriceDeltas,
+  reconstructCatalogFromChangeLog
 } = require('./priceCatalog');
 const {
   markStockSold,
@@ -649,10 +651,10 @@ async function readJsonBinRaw(options = {}) {
   if (!data) data = readFallbackDb();
   data = markEmergencyDb(data, NETLIFY_SITE_ID && NETLIFY_BLOBS_TOKEN ? 'Netlify Blobs primary database' : 'Primary server file database', !(NETLIFY_SITE_ID && NETLIFY_BLOBS_TOKEN));
   const loaded = data;
-  const recovered = recoverSettingsFromBackups(loaded);
+  const recovered = await recoverSettingsFromBackups(loaded);
   data = recovered.data;
   if (recovered.changed && !options.skipRecoverWrite) {
-    console.log('Recovered prices/stock blocks from backup snapshot');
+    console.log(`Recovered settings: ${recovered.customPriceCount} custom prices (${recovered.catalogSource}), ${recovered.blockCount} blocks (${recovered.blockSource})`);
     await writeJsonBinRaw(data, { backupReason: 'auto-recover-settings', backupSource: loaded }).catch(e => {
       console.error('Auto-recover write error:', e.message);
     });
@@ -830,44 +832,81 @@ function mergeUserWrite(existing, incoming, session) {
   return next;
 }
 
-function catalogRichness(catalog) {
-  if (!catalog || typeof catalog !== 'object') return 0;
-  return Object.keys(catalog.prices || {}).length
-    + Object.keys(catalog.customDayRates || {}).length
-    + (catalog.jawaker && catalog.jawaker.basePerToken ? 1 : 0);
-}
-
 function stockBlockCount(blocks) {
   return Object.keys(blocks || {}).length;
 }
 
-function recoverSettingsFromBackups(data) {
+async function collectRecoverySources(data) {
+  const sources = [];
+  const addSource = (label, catalog, stockBlocks) => {
+    const customPrices = countCustomPriceDeltas(catalog);
+    const blocks = stockBlockCount(stockBlocks);
+    if (customPrices > 0 || blocks > 0) {
+      sources.push({
+        id: sources.length,
+        label,
+        catalog: catalog || null,
+        stockBlocks: stockBlocks || {},
+        customPrices,
+        blocks
+      });
+    }
+  };
+
+  addSource('current', data && data[PRICE_CATALOG_KEY], data && data.stockBlocks);
+
+  const embedded = Array.isArray(data && data[BACKUPS_KEY]) ? data[BACKUPS_KEY] : [];
+  embedded.forEach((backup, index) => {
+    if (!backup || !backup.data) return;
+    addSource(`embedded-backup-${index + 1}`, backup.data[PRICE_CATALOG_KEY], backup.data.stockBlocks);
+  });
+
+  const fromLog = reconstructCatalogFromChangeLog(data);
+  if (fromLog) addSource('price-change-log', fromLog, null);
+
+  try {
+    const manifest = await readBackupManifest();
+    for (const entry of manifest.slice(0, MAX_BACKUPS)) {
+      try {
+        const { data: snapshot } = await readBackupSnapshot(entry.id);
+        addSource(`snapshot-${new Date(entry.ts).toLocaleString('en-GB')}`, snapshot[PRICE_CATALOG_KEY], snapshot.stockBlocks);
+      } catch (e) {
+        console.warn('Recovery snapshot skipped:', entry && entry.id, e.message);
+      }
+    }
+  } catch (e) {
+    console.warn('Recovery manifest read failed:', e.message);
+  }
+
+  return sources.sort((a, b) => b.customPrices - a.customPrices || b.blocks - a.blocks);
+}
+
+async function recoverSettingsFromBackups(data) {
   const result = { ...(data || {}) };
-  const backups = Array.isArray(result[BACKUPS_KEY]) ? result[BACKUPS_KEY] : [];
-  const sources = [result, ...backups.map(backup => backup && backup.data).filter(Boolean)];
+  const sources = await collectRecoverySources(data);
 
   let bestCatalog = result[PRICE_CATALOG_KEY];
-  let bestCatalogScore = catalogRichness(bestCatalog);
+  let bestCatalogScore = countCustomPriceDeltas(bestCatalog);
+  let bestCatalogSource = 'current';
   let bestBlocks = result.stockBlocks || {};
   let bestBlockScore = stockBlockCount(bestBlocks);
+  let bestBlockSource = 'current';
 
   sources.forEach(source => {
-    const catalog = source[PRICE_CATALOG_KEY];
-    const catalogScore = catalogRichness(catalog);
-    if (catalogScore > bestCatalogScore) {
-      bestCatalog = catalog;
-      bestCatalogScore = catalogScore;
+    if (source.customPrices > bestCatalogScore && source.catalog) {
+      bestCatalog = source.catalog;
+      bestCatalogScore = source.customPrices;
+      bestCatalogSource = source.label;
     }
-    const blocks = source.stockBlocks || {};
-    const blockScore = stockBlockCount(blocks);
-    if (blockScore > bestBlockScore) {
-      bestBlocks = blocks;
-      bestBlockScore = blockScore;
+    if (source.blocks > bestBlockScore && source.stockBlocks) {
+      bestBlocks = source.stockBlocks;
+      bestBlockScore = source.blocks;
+      bestBlockSource = source.label;
     }
   });
 
   let changed = false;
-  if (bestCatalogScore > catalogRichness(result[PRICE_CATALOG_KEY])) {
+  if (bestCatalogScore > countCustomPriceDeltas(result[PRICE_CATALOG_KEY])) {
     result[PRICE_CATALOG_KEY] = bestCatalog;
     changed = true;
   }
@@ -875,7 +914,16 @@ function recoverSettingsFromBackups(data) {
     result.stockBlocks = bestBlocks;
     changed = true;
   }
-  return { data: result, changed };
+
+  return {
+    data: result,
+    changed,
+    customPriceCount: bestCatalogScore,
+    catalogSource: bestCatalogSource,
+    blockSource: bestBlockSource,
+    blockCount: bestBlockScore,
+    sources
+  };
 }
 
 function preserveSensitiveFields(existing, incoming) {
@@ -910,8 +958,8 @@ function preserveSensitiveFields(existing, incoming) {
   const existingCatalog = existing && existing[PRICE_CATALOG_KEY];
   const incomingCatalog = next[PRICE_CATALOG_KEY];
   if (existingCatalog) {
-    const existingRich = catalogRichness(existingCatalog);
-    const incomingRich = catalogRichness(incomingCatalog);
+    const existingRich = countCustomPriceDeltas(existingCatalog);
+    const incomingRich = countCustomPriceDeltas(incomingCatalog);
     const existingTs = Number(existingCatalog.updatedAt || 0);
     const incomingTs = Number(incomingCatalog && incomingCatalog.updatedAt || 0);
     if (!incomingCatalog || incomingRich < existingRich || !incomingTs || incomingTs < existingTs) {
@@ -1122,18 +1170,44 @@ app.post('/db/write', async (req, res) => {
   }
 });
 
-app.post('/admin/recover-settings', async (req, res) => {
+app.get('/admin/price-recovery-options', async (req, res) => {
   const session = requireSession(req, res, ['admin']);
   if (!session) return;
   try {
     const data = await readJsonBinRaw({ forceRefresh: true, skipRecoverWrite: true });
-    const recovered = recoverSettingsFromBackups(data);
+    const sources = await collectRecoverySources(data);
+    res.json({
+      success: true,
+      currentCustomPrices: countCustomPriceDeltas(data[PRICE_CATALOG_KEY]),
+      currentBlocks: stockBlockCount(data.stockBlocks),
+      sources: sources.map(source => ({
+        id: source.id,
+        label: source.label,
+        customPrices: source.customPrices,
+        blocks: source.blocks
+      }))
+    });
+  } catch (e) {
+    console.error('Price recovery options error:', e.message);
+    res.status(500).json({ error: 'Could not load recovery options' });
+  }
+});
+
+app.post('/admin/recover-settings', async (req, res) => {
+  const session = requireSession(req, res, ['admin']);
+  if (!session) return;
+  try {
+    dbCache = null;
+    const data = await readJsonBinRaw({ forceRefresh: true, skipRecoverWrite: true });
+    const recovered = await recoverSettingsFromBackups(data);
     if (!recovered.changed) {
       return res.json({
         success: true,
         recovered: false,
+        customPriceCount: recovered.customPriceCount,
         catalog: getMergedCatalog(data),
         stockBlocks: data.stockBlocks || {},
+        sources: (recovered.sources || []).slice(0, 12),
         data: safeDataForSession(data, { role: 'admin' })
       });
     }
@@ -1142,13 +1216,78 @@ app.post('/admin/recover-settings', async (req, res) => {
     res.json({
       success: true,
       recovered: true,
+      customPriceCount: recovered.customPriceCount,
+      catalogSource: recovered.catalogSource,
+      blockSource: recovered.blockSource,
       catalog: getMergedCatalog(recovered.data),
       stockBlocks: recovered.data.stockBlocks || {},
+      sources: (recovered.sources || []).slice(0, 12),
       data: safeDataForSession(recovered.data, { role: 'admin' })
     });
   } catch (e) {
     console.error('Recover settings error:', e.message);
     res.status(500).json({ error: 'Could not recover settings from backup' });
+  }
+});
+
+app.post('/admin/backups/restore-settings', async (req, res) => {
+  const session = requireSession(req, res, ['admin']);
+  if (!session) return;
+  const { id, key, label, sourceIndex } = req.body || {};
+  if (!id && !key && label == null && sourceIndex == null) return res.status(400).json({ error: 'Backup id is required' });
+  try {
+    const current = await readJsonBinRaw({ forceRefresh: true, skipRecoverWrite: true });
+    let snapshotData = null;
+    let entry = null;
+    if (sourceIndex != null || label != null) {
+      const sources = await collectRecoverySources(current);
+      const match = sources.find(source => source.id === Number(sourceIndex))
+        || sources.find(source => source.label === label);
+      if (!match) return res.status(404).json({ error: 'Recovery source not found' });
+      snapshotData = {
+        [PRICE_CATALOG_KEY]: match.catalog,
+        stockBlocks: match.stockBlocks
+      };
+      entry = { id: String(match.id), iso: match.label };
+    } else {
+      const snapshot = await readBackupSnapshot(id || key);
+      entry = snapshot.entry;
+      snapshotData = snapshot.data;
+    }
+    const next = { ...current };
+    let changed = false;
+    const snapshotCatalog = snapshotData[PRICE_CATALOG_KEY];
+    if (snapshotCatalog && countCustomPriceDeltas(snapshotCatalog) > countCustomPriceDeltas(next[PRICE_CATALOG_KEY])) {
+      next[PRICE_CATALOG_KEY] = snapshotCatalog;
+      changed = true;
+    }
+    if (stockBlockCount(snapshotData.stockBlocks) > stockBlockCount(next.stockBlocks)) {
+      next.stockBlocks = { ...(snapshotData.stockBlocks || {}) };
+      changed = true;
+    }
+    if (!changed) {
+      return res.json({
+        success: true,
+        recovered: false,
+        catalog: getMergedCatalog(next),
+        stockBlocks: next.stockBlocks || {},
+        data: safeDataForSession(next, { role: 'admin' })
+      });
+    }
+    await writeJsonBinRaw(next, { backupReason: 'restore-settings-from-backup', backupSource: current });
+    setDbCache(next, false);
+    res.json({
+      success: true,
+      recovered: true,
+      backup: entry,
+      customPriceCount: countCustomPriceDeltas(next[PRICE_CATALOG_KEY]),
+      catalog: getMergedCatalog(next),
+      stockBlocks: next.stockBlocks || {},
+      data: safeDataForSession(next, { role: 'admin' })
+    });
+  } catch (e) {
+    console.error('Restore settings error:', e.message);
+    res.status(500).json({ error: e.message || 'Could not restore settings from backup' });
   }
 });
 

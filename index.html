@@ -2455,7 +2455,7 @@ async function doAdminLogin(){
       if(rr.ok&&rj.success){
         if(rj.data)applyDataSnapshot(rj.data);
         if(rj.catalog)applyPriceCatalog(rj.catalog);
-        if(rj.recovered)showToast('✓ Restored your prices and blocked plans from backup');
+        if(rj.recovered)showToast(`✓ Restored ${rj.customPriceCount||0} custom prices from backup`);
       }
     }catch(e){console.warn('recover settings',e);}
     document.getElementById('admin-err').style.display='none';logActivity('Admin login');
@@ -3537,7 +3537,8 @@ async function renderBackups(){
             <div style="font-weight:600">${new Date(b.ts).toLocaleString()}</div>
             <div style="color:var(--text3)">${b.reason||'auto'} · ${backupSummaryText(b.summary)}</div>
           </div>
-          <button class="view-btn" style="color:var(--orange)" onclick="restoreBackup('${b.id}')">Restore</button>
+          <button class="view-btn" style="color:var(--orange)" onclick="restoreBackup('${b.id}')">Restore all</button>
+          <button class="view-btn" style="color:var(--green)" onclick="restoreBackupSettings('${b.id}')">Prices only</button>
         </div>
       </div>`).join('');
   }catch(e){
@@ -3564,6 +3565,18 @@ async function restoreBackup(id){
     applyDataSnapshot(j.data||{});
     renderStockPanels();renderAdminCustomers();renderWallets();renderAdminRequests();renderAdminExpiry();renderTopupRequests();renderGameOrders();renderAdminPending();renderDashboard();
     showToast('✓ Backup restored');
+  }catch(e){showToast('⚠️ '+e.message);}
+}
+async function restoreBackupSettings(id){
+  if(!confirm('Restore only prices and blocked plans from this backup? Customers, stock, and orders stay as they are now.'))return;
+  try{
+    const r=await fetch(RT_SERVER+'/admin/backups/restore-settings',{method:'POST',headers:authHeaders(),body:JSON.stringify({id})});
+    const j=await r.json();
+    if(!r.ok||!j.success)throw new Error(j.error||'Could not restore prices');
+    if(j.data)applyDataSnapshot(j.data);
+    if(j.catalog)applyPriceCatalog(j.catalog);
+    renderAdminPrices();renderStockPanels();renderProducts('all');
+    showToast(j.recovered?`✓ Restored ${j.customPriceCount||0} custom prices`:'No better prices in that backup');
   }catch(e){showToast('⚠️ '+e.message);}
 }
 
@@ -4004,7 +4017,13 @@ function filterAdminPrices(){
 function renderAdminPrices(){
   const el=document.getElementById('admin-prices-body');
   if(!el)return;
-  let html=`<div style="background:var(--blue-bg);border:1px solid var(--blue-border);border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px;color:var(--text2)">Completed purchases and wallet transactions are <b>not changed</b> when you save new prices here.</div>
+  let html=`<div style="background:var(--orange-bg);border:1px solid var(--orange-border);border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px;color:var(--text2)">
+    <div style="font-weight:600;color:var(--text);margin-bottom:6px">Lost custom prices?</div>
+    <div style="margin-bottom:10px">If prices reset to defaults, try recovering them from automatic backups or the price change log.</div>
+    <button class="btn-primary" type="button" onclick="recoverAdminPrices()">Recover lost prices</button>
+    <div id="admin-price-recovery-status" style="margin-top:10px"></div>
+  </div>
+  <div style="background:var(--blue-bg);border:1px solid var(--blue-border);border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px;color:var(--text2)">Completed purchases and wallet transactions are <b>not changed</b> when you save new prices here.</div>
     <input id="admin-prices-search" placeholder="🔍 Search products (e.g. Jawaker, Netflix)..." oninput="filterAdminPrices()" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg2);color:var(--text);margin-bottom:14px">`;
   PRICE_CATEGORIES.forEach(cat=>{
     const items=products.filter(p=>p.cat===cat.key);
@@ -4016,6 +4035,72 @@ function renderAdminPrices(){
   });
   html+=`<button class="btn-primary" style="margin-top:14px" onclick="saveAdminPrices()">Save all prices</button>`;
   el.innerHTML=html;
+  loadPriceRecoveryStatus();
+}
+async function loadPriceRecoveryStatus(){
+  const status=document.getElementById('admin-price-recovery-status');
+  if(!status||!isAdmin)return;
+  try{
+    const r=await fetch(RT_SERVER+'/admin/price-recovery-options',{headers:authHeaders()});
+    const j=await r.json();
+    if(!r.ok||!j.success)throw new Error(j.error||'Could not check recovery options');
+    const best=(j.sources||[]).find(s=>s.customPrices>j.currentCustomPrices)||(j.sources||[])[0];
+    if(j.currentCustomPrices>0){
+      status.innerHTML=`<span style="color:var(--green)">✓ ${j.currentCustomPrices} custom price(s) loaded</span>`;
+      return;
+    }
+    if(!best||!best.customPrices){
+      status.innerHTML='<span style="color:var(--orange)">No older custom prices found in backups. You will need to re-enter prices manually.</span>';
+      return;
+    }
+    status.innerHTML=`<span style="color:var(--orange)">Found ${best.customPrices} custom price(s) in <b>${esc(best.label)}</b>.</span> <button class="view-btn" type="button" onclick="restoreAdminPricesFromSource(${best.id})">Restore this</button>`;
+  }catch(e){
+    status.innerHTML=`<span style="color:var(--text3)">${esc(e.message)}</span>`;
+  }
+}
+async function recoverAdminPrices(){
+  const status=document.getElementById('admin-price-recovery-status');
+  if(status)status.textContent='Searching backups...';
+  try{
+    const r=await fetch(RT_SERVER+'/admin/recover-settings',{method:'POST',headers:authHeaders(),body:'{}'});
+    const j=await r.json();
+    if(!r.ok||!j.success)throw new Error(j.error||'Recovery failed');
+    if(j.data)applyDataSnapshot(j.data);
+    if(j.catalog)applyPriceCatalog(j.catalog);
+    renderAdminPrices();renderStockPanels();renderProducts('all');
+    if(j.recovered){
+      showToast(`✓ Restored ${j.customPriceCount||0} custom prices`);
+      if(status)status.innerHTML=`<span style="color:var(--green)">✓ Restored ${j.customPriceCount||0} custom prices from ${esc(j.catalogSource||'backup')}</span>`;
+      return;
+    }
+    await loadPriceRecoveryStatus();
+    showToast('No better prices found in backups — check options below');
+  }catch(e){
+    if(status)status.innerHTML=`<span style="color:var(--red)">${esc(e.message)}</span>`;
+    showToast('⚠️ '+e.message);
+  }
+}
+async function restoreAdminPricesFromSource(sourceIndex){
+  const status=document.getElementById('admin-price-recovery-status');
+  if(status)status.textContent='Restoring...';
+  try{
+    const r=await fetch(RT_SERVER+'/admin/backups/restore-settings',{method:'POST',headers:authHeaders(),body:JSON.stringify({sourceIndex})});
+    const j=await r.json();
+    if(!r.ok||!j.success)throw new Error(j.error||'Restore failed');
+    if(j.data)applyDataSnapshot(j.data);
+    if(j.catalog)applyPriceCatalog(j.catalog);
+    renderAdminPrices();renderStockPanels();renderProducts('all');
+    if(j.recovered){
+      showToast(`✓ Restored ${j.customPriceCount||0} custom prices`);
+      if(status)status.innerHTML=`<span style="color:var(--green)">✓ Restored ${j.customPriceCount||0} custom prices</span>`;
+    }else{
+      showToast('That backup did not have better prices');
+      await loadPriceRecoveryStatus();
+    }
+  }catch(e){
+    if(status)status.innerHTML=`<span style="color:var(--red)">${esc(e.message)}</span>`;
+    showToast('⚠️ '+e.message);
+  }
 }
 function readJawakerTierMult(inputId,fallbackMult){
   const pct=parseFloat(document.getElementById(inputId)?.value||'');

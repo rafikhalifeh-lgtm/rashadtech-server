@@ -199,6 +199,81 @@ function buildCatalogPayload(input) {
   return { prices, customDayRates, jawaker };
 }
 
+function countCustomPriceDeltas(catalog) {
+  const merged = mergePriceCatalog(catalog);
+  let score = 0;
+  Object.entries(merged.prices || {}).forEach(([key, value]) => {
+    if (DEFAULT_PRICE_CATALOG.prices[key] !== value) score += 1;
+  });
+  Object.entries(merged.customDayRates || {}).forEach(([key, value]) => {
+    if (DEFAULT_PRICE_CATALOG.customDayRates[key] !== value) score += 1;
+  });
+  const mergedJaw = merged.jawaker || {};
+  const defaultJaw = DEFAULT_PRICE_CATALOG.jawaker || {};
+  if (Number(mergedJaw.basePerToken) !== Number(defaultJaw.basePerToken)) score += 1;
+  (mergedJaw.tiers || []).forEach((tier, index) => {
+    const base = (defaultJaw.tiers || [])[index];
+    if (!base || Number(base.mult) !== Number(tier.mult)) score += 1;
+  });
+  return score;
+}
+
+function sparseCatalogFromMerged(merged) {
+  const prices = {};
+  Object.entries(merged.prices || {}).forEach(([key, value]) => {
+    if (DEFAULT_PRICE_CATALOG.prices[key] !== value) prices[key] = value;
+  });
+  const customDayRates = {};
+  Object.entries(merged.customDayRates || {}).forEach(([key, value]) => {
+    if (DEFAULT_PRICE_CATALOG.customDayRates[key] !== value) customDayRates[key] = value;
+  });
+  const jawaker = sanitizeJawakerConfig(merged.jawaker);
+  const hasJawakerDelta = Number(jawaker.basePerToken) !== Number(DEFAULT_PRICE_CATALOG.jawaker.basePerToken)
+    || JSON.stringify(jawaker.tiers) !== JSON.stringify(DEFAULT_PRICE_CATALOG.jawaker.tiers);
+  return {
+    prices,
+    customDayRates,
+    jawaker: hasJawakerDelta ? jawaker : DEFAULT_PRICE_CATALOG.jawaker
+  };
+}
+
+function reconstructCatalogFromChangeLog(data) {
+  const log = Array.isArray(data && data.priceChangeLog) ? data.priceChangeLog : [];
+  if (!log.length) return null;
+
+  const merged = mergePriceCatalog(null);
+  const entries = [...log].reverse();
+  entries.forEach(entry => {
+    (entry.changes || []).forEach(change => {
+      if (!change || change.new == null || !change.key) return;
+      const key = String(change.key);
+      const value = Number(change.new);
+      if (!Number.isFinite(value)) return;
+      if (key.endsWith(' (per day)')) {
+        merged.customDayRates[key.replace(' (per day)', '')] = value;
+      } else if (key === 'jawaker (per 12k tokens)') {
+        merged.jawaker = { ...merged.jawaker, basePerToken: value / 12000 };
+      } else {
+        merged.prices[key] = value;
+      }
+    });
+  });
+
+  const sparse = sparseCatalogFromMerged(merged);
+  if (!Object.keys(sparse.prices).length
+    && !Object.keys(sparse.customDayRates).length
+    && Number(sparse.jawaker.basePerToken) === Number(DEFAULT_PRICE_CATALOG.jawaker.basePerToken)
+    && JSON.stringify(sparse.jawaker.tiers) === JSON.stringify(DEFAULT_PRICE_CATALOG.jawaker.tiers)) {
+    return null;
+  }
+
+  return {
+    ...sparse,
+    updatedAt: Number(log[0] && log[0].ts) || Date.now(),
+    updatedBy: 'recovered-from-log'
+  };
+}
+
 module.exports = {
   PRICE_CATALOG_KEY,
   DEFAULT_PRICE_CATALOG,
@@ -210,5 +285,7 @@ module.exports = {
   pricesMatch,
   buildCatalogPayload,
   stockKey,
-  sanitizeNumberMap
+  sanitizeNumberMap,
+  countCustomPriceDeltas,
+  reconstructCatalogFromChangeLog
 };
