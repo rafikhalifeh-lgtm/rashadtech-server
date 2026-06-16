@@ -17,6 +17,7 @@ const {
 const {
   markStockSold,
   markLinkedStockSold,
+  stockAccountsForPlan,
   stampOrderDelivery,
   initPendingOrder
 } = require('./orderHelpers');
@@ -1830,7 +1831,7 @@ app.post('/purchase', async (req, res) => {
     if (Number(user.balance || 0) < Number(price)) return res.status(400).json({ error: 'Insufficient balance' });
 
     const dateStr = new Date().toLocaleString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
-    const accounts = data.stock[skey] || [];
+    const accounts = stockAccountsForPlan(data.stock, skey);
     const acc = accounts.find(a => !a.used);
     user.transactions = Array.isArray(user.transactions) ? user.transactions : [];
 
@@ -1868,7 +1869,7 @@ app.post('/purchase', async (req, res) => {
       orderId,
       assignCustId: assignedCustomer ? assignedCustomer.id : null,
       assignCustName: assignedCustomer ? `${assignedCustomer.fname || ''} ${assignedCustomer.lname || ''}`.trim() : ''
-    });
+    }, skey);
     const order = {
       id: orderId,
       product:product.name,short:product.short,color:product.color,tc:product.tc,

@@ -1581,30 +1581,58 @@ const getAccounts=k=>accountStock[k]||[];
 const isStockBlocked=k=>Boolean(_jbCache?.stockBlocks?.[k]);
 function customDayBlockKey(productId,userTypeKey){return sk(productId,userTypeKey,'custom');}
 function isCustomDaysBlocked(p,ut){return Boolean(p&&ut&&ut.hasCustom&&isStockBlocked(customDayBlockKey(p.id,ut.key)));}
-const availableCount=k=>getAccounts(k).filter(a=>!a.used).length;
-const totalCount=k=>getAccounts(k).length;
-const getNextAcc=k=>getAccounts(k).find(a=>!a.used)||null;
-function markLinkedStockSoldClient(acc,soldTo){
+function shahidPlanDuration(skey){
+  const m=/^shahid__1user__(.+)$/.exec(String(skey||''));
+  return m?m[1]:'';
+}
+function shahidDurationRank(dur){
+  if(dur==='1y')return 3;
+  if(dur==='3m')return 2;
+  return 1;
+}
+function getShahidPlanAccounts(skey){
+  const list=getAccounts(skey);
+  if(!isShahidOneUserKey(skey))return list;
+  const myRank=shahidDurationRank(shahidPlanDuration(skey));
+  return list.filter(acc=>{
+    const key=String(acc?.accKey||'');
+    if(!key.startsWith('shprof__'))return true;
+    for(const otherKey of shahidOneUserPlanKeys()){
+      if(otherKey===skey)continue;
+      if(shahidDurationRank(shahidPlanDuration(otherKey))<=myRank)continue;
+      if((accountStock[otherKey]||[]).some(a=>a&&a.accKey===key))return false;
+    }
+    return true;
+  });
+}
+function stockAccountsForKey(k){
+  return isShahidOneUserKey(k)?getShahidPlanAccounts(k):getAccounts(k);
+}
+const availableCount=k=>stockAccountsForKey(k).filter(a=>!a.used).length;
+const totalCount=k=>stockAccountsForKey(k).length;
+const getNextAcc=k=>stockAccountsForKey(k).find(a=>!a.used)||null;
+function markLinkedStockSoldClient(acc,soldTo,skey){
   if(!acc)return;
   const apply=a=>{a.used=true;if(soldTo)a.soldTo=soldTo;};
   const linkedKey=String(acc.accKey||'');
   if(linkedKey.startsWith('nfprof__')){
-    netflixOneUserPlanKeys().forEach(skey=>{
-      (accountStock[skey]||[]).forEach(a=>{if(a&&a.accKey===linkedKey)apply(a);});
+    netflixOneUserPlanKeys().forEach(planKey=>{
+      (accountStock[planKey]||[]).forEach(a=>{if(a&&a.accKey===linkedKey)apply(a);});
     });
     return;
   }
   if(linkedKey.startsWith('shprof__')){
-    shahidOneUserPlanKeys().forEach(skey=>{
-      (accountStock[skey]||[]).forEach(a=>{if(a&&a.accKey===linkedKey)apply(a);});
-    });
+    const planKey=String(skey||'');
+    if(/^shahid__1user__/.test(planKey)){
+      (accountStock[planKey]||[]).forEach(a=>{if(a&&a.accKey===linkedKey)apply(a);});
+    }else apply(acc);
     return;
   }
   apply(acc);
 }
 function markUsed(k,i){
-  const acc=accountStock[k]&&accountStock[k][i];
-  if(acc)markLinkedStockSoldClient(acc);
+  const acc=stockAccountsForKey(k)[i];
+  if(acc)markLinkedStockSoldClient(acc,null,k);
 }
 function stockLabel(n){if(n===0)return['Out of stock','sout'];if(n<=3)return[`${n} left`,'slow'];return[`${n} in stock`,'sok'];}
 
@@ -4317,7 +4345,7 @@ function renderShahidBulkForm(skey){
       <input type="email" id="sh-bulk-main-email" placeholder="Gmail that receives Shahid reset emails" value="${esc(defs.mainEmail||'')}">
       <input type="password" id="sh-bulk-main-pass" placeholder="Gmail app password" style="margin-top:6px">
     </div>
-    ${alias?`<div style="font-size:11px;color:var(--text3);margin-top:8px">${used}/${SHAHID_MAX_ONE_USER_SLOTS} users on this account · adds to all 1-user plans (1m, 3m, 1y) · ${slotsLeft} slot(s) left</div>`:''}
+    ${alias?`<div style="font-size:11px;color:var(--text3);margin-top:8px">${used}/${SHAHID_MAX_ONE_USER_SLOTS} users on this account · adds to <b>this plan only</b> · ${slotsLeft} slot(s) left</div>`:''}
   </div>
   <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px">User names (no PIN — max 4)</div>
   <div class="nf-bulk-profiles">${[1,2,3,4].map(n=>`<div class="nf-bulk-row">
@@ -4325,7 +4353,7 @@ function renderShahidBulkForm(skey){
     <input type="text" id="sh-bulk-name-${n}" placeholder="User name" value="${esc((defs.profiles&&defs.profiles[n-1]?.name)||'')}">
     <div style="font-size:11px;color:var(--text3)">no PIN</div>
   </div>`).join('')}</div>
-  <button class="inline-btn" onclick="addShahidBulkAccounts()"><i class="ti ti-users" style="font-size:13px;vertical-align:-2px;margin-right:4px"></i>Add users to all Shahid 1-user plans</button>`;
+  <button class="inline-btn" onclick="addShahidBulkAccounts()"><i class="ti ti-users" style="font-size:13px;vertical-align:-2px;margin-right:4px"></i>Add users to this Shahid plan</button>`;
 }
 function renderManualAddForm(skey,needsGmail,isShahidStock){
   const isShahidOne=isShahidOneUserKey(skey);
@@ -4363,7 +4391,7 @@ function renderManualAddForm(skey,needsGmail,isShahidStock){
     <button class="inline-btn" onclick="addAccount()"><i class="ti ti-plus" style="font-size:13px;vertical-align:-2px;margin-right:4px"></i>Add to stock</button>`;
 }
 function renderAccModal(showForm=false){
-  const skey=curAccModalKey;const list=getAccounts(skey);const isShahidStock=String(skey||'').startsWith('shahid__');const needsGmail=isNetflixKey(skey)||isShahidStock;let html='';
+  const skey=curAccModalKey;const list=stockAccountsForKey(skey);const isShahidStock=String(skey||'').startsWith('shahid__');const needsGmail=isNetflixKey(skey)||isShahidStock;let html='';
   if(list.length){
     html+=`<div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">${list.length} accounts (${availableCount(skey)} available)</div>
     <div class="acc-list">${list.map((a,i)=>{const owner=a.used?findStockOwnerClient(a):null;return `<div class="acc-item">
@@ -4414,7 +4442,7 @@ function validateNetflixAliasForAdd(skey,email,pin){
   return '';
 }
 async function assignStockAccount(idx){
-  const acc=accountStock[curAccModalKey]?.[idx];
+  const acc=stockAccountsForKey(curAccModalKey)[idx];
   if(!acc||acc.used){showToast('Account not available');return;}
   const userEmail=prompt('Customer email to assign this account to:');
   if(!userEmail)return;
@@ -4435,11 +4463,13 @@ async function assignStockAccount(idx){
   }catch(e){showToast('⚠️ '+e.message);}
 }
 async function delAccount(idx){
-  const acc=accountStock[curAccModalKey]?.[idx];
+  const acc=stockAccountsForKey(curAccModalKey)[idx];
   const msg=acc?.used?'Remove this sold account from stock?':'Delete this account from stock?';
   if(!confirm(msg))return;
   if(!accountStock[curAccModalKey])return;
-  accountStock[curAccModalKey].splice(idx,1);
+  const realIdx=(accountStock[curAccModalKey]||[]).findIndex(a=>a===acc||(acc?.accKey&&a?.accKey===acc.accKey));
+  if(realIdx<0)return;
+  accountStock[curAccModalKey].splice(realIdx,1);
   await saveData();
   renderAccModal(false);
   renderStockPanels();
@@ -4468,9 +4498,9 @@ function pushNetflixProfileToAllPlans(fields){
   netflixOneUserPlanKeys().forEach(skey=>pushStockAccount(skey,fields,accKey));
   return accKey;
 }
-function pushShahidProfileToAllPlans(fields){
+function pushShahidProfileStock(skey,fields){
   const accKey='shprof__'+Date.now()+'_'+Math.random().toString(36).slice(2,8);
-  shahidOneUserPlanKeys().forEach(skey=>pushStockAccount(skey,fields,accKey));
+  pushStockAccount(skey,fields,accKey);
   return accKey;
 }
 async function addShahidBulkAccounts(){
@@ -4500,7 +4530,7 @@ async function addShahidBulkAccounts(){
     names.add(key);
   }
   for(const p of profiles){
-    pushShahidProfileToAllPlans({email,pass,profileName:p.name,expiryDate,mainEmail:mainEmail||'',...(mainPass?{mainPass}:{})});
+    pushShahidProfileStock(curAccModalKey,{email,pass,profileName:p.name,expiryDate,mainEmail:mainEmail||'',...(mainPass?{mainPass}:{})});
   }
   saveShahidBulkDefaults({email,pass,expiryDate,mainEmail,profiles:profiles.map(p=>({name:p.name}))});
   await saveData();
@@ -4509,10 +4539,9 @@ async function addShahidBulkAccounts(){
     try{gmailConfigured=await setupGmailMonitor(mainEmail,mainPass);}catch(e){showToast('⚠️ Users saved but Gmail error: '+e.message);}
   }
   renderAccModal(true);renderStockPanels();renderAdminExpiry();
-  const planCount=shahidOneUserPlanKeys().length;
-  showToast(gmailConfigured?`✓ Added ${profiles.length} user(s) × ${planCount} plans + Gmail`:`✓ Added ${profiles.length} user(s) to all ${planCount} Shahid 1-user plans`);
-  logActivity('Shahid bulk stock added',`${profiles.length} users · all plans`);
-  for(const planKey of shahidOneUserPlanKeys())await autoFulfillPending(planKey);
+  showToast(gmailConfigured?`✓ Added ${profiles.length} user(s) to this plan + Gmail`:`✓ Added ${profiles.length} user(s) to this Shahid plan`);
+  logActivity('Shahid bulk stock added',`${profiles.length} users · ${curAccModalKey}`);
+  await autoFulfillPending(curAccModalKey);
 }
 async function addNetflixBulkAccounts(){
   if(!isNetflixOneUserKey(curAccModalKey)){showToast('Quick add is only for Netflix 1-user plans');return;}
@@ -4576,7 +4605,7 @@ async function addAccount(){
     pushNetflixProfileToAllPlans({email,pass,profileName,expiryDate,profilePin,mainEmail:mainEmail||'',...(mainPass?{mainPass}:{})});
     saveNetflixBulkDefaults({email,pass,expiryDate,mainEmail,profiles:[{name:profileName,pin:''}]});
   }else if(isShahidOneUserKey(curAccModalKey)){
-    pushShahidProfileToAllPlans({email,pass,profileName,expiryDate,mainEmail:mainEmail||'',...(mainPass?{mainPass}:{})});
+    pushShahidProfileStock(curAccModalKey,{email,pass,profileName,expiryDate,mainEmail:mainEmail||'',...(mainPass?{mainPass}:{})});
     saveShahidBulkDefaults({email,pass,expiryDate,mainEmail,profiles:[{name:profileName}]});
   }else if(isShahidFullKey(curAccModalKey)){
     pushStockAccount(curAccModalKey,{email,pass,expiryDate,mainEmail:mainEmail||'',...(mainPass?{mainPass}:{})});
@@ -4593,13 +4622,11 @@ async function addAccount(){
   const addedShahidFull=isShahidFullKey(curAccModalKey);
   const addedNetflixOne=isNetflixOneUserKey(curAccModalKey);
   showToast(gmailConfigured
-    ?(addedNetflixOne?'✓ Account added to all Netflix 1-user plans + Gmail':addedShahidOne?'✓ User added to all Shahid 1-user plans + Gmail':'✓ Account added + Gmail monitoring started')
-    :(addedNetflixOne?'✓ Account added to all Netflix 1-user plans':addedShahidOne?'✓ User added to all Shahid 1-user plans':addedShahidFull?'✓ Full Shahid account added':'✓ Account added to stock'));
+    ?(addedNetflixOne?'✓ Account added to all Netflix 1-user plans + Gmail':addedShahidOne?'✓ User added to this Shahid plan + Gmail':'✓ Account added + Gmail monitoring started')
+    :(addedNetflixOne?'✓ Account added to all Netflix 1-user plans':addedShahidOne?'✓ User added to this Shahid plan':addedShahidFull?'✓ Full Shahid account added':'✓ Account added to stock'));
   logActivity('Stock added',curAccModalKey);
   if(addedNetflixOne){
     for(const planKey of netflixOneUserPlanKeys())await autoFulfillPending(planKey);
-  }else if(addedShahidOne){
-    for(const planKey of shahidOneUserPlanKeys())await autoFulfillPending(planKey);
   }else await autoFulfillPending(curAccModalKey);
 }
 

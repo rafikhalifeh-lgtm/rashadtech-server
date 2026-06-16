@@ -13,19 +13,56 @@ function markStockSold(account, soldTo) {
   }
 }
 
-function markLinkedStockSold(stock, account, soldTo) {
+function shahidPlanDuration(skey) {
+  const m = /^shahid__1user__(.+)$/.exec(String(skey || ''));
+  return m ? m[1] : '';
+}
+
+function shahidDurationRank(dur) {
+  if (dur === '1y') return 3;
+  if (dur === '3m') return 2;
+  return 1;
+}
+
+function shahidOneUserPlanKeys() {
+  return ['shahid__1user__1m', 'shahid__1user__3m', 'shahid__1user__1y'];
+}
+
+function stockAccountsForPlan(stock, skey) {
+  const list = (stock && stock[skey]) || [];
+  if (!/^shahid__1user__/.test(String(skey || ''))) return list;
+  const myRank = shahidDurationRank(shahidPlanDuration(skey));
+  return list.filter(acc => {
+    const key = String(acc?.accKey || '');
+    if (!key.startsWith('shprof__')) return true;
+    for (const otherKey of shahidOneUserPlanKeys()) {
+      if (otherKey === skey) continue;
+      if (shahidDurationRank(shahidPlanDuration(otherKey)) <= myRank) continue;
+      if (((stock && stock[otherKey]) || []).some(a => a && a.accKey === key)) return false;
+    }
+    return true;
+  });
+}
+
+function markLinkedStockSold(stock, account, soldTo, skey) {
   if (!account) return;
   markStockSold(account, soldTo);
   const linkedKey = String(account.accKey || '');
   if (!stock || (!linkedKey.startsWith('nfprof__') && !linkedKey.startsWith('shprof__'))) return;
-  const planMatchers = linkedKey.startsWith('nfprof__')
-    ? [/^netflix__1user__/]
-    : [/^shahid__1user__/];
-  Object.entries(stock).forEach(([skey, accounts]) => {
-    if (!planMatchers.some(match => match.test(skey))) return;
-    (accounts || []).forEach(acc => {
-      if (acc && acc !== account && acc.accKey === linkedKey) markStockSold(acc, soldTo);
+  if (linkedKey.startsWith('nfprof__')) {
+    Object.entries(stock).forEach(([stockKey, accounts]) => {
+      if (!/^netflix__1user__/.test(stockKey)) return;
+      (accounts || []).forEach(acc => {
+        if (acc && acc !== account && acc.accKey === linkedKey) markStockSold(acc, soldTo);
+      });
     });
+    return;
+  }
+  // Shahid 1-user stock is duration-specific (1m / 3m / 1y), not shared across plans.
+  const planKey = String(skey || '');
+  if (!/^shahid__1user__/.test(planKey)) return;
+  (stock[planKey] || []).forEach(acc => {
+    if (acc && acc !== account && acc.accKey === linkedKey) markStockSold(acc, soldTo);
   });
 }
 
@@ -194,5 +231,7 @@ module.exports = {
   formatDeliveryTime,
   findOwnerForStockAccount,
   collectLowStockItems,
-  diffPriceCatalog
+  diffPriceCatalog,
+  stockAccountsForPlan,
+  shahidOneUserPlanKeys
 };

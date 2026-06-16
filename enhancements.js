@@ -7,6 +7,7 @@ const {
 } = require('./priceCatalog');
 const {
   markLinkedStockSold,
+  stockAccountsForPlan,
   stampOrderDelivery,
   pushStatusHistory,
   findOwnerForStockAccount,
@@ -157,7 +158,7 @@ function registerEnhancements(app, deps) {
       orderId: pendingOrder.id,
       assignCustId: assignedCustomer ? assignedCustomer.id : null,
       assignCustName: assignedCustomer ? `${assignedCustomer.fname || ''} ${assignedCustomer.lname || ''}`.trim() : ''
-    });
+    }, pendingOrder.skey);
     const order = {
       id: pendingOrder.id,
       product: pendingOrder.product,
@@ -376,7 +377,7 @@ function registerEnhancements(app, deps) {
         orderId,
         assignCustId: assignedCustomer ? assignedCustomer.id : null,
         assignCustName: assignedCustomer ? `${assignedCustomer.fname || ''} ${assignedCustomer.lname || ''}`.trim() : ''
-      });
+      }, skey);
       const order = {
         id: orderId,
         product: prod.name,
@@ -690,7 +691,7 @@ function registerEnhancements(app, deps) {
         await appendActivity('Removed orphan pending order', orderId, session.email);
         return res.json({ success: true, removedOrphan: true, alreadyFulfilled: true, user: sanitizeUser(user), data: safeDataForSession(data, { role: 'admin' }) });
       }
-      const accounts = data.stock[po.skey] || [];
+      const accounts = stockAccountsForPlan(data.stock, po.skey);
       const acc = accounts.find(a => !a.used);
       if (!acc) return res.status(409).json({ error: 'No stock available for this plan' });
       const aliasError = validateNetflixAliasPurchase(data, po.skey, acc);
