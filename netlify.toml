@@ -17,3 +17,17 @@
   for = "/robots.txt"
   [headers.values]
     Content-Type = "text/plain; charset=utf-8"
+
+[[headers]]
+  for = "/guides/output/rashadtech-promo-videos.zip"
+  [headers.values]
+    Content-Type = "application/zip"
+    Content-Disposition = "attachment; filename=\"rashadtech-promo-videos.zip\""
+    Cache-Control = "public, max-age=3600"
+
+[[headers]]
+  for = "/guides/output/rashadtech-promo-*.mp4"
+  [headers.values]
+    Content-Type = "video/mp4"
+    Accept-Ranges = "bytes"
+    Cache-Control = "public, max-age=3600"

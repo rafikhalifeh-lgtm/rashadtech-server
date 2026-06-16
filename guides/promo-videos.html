@@ -16,7 +16,12 @@
   .wrap { max-width: 960px; margin: 0 auto; }
   .brand { color: #E50914; font-weight: 800; font-size: 14px; letter-spacing: 1px; margin-bottom: 8px; }
   h1 { font-size: clamp(28px, 5vw, 40px); font-weight: 800; margin-bottom: 10px; }
-  .sub { color: #a8a8b8; font-size: 16px; line-height: 1.5; margin-bottom: 32px; max-width: 640px; }
+  .sub { color: #a8a8b8; font-size: 16px; line-height: 1.5; margin-bottom: 24px; max-width: 640px; }
+  .hero-dl {
+    display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 28px;
+    padding: 18px 20px; border-radius: 14px;
+    background: rgba(229, 9, 20, 0.12); border: 1px solid rgba(229, 9, 20, 0.35);
+  }
   .grid { display: grid; gap: 20px; }
   @media (min-width: 720px) { .grid { grid-template-columns: 1fr 1fr; } }
   .card {
@@ -34,25 +39,39 @@
   .btn {
     display: inline-flex; align-items: center; justify-content: center; gap: 8px;
     padding: 12px 18px; border-radius: 10px; font-size: 14px; font-weight: 700;
-    text-decoration: none; border: none; cursor: pointer;
+    text-decoration: none; border: none; cursor: pointer; font-family: inherit;
   }
   .btn-primary { background: #E50914; color: #fff; }
   .btn-primary:hover { background: #ff3b3b; }
+  .btn-primary:disabled { opacity: 0.6; cursor: wait; }
   .btn-ghost { background: #252530; color: #fff; border: 1px solid #2d2d3a; }
   .btn-ghost:hover { background: #2d2d3a; }
   .note {
     margin-top: 28px; padding: 16px 18px; border-radius: 12px;
     background: rgba(79, 142, 247, 0.1); border: 1px solid rgba(79, 142, 247, 0.25);
-    color: #c8d9ff; font-size: 14px; line-height: 1.55;
+    color: #c8d9ff; font-size: 14px; line-height: 1.65;
   }
+  .note ol { margin: 10px 0 0 20px; }
+  .note li { margin-bottom: 6px; }
   .footer { margin-top: 36px; text-align: center; color: #6b6b7a; font-size: 13px; }
+  .status { font-size: 13px; color: #3ecf6e; min-height: 20px; margin-top: 8px; }
+  .links { margin-top: 16px; font-size: 12px; color: #6b6b7a; word-break: break-all; }
+  .links a { color: #4f8ef7; text-decoration: none; }
 </style>
 </head>
 <body>
 <div class="wrap">
   <div class="brand">RASHADTECH</div>
   <h1>Promo videos — download</h1>
-  <p class="sub">Professional marketing videos for rashadtech.tv. Use landscape for YouTube and Facebook, vertical for Instagram Reels, TikTok, and Stories.</p>
+  <p class="sub">Professional marketing videos for rashadtech.tv. Landscape for YouTube/Facebook · Vertical for Reels/TikTok.</p>
+
+  <div class="hero-dl">
+    <button type="button" class="btn btn-primary" id="dl-all-zip" data-url="/guides/output/rashadtech-promo-videos.zip" data-name="rashadtech-promo-videos.zip">
+      ⬇ Download all 4 videos (ZIP ~8 MB)
+    </button>
+    <a class="btn btn-ghost" href="/guides/output/rashadtech-promo-videos.zip" download="rashadtech-promo-videos.zip">ZIP direct link</a>
+  </div>
+  <div class="status" id="dl-status"></div>
 
   <div class="grid">
     <div class="card">
@@ -62,8 +81,8 @@
       </div>
       <video controls preload="metadata" src="/guides/output/rashadtech-promo-en-landscape.mp4" poster="/guides/output/promo-frames/promo-en-0.png"></video>
       <div class="actions">
-        <a class="btn btn-primary" href="/guides/output/rashadtech-promo-en-landscape.mp4" download="rashadtech-promo-en-landscape.mp4">⬇ Download MP4</a>
-        <a class="btn btn-ghost" href="/guides/output/rashadtech-promo-en-landscape.mp4" target="_blank" rel="noopener">Open</a>
+        <button type="button" class="btn btn-primary dl-btn" data-url="/guides/output/rashadtech-promo-en-landscape.mp4" data-name="rashadtech-promo-en-landscape.mp4">⬇ Download MP4</button>
+        <a class="btn btn-ghost" href="/guides/output/rashadtech-promo-en-landscape.mp4?dl=1" target="_blank" rel="noopener">Open file</a>
       </div>
     </div>
 
@@ -74,8 +93,8 @@
       </div>
       <video class="vertical" controls preload="metadata" src="/guides/output/rashadtech-promo-en-vertical.mp4" poster="/guides/output/promo-frames/promo-en-0.png"></video>
       <div class="actions">
-        <a class="btn btn-primary" href="/guides/output/rashadtech-promo-en-vertical.mp4" download="rashadtech-promo-en-vertical.mp4">⬇ Download MP4</a>
-        <a class="btn btn-ghost" href="/guides/output/rashadtech-promo-en-vertical.mp4" target="_blank" rel="noopener">Open</a>
+        <button type="button" class="btn btn-primary dl-btn" data-url="/guides/output/rashadtech-promo-en-vertical.mp4" data-name="rashadtech-promo-en-vertical.mp4">⬇ Download MP4</button>
+        <a class="btn btn-ghost" href="/guides/output/rashadtech-promo-en-vertical.mp4?dl=1" target="_blank" rel="noopener">Open file</a>
       </div>
     </div>
 
@@ -86,8 +105,8 @@
       </div>
       <video controls preload="metadata" src="/guides/output/rashadtech-promo-ar-landscape.mp4" poster="/guides/output/promo-frames/promo-ar-0.png"></video>
       <div class="actions">
-        <a class="btn btn-primary" href="/guides/output/rashadtech-promo-ar-landscape.mp4" download="rashadtech-promo-ar-landscape.mp4">⬇ تحميل MP4</a>
-        <a class="btn btn-ghost" href="/guides/output/rashadtech-promo-ar-landscape.mp4" target="_blank" rel="noopener">فتح</a>
+        <button type="button" class="btn btn-primary dl-btn" data-url="/guides/output/rashadtech-promo-ar-landscape.mp4" data-name="rashadtech-promo-ar-landscape.mp4">⬇ تحميل MP4</button>
+        <a class="btn btn-ghost" href="/guides/output/rashadtech-promo-ar-landscape.mp4?dl=1" target="_blank" rel="noopener">فتح</a>
       </div>
     </div>
 
@@ -98,17 +117,68 @@
       </div>
       <video class="vertical" controls preload="metadata" src="/guides/output/rashadtech-promo-ar-vertical.mp4" poster="/guides/output/promo-frames/promo-ar-0.png"></video>
       <div class="actions">
-        <a class="btn btn-primary" href="/guides/output/rashadtech-promo-ar-vertical.mp4" download="rashadtech-promo-ar-vertical.mp4">⬇ تحميل MP4</a>
-        <a class="btn btn-ghost" href="/guides/output/rashadtech-promo-ar-vertical.mp4" target="_blank" rel="noopener">فتح</a>
+        <button type="button" class="btn btn-primary dl-btn" data-url="/guides/output/rashadtech-promo-ar-vertical.mp4" data-name="rashadtech-promo-ar-vertical.mp4">⬇ تحميل MP4</button>
+        <a class="btn btn-ghost" href="/guides/output/rashadtech-promo-ar-vertical.mp4?dl=1" target="_blank" rel="noopener">فتح</a>
       </div>
     </div>
   </div>
 
   <div class="note">
-    <strong>Phone tip:</strong> Tap <strong>Download MP4</strong>. If the file opens in the browser instead of saving, long-press the video and choose <strong>Save video</strong> (iPhone) or use the menu ⋮ → <strong>Download</strong> (Android).
+    <strong>Easiest:</strong> tap <strong>Download all 4 videos (ZIP)</strong> at the top.
+    <ol>
+      <li><strong>iPhone:</strong> ZIP downloads to Files app → unzip → save videos to Photos.</li>
+      <li><strong>Android:</strong> ZIP goes to Downloads → open with Files → extract MP4s.</li>
+      <li><strong>PC:</strong> ZIP downloads to your Downloads folder — double-click to extract.</li>
+      <li>If a single MP4 opens in the browser, use the red <strong>Download MP4</strong> button (not the video play bar).</li>
+    </ol>
+  </div>
+
+  <div class="links">
+    Direct links:<br>
+    <a href="https://rashadtech.tv/guides/output/rashadtech-promo-videos.zip">ZIP all videos</a> ·
+    <a href="https://rashadtech.tv/guides/output/rashadtech-promo-en-landscape.mp4">EN landscape</a> ·
+    <a href="https://rashadtech.tv/guides/output/rashadtech-promo-en-vertical.mp4">EN vertical</a> ·
+    <a href="https://rashadtech.tv/guides/output/rashadtech-promo-ar-landscape.mp4">AR landscape</a> ·
+    <a href="https://rashadtech.tv/guides/output/rashadtech-promo-ar-vertical.mp4">AR vertical</a>
   </div>
 
   <div class="footer">Created by RashadTech · <a href="https://rashadtech.tv" style="color:#4f8ef7;text-decoration:none">rashadtech.tv</a></div>
 </div>
+<script>
+async function forceDownload(url, filename, btn) {
+  const status = document.getElementById('dl-status');
+  const label = btn ? btn.textContent : '';
+  try {
+    if (btn) { btn.disabled = true; btn.textContent = 'Downloading…'; }
+    status.textContent = 'Downloading ' + filename + '…';
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const blob = await res.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = filename;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      URL.revokeObjectURL(blobUrl);
+      a.remove();
+    }, 1000);
+    status.textContent = '✓ ' + filename + ' — check your Downloads / Files app';
+  } catch (e) {
+    status.textContent = 'Could not auto-download — opening direct link…';
+    window.location.href = url;
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = label; }
+  }
+}
+document.querySelectorAll('.dl-btn').forEach(btn => {
+  btn.addEventListener('click', () => forceDownload(btn.dataset.url, btn.dataset.name, btn));
+});
+document.getElementById('dl-all-zip').addEventListener('click', function () {
+  forceDownload(this.dataset.url, this.dataset.name, this);
+});
+</script>
 </body>
 </html>
