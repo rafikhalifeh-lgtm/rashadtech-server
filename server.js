@@ -6,6 +6,7 @@ const path = require('path');
 const { ImapFlow } = require('imapflow');
 const { simpleParser } = require('mailparser');
 const { registerEnhancements } = require('./enhancements');
+const { registerWhatsAppBot } = require('./whatsappBot');
 const {
   getMergedCatalog,
   resolvePurchasePrice,
@@ -2519,6 +2520,11 @@ rtEnhancements = registerEnhancements(app, {
   notifyPurchaseFulfilled
 });
 
+const whatsappBot = registerWhatsAppBot(app, {
+  getEnv: (k) => process.env[k],
+  rateLimit,
+});
+
 // ── START ──────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, async () => {
@@ -2535,4 +2541,9 @@ app.listen(PORT, async () => {
     const j = await r.json();
     console.log('Webhook:', j.description);
   } catch(e) { console.log('Webhook error:', e.message); }
+  if (whatsappBot.enabled()) {
+    console.log('WhatsApp bot: enabled — webhook', (process.env.RENDER_EXTERNAL_URL || '') + '/whatsapp');
+  } else {
+    console.log('WhatsApp bot: disabled — set WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_VERIFY_TOKEN on Render');
+  }
 });
