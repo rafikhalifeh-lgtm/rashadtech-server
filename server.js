@@ -106,6 +106,45 @@ let netlifyStorePromise = null;
 let signupOtps = new Map();
 let resetOtps = new Map();
 const activePurchases = new Set();
+let dbWriteQueue = Promise.resolve();
+
+function enqueueDbWrite(task) {
+  const run = dbWriteQueue.then(task);
+  dbWriteQueue = run.catch(() => {});
+  return run;
+}
+
+function accountAlreadyFulfilled(data, acc) {
+  if (!acc) return false;
+  const accKey = String(acc.accKey || '');
+  const email = normalizeEmail(acc.email);
+  for (const user of Array.isArray(data.users) ? data.users : []) {
+    for (const order of Array.isArray(user.orders) ? user.orders : []) {
+      if (accKey && order.accKey === accKey) return true;
+      if (!accKey && normalizeEmail(order.email) === email && order.email) return true;
+    }
+    for (const customer of Array.isArray(user.myCustomers) ? user.myCustomers : []) {
+      for (const order of Array.isArray(customer.subs) ? customer.subs : []) {
+        if (accKey && order.accKey === accKey) return true;
+        if (!accKey && normalizeEmail(order.email) === email && order.email) return true;
+      }
+    }
+  }
+  return Boolean(acc.used && acc.soldTo);
+}
+
+function pickAvailableAccount(data, skey) {
+  const accounts = stockAccountsForPlan(data.stock || {}, skey);
+  for (const acc of accounts) {
+    if (!acc || acc.used) continue;
+    if (accountAlreadyFulfilled(data, acc)) {
+      markLinkedStockSold(data.stock, acc, acc.soldTo || { userEmail: 'unknown', userName: 'unknown', orderId: 'recovered' }, skey);
+      continue;
+    }
+    return acc;
+  }
+  return null;
+}
 
 function rateLimit(name, limit, windowMs) {
   return (req, res, next) => {
@@ -283,8 +322,15 @@ function decodeLinkToken(token) {
 
 function createSession(role, email) {
   const token = crypto.randomBytes(32).toString('hex');
-  sessions.set(token, { role, email: normalizeEmail(email), expiresAt: Date.now() + SESSION_TTL_MS });
-  if (rtEnhancements && rtEnhancements.persistSessions) rtEnhancements.persistSessions().catch(() => {});
+  const session = { role, email: normalizeEmail(email), expiresAt: Date.now() + SESSION_TTL_MS };
+  sessions.set(token, session);
+  if (dbCache) {
+    dbCache.sessions = dbCache.sessions || {};
+    dbCache.sessions[token] = session;
+  }
+  if (rtEnhancements && rtEnhancements.persistSessions) {
+    rtEnhancements.persistSessions().catch((e) => console.error('Session persist error:', e.message));
+  }
   return token;
 }
 
@@ -292,7 +338,15 @@ function getSession(req) {
   const header = req.get('authorization') || '';
   const match = header.match(/^Bearer\s+(.+)$/i);
   if (!match) return null;
-  const session = sessions.get(match[1]);
+  const token = match[1];
+  let session = sessions.get(token);
+  if (!session && dbCache && dbCache.sessions && dbCache.sessions[token]) {
+    const stored = dbCache.sessions[token];
+    if (stored && Date.now() < Number(stored.expiresAt || 0)) {
+      session = stored;
+      sessions.set(token, session);
+    }
+  }
   if (!session) return null;
   if (Date.now() > session.expiresAt) {
     sessions.delete(match[1]);
@@ -699,6 +753,7 @@ async function writeJsonBinRaw(data, options = {}) {
 function stripPrivateData(data) {
   const publicData = { ...(data || {}) };
   delete publicData[GMAIL_MONITORS_KEY];
+  delete publicData.sessions;
   if (Array.isArray(publicData.users)) {
     publicData.users = publicData.users.map(sanitizeUser);
   }
@@ -838,7 +893,10 @@ function mergeUserWrite(existing, incoming, session) {
   }
   next.users = users;
 
-  if (Array.isArray(incoming.requests)) next.requests = incoming.requests;
+  // Users cannot overwrite global product requests from a stale browser cache.
+  if (session.role === 'admin' && Array.isArray(incoming.requests)) {
+    next.requests = incoming.requests;
+  }
 
   const existingTopups = Array.isArray(next.topupreqs) ? next.topupreqs : [];
   const otherTopups = existingTopups.filter(r => normalizeEmail(r.email) !== email);
@@ -951,6 +1009,55 @@ async function recoverSettingsFromBackups(data) {
   };
 }
 
+function mergeStockPreservingSold(existingStock, incomingStock) {
+  const merged = { ...(existingStock || {}) };
+  for (const [key, incomingAccounts] of Object.entries(incomingStock || {})) {
+    const existingAccounts = Array.isArray(merged[key]) ? merged[key] : [];
+    const byId = new Map();
+    existingAccounts.forEach((acc) => {
+      if (!acc) return;
+      const id = String(acc.accKey || acc.email || '');
+      if (id) byId.set(id, acc);
+    });
+    (incomingAccounts || []).forEach((acc) => {
+      if (!acc) return;
+      const id = String(acc.accKey || acc.email || '');
+      if (!id) return;
+      const prev = byId.get(id);
+      if (prev && prev.used) {
+        byId.set(id, { ...acc, used: true, soldTo: prev.soldTo || acc.soldTo });
+      } else if (prev) {
+        byId.set(id, { ...prev, ...acc, used: Boolean(prev.used || acc.used) });
+      } else {
+        byId.set(id, acc);
+      }
+    });
+    merged[key] = Array.from(byId.values());
+  }
+  return merged;
+}
+
+function mergeAllTopupRequests(existingTopups, incomingTopups) {
+  const byId = new Map();
+  (existingTopups || []).forEach((row) => {
+    if (!row) return;
+    const key = row.id || `${normalizeEmail(row.email)}:${row.amount}:${row.date || ''}`;
+    byId.set(key, row);
+  });
+  (incomingTopups || []).forEach((row) => {
+    if (!row) return;
+    const key = row.id || `${normalizeEmail(row.email)}:${row.amount}:${row.date || ''}`;
+    const prev = byId.get(key);
+    if (!prev) {
+      byId.set(key, row);
+      return;
+    }
+    const credited = prev.status === 'credited' || row.status === 'credited';
+    byId.set(key, { ...prev, ...row, status: credited ? 'credited' : (row.status || prev.status) });
+  });
+  return Array.from(byId.values());
+}
+
 function preserveSensitiveFields(existing, incoming) {
   const next = { ...(incoming || {}) };
   const existingUsers = Array.isArray(existing && existing.users) ? existing.users : [];
@@ -999,9 +1106,14 @@ function preserveSensitiveFields(existing, incoming) {
     }
   }
   if (existing && existing.stock && incoming && incoming.stock) {
-    next.stock = { ...existing.stock, ...incoming.stock };
+    next.stock = mergeStockPreservingSold(existing.stock, incoming.stock);
   } else if (existing && existing.stock && (!incoming || !incoming.stock)) {
     next.stock = existing.stock;
+  }
+  if (existing && Array.isArray(existing.topupreqs)) {
+    next.topupreqs = Array.isArray(incoming && incoming.topupreqs)
+      ? mergeAllTopupRequests(existing.topupreqs, incoming.topupreqs)
+      : existing.topupreqs;
   }
   if (existing && Array.isArray(existing.pending) && (!incoming || !Array.isArray(incoming.pending))) {
     next.pending = existing.pending;
@@ -1180,14 +1292,16 @@ app.post('/db/write', async (req, res) => {
   if (!session) return;
   const { data } = req.body;
   try {
-    const existing = await readJsonBinRaw();
-    let nextData;
-    if (session.role === 'admin') {
-      nextData = preserveSensitiveFields(existing, data || {});
-    } else {
-      nextData = mergeUserWrite(existing, data || {}, session);
-    }
-    const result = await writeJsonBinRaw(nextData, { backupSource: existing });
+    const result = await enqueueDbWrite(async () => {
+      const existing = await readJsonBinRaw({ forceRefresh: true });
+      let nextData;
+      if (session.role === 'admin') {
+        nextData = preserveSensitiveFields(existing, data || {});
+      } else {
+        nextData = mergeUserWrite(existing, data || {}, session);
+      }
+      return writeJsonBinRaw(nextData, { backupSource: existing });
+    });
     res.json({ success: true, result });
   } catch(e) {
     console.error('DB write error:', e.message);
@@ -1314,6 +1428,12 @@ app.post('/admin/backups/restore-settings', async (req, res) => {
     console.error('Restore settings error:', e.message);
     res.status(500).json({ error: e.message || 'Could not restore settings from backup' });
   }
+});
+
+app.get('/auth/me', (req, res) => {
+  const session = getSession(req);
+  if (!session) return res.status(401).json({ error: 'Unauthorized' });
+  res.json({ success: true, role: session.role, email: session.email });
 });
 
 app.post('/auth/login', async (req, res) => {
@@ -1860,8 +1980,7 @@ app.post('/purchase', async (req, res) => {
     if (Number(user.balance || 0) < Number(price)) return res.status(400).json({ error: 'Insufficient balance' });
 
     const dateStr = formatBeirutTime();
-    const accounts = stockAccountsForPlan(data.stock, skey);
-    const acc = accounts.find(a => !a.used);
+    const acc = pickAvailableAccount(data, skey);
     user.transactions = Array.isArray(user.transactions) ? user.transactions : [];
 
     if (!acc) {
@@ -1934,6 +2053,98 @@ app.post('/purchase', async (req, res) => {
     res.status(500).json({ error: 'Purchase failed' });
   } finally {
     activePurchases.delete(lockKey);
+  }
+});
+
+app.post('/customer/topup-request', async (req, res) => {
+  const session = requireSession(req, res, ['user']);
+  if (!session) return;
+  const { amount, label } = req.body || {};
+  const amt = Number(amount);
+  if (!amt || amt <= 0) return res.status(400).json({ error: 'Invalid amount' });
+  try {
+    const data = await readJsonBinRaw();
+    data.topupreqs = Array.isArray(data.topupreqs) ? data.topupreqs : [];
+    data.users = Array.isArray(data.users) ? data.users : [];
+    const user = data.users.find(u => normalizeEmail(u.email) === session.email);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    const duplicate = data.topupreqs.find(r =>
+      normalizeEmail(r.email) === session.email &&
+      r.status === 'pending' &&
+      Number(r.amount) === amt &&
+      Date.now() - Number(r.id || 0) < 3600000
+    );
+    if (duplicate) {
+      return res.json({ success: true, duplicate: true, request: duplicate, data: safeDataForSession(data, session) });
+    }
+    const reqRow = {
+      id: Date.now(),
+      name: user.name,
+      email: user.email,
+      tgChatId: user.tgChatId || '',
+      amount: amt,
+      label: label || `$${amt}`,
+      date: formatBeirutTime(),
+      status: 'pending'
+    };
+    data.topupreqs.unshift(reqRow);
+    await writeJsonBinRaw(data);
+    await sendTG(
+      TG_ADMIN,
+      `💳 <b>Topup Request</b>\n\n👤 <b>${user.name}</b>\n📧 ${user.email}\n💵 Amount: <b>${reqRow.label}</b>\n📅 ${reqRow.date}\n\nGo to Admin → Topup Requests to credit after payment.`,
+      'HTML'
+    ).catch((e) => console.error('Topup admin TG:', e.message));
+    res.json({ success: true, request: reqRow, data: safeDataForSession(data, session) });
+  } catch (e) {
+    console.error('Topup request error:', e.message);
+    res.status(500).json({ error: 'Could not submit top-up request' });
+  }
+});
+
+app.post('/admin/credit-topup', async (req, res) => {
+  const session = requireSession(req, res, ['admin']);
+  if (!session) return;
+  const { requestId } = req.body || {};
+  if (!requestId) return res.status(400).json({ error: 'Request ID required' });
+  try {
+    const data = await readJsonBinRaw();
+    data.topupreqs = Array.isArray(data.topupreqs) ? data.topupreqs : [];
+    data.users = Array.isArray(data.users) ? data.users : [];
+    const reqRow = data.topupreqs.find(r => String(r.id) === String(requestId));
+    if (!reqRow) return res.status(404).json({ error: 'Top-up request not found' });
+    if (reqRow.status === 'credited') {
+      return res.json({ success: true, alreadyCredited: true, data: safeDataForSession(data, { role: 'admin' }) });
+    }
+    const user = data.users.find(u => normalizeEmail(u.email) === normalizeEmail(reqRow.email));
+    if (!user) return res.status(404).json({ error: 'User not found: ' + reqRow.email });
+    user.balance = Number(user.balance || 0) + Number(reqRow.amount || 0);
+    user.transactions = Array.isArray(user.transactions) ? user.transactions : [];
+    user.transactions.unshift({
+      type: 'topup',
+      label: `Wallet top-up — ${reqRow.label}`,
+      amount: Number(reqRow.amount),
+      balance: user.balance,
+      date: formatBeirutTime()
+    });
+    reqRow.status = 'credited';
+    await writeJsonBinRaw(data);
+    const custTgId = String(user.tgChatId || reqRow.tgChatId || '').trim();
+    if (custTgId) {
+      await sendTG(
+        custTgId,
+        `💰 <b>Wallet Topped Up!</b>\n\n✅ <b>${reqRow.label}</b> has been added to your wallet.\n💵 New balance: $${Number(user.balance).toFixed(2)}\n\nEnjoy shopping on rashadtech.tv! 🎉`,
+        'HTML'
+      ).catch((e) => console.error('Topup customer TG:', e.message));
+    }
+    await sendTG(
+      TG_ADMIN,
+      `✅ Credited ${reqRow.label} to ${reqRow.name} (${reqRow.email}) · Balance: $${Number(user.balance).toFixed(2)}${custTgId ? '' : ' · ⚠️ No TG ID'}`,
+      'HTML'
+    ).catch((e) => console.error('Topup credit admin TG:', e.message));
+    res.json({ success: true, user: sanitizeUser(user), data: safeDataForSession(data, { role: 'admin' }) });
+  } catch (e) {
+    console.error('Credit topup error:', e.message);
+    res.status(500).json({ error: 'Could not credit top-up' });
   }
 });
 
@@ -2545,7 +2756,8 @@ rtEnhancements = registerEnhancements(app, {
   sessions,
   SESSION_TTL_MS,
   findUserOrderRecord,
-  notifyPurchaseFulfilled
+  notifyPurchaseFulfilled,
+  pickAvailableAccount
 });
 
 const whatsappBot = registerWhatsAppBot(app, {

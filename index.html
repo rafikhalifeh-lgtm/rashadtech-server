@@ -1222,12 +1222,21 @@ function authHeaders(){
   return headers;
 }
 
-async function rtApi(path,opts={}){
-  const r=await fetch(RT_SERVER+path,{...opts,headers:{...authHeaders(),...(opts.headers||{})}});
-  const j=await r.json().catch(()=>({}));
-  if(!r.ok)throw new Error(j.error||'Request failed');
-  if(j.success===false)throw new Error(j.error||'Request failed');
-  return j;
+async function rtApi(path,opts={},timeoutMs=25000){
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),timeoutMs);
+  try{
+    const r=await fetch(RT_SERVER+path,{...opts,headers:{...authHeaders(),...(opts.headers||{})},signal:controller.signal});
+    clearTimeout(timer);
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(j.error||'Request failed');
+    if(j.success===false)throw new Error(j.error||'Request failed');
+    return j;
+  }catch(e){
+    clearTimeout(timer);
+    if(e.name==='AbortError')throw new Error('Server is waking up — please try again.');
+    throw e;
+  }
 }
 
 function normEmail(e){return String(e||'').trim().toLowerCase();}
@@ -1368,11 +1377,19 @@ function clearStoredSession(){
 async function validateStoredSession(role){
   if(!authToken)return false;
   try{
-    const r=await fetch(RT_SERVER+'/db/read',{method:'POST',headers:authHeaders(),body:JSON.stringify({})});
+    const controller=new AbortController();
+    const timer=setTimeout(()=>controller.abort(),12000);
+    const r=await fetch(RT_SERVER+'/auth/me',{
+      headers:{Authorization:'Bearer '+authToken},
+      signal:controller.signal
+    });
+    clearTimeout(timer);
     if(r.status===401){clearStoredSession();return false;}
     if(!r.ok)return false;
-    const j=await r.json();
-    if(j.success&&j.data)applyDataSnapshot(j.data);
+    const me=await r.json().catch(()=>({}));
+    if(!me.success||me.role!==role)return false;
+    const data=await jbRead();
+    if(data)applyDataSnapshot(data);
     return true;
   }catch(e){
     return false;
@@ -1398,12 +1415,22 @@ async function jbRead(){
 }
 
 async function jbWrite(data){
-  const r=await fetch(RT_SERVER+'/db/write',{
-    method:'POST',headers:authHeaders(),
-    body:JSON.stringify({data})
-  });
-  if(!r.ok)throw new Error('Write failed: '+r.status);
-  return await r.json();
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),20000);
+  try{
+    const r=await fetch(RT_SERVER+'/db/write',{
+      method:'POST',headers:authHeaders(),
+      body:JSON.stringify({data}),
+      signal:controller.signal
+    });
+    clearTimeout(timer);
+    if(!r.ok)throw new Error('Write failed: '+r.status);
+    return await r.json();
+  }catch(e){
+    clearTimeout(timer);
+    if(e.name==='AbortError')throw new Error('Save timed out — please try again');
+    throw e;
+  }
 }
 
 // fbGet/fbSet wrap JSONBin — full bin read/write
@@ -1676,6 +1703,19 @@ function markLinkedStockSoldClient(acc,soldTo,skey){
 function markUsed(k,i){
   const acc=stockAccountsForKey(k)[i];
   if(acc)markLinkedStockSoldClient(acc,null,k);
+}
+function markUsedByAcc(k,acc,soldTo){
+  if(!acc||!k)return;
+  const list=getAccounts(k);
+  let idx=-1;
+  if(acc.accKey)idx=list.findIndex(a=>a&&a.accKey===acc.accKey);
+  if(idx<0&&acc.email)idx=list.findIndex(a=>a&&a.email===acc.email);
+  if(idx>=0){
+    const target=list[idx];
+    markLinkedStockSoldClient(target,soldTo,k);
+  }else{
+    markLinkedStockSoldClient(acc,soldTo,k);
+  }
 }
 function stockLabel(n){if(n===0)return['Out of stock','sout'];if(n<=3)return[`${n} left`,'slow'];return[`${n} in stock`,'sok'];}
 
@@ -2536,18 +2576,17 @@ async function doAdminLogin(){
     persistAuthToken(j.token,'admin');isAdmin=true;
     try{localStorage.setItem('rt_admin_session',JSON.stringify({ts:Date.now()}));}catch(e){}
     applyDataSnapshot(j.data||{});
-    try{
-      const rr=await fetch(RT_SERVER+'/admin/recover-settings',{method:'POST',headers:authHeaders(),body:'{}'});
-      const rj=await rr.json();
-      if(rr.ok&&rj.success){
-        if(rj.data)applyDataSnapshot(rj.data);
-        if(rj.catalog)applyPriceCatalog(rj.catalog);
-        if(rj.recovered)showToast(`✓ Restored ${rj.customPriceCount||0} custom prices from backup`);
-      }
-    }catch(e){console.warn('recover settings',e);}
     document.getElementById('admin-err').style.display='none';logActivity('Admin login');
     document.getElementById('page-auth').classList.remove('active');
     document.getElementById('page-admin').classList.add('active');
+    fetch(RT_SERVER+'/admin/recover-settings',{method:'POST',headers:authHeaders(),body:'{}'})
+      .then(rr=>rr.json().then(rj=>{
+        if(rr.ok&&rj.success){
+          if(rj.data)applyDataSnapshot(rj.data);
+          if(rj.catalog)applyPriceCatalog(rj.catalog);
+          if(rj.recovered)showToast(`✓ Restored ${rj.customPriceCount||0} custom prices from backup`);
+        }
+      })).catch(()=>{});
     await loadPriceCatalog();
     renderStockPanels();renderAdminCustomers();renderWallets();renderAdminRequests();renderAdminExpiry();renderNetflixRenewalAlerts();renderTopupRequests();renderGameOrders();renderAdminPending();
     refreshAdminBackupStatus();
@@ -2974,99 +3013,8 @@ async function confirmPurchase(){
     finally{purchaseInFlight=false;}
     return;
   }
-  purchaseInFlight=true;
-  try{
-  const acc=getNextAcc(skey);
-  const dateStr=fmtBeirutTime();
-  if(!acc){
-    // No stock — create pending order, customer sees normal success
-    currentUser.balance-=price;
-    currentUser.transactions.unshift({type:'purchase',label:'Bought '+p.name+' · '+planLabel,amount:price,balance:currentUser.balance,date:dateStr});
-    // Store pending order — load existing first so we don't overwrite
-    let pending=[];
-    try{
-      if(!_jbCache)_jbCache=await jbRead();
-      if(_jbCache.pending&&Array.isArray(_jbCache.pending))pending=_jbCache.pending;
-    }catch(e){}
-    const newPendingOrder={id:'#'+(Math.floor(Math.random()*90000+10000)),userEmail:currentUser.email,userName:currentUser.name,userTgChatId:currentUser.tgChatId||'',product:p.name,short:p.short,color:p.color,tc:p.tc,productId:p.id,plan:planLabel,price,skey,date:dateStr,createdAt:Date.now(),status:'awaiting_stock',statusHistory:[{stage:'placed',at:Date.now()},{stage:'awaiting_stock',at:Date.now()}],...extraFields};
-    pending.unshift(newPendingOrder);
-    currentUser.transactions[0].pending=true;
-    currentUser.transactions[0].orderId=newPendingOrder.id;
-    try{_jbCache.pending=pending;await jbWrite(_jbCache);}catch(e){console.warn('pending save error:',e);}
-    await saveData();updateBal();renderSubs();renderTx();
-    closeModal('buy-modal');
-    showToast('✓ Purchase successful!');
-    // Bot message to customer
-    if(currentUser.tgChatId){
-      await sendTelegramToUser(currentUser.tgChatId,`✅ <b>Purchase Confirmed!</b>\n\n📦 ${p.name} · ${planLabel}\n💵 ${fmt(price)}\n💰 New balance: ${fmt(currentUser.balance)}\n\n⏳ Your account credentials will be delivered to you here shortly. Thank you for your patience!`);
-    }
-    await sendTelegram(`⏳ <b>Pending Order</b>\n👤 ${currentUser.name} (${currentUser.email})\n📦 ${p.name} · ${planLabel}\n💵 ${fmt(price)}\n⚠️ No stock — add accounts in Stock tab to fulfill.`);
-    return;
-  }
-  const accIdx=getAccounts(skey).indexOf(acc);markUsed(skey,accIdx);
-  currentUser.balance-=price;
-  const order={id:'#'+(Math.floor(Math.random()*90000+10000)),product:p.name,short:p.short,color:p.color,tc:p.tc,productId:p.id,plan:planLabel,price,email:acc.email,pass:acc.pass,date:dateStr,expiryDate:acc.expiryDate||null,...extraFields,...(accountProfileName(acc)?{profileName:accountProfileName(acc)}:{}),...(acc.profilePin?{profilePin:acc.profilePin}:{}),accKey:acc.accKey||'',mainEmail:acc.mainEmail||''};
-  if(assignCustId!==null){
-    const c=currentUser.myCustomers.find(x=>x.id===assignCustId);
-    if(c){
-      // Auto-set profile name to customer's first name
-      order.profileName=c.fname;
-      c.subs=c.subs||[];c.subs.push(order);
-    }
-    currentUser.transactions=currentUser.transactions||[];
-    currentUser.transactions.unshift({type:'purchase',label:'Bought '+p.name+' · '+planLabel+' (sub-customer)',amount:price,balance:currentUser.balance,date:dateStr});
-    await saveData();closeModal('buy-modal');closeModal('assign-modal');renderSubs();renderTx();renderMyCustomers();showToast('✓ Subscription assigned');
-    // Send credentials + link to Customer1 only
-    const cleanId=(order.id||'').replace('#','');
-    const cleanId2=(order.id||'').replace('#','');
-    const data2={id:order.id,product:p.name,short:p.short,color:p.color,tc:p.tc,productId:p.id,plan:planLabel,email:acc.email,pass:acc.pass,expiryDate:acc.expiryDate||'',profileName:order.profileName||'',profilePin:order.profilePin||'',accKey:order.accKey||'',mainEmail:acc.mainEmail||'',codeEmail:acc.email,inboxEmail:acc.mainEmail||acc.email};
-    const subLink=await createSubLinkUrl(data2);
-    const custName=c?`${c.fname} ${c.lname}`:'Customer';
-    if(currentUser.tgChatId){
-      let tgMsg=`✅ <b>${p.name} Subscription for ${custName}</b>\n\n`;
-      tgMsg+=`📋 ${planLabel}\n`;
-      tgMsg+=`📧 Email: <code>${acc.email}</code>\n`;
-      tgMsg+=`🔑 Password: <code>${acc.pass}</code>\n`;
-      if(order.profileName)tgMsg+=`👤 Profile: <b>${order.profileName}</b>\n`;
-      if(order.profilePin)tgMsg+=`🔢 PIN: <code>${order.profilePin}</code>\n`;
-      if(acc.expiryDate)tgMsg+=`⏰ Expires: ${acc.expiryDate}\n`;
-      tgMsg+=`\n🔗 Share link:\n${subLink}`;
-      await sendTelegramToUser(currentUser.tgChatId,tgMsg);
-    }
-    // Notify admin
-    await sendTelegram(`📦 <b>Subscription Assigned</b>\n👤 ${currentUser.name} → ${custName}\n📺 ${p.name} · ${planLabel}\n💵 ${fmt(price)}`);
-    if(isAdmin)renderStockPanels();
-    return;
-  } else {
-    currentUser.orders.unshift(order);
-    currentUser.transactions.unshift({type:'purchase',label:'Bought '+p.name+' · '+planLabel,amount:price,balance:currentUser.balance,date:dateStr});
-    await saveData();updateBal();renderSubs();renderTx();renderExpiryTracker();
-  }
-  const custInfo=assignCustId!==null?(()=>{const c=currentUser.myCustomers.find(x=>x.id===assignCustId);return c?`\n👥 <b>Assigned to:</b> ${c.fname} ${c.lname} (${c.code}${c.phone})`:''})():'';
-  let tgMsg=`🎉 <b>New Purchase</b>\n\n📦 <b>Product:</b> ${p.name}\n📋 <b>Plan:</b> ${planLabel}\n💵 <b>Price:</b> ${fmt(price)}\n👤 <b>Buyer:</b> ${currentUser.name} (${currentUser.email})\n📅 <b>Date:</b> ${dateStr}${custInfo}\n\n🔐 <b>Credentials:</b>\n📧 Email: <code>${acc.email}</code>\n🔑 Password: <code>${acc.pass}</code>`;
-  if(accountProfileName(acc))tgMsg+=`\n👤 Profile: <code>${accountProfileName(acc)}</code>`;
-  if(acc.expiryDate)tgMsg+=`\n📅 Expires: ${acc.expiryDate}`;
-  await sendTelegram(tgMsg);
-  // Send credentials to customer via Telegram bot
-  if(currentUser.tgChatId){
-    const forCust=assignCustId!==null?currentUser.myCustomers?.find(x=>x.id===assignCustId):null;
-    await deliverPurchaseTelegram(order,p,planLabel,price,forCust||null);
-  }
-  if(assignCustId===null){
-    let cl=`<div class="cred-line"><div class="cred-label">Email</div><div class="cred-val">${acc.email}</div></div><div class="cred-line"><div class="cred-label">Password</div><div class="cred-val">${acc.pass}</div></div>`;
-    if(accountProfileName(acc))cl+=`<div class="cred-line"><div class="cred-label">Profile</div><div class="cred-val">${accountProfileName(acc)}</div></div>`;
-    if(acc.expiryDate)cl+=`<div class="cred-line"><div class="cred-label">Expires</div><div class="cred-val">${acc.expiryDate}</div></div>`;
-    document.getElementById('modal-body').innerHTML=`<div class="success-wrap">
-      <i class="ti ti-circle-check" style="font-size:40px;color:var(--green);display:block;margin-bottom:12px"></i>
-      <div style="font-size:16px;font-weight:600;margin-bottom:6px">Purchase successful!</div>
-      <div style="font-size:13px;color:var(--text2);margin-bottom:2px">Your ${p.name} account is ready.</div>
-      <div class="cred-box">${cl}</div>
-      <div style="font-size:12px;color:var(--text2);margin-bottom:14px">New balance: <strong>${fmt(currentUser.balance)}</strong></div>
-      <button class="modal-buy-btn" onclick="closeModal('buy-modal')">Done</button></div>`;
-  }
-  if(isAdmin)renderStockPanels();
-  }catch(e){showToast('⚠️ '+(e.message||'Purchase failed'));}
-  finally{purchaseInFlight=false;}
+  showToast('Sign in as a customer to purchase. Use Admin → Pending Orders to fulfill stock.');
+  return;
 }
 
 function shahidActionButtons(orderId){
@@ -3980,33 +3928,20 @@ function renderAmounts(){document.getElementById('amounts-grid').innerHTML=topup
 function selAmt(i){document.querySelectorAll('.amt-btn').forEach(b=>b.classList.remove('sel'));document.getElementById('amt-'+i).classList.add('sel');selectedTopup=topupAmts[i];const btn=document.getElementById('topup-btn');btn.disabled=false;btn.textContent='Top up '+topupAmts[i].l;}
 async function reqTopup(){
   if(!selectedTopup||topupInFlight)return;
-  if(currentUser){
-    const dup=topupRequests.find(r=>normEmail(r.email)===normEmail(currentUser.email)&&r.status==='pending'&&r.amount===selectedTopup.v&&Date.now()-(r.id||0)<3600000);
-    if(dup){
-      document.getElementById('topup-amt-lbl').textContent=selectedTopup.l;
-      openModal('topup-modal');
-      showToast('You already have a pending top-up request');
-      return;
-    }
+  if(!dataLoaded||!authToken){
+    showToast('Please wait — still loading your account');
+    return;
   }
   topupInFlight=true;
   const btn=document.getElementById('topup-btn');
   if(btn)btn.disabled=true;
-  let addedReq=null;
   try{
-    document.getElementById('topup-amt-lbl').textContent=selectedTopup.l;
-    if(currentUser){
-      addedReq={id:Date.now(),name:currentUser.name,email:currentUser.email,tgChatId:currentUser.tgChatId||'',amount:selectedTopup.v,label:selectedTopup.l,date:fmtBeirutTime(),status:'pending'};
-      topupRequests.unshift(addedReq);
-      await saveData();
-      await sendTelegram(`💳 <b>Topup Request</b>\n\n👤 <b>${currentUser.name}</b>\n📧 ${currentUser.email}\n💵 Amount: <b>${selectedTopup.l}</b>\n📅 ${addedReq.date}\n\nGo to Admin → Topup Requests to credit after payment.`);
-    }
+    const j=await postJson('/customer/topup-request',{amount:selectedTopup.v,label:selectedTopup.l});
+    if(j.data)applyDataSnapshot(j.data);
+    if(j.duplicate)showToast('You already have a pending top-up request');
+  document.getElementById('topup-amt-lbl').textContent=selectedTopup.l;
     openModal('topup-modal');
   }catch(e){
-    if(addedReq){
-      const idx=topupRequests.indexOf(addedReq);
-      if(idx>=0)topupRequests.splice(idx,1);
-    }
     showToast('⚠️ Could not submit top-up — please try again');
   }finally{
     topupInFlight=false;
@@ -4939,8 +4874,10 @@ async function renderAdminPending(){
   const el=document.getElementById('admin-pending-list');
   if(!el)return;
   let pending=[];
-  try{if(_jbCache&&_jbCache.pending)pending=_jbCache.pending;else{_jbCache=await jbRead();if(_jbCache.pending)pending=_jbCache.pending;}}catch(e){}
-  try{_jbCache=await jbRead();if(_jbCache&&_jbCache.pending)pending=_jbCache.pending;}catch(e){}
+  try{
+    if(!_jbCache||!Array.isArray(_jbCache.pending))_jbCache=await jbRead();
+    pending=Array.isArray(_jbCache?.pending)?_jbCache.pending:[];
+  }catch(e){}
   if(!pending.length){el.innerHTML='<div class="empty-state" style="padding:32px">No pending orders. 🎉</div>';return;}
   el.innerHTML=pending.map((po,i)=>{
     const age=pendingAgeLabel(po);
@@ -4972,39 +4909,16 @@ async function cancelPendingOrder(orderId){
   }catch(e){showToast('⚠️ '+e.message);}
 }
 async function manualFulfillPending(i){
-  await refreshFromFirebase();
-  let pending=Array.isArray(_jbCache?.pending)?_jbCache.pending:[];
-  
-  if(!pending[i]){showToast('Order not found');return;}
-  const po=pending[i];
-  // Check if stock available
-  const acc=getNextAcc(po.skey);
-  if(!acc){showToast('Still no stock for this plan. Add accounts first.');return;}
-  const accIdx=getAccounts(po.skey).indexOf(acc);markUsed(po.skey,accIdx);
-  // Add to customer orders
-  const u=users.find(x=>x.email===po.userEmail);
-  if(u){
-    u.orders.unshift({id:po.id,product:po.product,short:po.short,color:po.color,tc:po.tc,productId:po.productId,plan:po.plan,price:po.price,email:acc.email,pass:acc.pass,date:po.date,expiryDate:acc.expiryDate||null,...(acc.profilePin?{profilePin:acc.profilePin}:{}),accKey:acc.accKey||'',mainEmail:acc.mainEmail||''});
-  }
-  pending.splice(i,1);
-  try{}catch(e){}
-  try{if(!_jbCache)_jbCache=await jbRead();_jbCache.pending=pending;await jbWrite(_jbCache);}catch(e){}
-  await saveData();
-  renderAdminPending();renderStockPanels();
-  showToast('✓ Order fulfilled!');
-  // Notify customer
-  const tgId=u?.tgChatId||po.userTgChatId||'';
-  if(tgId){
-    const prof=po.profileName||accountProfileName(acc)||'';
-    const linkDataM={id:po.id,product:po.product,short:po.short,color:po.color,tc:po.tc,productId:po.productId,plan:po.plan,email:acc.email,pass:acc.pass,expiryDate:acc.expiryDate||'',profileName:prof,profilePin:acc.profilePin||'',accKey:acc.accKey||'',mainEmail:acc.mainEmail||'',codeEmail:acc.email,inboxEmail:acc.mainEmail||acc.email,linkExpiry:Date.now()+(90*24*60*60*1000)};
-    const subLinkM=await createSubLinkUrl(linkDataM);
-    let msg=`✅ <b>Your ${po.product} is ready!</b>\n\n📋 ${po.plan}\n\n🔐 <b>Credentials:</b>\n📧 Email: <code>${acc.email}</code>\n🔑 Password: <code>${acc.pass}</code>`;
-    if(prof)msg+=`\n👤 Profile: <code>${prof}</code>`;
-    if(acc.expiryDate)msg+=`\n⏰ Expires: ${acc.expiryDate}`;
-    msg+=`\n\n🔗 <b>Your subscription link:</b>\n${subLinkM}\n\nEnjoy! 🌟`;
-    await sendTelegramToUser(tgId,msg);
-  }
-  await sendTelegram(`✅ Fulfilled: ${po.product} · ${po.plan} for ${po.userName}`);
+  try{
+    let pending=Array.isArray(_jbCache?.pending)?[..._jbCache.pending]:[];
+    if(!pending.length){_jbCache=await jbRead();pending=_jbCache?.pending||[];}
+    const po=pending[i];
+    if(!po)throw new Error('Order not found');
+    const j=await rtApi('/admin/fulfill-pending',{method:'POST',body:JSON.stringify({orderId:po.id})});
+    if(j.data)applyDataSnapshot(j.data);
+    renderAdminPending();renderStockPanels();renderSubs();renderMyCustomers();
+    showToast(j.alreadyFulfilled?'Already fulfilled':'✓ Order fulfilled');
+  }catch(e){showToast('⚠️ '+(e.message||'Fulfill failed'));}
 }
 
 async function renderGameOrders(){
@@ -5060,7 +4974,7 @@ function renderTopupRequests(){
       <div class="aw-bal" style="color:var(--blue);font-weight:700">${r.label}</div>
       ${r.status==='pending'
         ? (userExists
-          ? `<button class="aw-add-btn" onclick="creditTopupReq(${i})" style="white-space:nowrap">✓ Credit & Notify</button>`
+          ? `<button class="aw-add-btn" onclick="creditTopupReq(${r.id})" style="white-space:nowrap">✓ Credit & Notify</button>`
           : `<button class="aw-add-btn" onclick="deleteTopupReq(${i})" style="white-space:nowrap;background:var(--red-bg);color:var(--red);border-color:var(--red-border)">🗑 Remove</button>`)
         : `<span style="font-size:11px;background:var(--green-bg);color:var(--green);border:1px solid var(--green-border);padding:3px 8px;border-radius:4px;font-weight:600">Credited</span>`
       }
@@ -5068,36 +4982,22 @@ function renderTopupRequests(){
     </div>`;
   }).join('');
 }
-async function creditTopupReq(i){
-  await refreshFromFirebase();
-  const req=topupRequests[i];
-  if(!req)return;
-  const lockKey=req.id||String(i);
+async function creditTopupReq(requestId){
+  const lockKey=String(requestId);
   if(creditTopupInFlight.has(lockKey))return;
-  if(req.status==='credited'){showToast('Already credited');return;}
   creditTopupInFlight.add(lockKey);
-  req.status='credited';
   try{
-    const u=users.find(x=>x.email===req.email);
-    if(!u){req.status='pending';showToast('User not found: '+req.email);return;}
-    u.balance+=req.amount;
-    u.transactions.unshift({type:'topup',label:`Wallet top-up — ${req.label}`,amount:req.amount,balance:u.balance,date:fmtBeirutTime()});
-    await saveData();
+    const j=await rtApi('/admin/credit-topup',{method:'POST',body:JSON.stringify({requestId})});
+    if(j.data)applyDataSnapshot(j.data);
+    if(j.alreadyCredited)showToast('Already credited');
+    else showToast('✓ Top-up credited');
     renderTopupRequests();renderWallets();
-    if(currentUser&&currentUser.email===u.email){currentUser=u;updateBal();renderTx();}
-    showToast(`✓ Credited ${req.label} to ${req.name}`);
-    let latestUser=u;
-    try{if(_jbCache&&_jbCache.users){const fu=_jbCache.users.find(x=>x.email===req.email);if(fu)latestUser=fu;}}catch(e){}
-    const custTgId=latestUser.tgChatId||req.tgChatId||'';
-    if(custTgId){
-      await sendTelegramToUser(custTgId,`💰 <b>Wallet Topped Up!</b>\n\n✅ <b>${req.label}</b> has been added to your wallet.\n💵 New balance: ${fmt(u.balance)}\n\nEnjoy shopping on rashadtech.tv! 🎉`);
-    } else {
-      showToast('⚠️ No Telegram ID for '+req.name);
+    if(currentUser){
+      const fu=users.find(x=>normEmail(x.email)===normEmail(currentUser.email));
+      if(fu){currentUser=fu;updateBal();renderTx();}
     }
-    await sendTelegram(`✅ Credited ${req.label} to ${req.name} (${req.email}) · Balance: ${fmt(u.balance)}${custTgId?'':' · ⚠️ No TG ID'}`);
   }catch(e){
-    req.status='pending';
-    showToast('⚠️ Credit failed — try again');
+    showToast('⚠️ '+(e.message||'Credit failed'));
   }finally{creditTopupInFlight.delete(lockKey);}
 }
 async function saveData(){
@@ -5264,64 +5164,62 @@ async function init(){
   initFirebase();
   initTheme();
   initLang();
-  await loadPriceCatalog();
-  // Check for subscription link FIRST — hide all pages immediately
+  loadPriceCatalog().catch(()=>{});
   const params=new URLSearchParams(location.search);
   if(params.get('sub')||params.get('s')||params.get('t')){
-    // Hide everything, show only sublink page
     document.querySelectorAll('.page').forEach(p=>{p.classList.remove('active');p.style.display='none';});
     document.getElementById('page-sublink').style.display='flex';
     await checkSubLink();
     return;
   }
+
+  if(await restoreCustomerSession())return;
+  if(await restoreAdminSession())return;
+
   await loadData();
   renderAmounts();renderReqChips();
   startRealtimeSync();
   keepServerAwake();
   setTimeout(checkExpiryReminders,10000);
-  setTimeout(checkLowStock,15000); // Check low stock after 15s // Check expiry after 10s
+  setTimeout(checkLowStock,15000);
+}
 
-  // Restore customer session
+async function restoreCustomerSession(){
   try{
     const s=localStorage.getItem('rt_session');
-    if(s&&authToken&&authRole==='user'){
-      const sess=JSON.parse(s);
-      if(Date.now()-sess.ts < SESSION_MS){
-        if(await validateStoredSession('user')){
-          const u=users.find(x=>x.email===sess.email);
-          if(u){currentUser=u;enterApp();return;}
-        }
-        clearStoredSession();
-      } else {
-        clearStoredSession();
-      }
-    }
-  }catch(e){clearStoredSession();}
+    if(!s||!authToken||authRole!=='user')return false;
+    const sess=JSON.parse(s);
+    if(Date.now()-sess.ts>=SESSION_MS){clearStoredSession();return false;}
+    if(!await validateStoredSession('user')){clearStoredSession();return false;}
+    const u=users.find(x=>normEmail(x.email)===normEmail(sess.email));
+    if(!u){clearStoredSession();return false;}
+    currentUser=u;
+    enterApp();
+    startRealtimeSync();
+    keepServerAwake();
+    return true;
+  }catch(e){clearStoredSession();return false;}
+}
 
-  // Restore admin session
+async function restoreAdminSession(){
   try{
     const a=localStorage.getItem('rt_admin_session');
-    if(a&&authToken&&authRole==='admin'){
-      const sess=JSON.parse(a);
-      if(Date.now()-sess.ts < SESSION_MS){
-        if(await validateStoredSession('admin')){
-          isAdmin=true;
-          document.getElementById('page-auth').classList.remove('active');
-          document.getElementById('page-admin').classList.add('active');
-          await loadPriceCatalog();
-          renderStockPanels();renderAdminCustomers();renderWallets();renderAdminRequests();renderAdminExpiry();renderNetflixRenewalAlerts();renderTopupRequests();renderGameOrders();renderAdminPending();
-          refreshAdminBackupStatus();
-          if(!window._adminBackupPoll)window._adminBackupPoll=setInterval(refreshAdminBackupStatus,5*60*1000);
-          startRealtimeSync();
-          if(typeof rtSyncChatUI==='function')rtSyncChatUI();
-          return;
-        }
-        clearStoredSession();
-      } else {
-        clearStoredSession();
-      }
-    }
-  }catch(e){clearStoredSession();}
+    if(!a||!authToken||authRole!=='admin')return false;
+    const sess=JSON.parse(a);
+    if(Date.now()-sess.ts>=SESSION_MS){clearStoredSession();return false;}
+    if(!await validateStoredSession('admin')){clearStoredSession();return false;}
+    isAdmin=true;
+    document.getElementById('page-auth').classList.remove('active');
+    document.getElementById('page-admin').classList.add('active');
+    await loadPriceCatalog();
+    renderStockPanels();renderAdminCustomers();renderWallets();renderAdminRequests();renderAdminExpiry();renderNetflixRenewalAlerts();renderTopupRequests();renderGameOrders();renderAdminPending();
+    refreshAdminBackupStatus();
+    if(!window._adminBackupPoll)window._adminBackupPoll=setInterval(refreshAdminBackupStatus,5*60*1000);
+    startRealtimeSync();
+    keepServerAwake();
+    if(typeof rtSyncChatUI==='function')rtSyncChatUI();
+    return true;
+  }catch(e){clearStoredSession();return false;}
 }
 // Wait for full DOM before running
 if(document.readyState==='loading'){

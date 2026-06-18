@@ -58,7 +58,8 @@ function registerEnhancements(app, deps) {
     sessions,
     SESSION_TTL_MS,
     findUserOrderRecord,
-    notifyPurchaseFulfilled
+    notifyPurchaseFulfilled,
+    pickAvailableAccount
   } = deps;
 
   const activeFulfillOrders = new Set();
@@ -84,10 +85,18 @@ function registerEnhancements(app, deps) {
   async function persistSessions() {
     try {
       const data = await readJsonBinRaw();
-      const stored = {};
+      const stored = { ...(data[SESSIONS_KEY] || {}) };
       const now = Date.now();
       for (const [token, item] of sessions.entries()) {
-        if (item && now < Number(item.expiresAt || 0)) stored[token] = item;
+        if (item && now < Number(item.expiresAt || 0)) {
+          const prev = stored[token];
+          if (!prev || Number(item.expiresAt || 0) >= Number(prev.expiresAt || 0)) {
+            stored[token] = item;
+          }
+        }
+      }
+      for (const [token, item] of Object.entries(stored)) {
+        if (!item || now >= Number(item.expiresAt || 0)) delete stored[token];
       }
       data[SESSIONS_KEY] = stored;
       await writeJsonBinRaw(data, { backupReason: 'session-sync' });
@@ -693,7 +702,9 @@ function registerEnhancements(app, deps) {
         return res.json({ success: true, removedOrphan: true, alreadyFulfilled: true, user: sanitizeUser(user), data: safeDataForSession(data, { role: 'admin' }) });
       }
       const accounts = stockAccountsForPlan(data.stock, po.skey);
-      const acc = accounts.find(a => !a.used);
+      const acc = typeof pickAvailableAccount === 'function'
+        ? pickAvailableAccount(data, po.skey)
+        : accounts.find(a => !a.used);
       if (!acc) return res.status(409).json({ error: 'No stock available for this plan' });
       const aliasError = validateNetflixAliasPurchase(data, po.skey, acc);
       if (aliasError) return res.status(409).json({ error: aliasError });
