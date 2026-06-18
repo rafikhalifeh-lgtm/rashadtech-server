@@ -100,16 +100,38 @@ function initGameOrder(order) {
   return order;
 }
 
+const BEIRUT_TZ = 'Asia/Beirut';
+
+function formatBeirutTime(date = new Date()) {
+  try {
+    return new Date(date).toLocaleString('en-GB', {
+      day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+      timeZone: BEIRUT_TZ,
+    });
+  } catch (e) {
+    return '';
+  }
+}
+
 function parseLocaleDateMs(dateStr) {
   if (!dateStr) return null;
   const parts = String(dateStr).split(/[\/,\s]/).filter(Boolean);
   if (parts.length < 3) return null;
   const day = parseInt(parts[0], 10);
-  const month = parseInt(parts[1], 10) - 1;
+  const month = parseInt(parts[1], 10);
   const year = parseInt(parts[2], 10);
   const hour = parts[3] !== undefined ? parseInt(parts[3].split(':')[0], 10) : 12;
   const minute = parts[3] !== undefined ? parseInt(parts[3].split(':')[1] || '0', 10) : 0;
-  const dt = new Date(year, month, day, hour, minute);
+  const iso = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00`;
+  const utcGuess = Date.parse(iso + 'Z');
+  if (!Number.isFinite(utcGuess)) return null;
+  const beirutFmt = new Date(utcGuess).toLocaleString('en-GB', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', timeZone: BEIRUT_TZ,
+  });
+  if (beirutFmt === String(dateStr).trim()) return utcGuess;
+  const dt = new Date(year, month - 1, day, hour, minute);
   return Number.isFinite(dt.getTime()) ? dt.getTime() : null;
 }
 
@@ -121,15 +143,7 @@ function pendingAgeMs(order) {
 }
 
 function formatDeliveryTime(ts) {
-  if (!ts) return '';
-  try {
-    return new Date(ts).toLocaleString('en-GB', {
-      day: '2-digit', month: '2-digit', year: 'numeric',
-      hour: '2-digit', minute: '2-digit'
-    });
-  } catch (e) {
-    return '';
-  }
+  return formatBeirutTime(ts);
 }
 
 function normalizeEmail(email) {
@@ -228,7 +242,9 @@ module.exports = {
   initGameOrder,
   parseLocaleDateMs,
   pendingAgeMs,
+  formatBeirutTime,
   formatDeliveryTime,
+  BEIRUT_TZ,
   findOwnerForStockAccount,
   collectLowStockItems,
   diffPriceCatalog,

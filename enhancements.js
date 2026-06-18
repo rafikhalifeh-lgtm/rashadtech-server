@@ -13,7 +13,8 @@ const {
   findOwnerForStockAccount,
   collectLowStockItems,
   diffPriceCatalog,
-  pendingAgeMs
+  pendingAgeMs,
+  formatBeirutTime
 } = require('./orderHelpers');
 
 const PRICE_CHANGE_LOG_KEY = 'priceChangeLog';
@@ -71,7 +72,7 @@ function registerEnhancements(app, deps) {
         details,
         actor,
         ts: Date.now(),
-        time: new Date().toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+        time: formatBeirutTime()
       });
       data[ACTIVITY_LOG_KEY] = log.slice(0, 500);
       await writeJsonBinRaw(data, { backupReason: 'activity-log' });
@@ -369,7 +370,7 @@ function registerEnhancements(app, deps) {
         : null;
       const parts = String(skey).split('__');
       const prod = productsLabelFromKey(parts);
-      const dateStr = new Date().toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+      const dateStr = formatBeirutTime();
       const orderId = '#' + (Math.floor(Math.random() * 90000 + 10000));
       markLinkedStockSold(data.stock, acc, {
         userEmail: user.email,

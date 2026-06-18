@@ -310,7 +310,7 @@
   const _origAdminLogin=window.doAdminLogin;
   if(typeof _origAdminLogin==='function'){
     window.doAdminLogin=async function(){
-      try{rtShowLoading('Signing in...');await _origAdminLogin();loadAdminEnhancements();loadGmailMonitorPanel();}
+      try{rtShowLoading('Signing in...');await _origAdminLogin();await loadAdminEnhancements();loadGmailMonitorPanel();}
       finally{rtHideLoading();}
     };
   }

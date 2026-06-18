@@ -603,7 +603,7 @@ So your EmailJS template will receive the user email and verification code corre
       <div class="err-msg" id="login-err">Invalid email or password.</div>
       <form id="login-form" novalidate onsubmit="event.preventDefault();doLogin();" autocomplete="on">
       <div class="field"><label for="login-email">Email</label><input type="email" inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false" name="email" id="login-email" placeholder="you@email.com" autocomplete="username email"></div>
-      <div class="field"><label for="login-pass">Password</label><input type="password" name="password" id="login-pass" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter'){event.preventDefault();doLogin();}">
+      <div class="field"><label for="login-pass">Password</label><input type="password" name="password" id="login-pass" placeholder="••••••••" autocomplete="current-password">
       <a class="forgot-link" onclick="showView('forgot')">Forgot password?</a></div>
       <button type="submit" class="btn-primary">Sign in</button>
       </form>
@@ -675,7 +675,8 @@ So your EmailJS template will receive the user email and verification code corre
     <div id="view-admin" style="display:none">
       <div class="auth-title">Admin panel</div><div class="auth-desc">Enter admin password</div>
       <div class="err-msg" id="admin-err">Wrong password.</div>
-      <div class="field"><label>Password</label><input type="password" id="admin-pass" placeholder="••••••••" onkeydown="if(event.key==='Enter')doAdminLogin()"></div>
+      <div class="field"><label>Password</label><input type="password" id="admin-pass" placeholder="••••••••" autocomplete="current-password"></div>
+      <div class="field"><label>Admin PIN</label><input type="password" id="admin-pin" inputmode="numeric" autocomplete="one-time-code" placeholder="••••" onkeydown="if(event.key==='Enter')doAdminLogin()"></div>
       <button class="btn-primary" onclick="doAdminLogin()">Enter</button>
       <div class="auth-switch"><a onclick="showView('login')">← Back</a></div>
     </div>
@@ -1164,12 +1165,54 @@ let activityLog=[];
 function logActivity(action,details=''){
   activityLog.unshift({
     action,details,
-    time:new Date().toLocaleString('en-GB'),
+    time:fmtBeirutTime(),
     ts:Date.now()
   });
   if(activityLog.length>100)activityLog.pop(); // Keep last 100
 }
 let _jbCache=null; // local cache of full bin
+let syncPausedUntil=0;
+let topupInFlight=false;
+const creditTopupInFlight=new Set();
+let customOrderInFlight=false;
+let creditWalletInFlight=false;
+
+function fmtBeirutTime(date){
+  try{
+    return new Date(date||Date.now()).toLocaleString('en-GB',{
+      day:'2-digit',month:'2-digit',year:'numeric',
+      hour:'2-digit',minute:'2-digit',
+      timeZone:'Asia/Beirut'
+    });
+  }catch(e){return '';}
+}
+
+function persistAuthToken(token,role){
+  authToken=token;authRole=role;
+  try{
+    localStorage.setItem('rt_auth_token',token);
+    localStorage.setItem('rt_auth_role',role);
+  }catch(e){console.warn('localStorage unavailable',e);}
+}
+
+async function postJson(path,body,timeoutMs=28000){
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),timeoutMs);
+  try{
+    const r=await fetch(RT_SERVER+path,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(body),
+      signal:controller.signal
+    });
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok||j.success===false)throw new Error(j.error||'Request failed');
+    return j;
+  }catch(e){
+    if(e.name==='AbortError')throw new Error('Server is waking up — please wait a moment and try again.');
+    throw e;
+  }finally{clearTimeout(timer);}
+}
 
 function initFirebase(){} // no-op, kept for compatibility
 
@@ -1215,7 +1258,7 @@ function orderIdsMatch(a,b){
 }
 function formatTs(ts){
   if(!ts)return '';
-  try{return new Date(ts).toLocaleString('en-GB',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});}catch(e){return '';}
+  try{return new Date(ts).toLocaleString('en-GB',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',timeZone:'Asia/Beirut'});}catch(e){return '';}
 }
 function pendingAgeLabel(o){
   const ms=o?.createdAt?Date.now()-Number(o.createdAt):0;
@@ -2340,43 +2383,47 @@ function clearOTP(pfx){[0,1,2,3,4,5].forEach(i=>{const el=document.getElementByI
 
 function showView(v){['login','signup','verify','forgot','reset','admin'].forEach(x=>{const el=document.getElementById('view-'+x);if(el)el.style.display=x===v?'block':'none';});}
 let loginInFlight=false;
+let adminLoginInFlight=false;
 async function doLogin(){
   if(loginInFlight)return;
-  const form=document.getElementById('login-form');
-  const emailEl=document.getElementById('login-email');
-  const passEl=document.getElementById('login-pass');
-  emailEl?.blur();passEl?.blur();
-  await new Promise(r=>setTimeout(r,30));
-  const fd=form?new FormData(form):null;
-  const e=String((fd&&fd.get('email'))||emailEl?.value||'').replace(/\u00a0/g,' ').trim().toLowerCase();
-  const p=String((fd&&fd.get('password'))||passEl?.value||'').replace(/\u00a0/g,' ').trim();
-  const err=document.getElementById('login-err');
-  if(!e||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)){
-    err.textContent='Please enter a valid email address.';
-    err.style.display='block';
-    emailEl?.focus();
-    return;
-  }
-  if(!p){
-    err.textContent='Please enter your password.';
-    err.style.display='block';
-    passEl?.focus();
-    return;
-  }
-  err.style.display='none';
   loginInFlight=true;
+  const btn=document.querySelector('#login-form button[type="submit"]');
+  if(btn)btn.disabled=true;
   try{
-    const r=await fetch(RT_SERVER+'/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:e,password:p})});
-    const j=await r.json();
-    if(!r.ok||!j.success)throw new Error(j.error||'Invalid email or password.');
-    authToken=j.token;authRole='user';
-    localStorage.setItem('rt_auth_token',authToken);localStorage.setItem('rt_auth_role',authRole);
+    const form=document.getElementById('login-form');
+    const emailEl=document.getElementById('login-email');
+    const passEl=document.getElementById('login-pass');
+    emailEl?.blur();passEl?.blur();
+    await new Promise(r=>setTimeout(r,30));
+    const fd=form?new FormData(form):null;
+    const e=String((fd&&fd.get('email'))||emailEl?.value||'').replace(/\u00a0/g,' ').trim().toLowerCase();
+    const p=String((fd&&fd.get('password'))||passEl?.value||'').replace(/\u00a0/g,' ').trim();
+    const err=document.getElementById('login-err');
+    if(!e||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)){
+      err.textContent='Please enter a valid email address.';
+      err.style.display='block';
+      emailEl?.focus();
+      return;
+    }
+    if(!p){
+      err.textContent='Please enter your password.';
+      err.style.display='block';
+      passEl?.focus();
+      return;
+    }
+    err.style.display='none';
+    const j=await postJson('/auth/login',{email:e,password:p});
+    persistAuthToken(j.token,'user');
     applyDataSnapshot(j.data||{users:[j.user]});
     currentUser=j.user||users[0];
     err.style.display='none';logActivity('Customer login',currentUser.email);enterApp();
   }catch(ex){
+    const err=document.getElementById('login-err');
     err.textContent=ex.message||'Invalid email or password.';err.style.display='block';
-  }finally{loginInFlight=false;}
+  }finally{
+    loginInFlight=false;
+    if(btn)btn.disabled=false;
+  }
 }
 async function doSignup(){
   const n=document.getElementById('su-name').value.trim();
@@ -2423,8 +2470,7 @@ async function verifyOTP(){
     const r=await fetch(RT_SERVER+'/auth/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:pendingSignupData.name,email:pendingSignupData.email,password:pendingSignupData.pass,tgChatId:pendingSignupData.tgChatId||'',otp:code})});
     const j=await r.json();
     if(!r.ok||!j.success)throw new Error(j.error||'Signup failed');
-    authToken=j.token;authRole='user';
-    localStorage.setItem('rt_auth_token',authToken);localStorage.setItem('rt_auth_role',authRole);
+    persistAuthToken(j.token,'user');
     applyDataSnapshot(j.data||{users:[j.user]});
     currentUser=j.user||users[0];pendingSignupData=null;delete pendingOTPs[e];
     showToast('✓ Email verified! Welcome!');
@@ -2474,15 +2520,20 @@ async function doResetPass(){
   }
 }
 async function doAdminLogin(){
-  const p=document.getElementById('admin-pass').value;
-  // 2FA PIN
-  const pin=prompt('🔐 Enter admin PIN:');
+  if(adminLoginInFlight)return;
+  adminLoginInFlight=true;
+  const btn=document.querySelector('#view-admin .btn-primary');
+  if(btn)btn.disabled=true;
   try{
-    const r=await fetch(RT_SERVER+'/auth/admin-login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:p,pin})});
-    const j=await r.json();
-    if(!r.ok||!j.success)throw new Error(j.error||'Wrong password or PIN');
-    authToken=j.token;authRole='admin';isAdmin=true;
-    localStorage.setItem('rt_auth_token',authToken);localStorage.setItem('rt_auth_role',authRole);
+    const p=document.getElementById('admin-pass').value;
+    const pin=document.getElementById('admin-pin')?.value?.trim()||'';
+    if(!pin){
+      document.getElementById('admin-err').textContent='Please enter admin PIN.';
+      document.getElementById('admin-err').style.display='block';
+      return;
+    }
+    const j=await postJson('/auth/admin-login',{password:p,pin});
+    persistAuthToken(j.token,'admin');isAdmin=true;
     try{localStorage.setItem('rt_admin_session',JSON.stringify({ts:Date.now()}));}catch(e){}
     applyDataSnapshot(j.data||{});
     try{
@@ -2505,12 +2556,15 @@ async function doAdminLogin(){
     if(typeof rtSyncChatUI==='function')rtSyncChatUI();
   }catch(ex){
     document.getElementById('admin-err').textContent=ex.message;document.getElementById('admin-err').style.display='block';
+  }finally{
+    adminLoginInFlight=false;
+    if(btn)btn.disabled=false;
   }
 }
 function enterApp(){
   document.getElementById('page-auth').classList.remove('active');
   document.getElementById('page-app').classList.add('active');
-  document.getElementById('topbar-av').textContent=currentUser.name.charAt(0).toUpperCase();
+  document.getElementById('topbar-av').textContent=(currentUser?.name||currentUser?.email||'?').charAt(0).toUpperCase();
   document.getElementById('unverified-chip').style.display=currentUser.verified?'none':'inline-flex';
   const session={email:currentUser.email,ts:Date.now()};
   try{localStorage.setItem('rt_session',JSON.stringify(session));}catch(e){}
@@ -2825,6 +2879,7 @@ function renderCustomOrderBody(p,html){
 }
 
 async function submitCustomOrder(){
+  if(customOrderInFlight){showToast('Order already processing…');return;}
   const p=curProd;
   const isJawaker=p.customOrderType==='jawaker';
   const price=isJawaker?jawPrice(customOrderAmt):selPlan?.price;
@@ -2833,8 +2888,10 @@ async function submitCustomOrder(){
   if(p.customOrderNeedsPassword&&!customOrderPassword){showToast('Enter your password');return;}
   if(isJawaker&&customOrderAmt<12000){showToast('Minimum 12,000 tokens');return;}
   if(currentUser.balance<price){showToast('Insufficient balance');return;}
-  currentUser.balance-=price;
-  const dateStr=new Date().toLocaleString('en-GB',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  customOrderInFlight=true;
+  try{
+    currentUser.balance-=price;
+    const dateStr=fmtBeirutTime();
   const orderId='#'+(Math.floor(Math.random()*90000+10000));
   const credLabel=p.customOrderNeedsPassword?` · ${customOrderId}`:` · ID: ${customOrderId}`;
   currentUser.transactions.unshift({type:'purchase',label:`${p.name} · ${planLabel}${credLabel}`,amount:price,balance:currentUser.balance,date:dateStr,pending:true,orderId});
@@ -2848,13 +2905,16 @@ async function submitCustomOrder(){
   const orderPayload={id:orderId,type:p.customOrderType,product:p.name,short:p.short,color:p.color,playerId:customOrderId,plan:planLabel,price,userEmail:currentUser.email,userName:currentUser.name,userTgChatId:currentUser.tgChatId||'',date:dateStr,status:'pending',createdAt:Date.now(),statusHistory:[{stage:'pending',at:Date.now()}]};
   if(p.customOrderNeedsPassword&&customOrderPassword)orderPayload.playerPassword=customOrderPassword;
   go.unshift(orderPayload);
-  try{_jbCache.gameorders=go;await jbWrite(_jbCache);}catch(e){console.warn('game order save error:',e);}
+  try{_jbCache.gameorders=go;await jbWrite(_jbCache);}catch(e){currentUser.balance+=price;currentUser.transactions.shift();throw e;}
   await saveData();updateBal();renderTx();renderMyGameOrders();closeModal('buy-modal');showToast('✓ Order placed!');
   const passLine=p.customOrderNeedsPassword?`\n🔑 Password: <code>${customOrderPassword}</code>`:'';
   const idLabel=p.customOrderNeedsPassword?'Username':'Player ID';
   if(currentUser.tgChatId)await sendTelegramToUser(currentUser.tgChatId,`⏳ <b>Order Received!</b>\n\n🎮 <b>${p.name}</b>\n📋 ${planLabel}\n👤 ${idLabel}: <code>${customOrderId}</code>${passLine}\n💵 ${fmt(price)}\n\nYour order is being processed. We will notify you here once it's done! 🙏`);
   await sendTelegram(`🎮 <b>New Game Order ${orderId}</b>\n\n📦 ${p.name}\n📋 ${planLabel}\n👤 ${idLabel}: <code>${customOrderId}</code>${passLine}\n💵 ${fmt(price)}\n👤 ${currentUser.name} (${currentUser.email})\n📅 ${dateStr}\n\nGo to Admin → Game Orders to fulfill.`);
   customOrderId='';customOrderPassword='';customOrderAmt=0;selPlan=null;
+  }catch(e){
+    showToast('⚠️ '+((e&&e.message)||'Order failed — try again'));
+  }finally{customOrderInFlight=false;}
 }
 
 
@@ -2914,8 +2974,10 @@ async function confirmPurchase(){
     finally{purchaseInFlight=false;}
     return;
   }
+  purchaseInFlight=true;
+  try{
   const acc=getNextAcc(skey);
-  const dateStr=new Date().toLocaleString('en-GB',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  const dateStr=fmtBeirutTime();
   if(!acc){
     // No stock — create pending order, customer sees normal success
     currentUser.balance-=price;
@@ -2973,6 +3035,8 @@ async function confirmPurchase(){
     }
     // Notify admin
     await sendTelegram(`📦 <b>Subscription Assigned</b>\n👤 ${currentUser.name} → ${custName}\n📺 ${p.name} · ${planLabel}\n💵 ${fmt(price)}`);
+    if(isAdmin)renderStockPanels();
+    return;
   } else {
     currentUser.orders.unshift(order);
     currentUser.transactions.unshift({type:'purchase',label:'Bought '+p.name+' · '+planLabel,amount:price,balance:currentUser.balance,date:dateStr});
@@ -3001,6 +3065,8 @@ async function confirmPurchase(){
       <button class="modal-buy-btn" onclick="closeModal('buy-modal')">Done</button></div>`;
   }
   if(isAdmin)renderStockPanels();
+  }catch(e){showToast('⚠️ '+(e.message||'Purchase failed'));}
+  finally{purchaseInFlight=false;}
 }
 
 function shahidActionButtons(orderId){
@@ -3913,16 +3979,38 @@ function renderTx(){
 function renderAmounts(){document.getElementById('amounts-grid').innerHTML=topupAmts.map((a,i)=>`<div class="amt-btn" id="amt-${i}" onclick="selAmt(${i})"><div class="amt-val">${a.l}</div></div>`).join('');}
 function selAmt(i){document.querySelectorAll('.amt-btn').forEach(b=>b.classList.remove('sel'));document.getElementById('amt-'+i).classList.add('sel');selectedTopup=topupAmts[i];const btn=document.getElementById('topup-btn');btn.disabled=false;btn.textContent='Top up '+topupAmts[i].l;}
 async function reqTopup(){
-  if(!selectedTopup)return;
-  document.getElementById('topup-amt-lbl').textContent=selectedTopup.l;
-  openModal('topup-modal');
+  if(!selectedTopup||topupInFlight)return;
   if(currentUser){
-    // Save topup request
-    const req={id:Date.now(),name:currentUser.name,email:currentUser.email,tgChatId:currentUser.tgChatId||'',amount:selectedTopup.v,label:selectedTopup.l,date:new Date().toLocaleString('en-GB',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}),status:'pending'};
-    topupRequests.unshift(req);
-    await saveData();
-    // Notify admin on Telegram
-    await sendTelegram(`💳 <b>Topup Request</b>\n\n👤 <b>${currentUser.name}</b>\n📧 ${currentUser.email}\n💵 Amount: <b>${selectedTopup.l}</b>\n📅 ${req.date}\n\nGo to Admin → Topup Requests to credit after payment.`);
+    const dup=topupRequests.find(r=>normEmail(r.email)===normEmail(currentUser.email)&&r.status==='pending'&&r.amount===selectedTopup.v&&Date.now()-(r.id||0)<3600000);
+    if(dup){
+      document.getElementById('topup-amt-lbl').textContent=selectedTopup.l;
+      openModal('topup-modal');
+      showToast('You already have a pending top-up request');
+      return;
+    }
+  }
+  topupInFlight=true;
+  const btn=document.getElementById('topup-btn');
+  if(btn)btn.disabled=true;
+  let addedReq=null;
+  try{
+    document.getElementById('topup-amt-lbl').textContent=selectedTopup.l;
+    if(currentUser){
+      addedReq={id:Date.now(),name:currentUser.name,email:currentUser.email,tgChatId:currentUser.tgChatId||'',amount:selectedTopup.v,label:selectedTopup.l,date:fmtBeirutTime(),status:'pending'};
+      topupRequests.unshift(addedReq);
+      await saveData();
+      await sendTelegram(`💳 <b>Topup Request</b>\n\n👤 <b>${currentUser.name}</b>\n📧 ${currentUser.email}\n💵 Amount: <b>${selectedTopup.l}</b>\n📅 ${addedReq.date}\n\nGo to Admin → Topup Requests to credit after payment.`);
+    }
+    openModal('topup-modal');
+  }catch(e){
+    if(addedReq){
+      const idx=topupRequests.indexOf(addedReq);
+      if(idx>=0)topupRequests.splice(idx,1);
+    }
+    showToast('⚠️ Could not submit top-up — please try again');
+  }finally{
+    topupInFlight=false;
+    if(btn&&selectedTopup){btn.disabled=false;btn.textContent='Top up '+selectedTopup.l;}
   }
 }
 
@@ -3952,7 +4040,7 @@ async function submitRequest(){
     existing.requesters.push(currentUser.email);if(notes)existing.latestNote=notes;
     showToast('✓ Vote added to existing request!');
   } else {
-    globalRequests.push({id:Date.now(),service,notes,latestNote:notes,requesters:[currentUser.email],resolved:false,date:new Date().toLocaleString('en-GB',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})});
+    globalRequests.push({id:Date.now(),service,notes,latestNote:notes,requesters:[currentUser.email],resolved:false,date:fmtBeirutTime()});
     showToast('✓ Request submitted!');
     sendTelegram(`💡 <b>New Product Request</b>\n👤 ${currentUser.name} (${currentUser.email})\n📺 Service: <b>${service}</b>${notes?'\n📝 Notes: '+notes:''}`);
   }
@@ -4781,29 +4869,35 @@ function renderWallets(){
   </div>`).join('');
 }
 async function creditWallet(i){
+  if(creditWalletInFlight)return;
   await refreshFromFirebase();
   const amt=parseFloat(document.getElementById('wcredit-'+i).value)||0;
   if(amt<=0){showToast('Enter a valid amount');return;}
-  users[i].balance+=amt;
-  const date=new Date().toLocaleString('en-GB',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
-  users[i].transactions.unshift({type:'topup',label:'Deposit by admin',amount:amt,balance:users[i].balance,date});
-  document.getElementById('wbal-'+i).textContent=fmt(users[i].balance);
-  document.getElementById('wcredit-'+i).value='';
-  showToast(`✓ Added ${fmt(amt)} to ${users[i].name}`);
-  if(currentUser&&currentUser.email===users[i].email){currentUser=users[i];updateBal();renderTx();}
-  const tgIdDep=users[i].tgChatId||'';
-  await Promise.all([
-    saveData(),
-    sendTelegram(`💰 <b>Deposit</b>\n👤 ${users[i].name} (${users[i].email})\n➕ Added: ${fmt(amt)}\n💵 New balance: ${fmt(users[i].balance)}`),
-    tgIdDep?sendTelegramToUser(tgIdDep,`💰 <b>Wallet Topped Up!</b>\n\n✅ ${fmt(amt)} added to your wallet.\n💵 New balance: ${fmt(users[i].balance)}\n\nEnjoy shopping! 🎉`):Promise.resolve()
-  ]);
+  creditWalletInFlight=true;
+  try{
+    users[i].balance+=amt;
+    const date=fmtBeirutTime();
+    users[i].transactions.unshift({type:'topup',label:'Deposit by admin',amount:amt,balance:users[i].balance,date});
+    document.getElementById('wbal-'+i).textContent=fmt(users[i].balance);
+    document.getElementById('wcredit-'+i).value='';
+    showToast(`✓ Added ${fmt(amt)} to ${users[i].name}`);
+    if(currentUser&&currentUser.email===users[i].email){currentUser=users[i];updateBal();renderTx();}
+    const tgIdDep=users[i].tgChatId||'';
+    await Promise.all([
+      saveData(),
+      sendTelegram(`💰 <b>Deposit</b>\n👤 ${users[i].name} (${users[i].email})\n➕ Added: ${fmt(amt)}\n💵 New balance: ${fmt(users[i].balance)}`),
+      tgIdDep?sendTelegramToUser(tgIdDep,`💰 <b>Wallet Topped Up!</b>\n\n✅ ${fmt(amt)} added to your wallet.\n💵 New balance: ${fmt(users[i].balance)}\n\nEnjoy shopping! 🎉`):Promise.resolve()
+    ]);
+  }catch(e){
+    showToast('⚠️ Deposit failed — try again');
+  }finally{creditWalletInFlight=false;}
 }
 async function withdrawWallet(i){
   await refreshFromFirebase();
   const amt=parseFloat(document.getElementById('wcredit-'+i).value)||0;
   if(amt<=0){showToast('Enter a valid amount');return;}
   if(amt>users[i].balance){showToast('Amount exceeds balance');return;}
-  const date=new Date().toLocaleString('en-GB',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  const date=fmtBeirutTime();
   users[i].balance-=amt;
   users[i].transactions.unshift({type:'withdrawal',label:'Withdrawal by admin',amount:amt,balance:users[i].balance,date});
   document.getElementById('wbal-'+i).textContent=fmt(users[i].balance);
@@ -4977,29 +5071,38 @@ function renderTopupRequests(){
 async function creditTopupReq(i){
   await refreshFromFirebase();
   const req=topupRequests[i];
+  if(!req)return;
+  const lockKey=req.id||String(i);
+  if(creditTopupInFlight.has(lockKey))return;
   if(req.status==='credited'){showToast('Already credited');return;}
-  const u=users.find(x=>x.email===req.email);
-  if(!u){showToast('User not found: '+req.email);return;}
-  u.balance+=req.amount;
-  u.transactions.unshift({type:'topup',label:`Wallet top-up — ${req.label}`,amount:req.amount,balance:u.balance,date:new Date().toLocaleString('en-GB',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})});
+  creditTopupInFlight.add(lockKey);
   req.status='credited';
-  await saveData();
-  renderTopupRequests();renderWallets();
-  if(currentUser&&currentUser.email===u.email){currentUser=u;updateBal();renderTx();}
-  showToast(`✓ Credited ${req.label} to ${req.name}`);
-  // Get tgChatId - reload from Firebase to get latest
-  let latestUser=u;
-  try{if(_jbCache&&_jbCache.users){const fu=_jbCache.users.find(x=>x.email===req.email);if(fu)latestUser=fu;}}catch(e){}
-  const custTgId=latestUser.tgChatId||req.tgChatId||'';
-  if(custTgId){
-    await sendTelegramToUser(custTgId,`💰 <b>Wallet Topped Up!</b>\n\n✅ <b>${req.label}</b> has been added to your wallet.\n💵 New balance: ${fmt(u.balance)}\n\nEnjoy shopping on rashadtech.tv! 🎉`);
-  } else {
-    showToast('⚠️ No Telegram ID for '+req.name);
-  }
-  await sendTelegram(`✅ Credited ${req.label} to ${req.name} (${req.email}) · Balance: ${fmt(u.balance)}${custTgId?'':' · ⚠️ No TG ID'}`);
+  try{
+    const u=users.find(x=>x.email===req.email);
+    if(!u){req.status='pending';showToast('User not found: '+req.email);return;}
+    u.balance+=req.amount;
+    u.transactions.unshift({type:'topup',label:`Wallet top-up — ${req.label}`,amount:req.amount,balance:u.balance,date:fmtBeirutTime()});
+    await saveData();
+    renderTopupRequests();renderWallets();
+    if(currentUser&&currentUser.email===u.email){currentUser=u;updateBal();renderTx();}
+    showToast(`✓ Credited ${req.label} to ${req.name}`);
+    let latestUser=u;
+    try{if(_jbCache&&_jbCache.users){const fu=_jbCache.users.find(x=>x.email===req.email);if(fu)latestUser=fu;}}catch(e){}
+    const custTgId=latestUser.tgChatId||req.tgChatId||'';
+    if(custTgId){
+      await sendTelegramToUser(custTgId,`💰 <b>Wallet Topped Up!</b>\n\n✅ <b>${req.label}</b> has been added to your wallet.\n💵 New balance: ${fmt(u.balance)}\n\nEnjoy shopping on rashadtech.tv! 🎉`);
+    } else {
+      showToast('⚠️ No Telegram ID for '+req.name);
+    }
+    await sendTelegram(`✅ Credited ${req.label} to ${req.name} (${req.email}) · Balance: ${fmt(u.balance)}${custTgId?'':' · ⚠️ No TG ID'}`);
+  }catch(e){
+    req.status='pending';
+    showToast('⚠️ Credit failed — try again');
+  }finally{creditTopupInFlight.delete(lockKey);}
 }
 async function saveData(){
   if(!dataLoaded)return;
+  syncPausedUntil=Date.now()+8000;
   try{
     const pending=_jbCache?.pending||[];
     const gameorders=_jbCache?.gameorders||[];
@@ -5012,7 +5115,11 @@ async function saveData(){
       ...(priceCatalog?{priceCatalog}:{})
     };
     await jbWrite(_jbCache);
-  }catch(e){console.warn('save error:',e);}
+  }catch(e){
+    console.warn('save error:',e);
+    showToast('⚠️ Save failed — please try again');
+    throw e;
+  }
 }
 
 async function loadData(){
@@ -5099,9 +5206,13 @@ async function checkLowStock(){
   }
 }
 
+let realtimeSyncStarted=false;
 function startRealtimeSync(){
+  if(realtimeSyncStarted)return;
+  realtimeSyncStarted=true;
   setInterval(checkInactivity,60000); // Check inactivity every minute
   setInterval(async()=>{
+    if(Date.now()<syncPausedUntil)return;
     try{
       _jbCache=await jbRead();
       if(_jbCache.users&&_jbCache.users.length>0){
@@ -5197,9 +5308,12 @@ async function init(){
           isAdmin=true;
           document.getElementById('page-auth').classList.remove('active');
           document.getElementById('page-admin').classList.add('active');
+          await loadPriceCatalog();
           renderStockPanels();renderAdminCustomers();renderWallets();renderAdminRequests();renderAdminExpiry();renderNetflixRenewalAlerts();renderTopupRequests();renderGameOrders();renderAdminPending();
           refreshAdminBackupStatus();
           if(!window._adminBackupPoll)window._adminBackupPoll=setInterval(refreshAdminBackupStatus,5*60*1000);
+          startRealtimeSync();
+          if(typeof rtSyncChatUI==='function')rtSyncChatUI();
           return;
         }
         clearStoredSession();

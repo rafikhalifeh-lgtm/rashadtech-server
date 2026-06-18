@@ -20,7 +20,8 @@ const {
   markLinkedStockSold,
   stockAccountsForPlan,
   stampOrderDelivery,
-  initPendingOrder
+  initPendingOrder,
+  formatBeirutTime
 } = require('./orderHelpers');
 
 const app = express();
@@ -797,6 +798,27 @@ function dataForSession(data, session) {
   };
 }
 
+function mergeOwnTopupRequests(existingOwn, incomingOwn) {
+  const byId = new Map();
+  (existingOwn || []).forEach((row) => {
+    if (!row) return;
+    const key = row.id || `${normalizeEmail(row.email)}:${row.amount}:${row.date || ''}`;
+    byId.set(key, row);
+  });
+  (incomingOwn || []).forEach((row) => {
+    if (!row) return;
+    const key = row.id || `${normalizeEmail(row.email)}:${row.amount}:${row.date || ''}`;
+    const prev = byId.get(key);
+    if (!prev) {
+      byId.set(key, row);
+      return;
+    }
+    const credited = prev.status === 'credited' || row.status === 'credited';
+    byId.set(key, { ...prev, ...row, status: credited ? 'credited' : (row.status || prev.status) });
+  });
+  return Array.from(byId.values());
+}
+
 function mergeUserWrite(existing, incoming, session) {
   const next = { ...(existing || {}) };
   const email = session.email;
@@ -820,8 +842,9 @@ function mergeUserWrite(existing, incoming, session) {
 
   const existingTopups = Array.isArray(next.topupreqs) ? next.topupreqs : [];
   const otherTopups = existingTopups.filter(r => normalizeEmail(r.email) !== email);
+  const existingOwn = existingTopups.filter(r => normalizeEmail(r.email) === email);
   const ownTopups = (incoming.topupreqs || []).filter(r => normalizeEmail(r.email) === email);
-  next.topupreqs = [...otherTopups, ...ownTopups];
+  next.topupreqs = [...otherTopups, ...mergeOwnTopupRequests(existingOwn, ownTopups)];
 
   if (Array.isArray(incoming.gameorders)) {
     const existingGameOrders = Array.isArray(next.gameorders) ? next.gameorders : [];
@@ -871,7 +894,7 @@ async function collectRecoverySources(data) {
     for (const entry of manifest.slice(0, MAX_BACKUPS)) {
       try {
         const { data: snapshot } = await readBackupSnapshot(entry.id);
-        addSource(`snapshot-${new Date(entry.ts).toLocaleString('en-GB')}`, snapshot[PRICE_CATALOG_KEY], snapshot.stockBlocks);
+        addSource(`snapshot-${formatBeirutTime(entry.ts)}`, snapshot[PRICE_CATALOG_KEY], snapshot.stockBlocks);
       } catch (e) {
         console.warn('Recovery snapshot skipped:', entry && entry.id, e.message);
       }
@@ -1379,7 +1402,7 @@ app.post('/auth/signup', async (req, res) => {
       orders: [],
       myCustomers: [],
       verified: true,
-      joinedDate: new Date().toLocaleString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' })
+      joinedDate: formatBeirutTime()
     };
     data.users.push(user);
     await writeJsonBinRaw(data);
@@ -1588,12 +1611,17 @@ async function notifyPurchasePending(user, product, planLabel, price, assignCust
     : '';
   await sendTG(TG_ADMIN, `⏳ <b>Pending Order</b>\n👤 ${user.name} (${user.email})\n📦 ${product.name} · ${planLabel}\n💵 $${Number(price).toFixed(2)}${assignNote}\n⚠️ No stock — add accounts in Stock tab to fulfill.`, 'HTML').catch((e) => console.error('Pending admin TG:', e.message));
   if (!user.tgChatId) return false;
-  await sendTG(user.tgChatId, `✅ <b>Purchase Confirmed!</b>\n\n📦 ${product.name} · ${planLabel}\n💵 $${Number(price).toFixed(2)}\n💰 New balance: $${Number(user.balance || 0).toFixed(2)}${assignNote}\n\n⏳ Your credentials will be delivered here shortly.`, 'HTML').catch((e) => { console.error('Pending customer TG:', e.message); return false; });
-  return true;
+  try {
+    await sendTG(user.tgChatId, `✅ <b>Purchase Confirmed!</b>\n\n📦 ${product.name} · ${planLabel}\n💵 $${Number(price).toFixed(2)}\n💰 New balance: $${Number(user.balance || 0).toFixed(2)}${assignNote}\n\n⏳ Your credentials will be delivered here shortly.`, 'HTML');
+    return true;
+  } catch (e) {
+    console.error('Pending customer TG:', e.message);
+    return false;
+  }
 }
 
-async function notifyPurchaseFulfilled(user, product, planLabel, price, order, assignCustId) {
-  if (order && order.telegramDeliveredAt) return true;
+async function notifyPurchaseFulfilled(user, product, planLabel, price, order, assignCustId, options = {}) {
+  if (order && order.telegramDeliveredAt && !options.forceResend) return true;
   const assignedCustomer = assignCustId !== null && assignCustId !== undefined
     ? (user.myCustomers || []).find(c => c.id === assignCustId)
     : null;
@@ -1792,7 +1820,7 @@ app.post('/customer/resend-subscription', async (req, res) => {
       tc: order.tc || '',
       id: order.productId || ''
     };
-    const telegramSent = await notifyPurchaseFulfilled(user, product, order.plan || '', order.price || 0, order, customer ? customer.id : null);
+    const telegramSent = await notifyPurchaseFulfilled(user, product, order.plan || '', order.price || 0, order, customer ? customer.id : null, { forceResend: true });
     res.json({ success: true, telegramSent, user: sanitizeUser(user), data: safeDataForSession(data, session) });
   } catch (e) {
     console.error('Resend subscription error:', e.message);
@@ -1831,7 +1859,7 @@ app.post('/purchase', async (req, res) => {
     if (data.stockBlocks[purchaseBlockKey(skey, customDays)]) return res.status(403).json({ error: 'This plan is temporarily unavailable.' });
     if (Number(user.balance || 0) < Number(price)) return res.status(400).json({ error: 'Insufficient balance' });
 
-    const dateStr = new Date().toLocaleString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
+    const dateStr = formatBeirutTime();
     const accounts = stockAccountsForPlan(data.stock, skey);
     const acc = accounts.find(a => !a.used);
     user.transactions = Array.isArray(user.transactions) ? user.transactions : [];
@@ -1949,7 +1977,7 @@ app.post('/admin/cancel-pending', async (req, res) => {
         label: `Refund — canceled ${order.product} · ${order.plan}`,
         amount: refund,
         balance: user.balance,
-        date: new Date().toLocaleString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' }),
+        date: formatBeirutTime(),
         orderId: order.id
       });
     }
