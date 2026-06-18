@@ -480,6 +480,19 @@ function registerWhatsAppBot(app, { getEnv, rateLimit }) {
 
   const waLimiter = rateLimit ? rateLimit('whatsapp-webhook', 120, 60_000) : (req, res, next) => next();
 
+  app.get('/whatsapp/status', (req, res) => {
+    const base = String(process.env.RENDER_EXTERNAL_URL || '').replace(/\/$/, '');
+    res.json({
+      ok: true,
+      enabled: enabled(),
+      webhookUrl: base ? `${base}/whatsapp` : null,
+      hasAccessToken: Boolean(token()),
+      hasPhoneNumberId: Boolean(phoneId()),
+      hasVerifyToken: Boolean(verifyToken()),
+      sessions: sessions.size,
+    });
+  });
+
   app.post('/whatsapp', waLimiter, async (req, res) => {
     res.sendStatus(200);
     if (!enabled()) return;
