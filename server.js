@@ -21,7 +21,8 @@ const {
   stockAccountsForPlan,
   stampOrderDelivery,
   initPendingOrder,
-  formatBeirutTime
+  formatBeirutTime,
+  initGameOrder
 } = require('./orderHelpers');
 
 const app = express();
@@ -67,8 +68,8 @@ const EMAILJS_SERVICE_ID = normalizeEnvSecret(process.env.EMAILJS_SERVICE_ID) ||
 const EMAILJS_TEMPLATE_ID = normalizeEnvSecret(process.env.EMAILJS_TEMPLATE_ID) || 'template_e0h7eia';
 const EMAILJS_PUBLIC_KEY = normalizeEnvSecret(process.env.EMAILJS_PUBLIC_KEY) || 'LyKu6ZB_y6qoFh7Ef';
 const EMAILJS_PRIVATE_KEY = normalizeEnvSecret(process.env.EMAILJS_PRIVATE_KEY);
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'RkhRkh7979@';
-const ADMIN_PIN = process.env.ADMIN_PIN || '7979';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || (process.env.NODE_ENV === 'production' ? '' : 'RkhRkh7979@');
+const ADMIN_PIN = process.env.ADMIN_PIN || (process.env.NODE_ENV === 'production' ? '' : '7979');
 const JSONBIN_ALLOW_PUBLIC_READ = normalizeEnvSecret(process.env.JSONBIN_ALLOW_PUBLIC_READ) === 'true';
 let FALLBACK_DB_FILE = process.env.FALLBACK_DB_FILE || (fs.existsSync('/var/data') ? '/var/data/rashadtech-db.json' : path.join(process.cwd(), '.data', 'emergency-db.json'));
 const JSONBIN_SYNC_INTERVAL_MS = Number(process.env.JSONBIN_SYNC_INTERVAL_MS || 10 * 60 * 1000);
@@ -106,6 +107,7 @@ let netlifyStorePromise = null;
 let signupOtps = new Map();
 let resetOtps = new Map();
 const activePurchases = new Set();
+const activeTopupCredits = new Set();
 let dbWriteQueue = Promise.resolve();
 
 function enqueueDbWrite(task) {
@@ -898,8 +900,14 @@ function mergeUserWrite(existing, incoming, session) {
   next.users = users;
 
   // Users cannot overwrite global product requests from a stale browser cache.
-  if (session.role === 'admin' && Array.isArray(incoming.requests)) {
-    next.requests = incoming.requests;
+  if (Array.isArray(incoming.requests)) {
+    next.requests = session.role === 'admin'
+      ? incoming.requests
+      : mergeArrayByKey(
+        Array.isArray(next.requests) ? next.requests : [],
+        incoming.requests,
+        item => item && item.id
+      );
   }
 
   const existingTopups = Array.isArray(next.topupreqs) ? next.topupreqs : [];
@@ -1014,67 +1022,60 @@ async function recoverSettingsFromBackups(data) {
 }
 
 function mergeStockPreservingSold(existingStock, incomingStock) {
-  const merged = { ...(existingStock || {}) };
+  const existing = existingStock || {};
+  const merged = { ...existing };
   for (const [key, incomingAccounts] of Object.entries(incomingStock || {})) {
-    const existingAccounts = Array.isArray(merged[key]) ? merged[key] : [];
-    const byId = new Map();
+    const existingAccounts = Array.isArray(existing[key]) ? existing[key] : [];
+    const existingById = new Map();
     existingAccounts.forEach((acc) => {
       if (!acc) return;
       const id = String(acc.accKey || acc.email || '');
-      if (id) byId.set(id, acc);
+      if (id) existingById.set(id, acc);
     });
-    (incomingAccounts || []).forEach((acc) => {
-      if (!acc) return;
+    merged[key] = (incomingAccounts || []).map((acc) => {
+      if (!acc) return acc;
       const id = String(acc.accKey || acc.email || '');
-      if (!id) return;
-      const prev = byId.get(id);
+      const prev = id ? existingById.get(id) : null;
       if (prev && prev.used) {
-        byId.set(id, { ...acc, used: true, soldTo: prev.soldTo || acc.soldTo });
-      } else if (prev) {
-        byId.set(id, { ...prev, ...acc, used: Boolean(prev.used || acc.used) });
-      } else {
-        byId.set(id, acc);
+        return { ...acc, used: true, soldTo: prev.soldTo || acc.soldTo };
       }
-    });
-    merged[key] = Array.from(byId.values());
+      if (prev) {
+        return { ...prev, ...acc, used: Boolean(prev.used || acc.used) };
+      }
+      return acc;
+    }).filter(Boolean);
   }
   return merged;
 }
 
 function mergeAllTopupRequests(existingTopups, incomingTopups) {
-  const byId = new Map();
+  if (!Array.isArray(incomingTopups)) return Array.isArray(existingTopups) ? existingTopups : [];
+  const existingByKey = new Map();
   (existingTopups || []).forEach((row) => {
     if (!row) return;
     const key = row.id || `${normalizeEmail(row.email)}:${row.amount}:${row.date || ''}`;
-    byId.set(key, row);
+    existingByKey.set(key, row);
   });
-  (incomingTopups || []).forEach((row) => {
-    if (!row) return;
+  return incomingTopups.map((row) => {
+    if (!row) return row;
     const key = row.id || `${normalizeEmail(row.email)}:${row.amount}:${row.date || ''}`;
-    const prev = byId.get(key);
-    if (!prev) {
-      byId.set(key, row);
-      return;
-    }
+    const prev = existingByKey.get(key);
+    if (!prev) return row;
     const credited = prev.status === 'credited' || row.status === 'credited';
-    byId.set(key, { ...prev, ...row, status: credited ? 'credited' : (row.status || prev.status) });
+    return { ...prev, ...row, status: credited ? 'credited' : (row.status || prev.status) };
   });
-  return Array.from(byId.values());
 }
 
 function mergeUsersPreservingWallet(existingUsers, incomingUsers) {
   const existing = Array.isArray(existingUsers) ? existingUsers : [];
   if (!Array.isArray(incomingUsers)) return existing;
   const byEmail = new Map(existing.map(u => [normalizeEmail(u.email), { ...u }]));
-  for (const inc of incomingUsers) {
-    if (!inc || !inc.email) continue;
+  return incomingUsers.map((inc) => {
+    if (!inc || !inc.email) return inc;
     const email = normalizeEmail(inc.email);
     const prev = byEmail.get(email);
-    if (!prev) {
-      byEmail.set(email, { ...inc });
-      continue;
-    }
-    byEmail.set(email, {
+    if (!prev) return { ...inc };
+    return {
       ...prev,
       name: String(inc.name || prev.name || '').trim() || prev.name,
       tgChatId: String(inc.tgChatId || prev.tgChatId || '').trim(),
@@ -1088,9 +1089,8 @@ function mergeUsersPreservingWallet(existingUsers, incomingUsers) {
       myCustomers: Array.isArray(prev.myCustomers) && prev.myCustomers.length
         ? prev.myCustomers
         : (Array.isArray(inc.myCustomers) ? inc.myCustomers : [])
-    });
-  }
-  return Array.from(byEmail.values());
+    };
+  }).filter(Boolean);
 }
 
 function preserveSensitiveFields(existing, incoming) {
@@ -1197,13 +1197,24 @@ function purchaseBlockKey(skey, customDays) {
 function netflixAliasUsage(data, aliasEmail) {
   const alias = normalizeEmail(aliasEmail);
   const usage = { oneUser: 0, full: 0 };
+  const seenProfiles = new Set();
   if (!alias) return usage;
   for (const [key, accounts] of Object.entries((data && data.stock) || {})) {
     if (!isNetflixStockKey(key)) continue;
     for (const account of Array.isArray(accounts) ? accounts : []) {
       if (normalizeEmail(account && account.email) !== alias) continue;
-      if (isNetflixFullStockKey(key)) usage.full += 1;
-      if (isNetflixOneUserStockKey(key)) usage.oneUser += 1;
+      if (isNetflixFullStockKey(key)) {
+        usage.full += 1;
+        continue;
+      }
+      if (isNetflixOneUserStockKey(key)) {
+        const profileKey = String(account.accKey || '');
+        if (profileKey.startsWith('nfprof__')) {
+          if (seenProfiles.has(profileKey)) continue;
+          seenProfiles.add(profileKey);
+        }
+        usage.oneUser += 1;
+      }
     }
   }
   return usage;
@@ -1229,7 +1240,7 @@ function validateNetflixAliasPurchase(data, skey, acc) {
 
 // ── HEALTH ─────────────────────────────────────────────────────────────
 app.get('/', (req, res) => {
-  res.json({ status: 'rashadtech server running', codes: Object.keys(latestCodes) });
+  res.json({ status: 'rashadtech server running', ok: true });
 });
 app.get('/ping', (req, res) => {
   res.json({ ok: true, ts: Date.now() });
@@ -1490,6 +1501,9 @@ app.post('/auth/login', async (req, res) => {
 
 app.post('/auth/admin-login', async (req, res) => {
   const { password, pin } = req.body;
+  if (!ADMIN_PASSWORD || !ADMIN_PIN) {
+    return res.status(503).json({ error: 'Admin login is not configured. Set ADMIN_PASSWORD and ADMIN_PIN on the server.' });
+  }
   if (password !== ADMIN_PASSWORD || pin !== ADMIN_PIN) return res.status(401).json({ error: 'Wrong password or PIN' });
   const token = createSession('admin', 'admin');
   try {
@@ -1629,7 +1643,10 @@ app.post('/auth/reset-password', async (req, res) => {
 app.post('/auth/logout', (req, res) => {
   const header = req.get('authorization') || '';
   const match = header.match(/^Bearer\s+(.+)$/i);
-  if (match) sessions.delete(match[1]);
+  if (match) {
+    sessions.delete(match[1]);
+    if (dbCache && dbCache.sessions) delete dbCache.sessions[match[1]];
+  }
   if (rtEnhancements && rtEnhancements.persistSessions) rtEnhancements.persistSessions().catch(() => {});
   res.json({ success: true });
 });
@@ -1991,91 +2008,101 @@ app.post('/purchase', async (req, res) => {
     return res.status(400).json({ error: 'Invalid purchase' });
   }
   try {
-    const data = await readJsonBinRaw({ forceRefresh: true });
-    const catalog = getMergedCatalog(data);
-    const expectedPrice = resolvePurchasePrice(catalog, { skey, customDays: Number(customDays || 0) });
-    if (expectedPrice == null || !pricesMatch(expectedPrice, price)) {
-      return res.status(400).json({ error: 'Price has changed. Refresh the store and try again.' });
-    }
-    data.users = Array.isArray(data.users) ? data.users : [];
-    data.stock = data.stock || {};
-    data.pending = Array.isArray(data.pending) ? data.pending : [];
-    data.stockBlocks = data.stockBlocks || {};
-    const user = data.users.find(u => normalizeEmail(u.email) === session.email);
-    if (!user) return res.status(404).json({ error: 'User not found' });
-    syncUserContact(user, { tgChatId });
-    if (user.banned) return res.status(403).json({ error: 'Your account has been suspended. Contact support.' });
-    if (data.stockBlocks[purchaseBlockKey(skey, customDays)]) return res.status(403).json({ error: 'This plan is temporarily unavailable.' });
-    if (Number(user.balance || 0) < Number(price)) return res.status(400).json({ error: 'Insufficient balance' });
+    const outcome = await enqueueDbWrite(async () => {
+      const data = await readJsonBinRaw({ forceRefresh: true });
+      const catalog = getMergedCatalog(data);
+      const expectedPrice = resolvePurchasePrice(catalog, { skey, customDays: Number(customDays || 0) });
+      if (expectedPrice == null || !pricesMatch(expectedPrice, price)) {
+        return { error: 'Price has changed. Refresh the store and try again.', status: 400 };
+      }
+      data.users = Array.isArray(data.users) ? data.users : [];
+      data.stock = data.stock || {};
+      data.pending = Array.isArray(data.pending) ? data.pending : [];
+      data.stockBlocks = data.stockBlocks || {};
+      const user = data.users.find(u => normalizeEmail(u.email) === session.email);
+      if (!user) return { error: 'User not found', status: 404 };
+      syncUserContact(user, { tgChatId });
+      if (user.banned) return { error: 'Your account has been suspended. Contact support.', status: 403 };
+      if (data.stockBlocks[purchaseBlockKey(skey, customDays)]) {
+        return { error: 'This plan is temporarily unavailable.', status: 403 };
+      }
+      if (Number(user.balance || 0) < Number(price)) return { error: 'Insufficient balance', status: 400 };
 
-    const dateStr = formatBeirutTime();
-    const acc = pickAvailableAccount(data, skey);
-    user.transactions = Array.isArray(user.transactions) ? user.transactions : [];
+      const dateStr = formatBeirutTime();
+      const acc = pickAvailableAccount(data, skey);
+      user.transactions = Array.isArray(user.transactions) ? user.transactions : [];
 
-    if (!acc) {
+      if (!acc) {
+        user.balance = Number(user.balance || 0) - Number(price);
+        const assignedCustomer = assignCustId !== null && assignCustId !== undefined
+          ? (user.myCustomers || []).find(c => c.id === assignCustId)
+          : null;
+        const pendingOrder = initPendingOrder({
+          id:'#'+(Math.floor(Math.random()*90000+10000)),
+          userEmail:user.email,userName:user.name,userTgChatId:user.tgChatId||'',
+          product:product.name,short:product.short,color:product.color,tc:product.tc,
+          productId:product.id,plan:planLabel,price:Number(price),skey,date:dateStr,
+          ...(assignedCustomer ? { assignCustId, profileName: extraFields?.profileName || assignedCustomer.fname } : {}),
+          ...(extraFields||{})
+        });
+        data.pending.unshift(pendingOrder);
+        user.transactions.unshift({type:'purchase',label:'Bought '+product.name+' · '+planLabel,amount:Number(price),balance:user.balance,date:dateStr,pending:true,orderId:pendingOrder.id});
+        await writeJsonBinRaw(data);
+        return { mode: 'pending', data, user, pendingOrder };
+      }
+
+      const aliasError = validateNetflixAliasPurchase(data, skey, acc);
+      if (aliasError) return { error: aliasError, status: 409 };
+
       user.balance = Number(user.balance || 0) - Number(price);
+      const orderId = '#'+ (Math.floor(Math.random()*90000+10000));
       const assignedCustomer = assignCustId !== null && assignCustId !== undefined
-        ? (user.myCustomers || []).find(c => c.id === assignCustId)
+        ? (user.myCustomers||[]).find(c => c.id === assignCustId)
         : null;
-      const pendingOrder = initPendingOrder({
-        id:'#'+(Math.floor(Math.random()*90000+10000)),
-        userEmail:user.email,userName:user.name,userTgChatId:user.tgChatId||'',
+      markLinkedStockSold(data.stock, acc, {
+        userEmail: user.email,
+        userName: user.name,
+        orderId,
+        assignCustId: assignedCustomer ? assignedCustomer.id : null,
+        assignCustName: assignedCustomer ? `${assignedCustomer.fname || ''} ${assignedCustomer.lname || ''}`.trim() : ''
+      }, skey);
+      const order = {
+        id: orderId,
         product:product.name,short:product.short,color:product.color,tc:product.tc,
-        productId:product.id,plan:planLabel,price:Number(price),skey,date:dateStr,
-        ...(assignedCustomer ? { assignCustId, profileName: extraFields?.profileName || assignedCustomer.fname } : {}),
-        ...(extraFields||{})
+        productId:product.id,plan:planLabel,price:Number(price),
+        email:acc.email,pass:acc.pass,date:dateStr,expiryDate:acc.expiryDate||null,
+        ...(extraFields||{}),
+        ...(accountProfileName(acc) ? { profileName: accountProfileName(acc) } : {}),
+        ...(acc.profilePin?{profilePin:acc.profilePin}:{}),
+        accKey:acc.accKey||'',mainEmail:acc.mainEmail||''
+      };
+      if (assignedCustomer) {
+        order.profileName = order.profileName || assignedCustomer.fname;
+        assignedCustomer.subs = Array.isArray(assignedCustomer.subs) ? assignedCustomer.subs : [];
+        assignedCustomer.subs.unshift(order);
+      } else {
+        user.orders = Array.isArray(user.orders) ? user.orders : [];
+        user.orders.unshift(order);
+      }
+      data.pending = (data.pending || []).filter(po => {
+        if (normalizeEmail(po.userEmail) !== lockKey) return true;
+        const existing = findUserOrderRecord(user, po.id).order;
+        return !(existing && existing.email && !existing.pending);
       });
-      data.pending.unshift(pendingOrder);
-      user.transactions.unshift({type:'purchase',label:'Bought '+product.name+' · '+planLabel,amount:Number(price),balance:user.balance,date:dateStr,pending:true,orderId:pendingOrder.id});
+      user.transactions.unshift({type:'purchase',label:'Bought '+product.name+' · '+planLabel,amount:Number(price),balance:user.balance,date:dateStr});
       await writeJsonBinRaw(data);
+      return { mode: 'fulfilled', data, user, order };
+    });
+    if (outcome.error) return res.status(outcome.status || 400).json({ error: outcome.error });
+    if (outcome.mode === 'pending') {
+      const { data, user, pendingOrder } = outcome;
       const telegramSent = await notifyPurchasePending(user, product, planLabel, price, assignCustId);
       return res.json({ success:true, pending:true, telegramSent, user:sanitizeUser(user), order:pendingOrder, data:safeDataForSession(data, session) });
     }
-
-    const aliasError = validateNetflixAliasPurchase(data, skey, acc);
-    if (aliasError) return res.status(409).json({ error: aliasError });
-
-    user.balance = Number(user.balance || 0) - Number(price);
-    const orderId = '#'+ (Math.floor(Math.random()*90000+10000));
-    const assignedCustomer = assignCustId !== null && assignCustId !== undefined
-      ? (user.myCustomers||[]).find(c => c.id === assignCustId)
-      : null;
-    markLinkedStockSold(data.stock, acc, {
-      userEmail: user.email,
-      userName: user.name,
-      orderId,
-      assignCustId: assignedCustomer ? assignedCustomer.id : null,
-      assignCustName: assignedCustomer ? `${assignedCustomer.fname || ''} ${assignedCustomer.lname || ''}`.trim() : ''
-    }, skey);
-    const order = {
-      id: orderId,
-      product:product.name,short:product.short,color:product.color,tc:product.tc,
-      productId:product.id,plan:planLabel,price:Number(price),
-      email:acc.email,pass:acc.pass,date:dateStr,expiryDate:acc.expiryDate||null,
-      ...(extraFields||{}),
-      ...(accountProfileName(acc) ? { profileName: accountProfileName(acc) } : {}),
-      ...(acc.profilePin?{profilePin:acc.profilePin}:{}),
-      accKey:acc.accKey||'',mainEmail:acc.mainEmail||''
-    };
-    if (assignedCustomer) {
-      order.profileName = order.profileName || assignedCustomer.fname;
-      assignedCustomer.subs = Array.isArray(assignedCustomer.subs) ? assignedCustomer.subs : [];
-      assignedCustomer.subs.unshift(order);
-    } else {
-      user.orders = Array.isArray(user.orders) ? user.orders : [];
-      user.orders.unshift(order);
-    }
-    // Remove ghost pending rows that already have a fulfilled order (prevents double delivery).
-    data.pending = (data.pending || []).filter(po => {
-      if (normalizeEmail(po.userEmail) !== lockKey) return true;
-      const existing = findUserOrderRecord(user, po.id).order;
-      return !(existing && existing.email && !existing.pending);
-    });
-    user.transactions.unshift({type:'purchase',label:'Bought '+product.name+' · '+planLabel,amount:Number(price),balance:user.balance,date:dateStr});
-    await writeJsonBinRaw(data);
+    const { data, user, order } = outcome;
     const telegramSent = await notifyPurchaseFulfilled(user, product, planLabel, price, order, assignCustId);
     stampOrderDelivery(order, telegramSent);
-    await writeJsonBinRaw(data);
+    await enqueueDbWrite(() => writeJsonBinRaw(data));
     res.json({ success:true, pending:false, telegramSent, user:sanitizeUser(user), order, data:safeDataForSession(data, session) });
   } catch(e) {
     console.error('Purchase error:', e.message);
@@ -2135,28 +2162,39 @@ app.post('/admin/credit-topup', async (req, res) => {
   if (!session) return;
   const { requestId } = req.body || {};
   if (!requestId) return res.status(400).json({ error: 'Request ID required' });
+  const lockKey = String(requestId);
+  if (activeTopupCredits.has(lockKey)) {
+    return res.status(409).json({ error: 'This top-up is already being credited' });
+  }
+  activeTopupCredits.add(lockKey);
   try {
-    const data = await readJsonBinRaw();
-    data.topupreqs = Array.isArray(data.topupreqs) ? data.topupreqs : [];
-    data.users = Array.isArray(data.users) ? data.users : [];
-    const reqRow = data.topupreqs.find(r => String(r.id) === String(requestId));
-    if (!reqRow) return res.status(404).json({ error: 'Top-up request not found' });
-    if (reqRow.status === 'credited') {
-      return res.json({ success: true, alreadyCredited: true, data: safeDataForSession(data, { role: 'admin' }) });
-    }
-    const user = data.users.find(u => normalizeEmail(u.email) === normalizeEmail(reqRow.email));
-    if (!user) return res.status(404).json({ error: 'User not found: ' + reqRow.email });
-    user.balance = Number(user.balance || 0) + Number(reqRow.amount || 0);
-    user.transactions = Array.isArray(user.transactions) ? user.transactions : [];
-    user.transactions.unshift({
-      type: 'topup',
-      label: `Wallet top-up — ${reqRow.label}`,
-      amount: Number(reqRow.amount),
-      balance: user.balance,
-      date: formatBeirutTime()
+    const outcome = await enqueueDbWrite(async () => {
+      const data = await readJsonBinRaw({ forceRefresh: true });
+      data.topupreqs = Array.isArray(data.topupreqs) ? data.topupreqs : [];
+      data.users = Array.isArray(data.users) ? data.users : [];
+      const reqRow = data.topupreqs.find(r => String(r.id) === lockKey);
+      if (!reqRow) return { error: 'Top-up request not found', status: 404 };
+      if (reqRow.status === 'credited') return { alreadyCredited: true, data };
+      const user = data.users.find(u => normalizeEmail(u.email) === normalizeEmail(reqRow.email));
+      if (!user) return { error: 'User not found: ' + reqRow.email, status: 404 };
+      user.balance = Number(user.balance || 0) + Number(reqRow.amount || 0);
+      user.transactions = Array.isArray(user.transactions) ? user.transactions : [];
+      user.transactions.unshift({
+        type: 'topup',
+        label: `Wallet top-up — ${reqRow.label}`,
+        amount: Number(reqRow.amount),
+        balance: user.balance,
+        date: formatBeirutTime()
+      });
+      reqRow.status = 'credited';
+      await writeJsonBinRaw(data);
+      return { data, user, reqRow };
     });
-    reqRow.status = 'credited';
-    await writeJsonBinRaw(data);
+    if (outcome.error) return res.status(outcome.status || 400).json({ error: outcome.error });
+    if (outcome.alreadyCredited) {
+      return res.json({ success: true, alreadyCredited: true, data: safeDataForSession(outcome.data, { role: 'admin' }) });
+    }
+    const { user, reqRow, data } = outcome;
     const custTgId = String(user.tgChatId || reqRow.tgChatId || '').trim();
     if (custTgId) {
       await sendTG(
@@ -2174,6 +2212,141 @@ app.post('/admin/credit-topup', async (req, res) => {
   } catch (e) {
     console.error('Credit topup error:', e.message);
     res.status(500).json({ error: 'Could not credit top-up' });
+  } finally {
+    activeTopupCredits.delete(lockKey);
+  }
+});
+
+app.post('/admin/wallet-adjust', async (req, res) => {
+  const session = requireSession(req, res, ['admin']);
+  if (!session) return;
+  const { email, amount, type, notify } = req.body || {};
+  const targetEmail = normalizeEmail(email);
+  const amt = Number(amount);
+  if (!targetEmail || !amt || amt <= 0) return res.status(400).json({ error: 'Valid email and amount required' });
+  const mode = type === 'withdraw' ? 'withdraw' : 'deposit';
+  try {
+    const outcome = await enqueueDbWrite(async () => {
+      const data = await readJsonBinRaw({ forceRefresh: true });
+      data.users = Array.isArray(data.users) ? data.users : [];
+      const user = data.users.find(u => normalizeEmail(u.email) === targetEmail);
+      if (!user) return { error: 'User not found', status: 404 };
+      if (mode === 'withdraw' && Number(user.balance || 0) < amt) {
+        return { error: 'Amount exceeds balance', status: 400 };
+      }
+      user.balance = mode === 'withdraw'
+        ? Number(user.balance || 0) - amt
+        : Number(user.balance || 0) + amt;
+      user.transactions = Array.isArray(user.transactions) ? user.transactions : [];
+      user.transactions.unshift({
+        type: mode === 'withdraw' ? 'withdrawal' : 'topup',
+        label: mode === 'withdraw' ? 'Withdrawal by admin' : 'Deposit by admin',
+        amount: amt,
+        balance: user.balance,
+        date: formatBeirutTime()
+      });
+      await writeJsonBinRaw(data);
+      return { data, user };
+    });
+    if (outcome.error) return res.status(outcome.status || 400).json({ error: outcome.error });
+    const { user, data } = outcome;
+    if (notify !== false && user.tgChatId) {
+      const msg = mode === 'withdraw'
+        ? `💰 <b>Wallet Updated</b>\n\n➖ $${amt.toFixed(2)} withdrawn.\n💵 New balance: $${Number(user.balance).toFixed(2)}`
+        : `💰 <b>Wallet Topped Up!</b>\n\n✅ $${amt.toFixed(2)} added to your wallet.\n💵 New balance: $${Number(user.balance).toFixed(2)}\n\nEnjoy shopping! 🎉`;
+      await sendTG(user.tgChatId, msg, 'HTML').catch(() => {});
+    }
+    res.json({ success: true, user: sanitizeUser(user), data: safeDataForSession(data, { role: 'admin' }) });
+  } catch (e) {
+    console.error('Wallet adjust error:', e.message);
+    res.status(500).json({ error: 'Could not adjust wallet' });
+  }
+});
+
+app.post('/purchase-game', async (req, res) => {
+  const session = requireSession(req, res, ['user']);
+  if (!session) return;
+  const lockKey = normalizeEmail(session.email);
+  if (activePurchases.has(lockKey)) {
+    return res.status(409).json({ error: 'Order already processing. Please wait a moment.' });
+  }
+  activePurchases.add(lockKey);
+  const { product, planLabel, price, playerId, playerPassword, customOrderType, tgChatId } = req.body || {};
+  const orderPrice = Number(price);
+  if (!product || !planLabel || !playerId || !orderPrice || orderPrice <= 0) {
+    activePurchases.delete(lockKey);
+    return res.status(400).json({ error: 'Invalid game order' });
+  }
+  try {
+    const outcome = await enqueueDbWrite(async () => {
+      const data = await readJsonBinRaw({ forceRefresh: true });
+      data.users = Array.isArray(data.users) ? data.users : [];
+      data.gameorders = Array.isArray(data.gameorders) ? data.gameorders : [];
+      const user = data.users.find(u => normalizeEmail(u.email) === session.email);
+      if (!user) return { error: 'User not found', status: 404 };
+      syncUserContact(user, { tgChatId });
+      if (user.banned) return { error: 'Your account has been suspended.', status: 403 };
+      if (Number(user.balance || 0) < orderPrice) return { error: 'Insufficient balance', status: 400 };
+      user.balance = Number(user.balance || 0) - orderPrice;
+      const dateStr = formatBeirutTime();
+      const orderId = '#' + (Math.floor(Math.random() * 90000 + 10000));
+      const order = initGameOrder({
+        id: orderId,
+        type: customOrderType || 'game',
+        product: product.name,
+        short: product.short || '',
+        color: product.color || '',
+        playerId: String(playerId).trim(),
+        plan: planLabel,
+        price: orderPrice,
+        userEmail: user.email,
+        userName: user.name,
+        userTgChatId: user.tgChatId || '',
+        date: dateStr,
+        status: 'pending',
+        ...(playerPassword ? { playerPassword: String(playerPassword) } : {})
+      });
+      data.gameorders.unshift(order);
+      user.transactions = Array.isArray(user.transactions) ? user.transactions : [];
+      user.transactions.unshift({
+        type: 'purchase',
+        label: `${product.name} · ${planLabel}`,
+        amount: orderPrice,
+        balance: user.balance,
+        date: dateStr,
+        pending: true,
+        orderId
+      });
+      await writeJsonBinRaw(data);
+      return { data, user, order, dateStr };
+    });
+    if (outcome.error) return res.status(outcome.status || 400).json({ error: outcome.error });
+    const { data, user, order, dateStr } = outcome;
+    const passLine = order.playerPassword ? `\n🔑 Password: <code>${order.playerPassword}</code>` : '';
+    const idLabel = order.playerPassword ? 'Username' : 'Player ID';
+    if (user.tgChatId) {
+      await sendTG(
+        user.tgChatId,
+        `⏳ <b>Order Received!</b>\n\n🎮 <b>${order.product}</b>\n📋 ${planLabel}\n👤 ${idLabel}: <code>${order.playerId}</code>${passLine}\n💵 $${orderPrice.toFixed(2)}\n\nYour order is being processed. We will notify you here once it's done! 🙏`,
+        'HTML'
+      ).catch(() => {});
+    }
+    await sendTG(
+      TG_ADMIN,
+      `🎮 <b>New Game Order ${order.id}</b>\n\n📦 ${order.product}\n📋 ${planLabel}\n👤 ${idLabel}: <code>${order.playerId}</code>${passLine}\n💵 $${orderPrice.toFixed(2)}\n👤 ${user.name} (${user.email})\n📅 ${dateStr}\n\nGo to Admin → Game Orders to fulfill.`,
+      'HTML'
+    ).catch(() => {});
+    res.json({
+      success: true,
+      order,
+      user: sanitizeUser(user),
+      data: safeDataForSession(data, session)
+    });
+  } catch (e) {
+    console.error('Purchase game error:', e.message);
+    res.status(500).json({ error: 'Could not place game order' });
+  } finally {
+    activePurchases.delete(lockKey);
   }
 });
 
@@ -2201,28 +2374,39 @@ app.post('/admin/cancel-pending', async (req, res) => {
   const { orderId, reason } = req.body;
   if (!orderId) return res.status(400).json({ error: 'Order ID is required' });
   try {
-    const data = await readJsonBinRaw();
-    data.pending = Array.isArray(data.pending) ? data.pending : [];
-    data.users = Array.isArray(data.users) ? data.users : [];
-    const idx = data.pending.findIndex(o => o.id === orderId);
-    if (idx < 0) return res.status(404).json({ error: 'Pending order not found' });
-    const order = data.pending[idx];
-    const user = data.users.find(u => normalizeEmail(u.email) === normalizeEmail(order.userEmail));
-    const refund = Number(order.price || 0);
-    if (user && refund > 0) {
-      user.balance = Number(user.balance || 0) + refund;
-      user.transactions = Array.isArray(user.transactions) ? user.transactions : [];
-      user.transactions.unshift({
-        type: 'refund',
-        label: `Refund — canceled ${order.product} · ${order.plan}`,
-        amount: refund,
-        balance: user.balance,
-        date: formatBeirutTime(),
-        orderId: order.id
-      });
-    }
-    data.pending.splice(idx, 1);
-    await writeJsonBinRaw(data);
+    const outcome = await enqueueDbWrite(async () => {
+      const data = await readJsonBinRaw({ forceRefresh: true });
+      data.pending = Array.isArray(data.pending) ? data.pending : [];
+      data.users = Array.isArray(data.users) ? data.users : [];
+      const idx = data.pending.findIndex(o => o.id === orderId);
+      if (idx < 0) return { error: 'Pending order not found', status: 404 };
+      const order = data.pending[idx];
+      const user = data.users.find(u => normalizeEmail(u.email) === normalizeEmail(order.userEmail));
+      const existing = user ? findUserOrderRecord(user, order.id).order : null;
+      if (existing && existing.email && !existing.pending) {
+        data.pending.splice(idx, 1);
+        await writeJsonBinRaw(data);
+        return { error: 'Order was already fulfilled', status: 409 };
+      }
+      const refund = Number(order.price || 0);
+      if (user && refund > 0) {
+        user.balance = Number(user.balance || 0) + refund;
+        user.transactions = Array.isArray(user.transactions) ? user.transactions : [];
+        user.transactions.unshift({
+          type: 'refund',
+          label: `Refund — canceled ${order.product} · ${order.plan}`,
+          amount: refund,
+          balance: user.balance,
+          date: formatBeirutTime(),
+          orderId: order.id
+        });
+      }
+      data.pending.splice(idx, 1);
+      await writeJsonBinRaw(data);
+      return { data, order, user, refund };
+    });
+    if (outcome.error) return res.status(outcome.status || 400).json({ error: outcome.error });
+    const { data, order, user, refund } = outcome;
     const message = `❌ <b>Order Canceled & Refunded</b>\n\n📦 ${order.product} · ${order.plan}\n💵 Refund: $${refund.toFixed(2)}${reason ? `\n📝 Reason: ${reason}` : ''}\n\nYour wallet balance has been updated.`;
     if (user && user.tgChatId) await sendTG(user.tgChatId, message, 'HTML').catch(() => {});
     await sendTG(TG_ADMIN, `↩️ Canceled pending order ${order.id} for ${order.userName} — refunded $${refund.toFixed(2)}`, 'HTML').catch(() => {});
@@ -2433,8 +2617,32 @@ async function getInboxMaxUid(email, password) {
   }
 }
 
+function authorizeCodeRequest(req, body) {
+  const session = getSession(req);
+  if (session) return true;
+  const codeKey = normalizeEmail(body.codeEmail || body.mainEmail);
+  const inboxKey = normalizeEmail(body.inboxEmail || body.mainEmail || body.codeEmail);
+  const requested = [codeKey, inboxKey].filter(Boolean);
+  if (body.linkToken) {
+    try {
+      const payload = decodeLinkToken(body.linkToken);
+      const sub = payload.subscription || {};
+      const subEmails = [sub.email, sub.codeEmail, sub.mainEmail, sub.inboxEmail]
+        .map(normalizeEmail).filter(Boolean);
+      if (requested.some((email) => subEmails.includes(email))) return true;
+    } catch (e) {}
+  }
+  const subEmail = normalizeEmail(body.subEmail);
+  const subPass = String(body.subPass || '');
+  if (subEmail && subPass && requested.includes(subEmail)) return true;
+  return false;
+}
+
 // ── CODE ENDPOINTS ─────────────────────────────────────────────────────
 app.post('/get-code', async (req, res) => {
+  if (!authorizeCodeRequest(req, req.body || {})) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
   const { profileName, mainEmail, codeEmail, inboxEmail } = req.body;
   
   // codeEmail is the Netflix recipient alias; inboxEmail/mainEmail is the Gmail login inbox.
@@ -2786,7 +2994,8 @@ rtEnhancements = registerEnhancements(app, {
   SESSION_TTL_MS,
   findUserOrderRecord,
   notifyPurchaseFulfilled,
-  pickAvailableAccount
+  pickAvailableAccount,
+  enqueueDbWrite
 });
 
 const whatsappBot = registerWhatsAppBot(app, {

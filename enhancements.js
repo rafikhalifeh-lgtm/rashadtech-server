@@ -59,7 +59,8 @@ function registerEnhancements(app, deps) {
     SESSION_TTL_MS,
     findUserOrderRecord,
     notifyPurchaseFulfilled,
-    pickAvailableAccount
+    pickAvailableAccount,
+    enqueueDbWrite
   } = deps;
 
   const activeFulfillOrders = new Set();
@@ -85,18 +86,10 @@ function registerEnhancements(app, deps) {
   async function persistSessions() {
     try {
       const data = await readJsonBinRaw();
-      const stored = { ...(data[SESSIONS_KEY] || {}) };
+      const stored = {};
       const now = Date.now();
       for (const [token, item] of sessions.entries()) {
-        if (item && now < Number(item.expiresAt || 0)) {
-          const prev = stored[token];
-          if (!prev || Number(item.expiresAt || 0) >= Number(prev.expiresAt || 0)) {
-            stored[token] = item;
-          }
-        }
-      }
-      for (const [token, item] of Object.entries(stored)) {
-        if (!item || now >= Number(item.expiresAt || 0)) delete stored[token];
+        if (item && now < Number(item.expiresAt || 0)) stored[token] = item;
       }
       data[SESSIONS_KEY] = stored;
       await writeJsonBinRaw(data, { backupReason: 'session-sync' });
@@ -372,6 +365,11 @@ function registerEnhancements(app, deps) {
       const accounts = data.stock[skey] || [];
       const acc = accounts.find(a => a && a.accKey === accKey && !a.used);
       if (!acc) return res.status(404).json({ error: 'Available stock account not found' });
+      if (isNetflixStockKey(skey) && !acc.email) {
+        return res.status(400).json({ error: 'Netflix stock must have an email before assignment' });
+      }
+      const aliasError = validateNetflixAliasPurchase(data, skey, acc);
+      if (aliasError) return res.status(409).json({ error: aliasError });
       const user = data.users.find(u => normalizeEmail(u.email) === normalizeEmail(userEmail));
       if (!user) return res.status(404).json({ error: 'Customer not found' });
       const assignedCustomer = assignCustId != null
@@ -680,37 +678,53 @@ function registerEnhancements(app, deps) {
     }
     activeFulfillOrders.add(orderId);
     try {
-      const data = await readJsonBinRaw();
-      data.pending = Array.isArray(data.pending) ? data.pending : [];
-      data.users = Array.isArray(data.users) ? data.users : [];
-      data.stock = data.stock || {};
-      const idx = data.pending.findIndex(o => o.id === orderId);
-      if (idx < 0) return res.status(404).json({ error: 'Pending order not found' });
-      const po = data.pending[idx];
-      const user = data.users.find(u => normalizeEmail(u.email) === normalizeEmail(po.userEmail));
-      const existing = user ? findUserOrderRecord(user, po.id).order : null;
-      if (existing && existing.email && !existing.pending) {
+      const outcome = await enqueueDbWrite(async () => {
+        const data = await readJsonBinRaw({ forceRefresh: true });
+        data.pending = Array.isArray(data.pending) ? data.pending : [];
+        data.users = Array.isArray(data.users) ? data.users : [];
+        data.stock = data.stock || {};
+        const idx = data.pending.findIndex(o => o.id === orderId);
+        if (idx < 0) return { error: 'Pending order not found', status: 404 };
+        const po = data.pending[idx];
+        const user = data.users.find(u => normalizeEmail(u.email) === normalizeEmail(po.userEmail));
+        const existing = user ? findUserOrderRecord(user, po.id).order : null;
+        if (existing && existing.email && !existing.pending) {
+          data.pending.splice(idx, 1);
+          await writeJsonBinRaw(data);
+          return { alreadyFulfilled: true, data, user, order: existing };
+        }
+        const hasCharge = user && Array.isArray(user.transactions) && user.transactions.some(t => t.orderId === po.id);
+        if (!hasCharge) {
+          data.pending.splice(idx, 1);
+          await writeJsonBinRaw(data);
+          return { removedOrphan: true, data, user };
+        }
+        const acc = typeof pickAvailableAccount === 'function'
+          ? pickAvailableAccount(data, po.skey)
+          : stockAccountsForPlan(data.stock, po.skey).find(a => !a.used);
+        if (!acc) return { error: 'No stock available for this plan', status: 409 };
+        const aliasError = validateNetflixAliasPurchase(data, po.skey, acc);
+        if (aliasError) return { error: aliasError, status: 409 };
+        const order = user ? placeFulfilledOrder(user, po, acc, data.stock) : null;
+        pushStatusHistory(po, 'fulfilled');
         data.pending.splice(idx, 1);
+        if (user && Array.isArray(user.transactions)) {
+          user.transactions.forEach(t => {
+            if (t.orderId === po.id) t.pending = false;
+          });
+        }
         await writeJsonBinRaw(data);
-        return res.json({ success: true, order: existing, alreadyFulfilled: true, user: sanitizeUser(user), data: safeDataForSession(data, { role: 'admin' }) });
+        return { data, user, order, po, acc };
+      });
+      if (outcome.error) return res.status(outcome.status || 400).json({ error: outcome.error });
+      if (outcome.alreadyFulfilled) {
+        return res.json({ success: true, order: outcome.order, alreadyFulfilled: true, user: sanitizeUser(outcome.user), data: safeDataForSession(outcome.data, { role: 'admin' }) });
       }
-      const hasCharge = user && Array.isArray(user.transactions) && user.transactions.some(t => t.orderId === po.id);
-      if (!hasCharge) {
-        data.pending.splice(idx, 1);
-        await writeJsonBinRaw(data);
+      if (outcome.removedOrphan) {
         await appendActivity('Removed orphan pending order', orderId, session.email);
-        return res.json({ success: true, removedOrphan: true, alreadyFulfilled: true, user: sanitizeUser(user), data: safeDataForSession(data, { role: 'admin' }) });
+        return res.json({ success: true, removedOrphan: true, alreadyFulfilled: true, user: sanitizeUser(outcome.user), data: safeDataForSession(outcome.data, { role: 'admin' }) });
       }
-      const accounts = stockAccountsForPlan(data.stock, po.skey);
-      const acc = typeof pickAvailableAccount === 'function'
-        ? pickAvailableAccount(data, po.skey)
-        : accounts.find(a => !a.used);
-      if (!acc) return res.status(409).json({ error: 'No stock available for this plan' });
-      const aliasError = validateNetflixAliasPurchase(data, po.skey, acc);
-      if (aliasError) return res.status(409).json({ error: aliasError });
-      const order = user ? placeFulfilledOrder(user, po, acc, data.stock) : null;
-      pushStatusHistory(po, 'fulfilled');
-      data.pending.splice(idx, 1);
+      const { data, user, order, po, acc } = outcome;
       let telegramSent = false;
       if (user && order && !order.telegramDeliveredAt) {
         const product = { name: po.product, short: po.short, color: po.color, tc: po.tc, id: po.productId };
@@ -726,12 +740,7 @@ function registerEnhancements(app, deps) {
         }
       }
       if (order) stampOrderDelivery(order, telegramSent);
-      if (user && Array.isArray(user.transactions)) {
-        user.transactions.forEach(t => {
-          if (t.orderId === po.id) t.pending = false;
-        });
-      }
-      await writeJsonBinRaw(data);
+      if (telegramSent) await enqueueDbWrite(() => writeJsonBinRaw(data));
       await appendActivity('Pending order fulfilled', orderId, session.email);
       res.json({ success: true, order, user: sanitizeUser(user), data: safeDataForSession(data, { role: 'admin' }) });
     } catch (e) {

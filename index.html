@@ -1784,6 +1784,7 @@ async function sendTelegram(msg){
   }catch(e){console.error('TG fetch error:',e);}
 }
 let _sublinkAccKey=null;
+let _sublinkLinkToken=null;
 let _sublinkEmail=null;
 let _sublinkPass=null;
 let _sublinkProfileName=null;
@@ -1824,8 +1825,8 @@ async function requestSigninCode(){
     const controller=new AbortController();
     const timeout=setTimeout(()=>controller.abort(),30000);
     const r=await fetch(`${RT_SERVER}/get-code`,{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({profileName:_sublinkProfileName||'Customer',accountKey:'default',mainEmail:_sublinkMainEmail,codeEmail:_sublinkCodeEmail,inboxEmail:_sublinkInboxEmail}),
+      method:'POST',headers:authHeaders(),
+      body:JSON.stringify({profileName:_sublinkProfileName||'Customer',accountKey:'default',mainEmail:_sublinkMainEmail,codeEmail:_sublinkCodeEmail,inboxEmail:_sublinkInboxEmail,linkToken:_sublinkLinkToken,subEmail:_sublinkEmail,subPass:_sublinkPass}),
       signal:controller.signal
     });
     clearTimeout(timeout);
@@ -1861,8 +1862,8 @@ async function refreshSigninCode(){
     const controller=new AbortController();
     const timeout=setTimeout(()=>controller.abort(),60000);
     const r=await fetch(`${RT_SERVER}/get-code`,{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({accountKey:'default',profileName:_sublinkProfileName||'unknown',codeType:'netflix',mainEmail:_sublinkMainEmail,codeEmail:_sublinkCodeEmail,inboxEmail:_sublinkInboxEmail}),
+      method:'POST',headers:authHeaders(),
+      body:JSON.stringify({accountKey:'default',profileName:_sublinkProfileName||'unknown',codeType:'netflix',mainEmail:_sublinkMainEmail,codeEmail:_sublinkCodeEmail,inboxEmail:_sublinkInboxEmail,linkToken:_sublinkLinkToken,subEmail:_sublinkEmail,subPass:_sublinkPass}),
       signal:controller.signal
     });
     clearTimeout(timeout);
@@ -2220,6 +2221,7 @@ async function checkSubLink(){
 
   let found=null;
   if(token){
+    _sublinkLinkToken=token;
     try{
       const r=await fetch(`${RT_SERVER}/links/${encodeURIComponent(token)}`);
       const j=await r.json();
@@ -2230,6 +2232,7 @@ async function checkSubLink(){
       return true;
     }
   } else if(encoded){
+    _sublinkLinkToken=null;
     // Decode data directly from URL — no server needed
     try{
       found=JSON.parse(decodeURIComponent(escape(atob(encoded))));
@@ -2929,28 +2932,26 @@ async function submitCustomOrder(){
   if(currentUser.balance<price){showToast('Insufficient balance');return;}
   customOrderInFlight=true;
   try{
-    currentUser.balance-=price;
-    const dateStr=fmtBeirutTime();
-  const orderId='#'+(Math.floor(Math.random()*90000+10000));
-  const credLabel=p.customOrderNeedsPassword?` · ${customOrderId}`:` · ID: ${customOrderId}`;
-  currentUser.transactions.unshift({type:'purchase',label:`${p.name} · ${planLabel}${credLabel}`,amount:price,balance:currentUser.balance,date:dateStr,pending:true,orderId});
-  // Save game order
-  let go=[];
-  try{
-    if(!_jbCache)_jbCache=await jbRead();
-    if(Array.isArray(_jbCache.gameorders))go=_jbCache.gameorders;
-  }catch(e){}
-  if(!_jbCache)_jbCache={};
-  const orderPayload={id:orderId,type:p.customOrderType,product:p.name,short:p.short,color:p.color,playerId:customOrderId,plan:planLabel,price,userEmail:currentUser.email,userName:currentUser.name,userTgChatId:currentUser.tgChatId||'',date:dateStr,status:'pending',createdAt:Date.now(),statusHistory:[{stage:'pending',at:Date.now()}]};
-  if(p.customOrderNeedsPassword&&customOrderPassword)orderPayload.playerPassword=customOrderPassword;
-  go.unshift(orderPayload);
-  try{_jbCache.gameorders=go;await jbWrite(_jbCache);}catch(e){currentUser.balance+=price;currentUser.transactions.shift();throw e;}
-  await saveData();updateBal();renderTx();renderMyGameOrders();closeModal('buy-modal');showToast('✓ Order placed!');
-  const passLine=p.customOrderNeedsPassword?`\n🔑 Password: <code>${customOrderPassword}</code>`:'';
-  const idLabel=p.customOrderNeedsPassword?'Username':'Player ID';
-  if(currentUser.tgChatId)await sendTelegramToUser(currentUser.tgChatId,`⏳ <b>Order Received!</b>\n\n🎮 <b>${p.name}</b>\n📋 ${planLabel}\n👤 ${idLabel}: <code>${customOrderId}</code>${passLine}\n💵 ${fmt(price)}\n\nYour order is being processed. We will notify you here once it's done! 🙏`);
-  await sendTelegram(`🎮 <b>New Game Order ${orderId}</b>\n\n📦 ${p.name}\n📋 ${planLabel}\n👤 ${idLabel}: <code>${customOrderId}</code>${passLine}\n💵 ${fmt(price)}\n👤 ${currentUser.name} (${currentUser.email})\n📅 ${dateStr}\n\nGo to Admin → Game Orders to fulfill.`);
-  customOrderId='';customOrderPassword='';customOrderAmt=0;selPlan=null;
+    const j=await rtApi('/purchase-game',{
+      method:'POST',
+      body:JSON.stringify({
+        product:{name:p.name,short:p.short,color:p.color},
+        planLabel,
+        price,
+        playerId:customOrderId,
+        playerPassword:p.customOrderNeedsPassword?customOrderPassword:undefined,
+        customOrderType:p.customOrderType,
+        tgChatId:currentUser.tgChatId||''
+      })
+    });
+    if(j.data)applyDataSnapshot(j.data);
+    if(j.user){
+      const fu=users.find(x=>normEmail(x.email)===normEmail(currentUser.email));
+      if(fu)currentUser=fu;
+    }
+    syncPausedUntil=Date.now()+20000;
+    updateBal();renderTx();renderMyGameOrders();closeModal('buy-modal');showToast('✓ Order placed!');
+    customOrderId='';customOrderPassword='';customOrderAmt=0;selPlan=null;
   }catch(e){
     showToast('⚠️ '+((e&&e.message)||'Order failed — try again'));
   }finally{customOrderInFlight=false;}
@@ -4796,11 +4797,11 @@ function renderWallets(){
   const el=document.getElementById('wallets-list');
   if(!users.length){el.innerHTML='<div class="empty-state" style="padding:32px"><i class="ti ti-wallet"></i>No registered users yet.</div>';return;}
   el.innerHTML=users.map((u,i)=>`<div class="admin-wallet-row">
-    <div class="aw-info"><div class="aw-name">${u.name}</div><div class="aw-email">${u.email}</div></div>
+    <div class="aw-info"><div class="aw-name">${esc(u.name)}</div><div class="aw-email">${esc(u.email)}</div></div>
     <div class="aw-bal" id="wbal-${i}">${fmt(u.balance)}</div>
     <input class="aw-input" type="number" id="wcredit-${i}" placeholder="$0" min="0" step="0.5">
     <button class="aw-add-btn" onclick="creditWallet(${i})" title="Deposit"><i class="ti ti-plus" style="font-size:12px;vertical-align:-1px"></i> Add</button>
-    <button onclick="getTopupHistory('${u.email}')" title="History" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;font-size:12px;cursor:pointer;color:var(--text2)">📋</button>
+    <button ${jsOnClick('getTopupHistory',u.email)} title="History" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;font-size:12px;cursor:pointer;color:var(--text2)">📋</button>
     <button class="aw-add-btn" onclick="withdrawWallet(${i})" title="Withdraw" style="background:var(--red-bg);color:var(--red);border-color:var(--red-border)"><i class="ti ti-minus" style="font-size:12px;vertical-align:-1px"></i> Take</button>
   </div>`).join('');
 }
@@ -4811,41 +4812,45 @@ async function creditWallet(i){
   if(amt<=0){showToast('Enter a valid amount');return;}
   creditWalletInFlight=true;
   try{
-    users[i].balance+=amt;
-    const date=fmtBeirutTime();
-    users[i].transactions.unshift({type:'topup',label:'Deposit by admin',amount:amt,balance:users[i].balance,date});
-    document.getElementById('wbal-'+i).textContent=fmt(users[i].balance);
+    const u=users[i];
+    const j=await rtApi('/admin/wallet-adjust',{method:'POST',body:JSON.stringify({email:u.email,amount:amt,type:'deposit'})});
+    if(j.data)applyDataSnapshot(j.data);
+    const fu=users.find(x=>normEmail(x.email)===normEmail(u.email));
+    if(fu){
+      document.getElementById('wbal-'+i).textContent=fmt(fu.balance);
+      if(currentUser&&normEmail(currentUser.email)===normEmail(fu.email)){currentUser=fu;updateBal();renderTx();}
+    }
     document.getElementById('wcredit-'+i).value='';
-    showToast(`✓ Added ${fmt(amt)} to ${users[i].name}`);
-    if(currentUser&&currentUser.email===users[i].email){currentUser=users[i];updateBal();renderTx();}
-    const tgIdDep=users[i].tgChatId||'';
-    await Promise.all([
-      saveData(),
-      sendTelegram(`💰 <b>Deposit</b>\n👤 ${users[i].name} (${users[i].email})\n➕ Added: ${fmt(amt)}\n💵 New balance: ${fmt(users[i].balance)}`),
-      tgIdDep?sendTelegramToUser(tgIdDep,`💰 <b>Wallet Topped Up!</b>\n\n✅ ${fmt(amt)} added to your wallet.\n💵 New balance: ${fmt(users[i].balance)}\n\nEnjoy shopping! 🎉`):Promise.resolve()
-    ]);
+    showToast(`✓ Added ${fmt(amt)} to ${u.name}`);
+    await sendTelegram(`💰 <b>Deposit</b>\n👤 ${u.name} (${u.email})\n➕ Added: ${fmt(amt)}\n💵 New balance: ${fmt(fu?.balance??u.balance)}`);
   }catch(e){
-    showToast('⚠️ Deposit failed — try again');
+    showToast('⚠️ '+(e.message||'Deposit failed — try again'));
   }finally{creditWalletInFlight=false;}
 }
 async function withdrawWallet(i){
   await refreshFromFirebase();
   const amt=parseFloat(document.getElementById('wcredit-'+i).value)||0;
   if(amt<=0){showToast('Enter a valid amount');return;}
-  if(amt>users[i].balance){showToast('Amount exceeds balance');return;}
-  const date=fmtBeirutTime();
-  users[i].balance-=amt;
-  users[i].transactions.unshift({type:'withdrawal',label:'Withdrawal by admin',amount:amt,balance:users[i].balance,date});
-  document.getElementById('wbal-'+i).textContent=fmt(users[i].balance);
-  document.getElementById('wcredit-'+i).value='';
-  showToast(`✓ Withdrew ${fmt(amt)} from ${users[i].name}`);
-  if(currentUser&&currentUser.email===users[i].email){currentUser=users[i];updateBal();renderTx();}
-  const tgIdWd=users[i].tgChatId||'';
-  await Promise.all([
-    saveData(),
-    sendTelegram(`💸 <b>Withdrawal</b>\n👤 ${users[i].name} (${users[i].email})\n➖ Removed: ${fmt(amt)}\n💵 New balance: ${fmt(users[i].balance)}`),
-    tgIdWd?sendTelegramToUser(tgIdWd,`💸 <b>Balance Updated</b>\n\n➖ ${fmt(amt)} withdrawn from your wallet.\n💵 New balance: ${fmt(users[i].balance)}`):Promise.resolve()
-  ]);
+  const u=users[i];
+  if(amt>u.balance){showToast('Amount exceeds balance');return;}
+  try{
+    const j=await rtApi('/admin/wallet-adjust',{method:'POST',body:JSON.stringify({email:u.email,amount:amt,type:'withdraw'})});
+    if(j.data)applyDataSnapshot(j.data);
+    const fu=users.find(x=>normEmail(x.email)===normEmail(u.email));
+    if(fu){
+      document.getElementById('wbal-'+i).textContent=fmt(fu.balance);
+      if(currentUser&&normEmail(currentUser.email)===normEmail(fu.email)){currentUser=fu;updateBal();renderTx();}
+    }
+    document.getElementById('wcredit-'+i).value='';
+    showToast(`✓ Withdrew ${fmt(amt)} from ${u.name}`);
+    const tgIdWd=fu?.tgChatId||u.tgChatId||'';
+    await Promise.all([
+      sendTelegram(`💸 <b>Withdrawal</b>\n👤 ${u.name} (${u.email})\n➖ Removed: ${fmt(amt)}\n💵 New balance: ${fmt(fu?.balance??u.balance)}`),
+      tgIdWd?sendTelegramToUser(tgIdWd,`💸 <b>Balance Updated</b>\n\n➖ ${fmt(amt)} withdrawn from your wallet.\n💵 New balance: ${fmt(fu?.balance??u.balance)}`):Promise.resolve()
+    ]);
+  }catch(e){
+    showToast('⚠️ '+(e.message||'Withdrawal failed'));
+  }
 }
 
 // ============================================================
@@ -5084,27 +5089,7 @@ async function checkExpiryReminders(){
 
 async function checkLowStock(){
   if(!isAdmin)return;
-  for(const [key,accs] of Object.entries(accountStock)){
-    const available=(accs||[]).filter(a=>!a.used).length;
-    if(available===1){
-      // Check if we already notified recently
-      const alertKey='lowstock_'+key;
-      const last=localStorage.getItem(alertKey);
-      const now=Date.now();
-      if(!last||now-parseInt(last)>3600000){ // Alert once per hour
-        localStorage.setItem(alertKey,now);
-        await sendTelegram(`⚠️ <b>Low Stock Alert!</b>\n\n📦 ${key.replace(/__/g,' · ')}\n🔴 Only 1 account remaining!\n\nAdd more stock soon.`);
-      }
-    } else if(available===0){
-      const alertKey='emptystock_'+key;
-      const last=localStorage.getItem(alertKey);
-      const now=Date.now();
-      if(!last||now-parseInt(last)>3600000){
-        localStorage.setItem(alertKey,now);
-        await sendTelegram(`❌ <b>Out of Stock!</b>\n\n📦 ${key.replace(/__/g,' · ')}\n🔴 No accounts available!`);
-      }
-    }
-  }
+  // Low-stock Telegram alerts run on the server (daily cron). Dashboard UI still shows counts elsewhere.
 }
 
 let realtimeSyncStarted=false;
