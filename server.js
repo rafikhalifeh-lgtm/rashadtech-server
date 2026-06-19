@@ -1379,7 +1379,7 @@ app.post('/db/write', async (req, res) => {
       } else {
         nextData = mergeUserWrite(existing, data || {}, session);
       }
-      return writeJsonBinRaw(nextData, { backupSource: existing });
+      return writeJsonBinRaw(nextData, { backupSource: existing, lightWrite: true });
     });
     res.json({ success: true, result });
   } catch(e) {

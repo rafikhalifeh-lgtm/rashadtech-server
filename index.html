@@ -1234,7 +1234,7 @@ async function rtApi(path,opts={},timeoutMs=25000){
     const r=await fetch(RT_SERVER+path,{...opts,headers:{...authHeaders(),...(opts.headers||{})},signal:controller.signal});
     clearTimeout(timer);
     const j=await r.json().catch(()=>({}));
-    if(!r.ok)throw new Error(j.error||'Request failed');
+    if(!r.ok)throw new Error(j.error||(r.status===404?'Server update required — redeploy backend':'Request failed'));
     if(j.success===false)throw new Error(j.error||'Request failed');
     return j;
   }catch(e){
@@ -1432,8 +1432,10 @@ async function jbWrite(data,timeoutMs){
       signal:controller.signal
     });
     clearTimeout(timer);
-    if(!r.ok)throw new Error('Write failed: '+r.status);
-    return await r.json();
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(j.error||('Write failed: '+r.status));
+    if(j.success===false)throw new Error(j.error||'Save failed');
+    return j;
   }catch(e){
     clearTimeout(timer);
     if(e.name==='AbortError')throw new Error('Save timed out — please try again');
@@ -5125,7 +5127,8 @@ async function saveData(){
     return;
   }catch(e){}
   console.warn('save error:',lastErr);
-  showToast('⚠️ Save failed — please try again');
+  const errMsg=lastErr?.message||'Save failed — please try again';
+  showToast('⚠️ '+errMsg);
   throw lastErr;
 }
 
