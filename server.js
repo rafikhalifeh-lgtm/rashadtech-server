@@ -725,26 +725,33 @@ async function readJsonBinRaw(options = {}) {
 
 async function writeJsonBinRaw(data, options = {}) {
   const nextData = { ...(data || {}) };
+  const lightWrite = Boolean(options.lightWrite);
   const existingBackups = Array.isArray(nextData[BACKUPS_KEY])
     ? nextData[BACKUPS_KEY].filter(item => item && item.data).slice(0, 9)
     : [];
   let backupSource = options.backupSource;
-  if (backupSource === undefined) backupSource = await readJsonBinRaw().catch(() => null);
-  if (backupSource) {
-    backupSource = { ...backupSource };
-    delete backupSource[BACKUPS_KEY];
-    delete backupSource[GMAIL_MONITORS_KEY];
-    nextData[BACKUPS_KEY] = [
-      { ts: Date.now(), data: backupSource },
-      ...existingBackups
-    ].slice(0, 10);
+  if (!lightWrite) {
+    if (backupSource === undefined) backupSource = await readJsonBinRaw().catch(() => null);
+    if (backupSource) {
+      backupSource = { ...backupSource };
+      delete backupSource[BACKUPS_KEY];
+      delete backupSource[GMAIL_MONITORS_KEY];
+      nextData[BACKUPS_KEY] = [
+        { ts: Date.now(), data: backupSource },
+        ...existingBackups
+      ].slice(0, 10);
+    } else {
+      nextData[BACKUPS_KEY] = existingBackups;
+    }
   } else {
     nextData[BACKUPS_KEY] = existingBackups;
   }
   const fallbackData = markEmergencyDb(nextData, NETLIFY_SITE_ID && NETLIFY_BLOBS_TOKEN ? 'Netlify Blobs primary database' : 'Primary server file database', !(NETLIFY_SITE_ID && NETLIFY_BLOBS_TOKEN));
   saveLocalDb(fallbackData, true);
   if (NETLIFY_SITE_ID && NETLIFY_BLOBS_TOKEN) {
-    if (backupSource) await createBackupSnapshot(backupSource, options.backupReason || 'before-write').catch(e => console.error('Backup snapshot error:', e.message));
+    if (!lightWrite && backupSource) {
+      await createBackupSnapshot(backupSource, options.backupReason || 'before-write').catch(e => console.error('Backup snapshot error:', e.message));
+    }
     await writeNetlifyDb(fallbackData);
     setDbCache(fallbackData, false);
   }
@@ -1024,29 +1031,42 @@ async function recoverSettingsFromBackups(data, options = {}) {
 
 function mergeStockPreservingSold(existingStock, incomingStock) {
   const existing = existingStock || {};
+  const incoming = incomingStock || {};
   const merged = { ...existing };
-  for (const [key, incomingAccounts] of Object.entries(incomingStock || {})) {
+  for (const key of Object.keys(incoming)) {
     const existingAccounts = Array.isArray(existing[key]) ? existing[key] : [];
-    const existingById = new Map();
+    const incomingAccounts = Array.isArray(incoming[key]) ? incoming[key] : [];
+    const byId = new Map();
     existingAccounts.forEach((acc) => {
       if (!acc) return;
       const id = String(acc.accKey || acc.email || '');
-      if (id) existingById.set(id, acc);
+      if (id) byId.set(id, acc);
     });
-    merged[key] = (incomingAccounts || []).map((acc) => {
-      if (!acc) return acc;
+    const incomingIds = new Set();
+    incomingAccounts.forEach((acc) => {
+      if (!acc) return;
       const id = String(acc.accKey || acc.email || '');
-      const prev = id ? existingById.get(id) : null;
+      if (!id) return;
+      incomingIds.add(id);
+      const prev = byId.get(id);
       if (prev && prev.used) {
-        return { ...acc, used: true, soldTo: prev.soldTo || acc.soldTo };
+        byId.set(id, { ...acc, used: true, soldTo: prev.soldTo || acc.soldTo });
+      } else if (prev) {
+        byId.set(id, { ...prev, ...acc, used: Boolean(prev.used || acc.used) });
+      } else {
+        byId.set(id, acc);
       }
-      if (prev) {
-        return { ...prev, ...acc, used: Boolean(prev.used || acc.used) };
-      }
-      return acc;
-    }).filter(Boolean);
+    });
+    for (const [id, acc] of [...byId.entries()]) {
+      if (!incomingIds.has(id) && !acc.used) byId.delete(id);
+    }
+    merged[key] = Array.from(byId.values());
   }
   return merged;
+}
+
+function netflixOneUserPlanKeys() {
+  return ['netflix__1user__1m', 'netflix__1user__3m', 'netflix__1user__6m', 'netflix__1user__1y'];
 }
 
 function mergeAllTopupRequests(existingTopups, incomingTopups) {
@@ -2345,6 +2365,83 @@ app.post('/purchase-game', async (req, res) => {
     res.status(500).json({ error: 'Could not place game order' });
   } finally {
     activePurchases.delete(lockKey);
+  }
+});
+
+app.post('/admin/stock-add', async (req, res) => {
+  const session = requireSession(req, res, ['admin']);
+  if (!session) return;
+  const { skey, skeys, account, accKey, replicateToNetflixPlans, accounts } = req.body || {};
+  const batch = Array.isArray(accounts) ? accounts : null;
+  const keys = replicateToNetflixPlans
+    ? netflixOneUserPlanKeys()
+    : (Array.isArray(skeys) && skeys.length ? skeys : (skey ? [skey] : []));
+  if (batch) {
+    if (!batch.length) return res.status(400).json({ error: 'No accounts to add' });
+  } else if (!keys.length || !account || !account.email || !account.pass) {
+    return res.status(400).json({ error: 'Plan key and account email/password required' });
+  }
+  try {
+    const outcome = await enqueueDbWrite(async () => {
+      const data = await readJsonBinRaw({ forceRefresh: true });
+      data.stock = data.stock || {};
+      const addedKeys = [];
+      const rows = batch || [{ account, accKey, replicateToNetflixPlans: false }];
+        for (const row of rows) {
+        const rowAccount = row.account || account;
+        if (!rowAccount || !rowAccount.email || !rowAccount.pass) {
+          return { error: 'Each account needs email and password', status: 400 };
+        }
+        const rowKeys = row.replicateToNetflixPlans
+          ? netflixOneUserPlanKeys()
+          : (row.skey ? [row.skey] : keys);
+        if (!rowKeys.length || !rowKeys[0]) {
+          return { error: 'Plan key required for each account', status: 400 };
+        }
+        const firstKey = rowKeys[0] || '';
+        const sharedKey = row.accKey || accKey || (row.replicateToNetflixPlans || replicateToNetflixPlans
+          ? `nfprof__${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+          : /^shahid__1user__/.test(firstKey)
+            ? `shprof__${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+            : `${firstKey}__${Date.now()}_${Math.random().toString(36).slice(2, 6)}`);
+        const accPayload = {
+          used: false,
+          accKey: sharedKey,
+          email: String(rowAccount.email).trim(),
+          pass: String(rowAccount.pass).trim(),
+          ...(rowAccount.profileName ? { profileName: String(rowAccount.profileName).trim() } : {}),
+          ...(rowAccount.expiryDate ? { expiryDate: String(rowAccount.expiryDate).trim() } : {}),
+          ...(rowAccount.profilePin ? { profilePin: String(rowAccount.profilePin).trim() } : {}),
+          ...(rowAccount.mainEmail ? { mainEmail: String(rowAccount.mainEmail).trim() } : {}),
+          ...(rowAccount.mainPass ? { mainPass: String(rowAccount.mainPass) } : {})
+        };
+        for (const key of rowKeys) {
+          if (!key) continue;
+          if (isNetflixStockKey(key) && !accPayload.email) {
+            return { error: 'Netflix stock requires email', status: 400 };
+          }
+          const aliasError = validateNetflixAliasPurchase(data, key, accPayload);
+          if (aliasError) return { error: aliasError, status: 409 };
+          if (!Array.isArray(data.stock[key])) data.stock[key] = [];
+          if (data.stock[key].some(a => a && a.accKey === accPayload.accKey)) {
+            return { error: 'This account is already in stock', status: 409 };
+          }
+          data.stock[key].push({ ...accPayload, accKey: sharedKey });
+          addedKeys.push(key);
+        }
+      }
+      await writeJsonBinRaw(data, { backupReason: 'stock-add', lightWrite: true });
+      return { data, addedKeys };
+    });
+    if (outcome.error) return res.status(outcome.status || 400).json({ error: outcome.error });
+    res.json({
+      success: true,
+      addedKeys: outcome.addedKeys,
+      data: safeDataForSession(outcome.data, { role: 'admin' })
+    });
+  } catch (e) {
+    console.error('Stock add error:', e.message);
+    res.status(500).json({ error: 'Could not add stock account' });
   }
 });
 
