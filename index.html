@@ -1180,6 +1180,7 @@ let customOrderInFlight=false;
 let creditWalletInFlight=false;
 let addStockInFlight=false;
 let saveDataInFlight=false;
+const _stockAddAccKeys=new Map();
 
 function fmtBeirutTime(date){
   try{
@@ -1442,9 +1443,46 @@ async function jbWrite(data,timeoutMs){
 
 async function apiStockAdd(payload){
   syncPausedUntil=Date.now()+20000;
-  const j=await rtApi('/admin/stock-add',{method:'POST',body:JSON.stringify(payload)},45000);
-  if(j.data)applyDataSnapshot(j.data);
-  return j;
+  const acc=payload.account||{};
+  const keys=payload.replicateToNetflixPlans?netflixOneUserPlanKeys():[payload.skey].filter(Boolean);
+  const requestId=payload.requestId||[
+    normEmail(acc.email),
+    String(acc.profileName||'').trim().toLowerCase(),
+    String(acc.profilePin||'').trim(),
+    keys.join('|')
+  ].join('::');
+  const body={...payload,requestId};
+  if(!body.accKey){
+    const firstKey=keys[0]||'stock';
+    body.accKey=payload.replicateToNetflixPlans
+      ?'nfprof__'+Date.now()+'_'+Math.random().toString(36).slice(2,8)
+      :/^shahid__1user__/.test(firstKey)
+        ?'shprof__'+Date.now()+'_'+Math.random().toString(36).slice(2,8)
+        :firstKey+'__'+Date.now()+'_'+Math.random().toString(36).slice(2,6);
+  }
+  try{
+    const j=await rtApi('/admin/stock-add',{method:'POST',body:JSON.stringify(body)},45000);
+    if(j.data)applyDataSnapshot(j.data);
+    return j;
+  }catch(e){
+    const msg=String(e.message||'');
+    if(/already in stock|already in progress/i.test(msg)){
+      try{
+        const fresh=await jbRead();
+        applyDataSnapshot(fresh);
+      }catch(err){}
+      return {success:true,duplicate:true,message:msg};
+    }
+    throw e;
+  }
+}
+
+function setAddStockBusy(busy){
+  addStockInFlight=busy;
+  ['btn-add-stock','btn-add-netflix-bulk','btn-add-shahid-bulk'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el)el.disabled=busy;
+  });
 }
 
 // fbGet/fbSet wrap JSONBin — full bin read/write
@@ -2596,14 +2634,6 @@ async function doAdminLogin(){
     document.getElementById('admin-err').style.display='none';logActivity('Admin login');
     document.getElementById('page-auth').classList.remove('active');
     document.getElementById('page-admin').classList.add('active');
-    fetch(RT_SERVER+'/admin/recover-settings',{method:'POST',headers:authHeaders(),body:'{}'})
-      .then(rr=>rr.json().then(rj=>{
-        if(rr.ok&&rj.success){
-          if(rj.data)applyDataSnapshot(rj.data);
-          if(rj.catalog)applyPriceCatalog(rj.catalog);
-          if(rj.recovered)showToast(`✓ Restored ${rj.customPriceCount||0} custom prices from backup`);
-        }
-      })).catch(()=>{});
     await loadPriceCatalog();
     renderStockPanels();renderAdminCustomers();renderWallets();renderAdminRequests();renderAdminExpiry();renderNetflixRenewalAlerts();renderTopupRequests();renderGameOrders();renderAdminPending();
     refreshAdminBackupStatus();
@@ -4364,7 +4394,7 @@ function renderNetflixBulkForm(skey){
     <input type="text" id="nf-bulk-name-${n}" placeholder="Profile name" value="${esc((defs.profiles&&defs.profiles[n-1]?.name)||'')}">
     <input type="text" id="nf-bulk-pin-${n}" placeholder="PIN" maxlength="6" value="${esc((defs.profiles&&defs.profiles[n-1]?.pin)||'')}">
   </div>`).join('')}</div>
-  <button class="inline-btn" onclick="addNetflixBulkAccounts()"><i class="ti ti-users" style="font-size:13px;vertical-align:-2px;margin-right:4px"></i>Add profiles to all Netflix 1-user plans</button>`;
+  <button class="inline-btn" id="btn-add-netflix-bulk" onclick="addNetflixBulkAccounts()"><i class="ti ti-users" style="font-size:13px;vertical-align:-2px;margin-right:4px"></i>Add profiles to all Netflix 1-user plans</button>`;
 }
 function renderShahidBulkForm(skey){
   const defs=loadShahidBulkDefaults();
@@ -4393,7 +4423,7 @@ function renderShahidBulkForm(skey){
     <input type="text" id="sh-bulk-name-${n}" placeholder="User name" value="${esc((defs.profiles&&defs.profiles[n-1]?.name)||'')}">
     <div style="font-size:11px;color:var(--text3)">no PIN</div>
   </div>`).join('')}</div>
-  <button class="inline-btn" onclick="addShahidBulkAccounts()"><i class="ti ti-users" style="font-size:13px;vertical-align:-2px;margin-right:4px"></i>Add users to this Shahid plan</button>`;
+  <button class="inline-btn" id="btn-add-shahid-bulk" onclick="addShahidBulkAccounts()"><i class="ti ti-users" style="font-size:13px;vertical-align:-2px;margin-right:4px"></i>Add users to this Shahid plan</button>`;
 }
 function renderManualAddForm(skey,needsGmail,isShahidStock){
   const isShahidOne=isShahidOneUserKey(skey);
@@ -4428,7 +4458,7 @@ function renderManualAddForm(skey,needsGmail,isShahidStock){
       <input type="password" id="new-acc-main-pass" placeholder="Gmail app password" style="margin-top:6px">
       <div style="font-size:11px;color:var(--text3);margin-top:4px">Gmail only. Use a 16-character app password with IMAP enabled. Spaces are okay; they will be removed automatically.</div>
   </div>`:''}
-    <button class="inline-btn" onclick="addAccount()"><i class="ti ti-plus" style="font-size:13px;vertical-align:-2px;margin-right:4px"></i>Add to stock</button>`;
+    <button class="inline-btn" id="btn-add-stock" onclick="addAccount()"><i class="ti ti-plus" style="font-size:13px;vertical-align:-2px;margin-right:4px"></i>Add to stock</button>`;
 }
 function renderAccModal(showForm=false){
   const skey=curAccModalKey;const list=stockAccountsForKey(skey);const isShahidStock=String(skey||'').startsWith('shahid__');const needsGmail=isNetflixKey(skey)||isShahidStock;let html='';
@@ -4545,7 +4575,7 @@ function pushShahidProfileStock(skey,fields){
 }
 async function addShahidBulkAccounts(){
   if(!isShahidOneUserKey(curAccModalKey)){showToast('Quick add is only for Shahid 1-user plans');return;}
-  if(addStockInFlight)return;
+  if(addStockInFlight){showToast('Stock add already in progress…');return;}
   const email=document.getElementById('sh-bulk-email')?.value.trim()||'';
   const pass=document.getElementById('sh-bulk-pass')?.value.trim()||'';
   const expiryDate=document.getElementById('sh-bulk-expiry')?.value.trim()||'';
@@ -4569,19 +4599,20 @@ async function addShahidBulkAccounts(){
     if(names.has(key)){showToast('Duplicate user name in this batch — each user needs a unique name');return;}
     names.add(key);
   }
-  addStockInFlight=true;
+  setAddStockBusy(true);
   try{
     await apiStockAdd({
       skey:curAccModalKey,
       accounts:profiles.map(p=>({
         skey:curAccModalKey,
+        accKey:'shprof__'+Date.now()+'_'+Math.random().toString(36).slice(2,8)+'_'+p.row,
         account:{email,pass,profileName:p.name,expiryDate,mainEmail:mainEmail||'',...(mainPass?{mainPass}:{})}
       }))
     });
   }catch(e){
     showToast('⚠️ '+(e.message||'Save failed'));
     return;
-  }finally{addStockInFlight=false;}
+  }finally{setAddStockBusy(false);}
   saveShahidBulkDefaults({email,pass,expiryDate,mainEmail,profiles:profiles.map(p=>({name:p.name}))});
   let gmailConfigured=false;
   if(mainEmail&&mainPass){
@@ -4594,7 +4625,7 @@ async function addShahidBulkAccounts(){
 }
 async function addNetflixBulkAccounts(){
   if(!isNetflixOneUserKey(curAccModalKey)){showToast('Quick add is only for Netflix 1-user plans');return;}
-  if(addStockInFlight)return;
+  if(addStockInFlight){showToast('Stock add already in progress…');return;}
   const email=document.getElementById('nf-bulk-email')?.value.trim()||'';
   const pass=document.getElementById('nf-bulk-pass')?.value.trim()||'';
   const expiryDate=document.getElementById('nf-bulk-expiry')?.value.trim()||'';
@@ -4619,18 +4650,19 @@ async function addNetflixBulkAccounts(){
     if(pins.has(p.pin)){showToast('Duplicate PIN in this batch — each profile needs a unique PIN');return;}
     pins.add(p.pin);
   }
-  addStockInFlight=true;
+  setAddStockBusy(true);
   try{
     await apiStockAdd({
       accounts:profiles.map(p=>({
         replicateToNetflixPlans:true,
+        accKey:'nfprof__'+Date.now()+'_'+Math.random().toString(36).slice(2,8)+'_'+p.row,
         account:{email,pass,profileName:p.name,profilePin:p.pin,expiryDate,mainEmail:mainEmail||'',...(mainPass?{mainPass}:{})}
       }))
     });
   }catch(e){
     showToast('⚠️ '+(e.message||'Save failed'));
     return;
-  }finally{addStockInFlight=false;}
+  }finally{setAddStockBusy(false);}
   saveNetflixBulkDefaults({email,pass,expiryDate,mainEmail,profiles:profiles.map(p=>({name:p.name,pin:''}))});
   let gmailConfigured=false;
   if(mainEmail&&mainPass){
@@ -4644,7 +4676,7 @@ async function addNetflixBulkAccounts(){
 }
 
 async function addAccount(){
-  if(addStockInFlight)return;
+  if(addStockInFlight){showToast('Stock add already in progress…');return;}
   const email=document.getElementById('new-acc-email').value.trim();
   const pass=document.getElementById('new-acc-pass').value.trim();
   const profileName=(document.getElementById('new-acc-profile')?.value||'').trim();
@@ -4658,7 +4690,7 @@ async function addAccount(){
   const aliasError=isShahidStock?validateShahidAliasForAdd(curAccModalKey,email,profileName):validateNetflixAliasForAdd(curAccModalKey,email,profilePin);
   if(aliasError){showToast('⚠️ '+aliasError);return;}
   const account={email,pass,profileName,expiryDate,profilePin,mainEmail:mainEmail||'',...(mainPass?{mainPass}:{})};
-  addStockInFlight=true;
+  setAddStockBusy(true);
   try{
     if(isNetflixOneUserKey(curAccModalKey)){
       await apiStockAdd({replicateToNetflixPlans:true,account});
@@ -4672,7 +4704,7 @@ async function addAccount(){
   }catch(e){
     showToast('⚠️ '+(e.message||'Save failed'));
     return;
-  }finally{addStockInFlight=false;}
+  }finally{setAddStockBusy(false);}
   let gmailConfigured=false;
   if(mainEmail&&mainPass){
     try{gmailConfigured=await setupGmailMonitor(mainEmail,mainPass);}catch(e){showToast('⚠️ Account saved but email server error: '+e.message);}

@@ -108,6 +108,7 @@ let signupOtps = new Map();
 let resetOtps = new Map();
 const activePurchases = new Set();
 const activeTopupCredits = new Set();
+const activeStockAdds = new Set();
 let dbWriteQueue = Promise.resolve();
 
 function enqueueDbWrite(task) {
@@ -984,7 +985,7 @@ async function collectRecoverySources(data) {
 }
 
 async function recoverSettingsFromBackups(data, options = {}) {
-  const recoverBlocks = options.recoverBlocks !== false;
+  const recoverBlocks = options.recoverBlocks === true;
   const result = { ...(data || {}) };
   const sources = await collectRecoverySources(data);
 
@@ -1067,6 +1068,26 @@ function mergeStockPreservingSold(existingStock, incomingStock) {
 
 function netflixOneUserPlanKeys() {
   return ['netflix__1user__1m', 'netflix__1user__3m', 'netflix__1user__6m', 'netflix__1user__1y'];
+}
+
+function stockAccountMatches(a, b) {
+  if (!a || !b) return false;
+  if (normalizeEmail(a.email) !== normalizeEmail(b.email)) return false;
+  if (String(a.profileName || '').trim().toLowerCase() !== String(b.profileName || '').trim().toLowerCase()) return false;
+  if (String(a.profilePin || '').trim() !== String(b.profilePin || '').trim()) return false;
+  return true;
+}
+
+function findDuplicateStockAccount(stock, key, accPayload) {
+  const list = Array.isArray(stock && stock[key]) ? stock[key] : [];
+  return list.find(a => a && !a.used && stockAccountMatches(a, accPayload));
+}
+
+function stockAddFingerprint(rowAccount, rowKeys) {
+  const email = normalizeEmail(rowAccount && rowAccount.email);
+  const profile = String(rowAccount && rowAccount.profileName || '').trim().toLowerCase();
+  const pin = String(rowAccount && rowAccount.profilePin || '').trim();
+  return [email, profile, pin, (rowKeys || []).join('|')].join('::');
 }
 
 function mergeAllTopupRequests(existingTopups, incomingTopups) {
@@ -1396,7 +1417,7 @@ app.post('/admin/recover-settings', async (req, res) => {
   try {
     dbCache = null;
     const data = await readJsonBinRaw({ forceRefresh: true, skipRecoverWrite: true });
-    const recovered = await recoverSettingsFromBackups(data);
+    const recovered = await recoverSettingsFromBackups(data, { recoverBlocks: false });
     if (!recovered.changed) {
       return res.json({
         success: true,
@@ -1430,7 +1451,7 @@ app.post('/admin/recover-settings', async (req, res) => {
 app.post('/admin/backups/restore-settings', async (req, res) => {
   const session = requireSession(req, res, ['admin']);
   if (!session) return;
-  const { id, key, label, sourceIndex } = req.body || {};
+  const { id, key, label, sourceIndex, restoreBlocks } = req.body || {};
   if (!id && !key && label == null && sourceIndex == null) return res.status(400).json({ error: 'Backup id is required' });
   try {
     const current = await readJsonBinRaw({ forceRefresh: true, skipRecoverWrite: true });
@@ -1458,7 +1479,7 @@ app.post('/admin/backups/restore-settings', async (req, res) => {
       next[PRICE_CATALOG_KEY] = snapshotCatalog;
       changed = true;
     }
-    if (stockBlockCount(snapshotData.stockBlocks) > stockBlockCount(next.stockBlocks)) {
+    if (restoreBlocks === true && stockBlockCount(snapshotData.stockBlocks) > stockBlockCount(next.stockBlocks)) {
       next.stockBlocks = { ...(snapshotData.stockBlocks || {}) };
       changed = true;
     }
@@ -2371,7 +2392,7 @@ app.post('/purchase-game', async (req, res) => {
 app.post('/admin/stock-add', async (req, res) => {
   const session = requireSession(req, res, ['admin']);
   if (!session) return;
-  const { skey, skeys, account, accKey, replicateToNetflixPlans, accounts } = req.body || {};
+  const { skey, skeys, account, accKey, replicateToNetflixPlans, accounts, requestId } = req.body || {};
   const batch = Array.isArray(accounts) ? accounts : null;
   const keys = replicateToNetflixPlans
     ? netflixOneUserPlanKeys()
@@ -2381,13 +2402,14 @@ app.post('/admin/stock-add', async (req, res) => {
   } else if (!keys.length || !account || !account.email || !account.pass) {
     return res.status(400).json({ error: 'Plan key and account email/password required' });
   }
+  const lockKeys = [];
   try {
     const outcome = await enqueueDbWrite(async () => {
       const data = await readJsonBinRaw({ forceRefresh: true });
       data.stock = data.stock || {};
       const addedKeys = [];
-      const rows = batch || [{ account, accKey, replicateToNetflixPlans: false }];
-        for (const row of rows) {
+      const rows = batch || [{ account, accKey, replicateToNetflixPlans: Boolean(replicateToNetflixPlans), skey }];
+      for (const row of rows) {
         const rowAccount = row.account || account;
         if (!rowAccount || !rowAccount.email || !rowAccount.pass) {
           return { error: 'Each account needs email and password', status: 400 };
@@ -2404,6 +2426,12 @@ app.post('/admin/stock-add', async (req, res) => {
           : /^shahid__1user__/.test(firstKey)
             ? `shprof__${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
             : `${firstKey}__${Date.now()}_${Math.random().toString(36).slice(2, 6)}`);
+        const fingerprint = row.requestId || requestId || stockAddFingerprint(rowAccount, rowKeys);
+        if (activeStockAdds.has(fingerprint)) {
+          return { error: 'This account add is already in progress', status: 409, duplicate: true };
+        }
+        activeStockAdds.add(fingerprint);
+        lockKeys.push(fingerprint);
         const accPayload = {
           used: false,
           accKey: sharedKey,
@@ -2424,7 +2452,10 @@ app.post('/admin/stock-add', async (req, res) => {
           if (aliasError) return { error: aliasError, status: 409 };
           if (!Array.isArray(data.stock[key])) data.stock[key] = [];
           if (data.stock[key].some(a => a && a.accKey === accPayload.accKey)) {
-            return { error: 'This account is already in stock', status: 409 };
+            return { error: 'This account is already in stock', status: 409, duplicate: true };
+          }
+          if (findDuplicateStockAccount(data.stock, key, accPayload)) {
+            return { error: 'This account is already in stock for this plan', status: 409, duplicate: true };
           }
           data.stock[key].push({ ...accPayload, accKey: sharedKey });
           addedKeys.push(key);
@@ -2433,7 +2464,13 @@ app.post('/admin/stock-add', async (req, res) => {
       await writeJsonBinRaw(data, { backupReason: 'stock-add', lightWrite: true });
       return { data, addedKeys };
     });
-    if (outcome.error) return res.status(outcome.status || 400).json({ error: outcome.error });
+    if (outcome.error) {
+      return res.status(outcome.status || 400).json({
+        error: outcome.error,
+        duplicate: Boolean(outcome.duplicate),
+        alreadyInStock: Boolean(outcome.duplicate)
+      });
+    }
     res.json({
       success: true,
       addedKeys: outcome.addedKeys,
@@ -2442,6 +2479,8 @@ app.post('/admin/stock-add', async (req, res) => {
   } catch (e) {
     console.error('Stock add error:', e.message);
     res.status(500).json({ error: 'Could not add stock account' });
+  } finally {
+    lockKeys.forEach((key) => activeStockAdds.delete(key));
   }
 });
 
@@ -2456,7 +2495,7 @@ app.post('/admin/stock-block', async (req, res) => {
       data.stockBlocks = data.stockBlocks || {};
       if (blocked) data.stockBlocks[skey] = { blocked: true, ts: Date.now() };
       else delete data.stockBlocks[skey];
-      await writeJsonBinRaw(data);
+      await writeJsonBinRaw(data, { backupReason: 'stock-block', lightWrite: true });
       return data;
     });
     res.json({ success: true, stockBlocks: outcome.stockBlocks, data: safeDataForSession(outcome, { role: 'admin' }) });
