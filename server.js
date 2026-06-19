@@ -117,6 +117,14 @@ function enqueueDbWrite(task) {
   return run;
 }
 
+async function readDbForWrite() {
+  return readJsonBinRaw({ skipRecoverWrite: true });
+}
+
+async function writeDbFast(data, options = {}) {
+  return writeJsonBinRaw(data, { ...options, lightWrite: true });
+}
+
 function accountAlreadyFulfilled(data, acc) {
   if (!acc) return false;
   const accKey = String(acc.accKey || '');
@@ -1358,7 +1366,7 @@ app.post('/db/read', async (req, res) => {
   const session = requireSession(req, res, ['admin', 'user']);
   if (!session) return;
   try {
-    const data = await readJsonBinRaw();
+    const data = await readJsonBinRaw({ skipRecoverWrite: true });
     res.json({ success: true, data: safeDataForSession(data, session) });
   } catch(e) {
     console.error('DB read error:', e.message);
@@ -1372,14 +1380,14 @@ app.post('/db/write', async (req, res) => {
   const { data } = req.body;
   try {
     const result = await enqueueDbWrite(async () => {
-      const existing = await readJsonBinRaw({ forceRefresh: true });
+      const existing = await readDbForWrite();
       let nextData;
       if (session.role === 'admin') {
         nextData = preserveSensitiveFields(existing, data || {});
       } else {
         nextData = mergeUserWrite(existing, data || {}, session);
       }
-      return writeJsonBinRaw(nextData, { backupSource: existing, lightWrite: true });
+      return writeDbFast(nextData, { backupSource: existing });
     });
     res.json({ success: true, result });
   } catch(e) {
@@ -1528,7 +1536,7 @@ app.post('/auth/login', async (req, res) => {
     if (user.banned) return res.status(403).json({ error: 'Your account has been suspended. Please contact support.' });
     if (recoveredPassword || !String(user.pass || '').startsWith(PASSWORD_HASH_PREFIX)) {
       user.pass = hashPassword(cleanPassword);
-      await writeJsonBinRaw(data);
+      await writeDbFast(data);
     }
     const token = createSession('user', user.email);
     res.json({ success: true, token, user: sanitizeUser(user), data: safeDataForSession(data, { role: 'user', email: normalizeEmail(user.email) }) });
@@ -1604,7 +1612,7 @@ app.post('/auth/signup', async (req, res) => {
       joinedDate: formatBeirutTime()
     };
     data.users.push(user);
-    await writeJsonBinRaw(data);
+    await writeDbFast(data);
     const token = createSession('user', user.email);
     res.json({ success: true, token, user: sanitizeUser(user), data: safeDataForSession(data, { role: 'user', email: cleanEmail }) });
   } catch(e) {
@@ -1668,7 +1676,7 @@ app.post('/auth/reset-password', async (req, res) => {
     const user = (data.users || []).find(u => normalizeEmail(u.email) === normalizeEmail(email));
     if (!user) return res.status(404).json({ error: 'User not found' });
     user.pass = hashPassword(password);
-    await writeJsonBinRaw(data);
+    await writeDbFast(data);
     res.json({ success: true });
   } catch(e) {
     console.error('Reset password error:', e.message);
@@ -1895,7 +1903,7 @@ app.post('/customer/profile', async (req, res) => {
     const user = data.users.find(u => normalizeEmail(u.email) === session.email);
     if (!user) return res.status(404).json({ error: 'User not found' });
     syncUserContact(user, { name, tgChatId });
-    await writeJsonBinRaw(data);
+    await writeDbFast(data);
     res.json({ success: true, user: sanitizeUser(user), data: safeDataForSession(data, session) });
   } catch (e) {
     console.error('Profile save error:', e.message);
@@ -1928,7 +1936,7 @@ app.post('/customer/subscription/update', async (req, res) => {
     }
     if (note !== undefined) order.note = String(note || '').trim();
     if (autoRenew !== undefined) order.autoRenew = Boolean(autoRenew);
-    await writeJsonBinRaw(data);
+    await writeDbFast(data);
     res.json({ success: true, order, user: sanitizeUser(user), data: safeDataForSession(data, session) });
   } catch (e) {
     console.error('Subscription update error:', e.message);
@@ -2014,7 +2022,7 @@ app.post('/customer/resend-subscription', async (req, res) => {
     const { order, customer } = findUserOrderRecord(user, orderId);
     if (!order || !order.email) return res.status(404).json({ error: 'Subscription not found' });
     if (!user.tgChatId) return res.status(400).json({ error: 'Add your Telegram Chat ID in Profile first, then tap Save.' });
-    await writeJsonBinRaw(data);
+    await writeDbFast(data);
     const product = {
       name: order.product,
       short: order.short || '',
@@ -2045,7 +2053,7 @@ app.post('/purchase', async (req, res) => {
   }
   try {
     const outcome = await enqueueDbWrite(async () => {
-      const data = await readJsonBinRaw({ forceRefresh: true });
+      const data = await readDbForWrite();
       const catalog = getMergedCatalog(data);
       const expectedPrice = resolvePurchasePrice(catalog, { skey, customDays: Number(customDays || 0) });
       if (expectedPrice == null || !pricesMatch(expectedPrice, price)) {
@@ -2083,7 +2091,7 @@ app.post('/purchase', async (req, res) => {
         });
         data.pending.unshift(pendingOrder);
         user.transactions.unshift({type:'purchase',label:'Bought '+product.name+' · '+planLabel,amount:Number(price),balance:user.balance,date:dateStr,pending:true,orderId:pendingOrder.id});
-        await writeJsonBinRaw(data);
+        await writeDbFast(data);
         return { mode: 'pending', data, user, pendingOrder };
       }
 
@@ -2126,7 +2134,7 @@ app.post('/purchase', async (req, res) => {
         return !(existing && existing.email && !existing.pending);
       });
       user.transactions.unshift({type:'purchase',label:'Bought '+product.name+' · '+planLabel,amount:Number(price),balance:user.balance,date:dateStr});
-      await writeJsonBinRaw(data);
+      await writeDbFast(data);
       return { mode: 'fulfilled', data, user, order };
     });
     if (outcome.error) return res.status(outcome.status || 400).json({ error: outcome.error });
@@ -2138,7 +2146,7 @@ app.post('/purchase', async (req, res) => {
     const { data, user, order } = outcome;
     const telegramSent = await notifyPurchaseFulfilled(user, product, planLabel, price, order, assignCustId);
     stampOrderDelivery(order, telegramSent);
-    await enqueueDbWrite(() => writeJsonBinRaw(data));
+    await enqueueDbWrite(() => writeDbFast(data));
     res.json({ success:true, pending:false, telegramSent, user:sanitizeUser(user), order, data:safeDataForSession(data, session) });
   } catch(e) {
     console.error('Purchase error:', e.message);
@@ -2155,32 +2163,40 @@ app.post('/customer/topup-request', async (req, res) => {
   const amt = Number(amount);
   if (!amt || amt <= 0) return res.status(400).json({ error: 'Invalid amount' });
   try {
-    const data = await readJsonBinRaw();
-    data.topupreqs = Array.isArray(data.topupreqs) ? data.topupreqs : [];
-    data.users = Array.isArray(data.users) ? data.users : [];
-    const user = data.users.find(u => normalizeEmail(u.email) === session.email);
-    if (!user) return res.status(404).json({ error: 'User not found' });
-    const duplicate = data.topupreqs.find(r =>
-      normalizeEmail(r.email) === session.email &&
-      r.status === 'pending' &&
-      Number(r.amount) === amt &&
-      Date.now() - Number(r.id || 0) < 3600000
-    );
-    if (duplicate) {
-      return res.json({ success: true, duplicate: true, request: duplicate, data: safeDataForSession(data, session) });
+    const outcome = await enqueueDbWrite(async () => {
+      const data = await readDbForWrite();
+      data.topupreqs = Array.isArray(data.topupreqs) ? data.topupreqs : [];
+      data.users = Array.isArray(data.users) ? data.users : [];
+      const user = data.users.find(u => normalizeEmail(u.email) === session.email);
+      if (!user) return { error: 'User not found', status: 404 };
+      const duplicate = data.topupreqs.find(r =>
+        normalizeEmail(r.email) === session.email &&
+        r.status === 'pending' &&
+        Number(r.amount) === amt &&
+        Date.now() - Number(r.id || 0) < 3600000
+      );
+      if (duplicate) {
+        return { duplicate: true, request: duplicate, data };
+      }
+      const reqRow = {
+        id: Date.now(),
+        name: user.name,
+        email: user.email,
+        tgChatId: user.tgChatId || '',
+        amount: amt,
+        label: label || `$${amt}`,
+        date: formatBeirutTime(),
+        status: 'pending'
+      };
+      data.topupreqs.unshift(reqRow);
+      await writeDbFast(data);
+      return { request: reqRow, data, user };
+    });
+    if (outcome.error) return res.status(outcome.status || 400).json({ error: outcome.error });
+    if (outcome.duplicate) {
+      return res.json({ success: true, duplicate: true, request: outcome.request, data: safeDataForSession(outcome.data, session) });
     }
-    const reqRow = {
-      id: Date.now(),
-      name: user.name,
-      email: user.email,
-      tgChatId: user.tgChatId || '',
-      amount: amt,
-      label: label || `$${amt}`,
-      date: formatBeirutTime(),
-      status: 'pending'
-    };
-    data.topupreqs.unshift(reqRow);
-    await writeJsonBinRaw(data);
+    const { request: reqRow, data, user } = outcome;
     await sendTG(
       TG_ADMIN,
       `💳 <b>Topup Request</b>\n\n👤 <b>${user.name}</b>\n📧 ${user.email}\n💵 Amount: <b>${reqRow.label}</b>\n📅 ${reqRow.date}\n\nGo to Admin → Topup Requests to credit after payment.`,
@@ -2205,7 +2221,7 @@ app.post('/admin/credit-topup', async (req, res) => {
   activeTopupCredits.add(lockKey);
   try {
     const outcome = await enqueueDbWrite(async () => {
-      const data = await readJsonBinRaw({ forceRefresh: true });
+      const data = await readDbForWrite();
       data.topupreqs = Array.isArray(data.topupreqs) ? data.topupreqs : [];
       data.users = Array.isArray(data.users) ? data.users : [];
       const reqRow = data.topupreqs.find(r => String(r.id) === lockKey);
@@ -2223,7 +2239,7 @@ app.post('/admin/credit-topup', async (req, res) => {
         date: formatBeirutTime()
       });
       reqRow.status = 'credited';
-      await writeJsonBinRaw(data);
+      await writeDbFast(data);
       return { data, user, reqRow };
     });
     if (outcome.error) return res.status(outcome.status || 400).json({ error: outcome.error });
@@ -2263,7 +2279,7 @@ app.post('/admin/wallet-adjust', async (req, res) => {
   const mode = type === 'withdraw' ? 'withdraw' : 'deposit';
   try {
     const outcome = await enqueueDbWrite(async () => {
-      const data = await readJsonBinRaw({ forceRefresh: true });
+      const data = await readDbForWrite();
       data.users = Array.isArray(data.users) ? data.users : [];
       const user = data.users.find(u => normalizeEmail(u.email) === targetEmail);
       if (!user) return { error: 'User not found', status: 404 };
@@ -2281,7 +2297,7 @@ app.post('/admin/wallet-adjust', async (req, res) => {
         balance: user.balance,
         date: formatBeirutTime()
       });
-      await writeJsonBinRaw(data);
+      await writeDbFast(data);
       return { data, user };
     });
     if (outcome.error) return res.status(outcome.status || 400).json({ error: outcome.error });
@@ -2315,7 +2331,7 @@ app.post('/purchase-game', async (req, res) => {
   }
   try {
     const outcome = await enqueueDbWrite(async () => {
-      const data = await readJsonBinRaw({ forceRefresh: true });
+      const data = await readDbForWrite();
       data.users = Array.isArray(data.users) ? data.users : [];
       data.gameorders = Array.isArray(data.gameorders) ? data.gameorders : [];
       const user = data.users.find(u => normalizeEmail(u.email) === session.email);
@@ -2353,7 +2369,7 @@ app.post('/purchase-game', async (req, res) => {
         pending: true,
         orderId
       });
-      await writeJsonBinRaw(data);
+      await writeDbFast(data);
       return { data, user, order, dateStr };
     });
     if (outcome.error) return res.status(outcome.status || 400).json({ error: outcome.error });
@@ -2402,7 +2418,7 @@ app.post('/admin/stock-add', async (req, res) => {
   const lockKeys = [];
   try {
     const outcome = await enqueueDbWrite(async () => {
-      const data = await readJsonBinRaw({ forceRefresh: true });
+      const data = await readDbForWrite();
       data.stock = data.stock || {};
       const addedKeys = [];
       const rows = batch || [{ account, accKey, replicateToNetflixPlans: Boolean(replicateToNetflixPlans), skey }];
@@ -2490,7 +2506,7 @@ app.post('/admin/stock-delete', async (req, res) => {
   }
   try {
     const outcome = await enqueueDbWrite(async () => {
-      const data = await readJsonBinRaw({ forceRefresh: true });
+      const data = await readDbForWrite();
       data.stock = data.stock || {};
       const targetKey = String(accKey || '');
       const targetEmail = normalizeEmail(email);
@@ -2536,7 +2552,7 @@ app.post('/admin/stock-block', async (req, res) => {
   if (!skey) return res.status(400).json({ error: 'Stock key is required' });
   try {
     const outcome = await enqueueDbWrite(async () => {
-      const data = await readJsonBinRaw({ forceRefresh: true });
+      const data = await readDbForWrite();
       data.stockBlocks = data.stockBlocks || {};
       if (blocked) data.stockBlocks[skey] = { blocked: true, ts: Date.now() };
       else delete data.stockBlocks[skey];
@@ -2557,7 +2573,7 @@ app.post('/admin/cancel-pending', async (req, res) => {
   if (!orderId) return res.status(400).json({ error: 'Order ID is required' });
   try {
     const outcome = await enqueueDbWrite(async () => {
-      const data = await readJsonBinRaw({ forceRefresh: true });
+      const data = await readDbForWrite();
       data.pending = Array.isArray(data.pending) ? data.pending : [];
       data.users = Array.isArray(data.users) ? data.users : [];
       const idx = data.pending.findIndex(o => o.id === orderId);
@@ -2567,7 +2583,7 @@ app.post('/admin/cancel-pending', async (req, res) => {
       const existing = user ? findUserOrderRecord(user, order.id).order : null;
       if (existing && existing.email && !existing.pending) {
         data.pending.splice(idx, 1);
-        await writeJsonBinRaw(data);
+        await writeDbFast(data);
         return { error: 'Order was already fulfilled', status: 409 };
       }
       const refund = Number(order.price || 0);
@@ -2584,7 +2600,7 @@ app.post('/admin/cancel-pending', async (req, res) => {
         });
       }
       data.pending.splice(idx, 1);
-      await writeJsonBinRaw(data);
+      await writeDbFast(data);
       return { data, order, user, refund };
     });
     if (outcome.error) return res.status(outcome.status || 400).json({ error: outcome.error });
@@ -2660,7 +2676,7 @@ app.post('/notify', async (req, res) => {
       if (stored && stored !== requested) return res.status(403).json({ error: 'Cannot send Telegram messages to this chat.' });
       if (!stored && requested) {
         user.tgChatId = requested;
-        await writeJsonBinRaw(data);
+        await writeDbFast(data);
       }
     }
     const target = chatId || TG_ADMIN;
@@ -2777,7 +2793,7 @@ async function loadGmailMonitors(force = false) {
 async function persistGmailMonitors() {
   const data = await readJsonBinRaw();
   data[GMAIL_MONITORS_KEY] = monitoredEmails;
-  await writeJsonBinRaw(data, { backupReason: 'gmail-monitor-update' });
+  await writeDbFast(data, { backupReason: 'gmail-monitor-update' });
 }
 
 async function getInboxMaxUid(email, password) {

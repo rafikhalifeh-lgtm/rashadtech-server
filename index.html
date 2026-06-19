@@ -1180,6 +1180,7 @@ let customOrderInFlight=false;
 let creditWalletInFlight=false;
 let addStockInFlight=false;
 let saveDataInFlight=false;
+let saveDataQueued=false;
 const _stockAddAccKeys=new Map();
 
 function fmtBeirutTime(date){
@@ -1206,7 +1207,7 @@ async function postJson(path,body,timeoutMs=28000){
   try{
     const r=await fetch(RT_SERVER+path,{
       method:'POST',
-      headers:{'Content-Type':'application/json'},
+      headers:authHeaders(),
       body:JSON.stringify(body),
       signal:controller.signal
     });
@@ -3996,13 +3997,13 @@ async function reqTopup(){
   const btn=document.getElementById('topup-btn');
   if(btn)btn.disabled=true;
   try{
-    const j=await postJson('/customer/topup-request',{amount:selectedTopup.v,label:selectedTopup.l});
+    const j=await rtApi('/customer/topup-request',{method:'POST',body:JSON.stringify({amount:selectedTopup.v,label:selectedTopup.l})});
     if(j.data)applyDataSnapshot(j.data);
     if(j.duplicate)showToast('You already have a pending top-up request');
   document.getElementById('topup-amt-lbl').textContent=selectedTopup.l;
     openModal('topup-modal');
   }catch(e){
-    showToast('⚠️ Could not submit top-up — please try again');
+    showToast('⚠️ '+(e.message||'Could not submit top-up — please try again'));
   }finally{
     topupInFlight=false;
     if(btn&&selectedTopup){btn.disabled=false;btn.textContent='Top up '+selectedTopup.l;}
@@ -5096,30 +5097,38 @@ async function creditTopupReq(requestId){
 }
 async function saveData(){
   if(!dataLoaded)return;
-  if(saveDataInFlight)return;
-  saveDataInFlight=true;
-  syncPausedUntil=Date.now()+12000;
-  const payload={
-    users,stock:accountStock,requests:globalRequests,
-    topupreqs:topupRequests,
-    pending:_jbCache?.pending||[],
-    gameorders:_jbCache?.gameorders||[],
-    ...(_jbCache?.priceCatalog?{priceCatalog:_jbCache.priceCatalog}:{})
-  };
-  let lastErr=null;
-  for(let attempt=1;attempt<=3;attempt++){
-    try{
-      _jbCache={...(_jbCache||{}),...payload};
-      await jbWrite(_jbCache);
-      saveDataInFlight=false;
-      return;
-    }catch(e){
-      lastErr=e;
-      console.warn('save error attempt',attempt,e.message);
-      if(attempt<3)await new Promise(r=>setTimeout(r,1500*attempt));
-    }
+  if(saveDataInFlight){
+    saveDataQueued=true;
+    return;
   }
+  saveDataInFlight=true;
+  syncPausedUntil=Date.now()+8000;
+  let lastErr=null;
+  do{
+    saveDataQueued=false;
+    const payload={
+      users,stock:accountStock,requests:globalRequests,
+      topupreqs:topupRequests,
+      pending:_jbCache?.pending||[],
+      gameorders:_jbCache?.gameorders||[],
+      ...(_jbCache?.priceCatalog?{priceCatalog:_jbCache.priceCatalog}:{})
+    };
+    for(let attempt=1;attempt<=3;attempt++){
+      try{
+        _jbCache={...(_jbCache||{}),...payload};
+        await jbWrite(_jbCache);
+        lastErr=null;
+        break;
+      }catch(e){
+        lastErr=e;
+        console.warn('save error attempt',attempt,e.message);
+        if(attempt<3)await new Promise(r=>setTimeout(r,1500*attempt));
+      }
+    }
+    if(lastErr)break;
+  }while(saveDataQueued);
   saveDataInFlight=false;
+  if(!lastErr)return;
   try{
     const fresh=await jbRead();
     applyDataSnapshot(fresh);
@@ -5225,7 +5234,7 @@ function startRealtimeSync(){
       if(active==='admin-gameorders'){const el=document.getElementById('gameorders-list');if(el)renderGameOrdersHtml(el,_jbCache.gameorders||[]);}
       if(active==='admin-stock')renderStockPanels();
     }catch(e){}
-  },12000);
+  },30000);
 }
 
 async function reloadStock(){
