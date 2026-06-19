@@ -882,12 +882,16 @@ function mergeUserWrite(existing, incoming, session) {
   if (incomingUser) {
     const idx = users.findIndex(u => normalizeEmail(u.email) === email);
     if (idx >= 0) {
+      const prev = users[idx];
       users[idx] = {
-        ...users[idx],
+        ...prev,
         name: incomingUser.name,
-        tgChatId: String(incomingUser.tgChatId || '').trim() || String(users[idx].tgChatId || '').trim(),
+        tgChatId: String(incomingUser.tgChatId || '').trim() || String(prev.tgChatId || '').trim(),
         verified: Boolean(incomingUser.verified),
-        myCustomers: Array.isArray(incomingUser.myCustomers) ? incomingUser.myCustomers : users[idx].myCustomers
+        myCustomers: Array.isArray(incomingUser.myCustomers) ? incomingUser.myCustomers : prev.myCustomers,
+        balance: Number(prev.balance || 0),
+        orders: Array.isArray(prev.orders) ? prev.orders : [],
+        transactions: Array.isArray(prev.transactions) ? prev.transactions : []
       };
     }
   }
@@ -1058,17 +1062,42 @@ function mergeAllTopupRequests(existingTopups, incomingTopups) {
   return Array.from(byId.values());
 }
 
+function mergeUsersPreservingWallet(existingUsers, incomingUsers) {
+  const existing = Array.isArray(existingUsers) ? existingUsers : [];
+  if (!Array.isArray(incomingUsers)) return existing;
+  const byEmail = new Map(existing.map(u => [normalizeEmail(u.email), { ...u }]));
+  for (const inc of incomingUsers) {
+    if (!inc || !inc.email) continue;
+    const email = normalizeEmail(inc.email);
+    const prev = byEmail.get(email);
+    if (!prev) {
+      byEmail.set(email, { ...inc });
+      continue;
+    }
+    byEmail.set(email, {
+      ...prev,
+      name: String(inc.name || prev.name || '').trim() || prev.name,
+      tgChatId: String(inc.tgChatId || prev.tgChatId || '').trim(),
+      verified: inc.verified !== undefined ? Boolean(inc.verified) : prev.verified,
+      banned: inc.banned !== undefined ? Boolean(inc.banned) : prev.banned,
+      joinedDate: inc.joinedDate || prev.joinedDate,
+      pass: inc.pass || prev.pass || '',
+      balance: Number(prev.balance || 0),
+      orders: Array.isArray(prev.orders) ? prev.orders : [],
+      transactions: Array.isArray(prev.transactions) ? prev.transactions : [],
+      myCustomers: Array.isArray(prev.myCustomers) && prev.myCustomers.length
+        ? prev.myCustomers
+        : (Array.isArray(inc.myCustomers) ? inc.myCustomers : [])
+    });
+  }
+  return Array.from(byEmail.values());
+}
+
 function preserveSensitiveFields(existing, incoming) {
   const next = { ...(incoming || {}) };
   const existingUsers = Array.isArray(existing && existing.users) ? existing.users : [];
   if (Array.isArray(next.users)) {
-    next.users = next.users.map(user => {
-      const current = existingUsers.find(existingUser => normalizeEmail(existingUser.email) === normalizeEmail(user.email));
-      return {
-        ...user,
-        pass: user.pass || (current && current.pass) || ''
-      };
-    });
+    next.users = mergeUsersPreservingWallet(existingUsers, next.users);
   }
   const preserveKeys = [
     GMAIL_MONITORS_KEY,
@@ -1962,7 +1991,7 @@ app.post('/purchase', async (req, res) => {
     return res.status(400).json({ error: 'Invalid purchase' });
   }
   try {
-    const data = await readJsonBinRaw();
+    const data = await readJsonBinRaw({ forceRefresh: true });
     const catalog = getMergedCatalog(data);
     const expectedPrice = resolvePurchasePrice(catalog, { skey, customDays: Number(customDays || 0) });
     if (expectedPrice == null || !pricesMatch(expectedPrice, price)) {

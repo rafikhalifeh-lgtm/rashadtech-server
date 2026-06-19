@@ -3003,6 +3003,7 @@ async function confirmPurchase(){
       applyDataSnapshot(j.data||{users:[j.user]});
       currentUser=users.find(x=>normEmail(x.email)===normEmail(currentUser.email))||j.user||currentUser;
       if(_jbCache)_jbCache.users=users;
+      syncPausedUntil=Date.now()+20000;
       closeModal('buy-modal');closeModal('assign-modal');updateBal();renderSubs();renderTx();renderMyCustomers();renderExpiryTracker();renderProducts('all');
       showToast('✓ Purchase successful!');
       if(j.pending&&!j.telegramSent&&currentUser.tgChatId){
@@ -5119,7 +5120,7 @@ function startRealtimeSync(){
         users=_jbCache.users;
         if(currentUser){
           const fu=users.find(x=>normEmail(x.email)===normEmail(currentUser.email));
-          if(fu){currentUser=fu;renderSubs();updateBal();}
+          if(fu){currentUser=fu;renderSubs();updateBal();renderTx();}
         }
       }
       if(_jbCache.pending&&currentUser)renderSubs();
