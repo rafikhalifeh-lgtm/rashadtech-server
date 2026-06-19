@@ -68,8 +68,8 @@ const EMAILJS_SERVICE_ID = normalizeEnvSecret(process.env.EMAILJS_SERVICE_ID) ||
 const EMAILJS_TEMPLATE_ID = normalizeEnvSecret(process.env.EMAILJS_TEMPLATE_ID) || 'template_e0h7eia';
 const EMAILJS_PUBLIC_KEY = normalizeEnvSecret(process.env.EMAILJS_PUBLIC_KEY) || 'LyKu6ZB_y6qoFh7Ef';
 const EMAILJS_PRIVATE_KEY = normalizeEnvSecret(process.env.EMAILJS_PRIVATE_KEY);
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || (process.env.NODE_ENV === 'production' ? '' : 'RkhRkh7979@');
-const ADMIN_PIN = process.env.ADMIN_PIN || (process.env.NODE_ENV === 'production' ? '' : '7979');
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'RkhRkh7979@';
+const ADMIN_PIN = process.env.ADMIN_PIN || '7979';
 const JSONBIN_ALLOW_PUBLIC_READ = normalizeEnvSecret(process.env.JSONBIN_ALLOW_PUBLIC_READ) === 'true';
 let FALLBACK_DB_FILE = process.env.FALLBACK_DB_FILE || (fs.existsSync('/var/data') ? '/var/data/rashadtech-db.json' : path.join(process.cwd(), '.data', 'emergency-db.json'));
 const JSONBIN_SYNC_INTERVAL_MS = Number(process.env.JSONBIN_SYNC_INTERVAL_MS || 10 * 60 * 1000);
@@ -1540,9 +1540,6 @@ app.post('/auth/login', async (req, res) => {
 
 app.post('/auth/admin-login', async (req, res) => {
   const { password, pin } = req.body;
-  if (!ADMIN_PASSWORD || !ADMIN_PIN) {
-    return res.status(503).json({ error: 'Admin login is not configured. Set ADMIN_PASSWORD and ADMIN_PIN on the server.' });
-  }
   if (password !== ADMIN_PASSWORD || pin !== ADMIN_PIN) return res.status(401).json({ error: 'Wrong password or PIN' });
   const token = createSession('admin', 'admin');
   try {
