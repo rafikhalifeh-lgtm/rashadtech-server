@@ -2484,6 +2484,54 @@ app.post('/admin/stock-add', async (req, res) => {
   }
 });
 
+app.post('/admin/stock-delete', async (req, res) => {
+  const session = requireSession(req, res, ['admin']);
+  if (!session) return;
+  const { skey, accKey, email } = req.body || {};
+  if (!skey || (!accKey && !email)) {
+    return res.status(400).json({ error: 'Plan key and account id required' });
+  }
+  try {
+    const outcome = await enqueueDbWrite(async () => {
+      const data = await readJsonBinRaw({ forceRefresh: true });
+      data.stock = data.stock || {};
+      const targetKey = String(accKey || '');
+      const targetEmail = normalizeEmail(email);
+      const keysToScan = targetKey.startsWith('nfprof__')
+        ? Object.keys(data.stock).filter(k => /^netflix__1user__/.test(k))
+        : [skey];
+      let removed = 0;
+      for (const key of keysToScan) {
+        const accounts = Array.isArray(data.stock[key]) ? data.stock[key] : [];
+        const next = accounts.filter((acc) => {
+          if (!acc) return false;
+          const match = targetKey
+            ? String(acc.accKey || '') === targetKey
+            : normalizeEmail(acc.email) === targetEmail;
+          if (match) {
+            removed += 1;
+            return false;
+          }
+          return true;
+        });
+        if (next.length !== accounts.length) data.stock[key] = next;
+      }
+      if (!removed) return { error: 'Account not found in stock', status: 404 };
+      await writeJsonBinRaw(data, { backupReason: 'stock-delete', lightWrite: true });
+      return { data, removed };
+    });
+    if (outcome.error) return res.status(outcome.status || 400).json({ error: outcome.error });
+    res.json({
+      success: true,
+      removed: outcome.removed,
+      data: safeDataForSession(outcome.data, { role: 'admin' })
+    });
+  } catch (e) {
+    console.error('Stock delete error:', e.message);
+    res.status(500).json({ error: 'Could not delete stock account' });
+  }
+});
+
 app.post('/admin/stock-block', async (req, res) => {
   const session = requireSession(req, res, ['admin']);
   if (!session) return;

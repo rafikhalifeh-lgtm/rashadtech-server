@@ -1453,12 +1453,17 @@ async function apiStockAdd(payload){
   ].join('::');
   const body={...payload,requestId};
   if(!body.accKey){
-    const firstKey=keys[0]||'stock';
-    body.accKey=payload.replicateToNetflixPlans
-      ?'nfprof__'+Date.now()+'_'+Math.random().toString(36).slice(2,8)
-      :/^shahid__1user__/.test(firstKey)
-        ?'shprof__'+Date.now()+'_'+Math.random().toString(36).slice(2,8)
-        :firstKey+'__'+Date.now()+'_'+Math.random().toString(36).slice(2,6);
+    if(_stockAddAccKeys.has(requestId))body.accKey=_stockAddAccKeys.get(requestId);
+    else{
+      const firstKey=keys[0]||'stock';
+      body.accKey=payload.replicateToNetflixPlans
+        ?'nfprof__'+Date.now()+'_'+Math.random().toString(36).slice(2,8)
+        :/^shahid__1user__/.test(firstKey)
+          ?'shprof__'+Date.now()+'_'+Math.random().toString(36).slice(2,8)
+          :firstKey+'__'+Date.now()+'_'+Math.random().toString(36).slice(2,6);
+      _stockAddAccKeys.set(requestId,body.accKey);
+      setTimeout(()=>_stockAddAccKeys.delete(requestId),120000);
+    }
   }
   try{
     const j=await rtApi('/admin/stock-add',{method:'POST',body:JSON.stringify(body)},45000);
@@ -1475,6 +1480,13 @@ async function apiStockAdd(payload){
     }
     throw e;
   }
+}
+
+async function apiStockDelete(payload){
+  syncPausedUntil=Date.now()+20000;
+  const j=await rtApi('/admin/stock-delete',{method:'POST',body:JSON.stringify(payload)},45000);
+  if(j.data)applyDataSnapshot(j.data);
+  return j;
 }
 
 function setAddStockBusy(busy){
@@ -4533,18 +4545,25 @@ async function assignStockAccount(idx){
   }catch(e){showToast('⚠️ '+e.message);}
 }
 async function delAccount(idx){
+  if(addStockInFlight){showToast('Please wait — another stock change is in progress');return;}
   const acc=stockAccountsForKey(curAccModalKey)[idx];
-  const msg=acc?.used?'Remove this sold account from stock?':'Delete this account from stock?';
+  if(!acc)return;
+  const msg=acc.used?'Remove this sold account from stock?':'Delete this account from stock?';
   if(!confirm(msg))return;
-  if(!accountStock[curAccModalKey])return;
-  const realIdx=(accountStock[curAccModalKey]||[]).findIndex(a=>a===acc||(acc?.accKey&&a?.accKey===acc.accKey));
-  if(realIdx<0)return;
-  accountStock[curAccModalKey].splice(realIdx,1);
-  await saveData();
-  renderAccModal(false);
-  renderStockPanels();
-  showToast('✅ Account deleted');
-  logActivity('Stock account deleted',curAccModalKey);
+  setAddStockBusy(true);
+  try{
+    await apiStockDelete({
+      skey:curAccModalKey,
+      accKey:acc.accKey||'',
+      email:acc.email||''
+    });
+    renderAccModal(false);
+    renderStockPanels();
+    showToast('✅ Account deleted');
+    logActivity('Stock account deleted',curAccModalKey);
+  }catch(e){
+    showToast('⚠️ '+(e.message||'Delete failed'));
+  }finally{setAddStockBusy(false);}
 }
 
 async function setupGmailMonitor(mainEmail,mainPass){
@@ -4605,6 +4624,7 @@ async function addShahidBulkAccounts(){
       skey:curAccModalKey,
       accounts:profiles.map(p=>({
         skey:curAccModalKey,
+        requestId:[normEmail(email),p.name.toLowerCase(),'',curAccModalKey].join('::'),
         accKey:'shprof__'+Date.now()+'_'+Math.random().toString(36).slice(2,8)+'_'+p.row,
         account:{email,pass,profileName:p.name,expiryDate,mainEmail:mainEmail||'',...(mainPass?{mainPass}:{})}
       }))
@@ -4655,6 +4675,7 @@ async function addNetflixBulkAccounts(){
     await apiStockAdd({
       accounts:profiles.map(p=>({
         replicateToNetflixPlans:true,
+        requestId:[normEmail(email),p.name.toLowerCase(),p.pin,netflixOneUserPlanKeys().join('|')].join('::'),
         accKey:'nfprof__'+Date.now()+'_'+Math.random().toString(36).slice(2,8)+'_'+p.row,
         account:{email,pass,profileName:p.name,profilePin:p.pin,expiryDate,mainEmail:mainEmail||'',...(mainPass?{mainPass}:{})}
       }))
