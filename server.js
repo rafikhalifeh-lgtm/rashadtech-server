@@ -710,7 +710,7 @@ async function readJsonBinRaw(options = {}) {
   if (!data) data = readFallbackDb();
   data = markEmergencyDb(data, NETLIFY_SITE_ID && NETLIFY_BLOBS_TOKEN ? 'Netlify Blobs primary database' : 'Primary server file database', !(NETLIFY_SITE_ID && NETLIFY_BLOBS_TOKEN));
   const loaded = data;
-  const recovered = await recoverSettingsFromBackups(loaded);
+  const recovered = await recoverSettingsFromBackups(loaded, { recoverBlocks: false });
   data = recovered.data;
   if (recovered.changed && !options.skipRecoverWrite) {
     console.log(`Recovered settings: ${recovered.customPriceCount} custom prices (${recovered.catalogSource}), ${recovered.blockCount} blocks (${recovered.blockSource})`);
@@ -976,7 +976,8 @@ async function collectRecoverySources(data) {
   return sources.sort((a, b) => b.customPrices - a.customPrices || b.blocks - a.blocks);
 }
 
-async function recoverSettingsFromBackups(data) {
+async function recoverSettingsFromBackups(data, options = {}) {
+  const recoverBlocks = options.recoverBlocks !== false;
   const result = { ...(data || {}) };
   const sources = await collectRecoverySources(data);
 
@@ -1005,7 +1006,7 @@ async function recoverSettingsFromBackups(data) {
     result[PRICE_CATALOG_KEY] = bestCatalog;
     changed = true;
   }
-  if (bestBlockScore > stockBlockCount(result.stockBlocks)) {
+  if (recoverBlocks && bestBlockScore > stockBlockCount(result.stockBlocks)) {
     result.stockBlocks = bestBlocks;
     changed = true;
   }
@@ -1128,11 +1129,8 @@ function preserveSensitiveFields(existing, incoming) {
     }
   }
   if (existing && existing.stockBlocks) {
-    if (!incoming || incoming.stockBlocks === undefined || incoming.stockBlocks === null) {
-      next.stockBlocks = existing.stockBlocks;
-    } else {
-      next.stockBlocks = { ...existing.stockBlocks, ...incoming.stockBlocks };
-    }
+    // Stock blocks are changed only via /admin/stock-block — never from browser saveData.
+    next.stockBlocks = existing.stockBlocks;
   }
   if (existing && existing.stock && incoming && incoming.stock) {
     next.stock = mergeStockPreservingSold(existing.stock, incoming.stock);
@@ -2356,12 +2354,15 @@ app.post('/admin/stock-block', async (req, res) => {
   const { skey, blocked } = req.body;
   if (!skey) return res.status(400).json({ error: 'Stock key is required' });
   try {
-    const data = await readJsonBinRaw();
-    data.stockBlocks = data.stockBlocks || {};
-    if (blocked) data.stockBlocks[skey] = { blocked: true, ts: Date.now() };
-    else delete data.stockBlocks[skey];
-    await writeJsonBinRaw(data);
-    res.json({ success: true, stockBlocks: data.stockBlocks, data: safeDataForSession(data, { role: 'admin' }) });
+    const outcome = await enqueueDbWrite(async () => {
+      const data = await readJsonBinRaw({ forceRefresh: true });
+      data.stockBlocks = data.stockBlocks || {};
+      if (blocked) data.stockBlocks[skey] = { blocked: true, ts: Date.now() };
+      else delete data.stockBlocks[skey];
+      await writeJsonBinRaw(data);
+      return data;
+    });
+    res.json({ success: true, stockBlocks: outcome.stockBlocks, data: safeDataForSession(outcome, { role: 'admin' }) });
   } catch(e) {
     console.error('Stock block error:', e.message);
     res.status(500).json({ error: 'Could not update stock block' });

@@ -614,7 +614,9 @@ So your EmailJS template will receive the user email and verification code corre
       <div class="auth-title">Create account</div><div class="auth-desc">Join rashadtech.tv</div>
       <div class="err-msg" id="signup-err"></div>
       <div class="field"><label>Full name</label><input type="text" id="su-name" placeholder="Your name"></div>
-      <div class="field"><label>Email</label><input type="email" id="su-email" placeholder="you@email.com"></div>
+      <div class="field"><label>Email</label><input type="email" id="su-email" placeholder="you@email.com">
+        <div style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.5">📧 After signup, check your <strong>spam/junk folder</strong> if the verification email is not in your inbox.</div>
+      </div>
       <div class="field"><label>Password</label><input type="password" id="su-pass" placeholder="Min. 6 characters"></div>
       <div class="field"><label>Telegram Chat ID (optional)</label>
         <input type="text" id="su-tgid" placeholder="e.g. 123456789">
@@ -635,7 +637,7 @@ So your EmailJS template will receive the user email and verification code corre
       <div class="auth-switch">Have an account? <a onclick="showView('login')">Sign in</a></div>
     </div>
     <div id="view-verify" style="display:none">
-      <div class="auth-title">Verify your email</div><div class="auth-desc" id="verify-desc">Enter the 6-digit code we sent.</div>
+      <div class="auth-title">Verify your email</div><div class="auth-desc" id="verify-desc">Enter the 6-digit code we sent. If you don't see it, check your spam/junk folder.</div>
       <div class="err-msg" id="verify-err">Wrong code.</div><div class="ok-msg" id="verify-ok">Code resent!</div>
       <div class="otp-row">
         <input class="otp-input" maxlength="1" id="otp0" oninput="otpMove('otp',0)" onkeydown="otpBack(event,'otp',0)">
@@ -650,7 +652,7 @@ So your EmailJS template will receive the user email and verification code corre
       <div class="auth-switch" style="margin-top:8px"><a onclick="showView('login')">← Back</a></div>
     </div>
     <div id="view-forgot" style="display:none">
-      <div class="auth-title">Reset password</div><div class="auth-desc">Enter your email and we'll send a reset code.</div>
+      <div class="auth-title">Reset password</div><div class="auth-desc">Enter your email and we'll send a reset code. Check your spam/junk folder if it doesn't arrive.</div>
       <div class="err-msg" id="forgot-err">Email not found.</div><div class="ok-msg" id="forgot-ok">Reset code sent!</div>
       <div class="field"><label>Email</label><input type="email" id="forgot-email" placeholder="you@email.com"></div>
       <button class="btn-primary" onclick="sendResetCode()">Send reset code</button>
@@ -1353,6 +1355,7 @@ function applyDataSnapshot(data){
   const incoming=data||{};
   _jbCache={...(_jbCache||{}),...incoming};
   if(incoming.pending)_jbCache.pending=incoming.pending;
+  if(incoming.stockBlocks!==undefined)_jbCache.stockBlocks=incoming.stockBlocks;
   users=Array.isArray(_jbCache.users)?_jbCache.users:[];
   accountStock=_jbCache.stock||{};
   globalRequests=_jbCache.requests||[];
@@ -2397,7 +2400,7 @@ function signupVerifyMessage(payload,email){
     return 'We sent a 6-digit code to your Telegram. Enter it below.';
   }
   if(payload?.emailSent||payload?.emailDelivered){
-    return `We sent a 6-digit code to ${email}. Check your inbox and spam folder.`;
+    return `We sent a 6-digit code to ${email}. Check your inbox — and your spam/junk folder if you don't see it.`;
   }
   return `Enter the 6-digit verification code for ${email}.`;
 }
@@ -4253,7 +4256,8 @@ async function toggleStockBlock(skey,blocked){
     const r=await fetch(RT_SERVER+'/admin/stock-block',{method:'POST',headers:authHeaders(),body:JSON.stringify({skey,blocked})});
     const j=await r.json();
     if(!r.ok||!j.success)throw new Error(j.error||'Could not update block');
-    applyDataSnapshot(j.data||_jbCache);
+    if(j.data)applyDataSnapshot(j.data);
+    else if(j.stockBlocks)_jbCache={...(_jbCache||{}),stockBlocks:j.stockBlocks};
     renderStockPanels();renderProducts('all');
     showToast(blocked?'Plan blocked':'Plan unblocked');
     logActivity(blocked?'Stock blocked':'Stock unblocked',skey);
@@ -4807,7 +4811,6 @@ function renderWallets(){
 }
 async function creditWallet(i){
   if(creditWalletInFlight)return;
-  await refreshFromFirebase();
   const amt=parseFloat(document.getElementById('wcredit-'+i).value)||0;
   if(amt<=0){showToast('Enter a valid amount');return;}
   creditWalletInFlight=true;
@@ -4828,7 +4831,6 @@ async function creditWallet(i){
   }finally{creditWalletInFlight=false;}
 }
 async function withdrawWallet(i){
-  await refreshFromFirebase();
   const amt=parseFloat(document.getElementById('wcredit-'+i).value)||0;
   if(amt<=0){showToast('Enter a valid amount');return;}
   const u=users[i];
@@ -5012,12 +5014,10 @@ async function saveData(){
   try{
     const pending=_jbCache?.pending||[];
     const gameorders=_jbCache?.gameorders||[];
-    const stockBlocks=_jbCache?.stockBlocks;
     const priceCatalog=_jbCache?.priceCatalog;
     _jbCache={
       users,stock:accountStock,requests:globalRequests,
       topupreqs:topupRequests,pending,gameorders,
-      ...(stockBlocks?{stockBlocks}:{}),
       ...(priceCatalog?{priceCatalog}:{})
     };
     await jbWrite(_jbCache);
@@ -5098,6 +5098,7 @@ function startRealtimeSync(){
   realtimeSyncStarted=true;
   setInterval(checkInactivity,60000); // Check inactivity every minute
   setInterval(async()=>{
+    if(document.hidden)return;
     if(Date.now()<syncPausedUntil)return;
     try{
       _jbCache=await jbRead();
@@ -5120,7 +5121,7 @@ function startRealtimeSync(){
       if(active==='admin-gameorders'){const el=document.getElementById('gameorders-list');if(el)renderGameOrdersHtml(el,_jbCache.gameorders||[]);}
       if(active==='admin-stock')renderStockPanels();
     }catch(e){}
-  },5000);
+  },12000);
 }
 
 async function reloadStock(){
