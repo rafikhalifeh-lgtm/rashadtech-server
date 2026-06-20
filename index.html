@@ -1485,6 +1485,49 @@ async function apiStockAdd(payload){
   }
 }
 
+function netflixMirrorCopyCount(skey){
+  if(!isNetflixOneUserKey(skey))return 0;
+  const keep=accountStock[skey]||[];
+  const fps=new Set();
+  keep.forEach(a=>{
+    const key=String(a?.accKey||'');
+    if(key)fps.add('k:'+key);
+    const email=normEmail(a?.email);
+    const profile=String(a?.profileName||'').trim().toLowerCase();
+    const pin=String(a?.profilePin||'').trim();
+    if(email)fps.add(`f:${email}::${profile}::${pin}`);
+  });
+  let mirrors=0;
+  netflixOneUserPlanKeys().forEach(pk=>{
+    if(pk===skey)return;
+    (accountStock[pk]||[]).forEach(a=>{
+      if(!a)return;
+      const key=String(a.accKey||'');
+      const email=normEmail(a.email);
+      const profile=String(a.profileName||'').trim().toLowerCase();
+      const pin=String(a.profilePin||'').trim();
+      const hit=(key&&fps.has('k:'+key))||(email&&fps.has(`f:${email}::${profile}::${pin}`));
+      if(hit)mirrors++;
+    });
+  });
+  return mirrors;
+}
+async function pruneNetflixMirrorsHere(){
+  if(!isNetflixOneUserKey(curAccModalKey))return;
+  const mirrors=netflixMirrorCopyCount(curAccModalKey);
+  if(!mirrors){showToast('No duplicate copies on other Netflix plans');return;}
+  const planLabel=DURATIONS_NF_1U.find(d=>sk('netflix','1user',d.key)===curAccModalKey)?.label||'this plan';
+  if(!confirm(`Remove ${mirrors} duplicate copy/copies from other Netflix plans and keep them only on ${planLabel}?`))return;
+  try{
+    const j=await rtApi('/admin/stock-prune-netflix-mirrors',{method:'POST',body:JSON.stringify({skey:curAccModalKey})},45000);
+    if(j.data)applyDataSnapshot(j.data);
+    renderAccModal(false);
+    renderStockPanels();
+    showToast(j.removed?`✓ Removed ${j.removed} duplicate(s) from other plans`:'No duplicates removed');
+  }catch(e){
+    showToast('⚠️ '+(e.message||'Cleanup failed'));
+  }
+}
 async function apiStockDelete(payload){
   syncPausedUntil=Date.now()+20000;
   const j=await rtApi('/admin/stock-delete',{method:'POST',body:JSON.stringify(payload)},45000);
@@ -1753,9 +1796,10 @@ function markLinkedStockSoldClient(acc,soldTo,skey){
   const apply=a=>{a.used=true;if(soldTo)a.soldTo=soldTo;};
   const linkedKey=String(acc.accKey||'');
   if(linkedKey.startsWith('nfprof__')){
-    netflixOneUserPlanKeys().forEach(planKey=>{
+    const planKey=String(skey||'');
+    if(/^netflix__1user__/.test(planKey)){
       (accountStock[planKey]||[]).forEach(a=>{if(a&&a.accKey===linkedKey)apply(a);});
-    });
+    }else apply(acc);
     return;
   }
   if(linkedKey.startsWith('shprof__')){
@@ -4480,6 +4524,16 @@ function renderManualAddForm(skey,needsGmail,isShahidStock){
 }
 function renderAccModal(showForm=false){
   const skey=curAccModalKey;const list=stockAccountsForKey(skey);const isShahidStock=String(skey||'').startsWith('shahid__');const needsGmail=isNetflixKey(skey)||isShahidStock;let html='';
+  if(isNetflixOneUserKey(skey)){
+    const mirrors=netflixMirrorCopyCount(skey);
+    if(mirrors>0){
+      const planLabel=DURATIONS_NF_1U.find(d=>sk('netflix','1user',d.key)===skey)?.label||'this plan';
+      html+=`<div style="background:var(--orange-bg);border:1px solid var(--orange);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:12px;font-size:12px;color:var(--text2)">
+        ⚠️ <b>${mirrors}</b> duplicate copy/copies still exist on other Netflix plans (leftover from old “add to all plans”).
+        <button class="view-btn" type="button" style="margin-top:8px" onclick="pruneNetflixMirrorsHere()">Keep only on ${esc(planLabel)}</button>
+      </div>`;
+    }
+  }
   if(list.length){
     html+=`<div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">${list.length} accounts (${availableCount(skey)} available)</div>
     <div class="acc-list">${list.map((a,i)=>{const owner=a.used?findStockOwnerClient(a):null;return `<div class="acc-item">

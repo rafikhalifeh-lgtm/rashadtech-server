@@ -50,11 +50,10 @@ function markLinkedStockSold(stock, account, soldTo, skey) {
   const linkedKey = String(account.accKey || '');
   if (!stock || (!linkedKey.startsWith('nfprof__') && !linkedKey.startsWith('shprof__'))) return;
   if (linkedKey.startsWith('nfprof__')) {
-    Object.entries(stock).forEach(([stockKey, accounts]) => {
-      if (!/^netflix__1user__/.test(stockKey)) return;
-      (accounts || []).forEach(acc => {
-        if (acc && acc !== account && acc.accKey === linkedKey) markStockSold(acc, soldTo);
-      });
+    const planKey = String(skey || '');
+    if (!/^netflix__1user__/.test(planKey)) return;
+    (stock[planKey] || []).forEach(acc => {
+      if (acc && acc !== account && acc.accKey === linkedKey) markStockSold(acc, soldTo);
     });
     return;
   }

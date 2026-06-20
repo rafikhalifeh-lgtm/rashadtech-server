@@ -1098,6 +1098,63 @@ function stockAddFingerprint(rowAccount, rowKeys) {
   return [email, profile, pin, (rowKeys || []).join('|')].join('::');
 }
 
+function stockAccountFingerprints(acc) {
+  const fps = [];
+  const key = String(acc && acc.accKey || '');
+  if (key) fps.push(`k:${key}`);
+  const email = normalizeEmail(acc && acc.email);
+  const profile = String(acc && acc.profileName || '').trim().toLowerCase();
+  const pin = String(acc && acc.profilePin || '').trim();
+  if (email) fps.push(`f:${email}::${profile}::${pin}`);
+  return fps;
+}
+
+function buildNetflixMirrorIndex(stock, keepSkey) {
+  const index = new Set();
+  const keep = Array.isArray(stock && stock[keepSkey]) ? stock[keepSkey] : [];
+  keep.forEach((acc) => {
+    stockAccountFingerprints(acc).forEach((fp) => index.add(fp));
+  });
+  return index;
+}
+
+function accountMatchesNetflixMirror(acc, index) {
+  return stockAccountFingerprints(acc).some((fp) => index.has(fp));
+}
+
+function countNetflixMirrorCopies(stock, keepSkey) {
+  if (!/^netflix__1user__/.test(String(keepSkey || ''))) return 0;
+  const index = buildNetflixMirrorIndex(stock, keepSkey);
+  let mirrors = 0;
+  for (const planKey of netflixOneUserPlanKeys()) {
+    if (planKey === keepSkey) continue;
+    for (const acc of Array.isArray(stock[planKey]) ? stock[planKey] : []) {
+      if (acc && accountMatchesNetflixMirror(acc, index)) mirrors += 1;
+    }
+  }
+  return mirrors;
+}
+
+function pruneNetflixMirrors(stock, keepSkey) {
+  if (!/^netflix__1user__/.test(String(keepSkey || ''))) return { removed: 0 };
+  const index = buildNetflixMirrorIndex(stock, keepSkey);
+  let removed = 0;
+  for (const planKey of netflixOneUserPlanKeys()) {
+    if (planKey === keepSkey) continue;
+    const accounts = Array.isArray(stock[planKey]) ? stock[planKey] : [];
+    const next = accounts.filter((acc) => {
+      if (!acc) return false;
+      if (accountMatchesNetflixMirror(acc, index)) {
+        removed += 1;
+        return false;
+      }
+      return true;
+    });
+    stock[planKey] = next;
+  }
+  return { removed };
+}
+
 function mergeAllTopupRequests(existingTopups, incomingTopups) {
   if (!Array.isArray(incomingTopups)) return Array.isArray(existingTopups) ? existingTopups : [];
   const existingByKey = new Map();
@@ -2506,6 +2563,39 @@ app.post('/admin/stock-add', async (req, res) => {
     res.status(500).json({ error: 'Could not add stock account' });
   } finally {
     lockKeys.forEach((key) => activeStockAdds.delete(key));
+  }
+});
+
+app.post('/admin/stock-prune-netflix-mirrors', async (req, res) => {
+  const session = requireSession(req, res, ['admin']);
+  if (!session) return;
+  const { skey } = req.body || {};
+  if (!skey || !/^netflix__1user__/.test(String(skey))) {
+    return res.status(400).json({ error: 'Netflix 1-user plan key required' });
+  }
+  try {
+    const outcome = await enqueueDbWrite(async () => {
+      const data = await readDbForWrite();
+      data.stock = data.stock || {};
+      const before = countNetflixMirrorCopies(data.stock, skey);
+      if (!before) return { data, removed: 0, remaining: 0 };
+      const { removed } = pruneNetflixMirrors(data.stock, skey);
+      await writeJsonBinRaw(data, { backupReason: 'prune-netflix-mirrors', lightWrite: true });
+      return {
+        data,
+        removed,
+        remaining: countNetflixMirrorCopies(data.stock, skey)
+      };
+    });
+    res.json({
+      success: true,
+      removed: outcome.removed,
+      remaining: outcome.remaining,
+      data: safeDataForSession(outcome.data, { role: 'admin' })
+    });
+  } catch (e) {
+    console.error('Prune Netflix mirrors error:', e.message);
+    res.status(500).json({ error: 'Could not remove duplicate Netflix copies' });
   }
 });
 
