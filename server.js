@@ -1241,20 +1241,27 @@ function purchaseBlockKey(skey, customDays) {
   return skey;
 }
 
-function netflixAliasUsage(data, aliasEmail) {
+function netflixAliasUsage(data, aliasEmail, planKey) {
   const alias = normalizeEmail(aliasEmail);
   const usage = { oneUser: 0, full: 0 };
-  const seenProfiles = new Set();
   if (!alias) return usage;
-  for (const [key, accounts] of Object.entries((data && data.stock) || {})) {
+  const keys = planKey
+    ? [String(planKey)]
+    : Object.keys((data && data.stock) || {}).filter(isNetflixStockKey);
+  const seenProfiles = new Set();
+  for (const key of keys) {
     if (!isNetflixStockKey(key)) continue;
-    for (const account of Array.isArray(accounts) ? accounts : []) {
+    for (const account of Array.isArray(data.stock[key]) ? data.stock[key] : []) {
       if (normalizeEmail(account && account.email) !== alias) continue;
       if (isNetflixFullStockKey(key)) {
         usage.full += 1;
         continue;
       }
       if (isNetflixOneUserStockKey(key)) {
+        if (planKey) {
+          usage.oneUser += 1;
+          continue;
+        }
         const profileKey = String(account.accKey || '');
         if (profileKey.startsWith('nfprof__')) {
           if (seenProfiles.has(profileKey)) continue;
@@ -1267,20 +1274,25 @@ function netflixAliasUsage(data, aliasEmail) {
   return usage;
 }
 
+function netflixAliasUsageGlobal(data, aliasEmail) {
+  return netflixAliasUsage(data, aliasEmail);
+}
+
 function validateNetflixAliasPurchase(data, skey, acc) {
   if (!acc || !isNetflixStockKey(skey)) return null;
-  const usage = netflixAliasUsage(data, acc.email);
-  if (isNetflixFullStockKey(skey) && usage.oneUser > 0) {
+  const globalUsage = netflixAliasUsageGlobal(data, acc.email);
+  const planUsage = isNetflixOneUserStockKey(skey) ? netflixAliasUsage(data, acc.email, skey) : globalUsage;
+  if (isNetflixFullStockKey(skey) && globalUsage.oneUser > 0) {
     return 'This Netflix alias is already split into 1-user profiles and cannot be sold as full account.';
   }
-  if (isNetflixFullStockKey(skey) && usage.full > 1) {
+  if (isNetflixFullStockKey(skey) && globalUsage.full > 1) {
     return 'This Netflix alias is already reserved as a full account and cannot be sold again.';
   }
-  if (isNetflixOneUserStockKey(skey) && usage.full > 0) {
+  if (isNetflixOneUserStockKey(skey) && globalUsage.full > 0) {
     return 'This Netflix alias is already reserved as a full account and cannot be sold as 1-user profile.';
   }
-  if (isNetflixOneUserStockKey(skey) && usage.oneUser > 5) {
-    return 'This Netflix alias already has more than 5 one-user profile slots.';
+  if (isNetflixOneUserStockKey(skey) && planUsage.oneUser > 5) {
+    return 'This Netflix alias already has more than 5 one-user profile slots on this plan.';
   }
   return null;
 }
@@ -2510,26 +2522,17 @@ app.post('/admin/stock-delete', async (req, res) => {
       data.stock = data.stock || {};
       const targetKey = String(accKey || '');
       const targetEmail = normalizeEmail(email);
-      const keysToScan = targetKey.startsWith('nfprof__')
-        ? Object.keys(data.stock).filter(k => /^netflix__1user__/.test(k))
-        : [skey];
-      let removed = 0;
-      for (const key of keysToScan) {
-        const accounts = Array.isArray(data.stock[key]) ? data.stock[key] : [];
-        const next = accounts.filter((acc) => {
-          if (!acc) return false;
-          const match = targetKey
-            ? String(acc.accKey || '') === targetKey
-            : normalizeEmail(acc.email) === targetEmail;
-          if (match) {
-            removed += 1;
-            return false;
-          }
-          return true;
-        });
-        if (next.length !== accounts.length) data.stock[key] = next;
-      }
+      const accounts = Array.isArray(data.stock[skey]) ? data.stock[skey] : [];
+      const next = accounts.filter((acc) => {
+        if (!acc) return false;
+        const match = targetKey
+          ? String(acc.accKey || '') === targetKey
+          : normalizeEmail(acc.email) === targetEmail;
+        return !match;
+      });
+      const removed = accounts.length - next.length;
       if (!removed) return { error: 'Account not found in stock', status: 404 };
+      data.stock[skey] = next;
       await writeJsonBinRaw(data, { backupReason: 'stock-delete', lightWrite: true });
       return { data, removed };
     });

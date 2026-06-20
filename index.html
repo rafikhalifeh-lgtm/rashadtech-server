@@ -4377,15 +4377,18 @@ function netflixProfileId(account){
   if(account.accKey)return String(account.accKey);
   return `${account.email}__${accountProfileName(account)}__${account.profilePin||''}`;
 }
-function netflixBulkSlotsUsed(alias){
+function netflixBulkSlotsUsed(alias,skey){
+  const planKey=skey||curAccModalKey||'';
   const ids=new Set();
-  netflixAliasAccounts(alias).filter(r=>isNetflixOneUserKey(r.key)).forEach(r=>ids.add(netflixProfileId(r.account)));
+  netflixAliasAccounts(alias).filter(r=>!planKey||r.key===planKey).forEach(r=>{
+    if(isNetflixOneUserKey(r.key))ids.add(netflixProfileId(r.account));
+  });
   return ids.size;
 }
 function renderNetflixBulkForm(skey){
   const defs=loadNetflixBulkDefaults();
   const alias=defs.email||'';
-  const used=alias?netflixBulkSlotsUsed(alias):0;
+  const used=alias?netflixBulkSlotsUsed(alias,skey):0;
   const slotsLeft=Math.max(0,5-used);
   return `<div class="acc-add-mode-row">
     <button type="button" class="acc-add-mode-btn${accAddMode==='bulk'?' active':''}" onclick="setAccAddMode('bulk')">⚡ Quick add profiles</button>
@@ -4401,7 +4404,7 @@ function renderNetflixBulkForm(skey){
       <input type="email" id="nf-bulk-main-email" placeholder="Gmail that receives Netflix codes" value="${esc(defs.mainEmail||'')}">
       <input type="password" id="nf-bulk-main-pass" placeholder="Gmail app password" style="margin-top:6px">
     </div>
-    ${alias?`<div style="font-size:11px;color:var(--text3);margin-top:8px">${used}/5 profiles for this alias · adds to all plans (1m, 3m, 6m, 1y) · ${slotsLeft} slot(s) left</div>`:''}
+    ${alias?`<div style="font-size:11px;color:var(--text3);margin-top:8px">${used}/5 profiles for this alias on <b>this plan only</b> · ${slotsLeft} slot(s) left</div>`:''}
   </div>
   <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px">Profile name & PIN (only these change per user)</div>
   <div class="nf-bulk-profiles">${[1,2,3,4,5].map(n=>`<div class="nf-bulk-row">
@@ -4409,7 +4412,7 @@ function renderNetflixBulkForm(skey){
     <input type="text" id="nf-bulk-name-${n}" placeholder="Profile name" value="${esc((defs.profiles&&defs.profiles[n-1]?.name)||'')}">
     <input type="text" id="nf-bulk-pin-${n}" placeholder="PIN" maxlength="6" value="${esc((defs.profiles&&defs.profiles[n-1]?.pin)||'')}">
   </div>`).join('')}</div>
-  <button class="inline-btn" id="btn-add-netflix-bulk" onclick="addNetflixBulkAccounts()"><i class="ti ti-users" style="font-size:13px;vertical-align:-2px;margin-right:4px"></i>Add profiles to all Netflix 1-user plans</button>`;
+  <button class="inline-btn" id="btn-add-netflix-bulk" onclick="addNetflixBulkAccounts()"><i class="ti ti-users" style="font-size:13px;vertical-align:-2px;margin-right:4px"></i>Add profiles to this plan</button>`;
 }
 function renderShahidBulkForm(skey){
   const defs=loadShahidBulkDefaults();
@@ -4518,12 +4521,12 @@ function netflixAliasAccounts(alias){
 function validateNetflixAliasForAdd(skey,email,pin){
   if(!isNetflixKey(skey))return '';
   const rows=netflixAliasAccounts(email);
-  const oneCount=netflixBulkSlotsUsed(email);
+  const oneCount=netflixBulkSlotsUsed(email,skey);
   const fullCount=rows.filter(r=>isNetflixFullKey(r.key)).length;
   if(isNetflixFullKey(skey)&&(oneCount>0||fullCount>0))return 'This Netflix alias is already used/reserved. Full account can only be added once and cannot mix with 1-user profiles.';
   if(isNetflixOneUserKey(skey)&&fullCount>0)return 'This Netflix alias is already reserved as full account and cannot be used for 1-user profiles.';
-  if(isNetflixOneUserKey(skey)&&oneCount>=5)return 'This Netflix alias already has 5 one-user profile slots.';
-  if(isNetflixOneUserKey(skey)&&pin&&rows.some(r=>isNetflixOneUserKey(r.key)&&String(r.account.profilePin||'')===String(pin)))return 'This PIN is already used for this Netflix alias. Use a different profile PIN.';
+  if(isNetflixOneUserKey(skey)&&oneCount>=5)return 'This Netflix alias already has 5 one-user profile slots on this plan.';
+  if(isNetflixOneUserKey(skey)&&pin&&rows.some(r=>r.key===skey&&String(r.account.profilePin||'')===String(pin)))return 'This PIN is already used for this Netflix alias on this plan. Use a different profile PIN.';
   return '';
 }
 async function assignStockAccount(idx){
@@ -4664,7 +4667,7 @@ async function addNetflixBulkAccounts(){
   if(!profiles.length){showToast('Enter at least one profile name and PIN');return;}
   const missing=profiles.find(p=>!p.name||!p.pin);
   if(missing){showToast(`Profile ${missing.row}: enter both name and PIN`);return;}
-  const used=netflixBulkSlotsUsed(email);
+  const used=netflixBulkSlotsUsed(email,curAccModalKey);
   if(used+profiles.length>5){showToast(`Only ${5-used} slot(s) left for this alias (max 5 profiles)`);return;}
   const pins=new Set();
   for(const p of profiles){
@@ -4676,10 +4679,11 @@ async function addNetflixBulkAccounts(){
   setAddStockBusy(true);
   try{
     await apiStockAdd({
+      skey:curAccModalKey,
       accounts:profiles.map(p=>({
-        replicateToNetflixPlans:true,
-        requestId:[normEmail(email),p.name.toLowerCase(),p.pin,netflixOneUserPlanKeys().join('|')].join('::'),
-        accKey:'nfprof__'+Date.now()+'_'+Math.random().toString(36).slice(2,8)+'_'+p.row,
+        skey:curAccModalKey,
+        requestId:[normEmail(email),p.name.toLowerCase(),p.pin,curAccModalKey].join('::'),
+        accKey:curAccModalKey+'__'+Date.now()+'_'+Math.random().toString(36).slice(2,8)+'_'+p.row,
         account:{email,pass,profileName:p.name,profilePin:p.pin,expiryDate,mainEmail:mainEmail||'',...(mainPass?{mainPass}:{})}
       }))
     });
@@ -4693,10 +4697,9 @@ async function addNetflixBulkAccounts(){
     try{gmailConfigured=await setupGmailMonitor(mainEmail,mainPass);}catch(e){showToast('⚠️ Profiles saved but Gmail error: '+e.message);}
   }
   renderAccModal(true);renderStockPanels();renderAdminExpiry();
-  const planCount=netflixOneUserPlanKeys().length;
-  showToast(gmailConfigured?`✓ Added ${profiles.length} profile(s) × ${planCount} plans + Gmail`:`✓ Added ${profiles.length} profile(s) to all ${planCount} plans`);
-  logActivity('Netflix bulk stock added',`${profiles.length} profiles · all plans`);
-  for(const planKey of netflixOneUserPlanKeys())await autoFulfillPending(planKey);
+  showToast(gmailConfigured?`✓ Added ${profiles.length} profile(s) to this plan + Gmail`:`✓ Added ${profiles.length} profile(s) to this Netflix plan`);
+  logActivity('Netflix bulk stock added',`${profiles.length} profiles · ${curAccModalKey}`);
+  await autoFulfillPending(curAccModalKey);
 }
 
 async function addAccount(){
@@ -4717,7 +4720,7 @@ async function addAccount(){
   setAddStockBusy(true);
   try{
     if(isNetflixOneUserKey(curAccModalKey)){
-      await apiStockAdd({replicateToNetflixPlans:true,account});
+      await apiStockAdd({skey:curAccModalKey,account});
       saveNetflixBulkDefaults({email,pass,expiryDate,mainEmail,profiles:[{name:profileName,pin:''}]});
     }else{
       await apiStockAdd({skey:curAccModalKey,account});
@@ -4738,12 +4741,10 @@ async function addAccount(){
   const addedShahidFull=isShahidFullKey(curAccModalKey);
   const addedNetflixOne=isNetflixOneUserKey(curAccModalKey);
   showToast(gmailConfigured
-    ?(addedNetflixOne?'✓ Account added to all Netflix 1-user plans + Gmail':addedShahidOne?'✓ User added to this Shahid plan + Gmail':'✓ Account added + Gmail monitoring started')
-    :(addedNetflixOne?'✓ Account added to all Netflix 1-user plans':addedShahidOne?'✓ User added to this Shahid plan':addedShahidFull?'✓ Full Shahid account added':'✓ Account added to stock'));
+    ?(addedNetflixOne?'✓ Account added to this Netflix plan + Gmail':addedShahidOne?'✓ User added to this Shahid plan + Gmail':'✓ Account added + Gmail monitoring started')
+    :(addedNetflixOne?'✓ Account added to this Netflix plan':addedShahidOne?'✓ User added to this Shahid plan':addedShahidFull?'✓ Full Shahid account added':'✓ Account added to stock'));
   logActivity('Stock added',curAccModalKey);
-  if(addedNetflixOne){
-    for(const planKey of netflixOneUserPlanKeys())await autoFulfillPending(planKey);
-  }else await autoFulfillPending(curAccModalKey);
+  await autoFulfillPending(curAccModalKey);
 }
 
 async function autoFulfillPending(skey){
