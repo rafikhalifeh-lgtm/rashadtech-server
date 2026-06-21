@@ -1085,6 +1085,9 @@ function stockAccountMatches(a, b) {
   const profileA = String(a.profileName || '').trim().toLowerCase();
   const profileB = String(b.profileName || '').trim().toLowerCase();
   if (!emailA && !emailB) {
+    const linkA = String(a.serviceLink || '').trim();
+    const linkB = String(b.serviceLink || '').trim();
+    if (linkA && linkB) return linkA === linkB;
     return Boolean(profileA) && profileA === profileB;
   }
   if (emailA !== emailB) return false;
@@ -1298,19 +1301,24 @@ function isAnghamiSubscription(sub) {
   return Boolean(sub && (sub.productId === 'anghami' || /anghami/i.test(sub.product || '')));
 }
 
+const ANGHAMI_CANCEL_NOTE_EN = 'NOTE: If you already have an Anghami Plus subscription, cancel it then try to click on the link again.';
+const ANGHAMI_CANCEL_NOTE_AR = 'ملاحظة: إذا كان لديك اشتراك Anghami Plus بالفعل، قم بإلغائه ثم اضغط على الرابط مرة أخرى.';
+
+function anghamiCustomerMessage(planLabel, serviceLink) {
+  return `Thanks for purchasing Anghami+!\n\n📋 ${planLabel}\n\n🔗 Here is your activation link:\n${serviceLink}\n\n${ANGHAMI_CANCEL_NOTE_EN}\n\n${ANGHAMI_CANCEL_NOTE_AR}`;
+}
+
 function isValidLinkSubscription(subscription) {
   if (!subscription) return false;
   if (isAnghamiSubscription(subscription)) {
-    return Boolean(String(subscription.profileName || '').trim());
+    return Boolean(String(subscription.serviceLink || '').trim() || String(subscription.profileName || '').trim());
   }
   return Boolean(subscription.email && subscription.pass);
 }
 
 function validateStockAccountForAdd(skey, rowAccount) {
   if (isAnghamiStockKey(skey)) {
-    const profileName = String(rowAccount && rowAccount.profileName || '').trim();
     const serviceLink = String(rowAccount && rowAccount.serviceLink || '').trim();
-    if (!profileName) return 'Profile name is required for Anghami stock';
     if (!serviceLink) return 'Activation link is required for Anghami stock';
     if (!/^https?:\/\//i.test(serviceLink)) return 'Enter a valid http(s) activation link';
     return null;
@@ -1950,8 +1958,7 @@ async function notifyPurchaseFulfilled(user, product, planLabel, price, order, a
     adminMsg += `\n👥 <b>Assigned to:</b> ${assignedCustomer.fname} ${assignedCustomer.lname} (${assignedCustomer.code}${assignedCustomer.phone})`;
   }
   if (isAnghami) {
-    adminMsg += `\n\n👤 <b>Anghami profile:</b> <code>${profileLabel || '—'}</code>`;
-    if (order.serviceLink) adminMsg += `\n🔗 <b>Activation link:</b> ${order.serviceLink}`;
+    adminMsg += `\n\n🔗 <b>Activation link:</b> ${order.serviceLink || '—'}`;
   } else {
     adminMsg += `\n\n🔐 <b>Credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`;
     if (profileLabel) adminMsg += `\n👤 Profile: <code>${profileLabel}</code>`;
@@ -1991,20 +1998,22 @@ async function notifyPurchaseFulfilled(user, product, planLabel, price, order, a
   const custName = assignedCustomer ? `${assignedCustomer.fname} ${assignedCustomer.lname}` : null;
   let custMsg = isAnghami
     ? (assignedCustomer
-      ? `✅ <b>Anghami+ for ${custName}</b>\n\n📋 ${planLabel}\n👥 <b>For:</b> ${custName}\n\n👤 <b>Profile name:</b> <code>${profileLabel || '—'}</code>`
-      : `✅ <b>Your Anghami+ is ready!</b>\n\n📋 ${planLabel}\n\n👤 <b>Profile name:</b> <code>${profileLabel || '—'}</code>`)
+      ? `✅ <b>Anghami+ for ${custName}</b>\n\n📋 ${planLabel}\n\n🔗 <b>Activation link:</b>\n${order.serviceLink || ''}\n\n${ANGHAMI_CANCEL_NOTE_EN}\n\n${ANGHAMI_CANCEL_NOTE_AR}`
+      : `✅ <b>Thanks for purchasing Anghami+!</b>\n\n📋 ${planLabel}\n\n🔗 <b>Activation link:</b>\n${order.serviceLink || ''}\n\n${ANGHAMI_CANCEL_NOTE_EN}\n\n${ANGHAMI_CANCEL_NOTE_AR}`)
     : (assignedCustomer
       ? `✅ <b>${product.name} subscription for ${custName}</b>\n\n📋 ${planLabel}\n👥 <b>For:</b> ${custName}\n\n🔐 <b>Credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`
       : `✅ <b>Your ${product.name} is ready!</b>\n\n📋 ${planLabel}\n\n🔐 <b>Your credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`);
   if (!isAnghami && profileLabel) custMsg += `\n👤 Profile: <code>${profileLabel}</code>`;
-  if (isAnghami && order.serviceLink) custMsg += `\n\n🔗 <b>Activate Anghami:</b>\n${order.serviceLink}`;
   if (order.expiryDate) custMsg += `\n⏰ Expires: ${order.expiryDate}`;
   if (order.profilePin) custMsg += `\n🔢 PIN: <code>${order.profilePin}</code>`;
   custMsg += `\n\n🔗 <b>Subscription link:</b>\n${subLink}\n\nEnjoy! 🌟`;
   try {
     await sendTG(user.tgChatId, custMsg, 'HTML');
     if (assignedCustomer && assignedCustomer.tgChatId && String(assignedCustomer.tgChatId) !== String(user.tgChatId)) {
-      await sendTG(assignedCustomer.tgChatId, `✅ <b>${product.name} subscription</b>\n\n📋 ${planLabel}\n\n🔐 <b>Credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>${order.profilePin ? `\n🔢 PIN: <code>${order.profilePin}</code>` : ''}\n\n🔗 ${subLink}`, 'HTML').catch(() => {});
+      const assignMsg = isAnghami
+        ? `✅ <b>Anghami+</b>\n\n📋 ${planLabel}\n\n🔗 ${order.serviceLink || ''}\n\n${ANGHAMI_CANCEL_NOTE_EN}\n\n🔗 ${subLink}`
+        : `✅ <b>${product.name} subscription</b>\n\n📋 ${planLabel}\n\n🔐 <b>Credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>${order.profilePin ? `\n🔢 PIN: <code>${order.profilePin}</code>` : ''}\n\n🔗 ${subLink}`;
+      await sendTG(assignedCustomer.tgChatId, assignMsg, 'HTML').catch(() => {});
     }
     return true;
   } catch (e) {

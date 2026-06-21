@@ -1346,14 +1346,11 @@ async function deliverPurchaseTelegram(order,p,planLabel,price,forCustomer){
   const prof=orderProfileName(order);
   const isAnghami=p.id==='anghami';
   let custCred=isAnghami
-    ?(forCustomer
-      ?`✅ <b>Anghami+ for ${who}</b>\n\n📋 ${planLabel}\n👥 <b>For:</b> ${who}\n\n👤 <b>Profile name:</b> <code>${prof||'—'}</code>`
-      :`✅ <b>Your Anghami+ is ready!</b>\n\n📋 ${planLabel}\n\n👤 <b>Profile name:</b> <code>${prof||'—'}</code>`)
+    ?`✅ <b>Thanks for purchasing Anghami+!</b>\n\n📋 ${planLabel}\n\n🔗 <b>Activation link:</b>\n${order.serviceLink||''}\n\n${ANGHAMI_CANCEL_NOTE_EN}\n\n${ANGHAMI_CANCEL_NOTE_AR}`
     :(forCustomer
       ?`✅ <b>${p.name} subscription for ${who}</b>\n\n📋 ${planLabel}\n👥 <b>For:</b> ${who}\n\n🔐 <b>Credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`
       :`✅ <b>Your ${p.name} is ready!</b>\n\n📋 ${planLabel}\n\n🔐 <b>Your credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`);
   if(!isAnghami&&prof)custCred+=`\n👤 Profile: <code>${prof}</code>`;
-  if(isAnghami&&order.serviceLink)custCred+=`\n\n🔗 <b>Activate Anghami:</b>\n${order.serviceLink}`;
   if(order.expiryDate)custCred+=`\n⏰ Expires: ${order.expiryDate}`;
   if(order.profilePin)custCred+=`\n🔢 PIN: <code>${order.profilePin}</code>`;
   custCred+=`\n\n🔗 <b>Subscription link:</b>\n${subLink}\n\nEnjoy! 🌟`;
@@ -1649,7 +1646,7 @@ const DEFAULT_PRODUCTS=[
     {name:'1 Month',desc:'Full HD',price:7},{name:'3 Months',desc:'Full HD',price:18},{name:'1 Year',desc:'Full HD',price:60}]},
   {id:'amazon',name:'Amazon Prime',short:'AP',color:'#00A8E0',tc:'#fff',cat:'video',badge:'new',desc:'Prime Video & more',hasUserTypes:false,plans:[
     {name:'1 Month',desc:'Full access',price:3},{name:'6 Months',desc:'Full access',price:10}]},
-  {id:'anghami',name:'Anghami+',short:'A',color:'#7B3FBE',tc:'#fff',cat:'music',badge:'',desc:'Arab & international music',hasUserTypes:false,hasProfileName:true,plans:[
+  {id:'anghami',name:'Anghami+',short:'A',color:'#7B3FBE',tc:'#fff',cat:'music',badge:'',desc:'Instant activation link · Arab & international music',hasUserTypes:false,plans:[
     {name:'3 Months',desc:'$4 · Unlimited',price:4},{name:'6 Months',desc:'$8 · Unlimited',price:8},{name:'1 Year',desc:'$15 · Unlimited',price:15}]},
   {id:'spotify',name:'Spotify',short:'S',color:'#1DB954',tc:'#fff',cat:'music',badge:'',desc:'Music & podcasts',hasUserTypes:false,plans:[
     {name:'1 Month',desc:'Ad-free',price:4},{name:'3 Months',desc:'Ad-free',price:10},{name:'6 Months',desc:'Best value',price:18}]},
@@ -1837,7 +1834,8 @@ function markUsedByAcc(k,acc,soldTo){
 }
 function stockLabel(n){if(n===0)return['Out of stock','sout'];if(n<=3)return[`${n} left`,'slow'];return[`${n} in stock`,'sok'];}
 
-const topupAmts=[{v:5,l:'$5'},{v:10,l:'$10'},{v:20,l:'$20'},{v:30,l:'$30'},{v:50,l:'$50'},{v:100,l:'$100'}];
+const ANGHAMI_CANCEL_NOTE_EN='NOTE: If you already have an Anghami Plus subscription, cancel it then try to click on the link again.';
+const ANGHAMI_CANCEL_NOTE_AR='ملاحظة: إذا كان لديك اشتراك Anghami Plus بالفعل، قم بإلغائه ثم اضغط على الرابط مرة أخرى.';
 let users=[],currentUser=null,isAdmin=false;
 // HTML sanitizer to prevent XSS
 function jsOnClick(fn,...args){
@@ -2408,7 +2406,7 @@ async function checkSubLink(){
   const passRow=document.getElementById('sublink-pass')?.closest('div')?.parentElement?.parentElement;
   if(credBlock){
     const credTitle=credBlock.querySelector('div');
-    if(credTitle)credTitle.textContent=anghamiSub?'YOUR ANGHAMI PROFILE':'YOUR CREDENTIALS';
+    if(credTitle)credTitle.textContent=anghamiSub?'YOUR ANGHAMI ACTIVATION':'YOUR CREDENTIALS';
   }
   if(emailRow)emailRow.style.display=anghamiSub?'none':'flex';
   if(passRow)passRow.style.display=anghamiSub?'none':'flex';
@@ -2422,11 +2420,8 @@ async function checkSubLink(){
   const profileRow=document.getElementById('sublink-profile-row');
   const serviceLinkRow=document.getElementById('sublink-service-link-row');
   const serviceLinkEl=document.getElementById('sublink-service-link');
-  if(anghamiSub&&subProf){
-    if(profileRow){
-      profileRow.style.display='flex';
-      document.getElementById('sublink-profile-name').textContent=subProf;
-    }
+  if(anghamiSub){
+    if(profileRow)profileRow.style.display='none';
     if(extraRow)extraRow.style.display='none';
   }else if(subProf){
     if(extraRow){extraRow.style.display='flex';document.getElementById('sublink-extra').textContent=subProf;}
@@ -2441,10 +2436,14 @@ async function checkSubLink(){
       serviceLinkRow.style.display='block';
       serviceLinkEl.href=svc;
       serviceLinkEl.textContent=svc;
+      const note=document.getElementById('sublink-anghami-note');
+      if(note)note.style.display='block';
     }else{
       serviceLinkRow.style.display='none';
       serviceLinkEl.href='#';
       serviceLinkEl.textContent='Open link';
+      const note=document.getElementById('sublink-anghami-note');
+      if(note)note.style.display='none';
     }
   }
   if(found.expiryDate){document.getElementById('sublink-expiry-row').style.display='flex';document.getElementById('sublink-expiry').textContent=found.expiryDate;}
@@ -2964,6 +2963,11 @@ function renderBuyBody(){
         <div><div class="plan-name">${pl.name}</div><div class="plan-desc">${pl.desc}</div></div>
         <div style="text-align:right"><div class="plan-price">${blocked?'Blocked':fmt(pl.price)}</div></div>
       </div>`;}).join('')}`;
+    if(p.id==='anghami'){
+      html+=`<div style="background:var(--orange-bg);border:1px solid var(--orange-border);border-radius:var(--radius-sm);padding:9px 12px;font-size:12px;color:var(--orange);margin-top:10px;line-height:1.5">
+        ${ANGHAMI_CANCEL_NOTE_EN}
+      </div>`;
+    }
     if(selPlan)renderConfirm(html,p);
     else{html+=`<button class="modal-buy-btn" disabled>Select a plan</button>`;document.getElementById('modal-body').innerHTML=html;}
   }
@@ -3255,7 +3259,7 @@ function subRow(o,forCustomer){
   const shahidBtns=isShahidOrder(o)?shahidActionButtons(o.id):'';
   const deliveryNote=o.telegramDeliveredAt?`<div class="delivery-proof">✓ Delivered to Telegram · ${esc(formatTs(o.telegramDeliveredAt))}</div>`:(o.deliveredAt?`<div class="delivery-proof">✓ Delivered · ${esc(formatTs(o.deliveredAt))}</div>`:'');
   const credHtml=isAnghamiOrder(o)
-    ?`<div class="sub-cred"><span class="cust-sub-cred-line">👤 Profile: ${esc(prof||'—')}</span>${o.serviceLink?`<a class="cust-sub-cred-line" href="${esc(o.serviceLink)}" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:none">🔗 Open Anghami link</a>`:''}</div>`
+    ?`<div class="sub-cred">${o.serviceLink?`<a class="cust-sub-cred-line" href="${esc(o.serviceLink)}" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:none;font-weight:600">🔗 Open Anghami activation link</a>`:'<span class="cust-sub-cred-line">Link pending</span>'}<div style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.4">${esc(ANGHAMI_CANCEL_NOTE_EN)}</div></div>`
     :`<div class="sub-cred"><span class="cust-sub-cred-line">📧 ${esc(o.email)}</span><span class="cust-sub-cred-line">🔑 ${esc(o.pass)}</span></div>`;
   return `<div class="sub-card"><div class="sub-icon" style="background:${ico?'#fff':o.color};overflow:hidden;padding:0">${iconHtml}</div>
     <div class="sub-info"><div class="sub-name">${esc(o.product)}</div><div class="sub-plan">${esc(o.plan)} · ${esc(o.date)}</div>
@@ -4529,10 +4533,9 @@ function renderShahidBulkForm(skey){
 }
 function renderManualAddForm(skey,needsGmail,isShahidStock){
   if(isAnghamiKey(skey)){
-    return `<div class="add-acc-form-title">Add Anghami slot</div>
-      <div style="font-size:12px;color:var(--text2);margin-bottom:12px">Plan is set by the row you opened. Enter the <strong>profile name</strong> and the <strong>activation link</strong> you will give the customer.</div>
-      <div class="field"><label>Profile name (required)</label><input type="text" id="new-acc-profile" placeholder="Exact Anghami profile name"></div>
-      <div class="field"><label>Activation link (required)</label><input type="url" id="new-acc-service-link" placeholder="https://..."></div>
+    return `<div class="add-acc-form-title">Add Anghami activation link</div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:12px">Paste the link from your supplier (e.g. <code>open.anghami.com/...</code>). Plan is set by the row you opened — e.g. <b>3 Months = $4</b>.</div>
+      <div class="field"><label>Activation link (required)</label><input type="url" id="new-acc-service-link" placeholder="https://open.anghami.com/..."></div>
       <button class="inline-btn" id="btn-add-stock" onclick="addAccount()"><i class="ti ti-plus" style="font-size:13px;vertical-align:-2px;margin-right:4px"></i>Add to stock</button>`;
   }
   const isShahidOne=isShahidOneUserKey(skey);
@@ -4585,8 +4588,7 @@ function renderAccModal(showForm=false){
     html+=`<div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">${list.length} accounts (${availableCount(skey)} available)</div>
     <div class="acc-list">${list.map((a,i)=>{const owner=a.used?findStockOwnerClient(a):null;const prof=accountProfileName(a);const anghami=isAnghamiKey(skey);return `<div class="acc-item">
       <div class="acc-item-info">${anghami
-        ?`<div class="acc-email">👤 ${esc(prof||'No profile')}</div>
-      ${a.serviceLink?`<div class="acc-extra"><a href="${esc(a.serviceLink)}" target="_blank" rel="noopener" style="color:var(--blue)">🔗 Activation link</a></div>`:''}`
+        ?`${a.serviceLink?`<div class="acc-email" style="word-break:break-all"><a href="${esc(a.serviceLink)}" target="_blank" rel="noopener" style="color:var(--blue)">${esc(a.serviceLink)}</a></div>`:'<div class="acc-email">No link</div>'}`
         :`<div class="acc-email">${esc(a.email)}</div><div class="acc-pass">${esc(a.pass)}</div>
       ${prof?`<div class="acc-extra">👤 Profile: ${esc(prof)}</div>`:''}`}
       ${!anghami&&a.profilePin?`<div class="acc-extra">🔢 PIN: ${esc(a.profilePin)}</div>`:''}
@@ -4810,22 +4812,20 @@ async function addNetflixBulkAccounts(){
 async function addAccount(){
   if(addStockInFlight){showToast('Stock add already in progress…');return;}
   const isAnghamiStock=isAnghamiKey(curAccModalKey);
-  const profileName=(document.getElementById('new-acc-profile')?.value||'').trim();
   const serviceLink=(document.getElementById('new-acc-service-link')?.value||'').trim();
   if(isAnghamiStock){
-    if(!profileName){showToast('Profile name is required');return;}
     if(!serviceLink){showToast('Activation link is required');return;}
     if(!/^https?:\/\//i.test(serviceLink)){showToast('Enter a valid http(s) link');return;}
     setAddStockBusy(true);
     try{
-      await apiStockAdd({skey:curAccModalKey,account:{profileName,serviceLink,email:'',pass:''}});
+      await apiStockAdd({skey:curAccModalKey,account:{serviceLink,email:'',pass:''}});
     }catch(e){
       showToast('⚠️ '+(e.message||'Save failed'));
       return;
     }finally{setAddStockBusy(false);}
     renderAccModal(false);renderStockPanels();renderAdminExpiry();
-    showToast('✓ Anghami profile added to this plan');
-    logActivity('Anghami stock added',`${profileName} · ${curAccModalKey}`);
+    showToast('✓ Anghami link added to this plan');
+    logActivity('Anghami stock added',serviceLink.slice(0,60)+' · '+curAccModalKey);
     await autoFulfillPending(curAccModalKey);
     return;
   }
@@ -4836,6 +4836,7 @@ async function addAccount(){
   const mainEmail=document.getElementById('new-acc-main-email')?.value.trim()||'';
   const mainPass=(document.getElementById('new-acc-main-pass')?.value||'').replace(/\s+/g,'');
   const isShahidStock=String(curAccModalKey||'').startsWith('shahid__');
+  const profileName=(document.getElementById('new-acc-profile')?.value||'').trim();
   const profilePin=(isShahidStock||isShahidFullKey(curAccModalKey))?'':(document.getElementById('new-acc-profile-pin')?.value.trim()||'');
   if(isShahidStock&&mainEmail&&!/@(gmail|googlemail)\.com$/i.test(mainEmail)){showToast('⚠️ Shahid reset links require a Gmail inbox');return;}
   const aliasError=isShahidStock?validateShahidAliasForAdd(curAccModalKey,email,profileName):validateNetflixAliasForAdd(curAccModalKey,email,profilePin);
@@ -5596,6 +5597,7 @@ if(document.readyState==='loading'){
         <div id="sublink-service-link-row" style="display:none;margin-top:12px">
           <div style="font-size:12px;color:var(--text2);margin-bottom:6px">Activation link</div>
           <a id="sublink-service-link" href="#" target="_blank" rel="noopener" class="shahid-reset-link" style="display:block">Open link</a>
+          <div id="sublink-anghami-note" style="display:none;font-size:12px;color:var(--orange);margin-top:10px;line-height:1.5">${ANGHAMI_CANCEL_NOTE_EN}<br><br>${ANGHAMI_CANCEL_NOTE_AR}</div>
         </div>
         <div id="sublink-pin-row" style="display:none;justify-content:space-between;align-items:center;margin-top:8px">
           <span style="font-size:12px;color:var(--text2)">Profile PIN</span>
