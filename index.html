@@ -1249,6 +1249,7 @@ function normEmail(e){return String(e||'').trim().toLowerCase();}
 function accountProfileName(acc){return String(acc?.profileName||acc?.extra||'').trim();}
 function orderProfileName(o){return String(o?.profileName||o?.extra||'').trim();}
 function isShahidOrder(o){return Boolean(o&&(o.productId==='shahid'||/shahid/i.test(o.product||'')));}
+function isAnghamiOrder(o){return Boolean(o&&(o.productId==='anghami'||/anghami/i.test(o.product||'')));}
 const SHAHID_FORGET_URL='https://shahid.mbc.net/en/hub/forget-password';
 let _shahidFixOrderId=null;
 let _shahidFixOrder=null;
@@ -1342,11 +1343,16 @@ async function deliverPurchaseTelegram(order,p,planLabel,price,forCustomer){
   const data2={id:order.id,product:p.name,short:p.short,color:p.color,tc:p.tc,productId:p.id,plan:planLabel,email:order.email,pass:order.pass,expiryDate:order.expiryDate||'',profileName:order.profileName||'',profilePin:order.profilePin||'',accKey:order.accKey||'',mainEmail:order.mainEmail||'',codeEmail:order.email,inboxEmail:order.mainEmail||order.email};
   const subLink=await createSubLinkUrl(data2);
   const who=forCustomer?`${forCustomer.fname} ${forCustomer.lname}`:null;
-  let custCred=forCustomer
-    ?`✅ <b>${p.name} subscription for ${who}</b>\n\n📋 ${planLabel}\n👥 <b>For:</b> ${who}\n\n🔐 <b>Credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`
-    :`✅ <b>Your ${p.name} is ready!</b>\n\n📋 ${planLabel}\n\n🔐 <b>Your credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`;
   const prof=orderProfileName(order);
-  if(prof)custCred+=`\n👤 Profile: <code>${prof}</code>`;
+  const isAnghami=p.id==='anghami';
+  let custCred=isAnghami
+    ?(forCustomer
+      ?`✅ <b>Anghami+ for ${who}</b>\n\n📋 ${planLabel}\n👥 <b>For:</b> ${who}\n\n👤 <b>Profile name:</b> <code>${prof||'—'}</code>`
+      :`✅ <b>Your Anghami+ is ready!</b>\n\n📋 ${planLabel}\n\n👤 <b>Profile name:</b> <code>${prof||'—'}</code>`)
+    :(forCustomer
+      ?`✅ <b>${p.name} subscription for ${who}</b>\n\n📋 ${planLabel}\n👥 <b>For:</b> ${who}\n\n🔐 <b>Credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`
+      :`✅ <b>Your ${p.name} is ready!</b>\n\n📋 ${planLabel}\n\n🔐 <b>Your credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`);
+  if(!isAnghami&&prof)custCred+=`\n👤 Profile: <code>${prof}</code>`;
   if(order.expiryDate)custCred+=`\n⏰ Expires: ${order.expiryDate}`;
   if(order.profilePin)custCred+=`\n🔢 PIN: <code>${order.profilePin}</code>`;
   custCred+=`\n\n🔗 <b>Subscription link:</b>\n${subLink}\n\nEnjoy! 🌟`;
@@ -2392,18 +2398,34 @@ async function checkSubLink(){
     :`<div style="width:52px;height:52px;border-radius:12px;background:${found.color||'#333'};color:${found.tc||'#fff'};display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;margin:0 auto">${found.short||'?'}</div>`;
   document.getElementById('sublink-name').textContent=found.product||'';
   document.getElementById('sublink-plan').textContent=(found.plan||'')+' · '+(found.date||'');
+  const anghamiSub=isAnghamiOrder(found);
+  const subProf=orderProfileName(found);
   document.getElementById('sublink-email').textContent=found.email||'';
   document.getElementById('sublink-pass').textContent=found.pass||'';
+  const credBlock=document.querySelector('#sublink-content [style*="YOUR CREDENTIALS"]')?.parentElement;
+  const emailRow=document.getElementById('sublink-email')?.closest('div');
+  const passRow=document.getElementById('sublink-pass')?.closest('div')?.parentElement?.parentElement;
+  if(credBlock){
+    const credTitle=credBlock.querySelector('div');
+    if(credTitle)credTitle.textContent=anghamiSub?'YOUR ANGHAMI PROFILE':'YOUR CREDENTIALS';
+  }
+  if(emailRow)emailRow.style.display=anghamiSub?'none':'flex';
+  if(passRow)passRow.style.display=anghamiSub?'none':'flex';
   _sublinkEmail=found.email||'';
   _sublinkPass=found.pass||'';
   _sublinkProfileName=found.profileName||found.product||'Customer';
   _sublinkMainEmail=found.mainEmail||found.inboxEmail||null;
   _sublinkCodeEmail=found.codeEmail||found.email||found.mainEmail||null;
   _sublinkInboxEmail=found.inboxEmail||found.mainEmail||found.codeEmail||null;
-  const subProf=orderProfileName(found);
   const extraRow=document.getElementById('sublink-extra-row');
   const profileRow=document.getElementById('sublink-profile-row');
-  if(subProf){
+  if(anghamiSub&&subProf){
+    if(profileRow){
+      profileRow.style.display='flex';
+      document.getElementById('sublink-profile-name').textContent=subProf;
+    }
+    if(extraRow)extraRow.style.display='none';
+  }else if(subProf){
     if(extraRow){extraRow.style.display='flex';document.getElementById('sublink-extra').textContent=subProf;}
     if(profileRow)profileRow.style.display='none';
   }else{
@@ -3212,14 +3234,17 @@ function subRow(o,forCustomer){
   let ex='';
   if(forCustomer)ex+=`<div class="sub-for-badge"><i class="ti ti-user" style="font-size:12px"></i> ${t('forSubCustomer','For')}: <strong>${esc(forCustomer.fname)} ${esc(forCustomer.lname)}</strong> · ${esc(forCustomer.code)} ${esc(forCustomer.phone)}</div>`;
   const prof=orderProfileName(o);
-  if(prof)ex+=`<div class="sub-cred">Profile: ${esc(prof)}</div>`;
+  if(prof&&!isAnghamiOrder(o))ex+=`<div class="sub-cred">Profile: ${esc(prof)}</div>`;
   const ico=PRODUCT_ICONS[o.productId];
   const iconHtml=ico?`<img src="${ico}" width="40" height="40" style="border-radius:9px;object-fit:contain;background:#fff;padding:2px" onerror="this.outerHTML='<div style=\'width:40px;height:40px;border-radius:9px;background:${o.color};color:${o.tc};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700\'>${o.short}</div>'">`:`<div style="width:40px;height:40px;border-radius:9px;background:${o.color};color:${o.tc};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700">${o.short}</div>`;
   const shahidBtns=isShahidOrder(o)?shahidActionButtons(o.id):'';
   const deliveryNote=o.telegramDeliveredAt?`<div class="delivery-proof">✓ Delivered to Telegram · ${esc(formatTs(o.telegramDeliveredAt))}</div>`:(o.deliveredAt?`<div class="delivery-proof">✓ Delivered · ${esc(formatTs(o.deliveredAt))}</div>`:'');
+  const credHtml=isAnghamiOrder(o)
+    ?`<div class="sub-cred"><span class="cust-sub-cred-line">👤 Profile: ${esc(prof||'—')}</span></div>`
+    :`<div class="sub-cred"><span class="cust-sub-cred-line">📧 ${esc(o.email)}</span><span class="cust-sub-cred-line">🔑 ${esc(o.pass)}</span></div>`;
   return `<div class="sub-card"><div class="sub-icon" style="background:${ico?'#fff':o.color};overflow:hidden;padding:0">${iconHtml}</div>
     <div class="sub-info"><div class="sub-name">${esc(o.product)}</div><div class="sub-plan">${esc(o.plan)} · ${esc(o.date)}</div>
-    <div class="sub-cred"><span class="cust-sub-cred-line">📧 ${esc(o.email)}</span><span class="cust-sub-cred-line">🔑 ${esc(o.pass)}</span></div>${deliveryNote}${ex}${shahidBtns}</div>
+    ${credHtml}${deliveryNote}${ex}${shahidBtns}</div>
     <div class="sub-right"><div class="sub-price">${fmt(o.price)}</div><span class="active-badge">${t('active','Active')}</span>
     <button ${jsOnClick('openSubOptions',o.id)} style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px;color:var(--text2);cursor:pointer;margin-top:4px;display:block;width:100%">••• ${t('options','Options')}</button>
     </div></div>`;
@@ -4488,6 +4513,12 @@ function renderShahidBulkForm(skey){
   <button class="inline-btn" id="btn-add-shahid-bulk" onclick="addShahidBulkAccounts()"><i class="ti ti-users" style="font-size:13px;vertical-align:-2px;margin-right:4px"></i>Add users to this Shahid plan</button>`;
 }
 function renderManualAddForm(skey,needsGmail,isShahidStock){
+  if(isAnghamiKey(skey)){
+    return `<div class="add-acc-form-title">Add Anghami slot</div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:12px">Plan is already set by the row you opened. Enter only the <strong>profile name</strong> to activate on that plan.</div>
+      <div class="field"><label>Profile name (required)</label><input type="text" id="new-acc-profile" placeholder="Exact Anghami profile name"></div>
+      <button class="inline-btn" id="btn-add-stock" onclick="addAccount()"><i class="ti ti-plus" style="font-size:13px;vertical-align:-2px;margin-right:4px"></i>Add to stock</button>`;
+  }
   const isShahidOne=isShahidOneUserKey(skey);
   const isShahidFull=isShahidFullKey(skey);
   let modeToggle='';
@@ -4536,10 +4567,12 @@ function renderAccModal(showForm=false){
   }
   if(list.length){
     html+=`<div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">${list.length} accounts (${availableCount(skey)} available)</div>
-    <div class="acc-list">${list.map((a,i)=>{const owner=a.used?findStockOwnerClient(a):null;return `<div class="acc-item">
-      <div class="acc-item-info"><div class="acc-email">${a.email}</div><div class="acc-pass">${a.pass}</div>
-      ${accountProfileName(a)?`<div class="acc-extra">👤 Profile: ${esc(accountProfileName(a))}</div>`:''}
-      ${a.profilePin?`<div class="acc-extra">🔢 PIN: ${esc(a.profilePin)}</div>`:''}
+    <div class="acc-list">${list.map((a,i)=>{const owner=a.used?findStockOwnerClient(a):null;const prof=accountProfileName(a);const anghami=isAnghamiKey(skey);return `<div class="acc-item">
+      <div class="acc-item-info">${anghami
+        ?`<div class="acc-email">👤 ${esc(prof||'No profile')}</div>`
+        :`<div class="acc-email">${esc(a.email)}</div><div class="acc-pass">${esc(a.pass)}</div>
+      ${prof?`<div class="acc-extra">👤 Profile: ${esc(prof)}</div>`:''}`}
+      ${!anghami&&a.profilePin?`<div class="acc-extra">🔢 PIN: ${esc(a.profilePin)}</div>`:''}
       ${a.expiryDate?`<div class="acc-extra" style="color:${daysLeft(a.expiryDate)!==null&&daysLeft(a.expiryDate)<=7?'var(--orange)':'var(--text3)'}">⏰ Expires: ${a.expiryDate}${daysLeft(a.expiryDate)!==null?' ('+daysLeft(a.expiryDate)+'d)':''}</div>`:''}
       </div>
       <span class="acc-badge ${a.used?'acc-used':'acc-avail'}">${a.used?'Used':'Available'}</span>
@@ -4561,6 +4594,7 @@ function renderAccModal(showForm=false){
   }
 }
 function isNetflixKey(k){return String(k||'').startsWith('netflix__');}
+function isAnghamiKey(k){return String(k||'').startsWith('anghami__');}
 function isNetflixOneUserKey(k){return /^netflix__1user__/.test(String(k||''));}
 function isNetflixFullKey(k){return /^netflix__full__/.test(String(k||''));}
 function netflixAliasAccounts(alias){
@@ -4758,9 +4792,25 @@ async function addNetflixBulkAccounts(){
 
 async function addAccount(){
   if(addStockInFlight){showToast('Stock add already in progress…');return;}
+  const isAnghamiStock=isAnghamiKey(curAccModalKey);
+  const profileName=(document.getElementById('new-acc-profile')?.value||'').trim();
+  if(isAnghamiStock){
+    if(!profileName){showToast('Profile name is required');return;}
+    setAddStockBusy(true);
+    try{
+      await apiStockAdd({skey:curAccModalKey,account:{profileName,email:'',pass:''}});
+    }catch(e){
+      showToast('⚠️ '+(e.message||'Save failed'));
+      return;
+    }finally{setAddStockBusy(false);}
+    renderAccModal(false);renderStockPanels();renderAdminExpiry();
+    showToast('✓ Anghami profile added to this plan');
+    logActivity('Anghami stock added',`${profileName} · ${curAccModalKey}`);
+    await autoFulfillPending(curAccModalKey);
+    return;
+  }
   const email=document.getElementById('new-acc-email').value.trim();
   const pass=document.getElementById('new-acc-pass').value.trim();
-  const profileName=(document.getElementById('new-acc-profile')?.value||'').trim();
   const expiryDate=document.getElementById('new-acc-expiry').value.trim();
   if(!email||!pass){showToast('Email and password are required');return;}
   const mainEmail=document.getElementById('new-acc-main-email')?.value.trim()||'';

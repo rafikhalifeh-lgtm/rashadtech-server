@@ -1080,8 +1080,15 @@ function netflixOneUserPlanKeys() {
 
 function stockAccountMatches(a, b) {
   if (!a || !b) return false;
-  if (normalizeEmail(a.email) !== normalizeEmail(b.email)) return false;
-  if (String(a.profileName || '').trim().toLowerCase() !== String(b.profileName || '').trim().toLowerCase()) return false;
+  const emailA = normalizeEmail(a.email);
+  const emailB = normalizeEmail(b.email);
+  const profileA = String(a.profileName || '').trim().toLowerCase();
+  const profileB = String(b.profileName || '').trim().toLowerCase();
+  if (!emailA && !emailB) {
+    return Boolean(profileA) && profileA === profileB;
+  }
+  if (emailA !== emailB) return false;
+  if (profileA !== profileB) return false;
   if (String(a.profilePin || '').trim() !== String(b.profilePin || '').trim()) return false;
   return true;
 }
@@ -1281,6 +1288,22 @@ function isNetflixFullStockKey(skey) {
 
 function isNetflixOneUserStockKey(skey) {
   return /^netflix__1user__/.test(String(skey || ''));
+}
+
+function isAnghamiStockKey(skey) {
+  return String(skey || '').startsWith('anghami__');
+}
+
+function validateStockAccountForAdd(skey, rowAccount) {
+  if (isAnghamiStockKey(skey)) {
+    const profileName = String(rowAccount && rowAccount.profileName || '').trim();
+    if (!profileName) return 'Profile name is required for Anghami stock';
+    return null;
+  }
+  if (!rowAccount || !rowAccount.email || !rowAccount.pass) {
+    return 'Each account needs email and password';
+  }
+  return null;
 }
 
 function customDayBlockKeyFromSkey(skey) {
@@ -1904,13 +1927,18 @@ async function notifyPurchaseFulfilled(user, product, planLabel, price, order, a
   const assignedCustomer = assignCustId !== null && assignCustId !== undefined
     ? (user.myCustomers || []).find(c => c.id === assignCustId)
     : null;
+  const profileLabel = orderProfileName(order);
+  const isAnghami = product && product.id === 'anghami';
   let adminMsg = `🎉 <b>New Purchase</b>\n\n📦 <b>Product:</b> ${product.name}\n📋 <b>Plan:</b> ${planLabel}\n💵 <b>Price:</b> $${Number(price).toFixed(2)}\n👤 <b>Buyer:</b> ${user.name} (${user.email})`;
   if (assignedCustomer) {
     adminMsg += `\n👥 <b>Assigned to:</b> ${assignedCustomer.fname} ${assignedCustomer.lname} (${assignedCustomer.code}${assignedCustomer.phone})`;
   }
-  adminMsg += `\n\n🔐 <b>Credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`;
-  const profileLabel = orderProfileName(order);
-  if (profileLabel) adminMsg += `\n👤 Profile: <code>${profileLabel}</code>`;
+  if (isAnghami) {
+    adminMsg += `\n\n👤 <b>Anghami profile:</b> <code>${profileLabel || '—'}</code>`;
+  } else {
+    adminMsg += `\n\n🔐 <b>Credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`;
+    if (profileLabel) adminMsg += `\n👤 Profile: <code>${profileLabel}</code>`;
+  }
   if (order.expiryDate) adminMsg += `\n📅 Expires: ${order.expiryDate}`;
   await sendTG(TG_ADMIN, adminMsg, 'HTML').catch((e) => console.error('Purchase admin TG:', e.message));
   if (!user.tgChatId) {
@@ -1943,10 +1971,14 @@ async function notifyPurchaseFulfilled(user, product, planLabel, price, order, a
   });
   const subLink = `https://rashadtech.tv?t=${token}`;
   const custName = assignedCustomer ? `${assignedCustomer.fname} ${assignedCustomer.lname}` : null;
-  let custMsg = assignedCustomer
-    ? `✅ <b>${product.name} subscription for ${custName}</b>\n\n📋 ${planLabel}\n👥 <b>For:</b> ${custName}\n\n🔐 <b>Credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`
-    : `✅ <b>Your ${product.name} is ready!</b>\n\n📋 ${planLabel}\n\n🔐 <b>Your credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`;
-  if (profileLabel) custMsg += `\n👤 Profile: <code>${profileLabel}</code>`;
+  let custMsg = isAnghami
+    ? (assignedCustomer
+      ? `✅ <b>Anghami+ for ${custName}</b>\n\n📋 ${planLabel}\n👥 <b>For:</b> ${custName}\n\n👤 <b>Profile name:</b> <code>${profileLabel || '—'}</code>`
+      : `✅ <b>Your Anghami+ is ready!</b>\n\n📋 ${planLabel}\n\n👤 <b>Profile name:</b> <code>${profileLabel || '—'}</code>`)
+    : (assignedCustomer
+      ? `✅ <b>${product.name} subscription for ${custName}</b>\n\n📋 ${planLabel}\n👥 <b>For:</b> ${custName}\n\n🔐 <b>Credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`
+      : `✅ <b>Your ${product.name} is ready!</b>\n\n📋 ${planLabel}\n\n🔐 <b>Your credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`);
+  if (!isAnghami && profileLabel) custMsg += `\n👤 Profile: <code>${profileLabel}</code>`;
   if (order.expiryDate) custMsg += `\n⏰ Expires: ${order.expiryDate}`;
   if (order.profilePin) custMsg += `\n🔢 PIN: <code>${order.profilePin}</code>`;
   custMsg += `\n\n🔗 <b>Subscription link:</b>\n${subLink}\n\nEnjoy! 🌟`;
@@ -2184,8 +2216,8 @@ app.post('/purchase', async (req, res) => {
         product:product.name,short:product.short,color:product.color,tc:product.tc,
         productId:product.id,plan:planLabel,price:Number(price),
         email:acc.email,pass:acc.pass,date:dateStr,expiryDate:acc.expiryDate||null,
-        ...(extraFields||{}),
         ...(accountProfileName(acc) ? { profileName: accountProfileName(acc) } : {}),
+        ...(extraFields||{}),
         ...(acc.profilePin?{profilePin:acc.profilePin}:{}),
         accKey:acc.accKey||'',mainEmail:acc.mainEmail||''
       };
@@ -2481,7 +2513,9 @@ app.post('/admin/stock-add', async (req, res) => {
     : (Array.isArray(skeys) && skeys.length ? skeys : (skey ? [skey] : []));
   if (batch) {
     if (!batch.length) return res.status(400).json({ error: 'No accounts to add' });
-  } else if (!keys.length || !account || !account.email || !account.pass) {
+  } else if (!keys.length || !account) {
+    return res.status(400).json({ error: 'Plan key and account required' });
+  } else if (!isAnghamiStockKey(keys[0]) && (!account.email || !account.pass)) {
     return res.status(400).json({ error: 'Plan key and account email/password required' });
   }
   const lockKeys = [];
@@ -2493,8 +2527,9 @@ app.post('/admin/stock-add', async (req, res) => {
       const rows = batch || [{ account, accKey, replicateToNetflixPlans: Boolean(replicateToNetflixPlans), skey }];
       for (const row of rows) {
         const rowAccount = row.account || account;
-        if (!rowAccount || !rowAccount.email || !rowAccount.pass) {
-          return { error: 'Each account needs email and password', status: 400 };
+        const validationError = validateStockAccountForAdd(row.skey || keys[0] || '', rowAccount);
+        if (validationError) {
+          return { error: validationError, status: 400 };
         }
         const rowKeys = row.replicateToNetflixPlans
           ? netflixOneUserPlanKeys()
@@ -2517,8 +2552,8 @@ app.post('/admin/stock-add', async (req, res) => {
         const accPayload = {
           used: false,
           accKey: sharedKey,
-          email: String(rowAccount.email).trim(),
-          pass: String(rowAccount.pass).trim(),
+          email: isAnghamiStockKey(firstKey) ? '' : String(rowAccount.email || '').trim(),
+          pass: isAnghamiStockKey(firstKey) ? '' : String(rowAccount.pass || '').trim(),
           ...(rowAccount.profileName ? { profileName: String(rowAccount.profileName).trim() } : {}),
           ...(rowAccount.expiryDate ? { expiryDate: String(rowAccount.expiryDate).trim() } : {}),
           ...(rowAccount.profilePin ? { profilePin: String(rowAccount.profilePin).trim() } : {}),
