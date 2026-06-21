@@ -1340,7 +1340,7 @@ async function updateSubscription(orderId,fields){
 }
 async function deliverPurchaseTelegram(order,p,planLabel,price,forCustomer){
   if(!currentUser?.tgChatId||!order)return false;
-  const data2={id:order.id,product:p.name,short:p.short,color:p.color,tc:p.tc,productId:p.id,plan:planLabel,email:order.email,pass:order.pass,expiryDate:order.expiryDate||'',profileName:order.profileName||'',profilePin:order.profilePin||'',accKey:order.accKey||'',mainEmail:order.mainEmail||'',codeEmail:order.email,inboxEmail:order.mainEmail||order.email};
+  const data2={id:order.id,product:p.name,short:p.short,color:p.color,tc:p.tc,productId:p.id,plan:planLabel,email:order.email,pass:order.pass,expiryDate:order.expiryDate||'',profileName:order.profileName||'',profilePin:order.profilePin||'',serviceLink:order.serviceLink||'',accKey:order.accKey||'',mainEmail:order.mainEmail||'',codeEmail:order.email,inboxEmail:order.mainEmail||order.email};
   const subLink=await createSubLinkUrl(data2);
   const who=forCustomer?`${forCustomer.fname} ${forCustomer.lname}`:null;
   const prof=orderProfileName(order);
@@ -1353,6 +1353,7 @@ async function deliverPurchaseTelegram(order,p,planLabel,price,forCustomer){
       ?`✅ <b>${p.name} subscription for ${who}</b>\n\n📋 ${planLabel}\n👥 <b>For:</b> ${who}\n\n🔐 <b>Credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`
       :`✅ <b>Your ${p.name} is ready!</b>\n\n📋 ${planLabel}\n\n🔐 <b>Your credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`);
   if(!isAnghami&&prof)custCred+=`\n👤 Profile: <code>${prof}</code>`;
+  if(isAnghami&&order.serviceLink)custCred+=`\n\n🔗 <b>Activate Anghami:</b>\n${order.serviceLink}`;
   if(order.expiryDate)custCred+=`\n⏰ Expires: ${order.expiryDate}`;
   if(order.profilePin)custCred+=`\n🔢 PIN: <code>${order.profilePin}</code>`;
   custCred+=`\n\n🔗 <b>Subscription link:</b>\n${subLink}\n\nEnjoy! 🌟`;
@@ -2252,7 +2253,7 @@ function subLinkDataFromOrder(o){
     id:o.id,product:o.product,short:o.short,color:o.color,tc:o.tc,
     productId:o.productId,plan:o.plan,email:o.email,pass:o.pass,
     expiryDate:o.expiryDate||'',profileName:o.profileName||'',
-    profilePin:o.profilePin||'',accKey:o.accKey||'',mainEmail:inboxEmail,
+    profilePin:o.profilePin||'',serviceLink:o.serviceLink||'',accKey:o.accKey||'',mainEmail:inboxEmail,
     codeEmail,inboxEmail,
     linkExpiry:Date.now()+(90*24*60*60*1000)
   };
@@ -2419,6 +2420,8 @@ async function checkSubLink(){
   _sublinkInboxEmail=found.inboxEmail||found.mainEmail||found.codeEmail||null;
   const extraRow=document.getElementById('sublink-extra-row');
   const profileRow=document.getElementById('sublink-profile-row');
+  const serviceLinkRow=document.getElementById('sublink-service-link-row');
+  const serviceLinkEl=document.getElementById('sublink-service-link');
   if(anghamiSub&&subProf){
     if(profileRow){
       profileRow.style.display='flex';
@@ -2431,6 +2434,18 @@ async function checkSubLink(){
   }else{
     if(extraRow)extraRow.style.display='none';
     if(profileRow)profileRow.style.display='none';
+  }
+  if(serviceLinkRow&&serviceLinkEl){
+    const svc=String(found.serviceLink||'').trim();
+    if(anghamiSub&&svc){
+      serviceLinkRow.style.display='block';
+      serviceLinkEl.href=svc;
+      serviceLinkEl.textContent=svc;
+    }else{
+      serviceLinkRow.style.display='none';
+      serviceLinkEl.href='#';
+      serviceLinkEl.textContent='Open link';
+    }
   }
   if(found.expiryDate){document.getElementById('sublink-expiry-row').style.display='flex';document.getElementById('sublink-expiry').textContent=found.expiryDate;}
   if(found.profilePin){document.getElementById('sublink-pin-row').style.display='flex';document.getElementById('sublink-profile-pin').textContent=found.profilePin;}
@@ -3240,7 +3255,7 @@ function subRow(o,forCustomer){
   const shahidBtns=isShahidOrder(o)?shahidActionButtons(o.id):'';
   const deliveryNote=o.telegramDeliveredAt?`<div class="delivery-proof">✓ Delivered to Telegram · ${esc(formatTs(o.telegramDeliveredAt))}</div>`:(o.deliveredAt?`<div class="delivery-proof">✓ Delivered · ${esc(formatTs(o.deliveredAt))}</div>`:'');
   const credHtml=isAnghamiOrder(o)
-    ?`<div class="sub-cred"><span class="cust-sub-cred-line">👤 Profile: ${esc(prof||'—')}</span></div>`
+    ?`<div class="sub-cred"><span class="cust-sub-cred-line">👤 Profile: ${esc(prof||'—')}</span>${o.serviceLink?`<a class="cust-sub-cred-line" href="${esc(o.serviceLink)}" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:none">🔗 Open Anghami link</a>`:''}</div>`
     :`<div class="sub-cred"><span class="cust-sub-cred-line">📧 ${esc(o.email)}</span><span class="cust-sub-cred-line">🔑 ${esc(o.pass)}</span></div>`;
   return `<div class="sub-card"><div class="sub-icon" style="background:${ico?'#fff':o.color};overflow:hidden;padding:0">${iconHtml}</div>
     <div class="sub-info"><div class="sub-name">${esc(o.product)}</div><div class="sub-plan">${esc(o.plan)} · ${esc(o.date)}</div>
@@ -4515,8 +4530,9 @@ function renderShahidBulkForm(skey){
 function renderManualAddForm(skey,needsGmail,isShahidStock){
   if(isAnghamiKey(skey)){
     return `<div class="add-acc-form-title">Add Anghami slot</div>
-      <div style="font-size:12px;color:var(--text2);margin-bottom:12px">Plan is already set by the row you opened. Enter only the <strong>profile name</strong> to activate on that plan.</div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:12px">Plan is set by the row you opened. Enter the <strong>profile name</strong> and the <strong>activation link</strong> you will give the customer.</div>
       <div class="field"><label>Profile name (required)</label><input type="text" id="new-acc-profile" placeholder="Exact Anghami profile name"></div>
+      <div class="field"><label>Activation link (required)</label><input type="url" id="new-acc-service-link" placeholder="https://..."></div>
       <button class="inline-btn" id="btn-add-stock" onclick="addAccount()"><i class="ti ti-plus" style="font-size:13px;vertical-align:-2px;margin-right:4px"></i>Add to stock</button>`;
   }
   const isShahidOne=isShahidOneUserKey(skey);
@@ -4569,7 +4585,8 @@ function renderAccModal(showForm=false){
     html+=`<div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">${list.length} accounts (${availableCount(skey)} available)</div>
     <div class="acc-list">${list.map((a,i)=>{const owner=a.used?findStockOwnerClient(a):null;const prof=accountProfileName(a);const anghami=isAnghamiKey(skey);return `<div class="acc-item">
       <div class="acc-item-info">${anghami
-        ?`<div class="acc-email">👤 ${esc(prof||'No profile')}</div>`
+        ?`<div class="acc-email">👤 ${esc(prof||'No profile')}</div>
+      ${a.serviceLink?`<div class="acc-extra"><a href="${esc(a.serviceLink)}" target="_blank" rel="noopener" style="color:var(--blue)">🔗 Activation link</a></div>`:''}`
         :`<div class="acc-email">${esc(a.email)}</div><div class="acc-pass">${esc(a.pass)}</div>
       ${prof?`<div class="acc-extra">👤 Profile: ${esc(prof)}</div>`:''}`}
       ${!anghami&&a.profilePin?`<div class="acc-extra">🔢 PIN: ${esc(a.profilePin)}</div>`:''}
@@ -4794,11 +4811,14 @@ async function addAccount(){
   if(addStockInFlight){showToast('Stock add already in progress…');return;}
   const isAnghamiStock=isAnghamiKey(curAccModalKey);
   const profileName=(document.getElementById('new-acc-profile')?.value||'').trim();
+  const serviceLink=(document.getElementById('new-acc-service-link')?.value||'').trim();
   if(isAnghamiStock){
     if(!profileName){showToast('Profile name is required');return;}
+    if(!serviceLink){showToast('Activation link is required');return;}
+    if(!/^https?:\/\//i.test(serviceLink)){showToast('Enter a valid http(s) link');return;}
     setAddStockBusy(true);
     try{
-      await apiStockAdd({skey:curAccModalKey,account:{profileName,email:'',pass:''}});
+      await apiStockAdd({skey:curAccModalKey,account:{profileName,serviceLink,email:'',pass:''}});
     }catch(e){
       showToast('⚠️ '+(e.message||'Save failed'));
       return;
@@ -5572,6 +5592,10 @@ if(document.readyState==='loading'){
         <div id="sublink-profile-row" style="display:none;justify-content:space-between;align-items:center;margin-top:8px">
           <span style="font-size:12px;color:var(--text2)">Profile Name</span>
           <span id="sublink-profile-name" style="font-size:13px;font-weight:600;color:var(--blue);cursor:pointer" onclick="copyText(this)"></span>
+        </div>
+        <div id="sublink-service-link-row" style="display:none;margin-top:12px">
+          <div style="font-size:12px;color:var(--text2);margin-bottom:6px">Activation link</div>
+          <a id="sublink-service-link" href="#" target="_blank" rel="noopener" class="shahid-reset-link" style="display:block">Open link</a>
         </div>
         <div id="sublink-pin-row" style="display:none;justify-content:space-between;align-items:center;margin-top:8px">
           <span style="font-size:12px;color:var(--text2)">Profile PIN</span>

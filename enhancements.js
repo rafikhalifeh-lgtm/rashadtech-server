@@ -177,6 +177,7 @@ function registerEnhancements(app, deps) {
       expiryDate: account.expiryDate || null,
       profileName: pendingOrder.profileName || account.profileName || account.extra || '',
       profilePin: account.profilePin || '',
+      serviceLink: pendingOrder.serviceLink || account.serviceLink || '',
       accKey: account.accKey || '',
       mainEmail: account.mainEmail || ''
     };

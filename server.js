@@ -1294,10 +1294,25 @@ function isAnghamiStockKey(skey) {
   return String(skey || '').startsWith('anghami__');
 }
 
+function isAnghamiSubscription(sub) {
+  return Boolean(sub && (sub.productId === 'anghami' || /anghami/i.test(sub.product || '')));
+}
+
+function isValidLinkSubscription(subscription) {
+  if (!subscription) return false;
+  if (isAnghamiSubscription(subscription)) {
+    return Boolean(String(subscription.profileName || '').trim());
+  }
+  return Boolean(subscription.email && subscription.pass);
+}
+
 function validateStockAccountForAdd(skey, rowAccount) {
   if (isAnghamiStockKey(skey)) {
     const profileName = String(rowAccount && rowAccount.profileName || '').trim();
+    const serviceLink = String(rowAccount && rowAccount.serviceLink || '').trim();
     if (!profileName) return 'Profile name is required for Anghami stock';
+    if (!serviceLink) return 'Activation link is required for Anghami stock';
+    if (!/^https?:\/\//i.test(serviceLink)) return 'Enter a valid http(s) activation link';
     return null;
   }
   if (!rowAccount || !rowAccount.email || !rowAccount.pass) {
@@ -1801,7 +1816,7 @@ app.post('/links/create', async (req, res) => {
   const session = requireSession(req, res, ['admin', 'user']);
   if (!session) return;
   const { subscription } = req.body;
-  if (!subscription || !subscription.email || !subscription.pass) return res.status(400).json({ error: 'Invalid subscription link data' });
+  if (!subscription || !isValidLinkSubscription(subscription)) return res.status(400).json({ error: 'Invalid subscription link data' });
   try {
     const token = encodeLinkToken({
       subscription,
@@ -1891,6 +1906,7 @@ function enrichSubscriptionFromLiveOrder(data, subscription, ownerEmail) {
     ...subscription,
     profileName: profileName || subscription.profileName || '',
     profilePin: order.profilePin || subscription.profilePin || '',
+    serviceLink: order.serviceLink || subscription.serviceLink || '',
     expiryDate: order.expiryDate || subscription.expiryDate || ''
   };
 }
@@ -1935,6 +1951,7 @@ async function notifyPurchaseFulfilled(user, product, planLabel, price, order, a
   }
   if (isAnghami) {
     adminMsg += `\n\n👤 <b>Anghami profile:</b> <code>${profileLabel || '—'}</code>`;
+    if (order.serviceLink) adminMsg += `\n🔗 <b>Activation link:</b> ${order.serviceLink}`;
   } else {
     adminMsg += `\n\n🔐 <b>Credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`;
     if (profileLabel) adminMsg += `\n👤 Profile: <code>${profileLabel}</code>`;
@@ -1958,6 +1975,7 @@ async function notifyPurchaseFulfilled(user, product, planLabel, price, order, a
     expiryDate: order.expiryDate || '',
     profileName: order.profileName || '',
     profilePin: order.profilePin || '',
+    serviceLink: order.serviceLink || '',
     accKey: order.accKey || '',
     mainEmail: order.mainEmail || '',
     codeEmail: order.email,
@@ -1979,6 +1997,7 @@ async function notifyPurchaseFulfilled(user, product, planLabel, price, order, a
       ? `✅ <b>${product.name} subscription for ${custName}</b>\n\n📋 ${planLabel}\n👥 <b>For:</b> ${custName}\n\n🔐 <b>Credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`
       : `✅ <b>Your ${product.name} is ready!</b>\n\n📋 ${planLabel}\n\n🔐 <b>Your credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`);
   if (!isAnghami && profileLabel) custMsg += `\n👤 Profile: <code>${profileLabel}</code>`;
+  if (isAnghami && order.serviceLink) custMsg += `\n\n🔗 <b>Activate Anghami:</b>\n${order.serviceLink}`;
   if (order.expiryDate) custMsg += `\n⏰ Expires: ${order.expiryDate}`;
   if (order.profilePin) custMsg += `\n🔢 PIN: <code>${order.profilePin}</code>`;
   custMsg += `\n\n🔗 <b>Subscription link:</b>\n${subLink}\n\nEnjoy! 🌟`;
@@ -2216,6 +2235,7 @@ app.post('/purchase', async (req, res) => {
         product:product.name,short:product.short,color:product.color,tc:product.tc,
         productId:product.id,plan:planLabel,price:Number(price),
         email:acc.email,pass:acc.pass,date:dateStr,expiryDate:acc.expiryDate||null,
+        ...(acc.serviceLink ? { serviceLink: acc.serviceLink } : {}),
         ...(accountProfileName(acc) ? { profileName: accountProfileName(acc) } : {}),
         ...(extraFields||{}),
         ...(acc.profilePin?{profilePin:acc.profilePin}:{}),
@@ -2555,6 +2575,7 @@ app.post('/admin/stock-add', async (req, res) => {
           email: isAnghamiStockKey(firstKey) ? '' : String(rowAccount.email || '').trim(),
           pass: isAnghamiStockKey(firstKey) ? '' : String(rowAccount.pass || '').trim(),
           ...(rowAccount.profileName ? { profileName: String(rowAccount.profileName).trim() } : {}),
+          ...(rowAccount.serviceLink ? { serviceLink: String(rowAccount.serviceLink).trim() } : {}),
           ...(rowAccount.expiryDate ? { expiryDate: String(rowAccount.expiryDate).trim() } : {}),
           ...(rowAccount.profilePin ? { profilePin: String(rowAccount.profilePin).trim() } : {}),
           ...(rowAccount.mainEmail ? { mainEmail: String(rowAccount.mainEmail).trim() } : {}),
