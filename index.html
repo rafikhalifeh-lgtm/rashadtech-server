@@ -1355,8 +1355,15 @@ let _shahidFixOrder=null;
 let editingCustId=null;
 
 function collectAssignedSubs(user){
+  const ownIds=new Set((user?.orders||[]).map(o=>String(o.id||'').replace(/^#/,'')));
+  const seen=new Set();
   const out=[];
-  (user?.myCustomers||[]).forEach(c=>(c.subs||[]).forEach(o=>out.push({order:o,customer:c})));
+  (user?.myCustomers||[]).forEach(c=>(c.subs||[]).forEach(o=>{
+    const oid=String(o.id||'').replace(/^#/,'');
+    if(oid&&(ownIds.has(oid)||seen.has(oid)))return;
+    if(oid)seen.add(oid);
+    out.push({order:o,customer:c});
+  }));
   return out;
 }
 function userPurchaseSummary(u){
@@ -1459,7 +1466,11 @@ async function deliverPurchaseTelegram(order,p,planLabel,price,forCustomer){
 }
 
 function applyDataSnapshot(data){
-  const keepCustomers=currentUser?.email?cloneMyCustomersListLocal(currentUser.myCustomers):null;
+  const keepUser=currentUser?.email?{
+    email:currentUser.email,
+    myCustomers:cloneMyCustomersListLocal(mergeMyCustomersClient(currentUser.myCustomers,readCachedMyCustomers(currentUser.email))),
+    orders:Array.isArray(currentUser.orders)?currentUser.orders.map(o=>({...o})):[]
+  }:null;
   const incoming=data||{};
   _jbCache={...(_jbCache||{}),...incoming};
   if(incoming.pending)_jbCache.pending=incoming.pending;
@@ -1473,11 +1484,12 @@ function applyDataSnapshot(data){
   if(currentUser){
     const fu=users.find(x=>normEmail(x.email)===normEmail(currentUser.email));
     if(fu){
-      if(keepCustomers?.length){
-        const merged=mergeMyCustomersClient(fu.myCustomers,keepCustomers);
-        if(scoreMyCustomers(merged)>scoreMyCustomers(fu.myCustomers))fu.myCustomers=merged;
+      if(keepUser){
+        fu.myCustomers=mergeMyCustomersClient(fu.myCustomers,keepUser.myCustomers);
+        if((keepUser.orders||[]).length>(fu.orders||[]).length)fu.orders=keepUser.orders;
       }
       currentUser=fu;
+      syncCurrentUserIntoUsers();
     }
   }
 }
@@ -2310,9 +2322,9 @@ async function subOptionAutoRenew(){
 
 function filterSubs(){
   const q=(document.getElementById('subs-search')?.value||'').toLowerCase();
-  document.querySelectorAll('.sub-card').forEach(card=>{
+  document.querySelectorAll('.sub-card,.sub-row').forEach(card=>{
     const text=card.textContent.toLowerCase();
-    card.style.display=text.includes(q)?'':'none';
+    card.style.display=!q||text.includes(q)?'':'none';
   });
 }
 
@@ -3066,14 +3078,19 @@ async function refreshMyCustomersTab(){
     if(j.data)applyDataSnapshot(j.data);
     else bindCurrentUserFromUsers(j.user);
     renderMyCustomers();
-    const after=(currentUser.myCustomers||[]).length;
-    if(after>before)showToast(`✓ Restored ${after} customer${after!==1?'s':''}`);
-    else if(after)showToast(`✓ ${after} customer${after!==1?'s':''} loaded`);
+    const after=scoreMyCustomers(currentUser.myCustomers);
+    if(after>before)showToast(`✓ Restored ${(currentUser.myCustomers||[]).length} customer${(currentUser.myCustomers||[]).length!==1?'s':''}`);
+    else if(after)showToast(`✓ ${(currentUser.myCustomers||[]).length} customer${(currentUser.myCustomers||[]).length!==1?'s':''} loaded`);
   }catch(e){
     console.warn('customers refresh:',e.message);
     try{
       const data=await jbRead();
-      if(data){applyDataSnapshot(data);bindCurrentUserFromUsers();renderMyCustomers();}
+      if(data){
+        applyDataSnapshot(data);
+        bindCurrentUserFromUsers();
+        renderMyCustomers();
+        renderSubs();
+      }
     }catch(e2){}
   }
 }
@@ -4282,7 +4299,17 @@ function bindCurrentUserFromUsers(fallback){
   const ref=fallback||currentUser;
   if(!ref?.email)return currentUser;
   const fu=users.find(x=>normEmail(x.email)===normEmail(ref.email));
-  currentUser=fu||ref;
+  if(fu){
+    const overlay=mergeMyCustomersClient(
+      mergeMyCustomersClient(currentUser?.myCustomers,ref.myCustomers),
+      readCachedMyCustomers(ref.email)
+    );
+    fu.myCustomers=mergeMyCustomersClient(fu.myCustomers,overlay);
+    currentUser=fu;
+    syncCurrentUserIntoUsers();
+    return currentUser;
+  }
+  currentUser=ref;
   return currentUser;
 }
 
@@ -4313,16 +4340,27 @@ function openEditMyCust(custId){
   document.getElementById('addmycust-submit-btn').textContent=currentLang==='ar'?'حفظ التغييرات':'Save changes';
   openModal('addmycust-modal');
 }
-async function saveMyCustomersToServer(){
+async function saveMyCustomersToServer(opts={}){
   if(!currentUser)throw new Error('Not logged in');
+  syncPausedUntil=Date.now()+20000;
   syncCurrentUserIntoUsers();
+  let list=currentUser.myCustomers||[];
+  const cached=readCachedMyCustomers(currentUser.email);
+  if(!list.length&&scoreMyCustomers(cached)>0&&!opts.confirmEmpty){
+    list=mergeMyCustomersClient(cached,list);
+    currentUser.myCustomers=list;
+    syncCurrentUserIntoUsers();
+  }
+  if(!list.length&&!opts.confirmEmpty&&scoreMyCustomers(cached)>0){
+    throw new Error('Save blocked — your customer list looked empty. Open Customers tab to restore.');
+  }
   const j=await rtApi('/customer/my-customers',{
     method:'POST',
-    body:JSON.stringify({myCustomers:currentUser.myCustomers||[]})
+    body:JSON.stringify({myCustomers:list,confirmEmpty:Boolean(opts.confirmEmpty)})
   });
   if(j.data)applyDataSnapshot(j.data);
   else bindCurrentUserFromUsers(j.user);
-  syncPausedUntil=Date.now()+8000;
+  syncPausedUntil=Date.now()+20000;
   return j;
 }
 async function saveMyCustomer(){
@@ -4359,7 +4397,7 @@ async function deleteMyCustomer(custId){
   try{
   currentUser.myCustomers=(currentUser.myCustomers||[]).filter(x=>x.id!==custId);
   syncCurrentUserIntoUsers();
-  await saveMyCustomersToServer();renderMyCustomers();renderSubs();showToast(currentLang==='ar'?'✓ تم حذف العميل':'✓ Customer deleted');
+  await saveMyCustomersToServer({confirmEmpty:true});renderMyCustomers();renderSubs();showToast(currentLang==='ar'?'✓ تم حذف العميل':'✓ Customer deleted');
   }catch(e){showToast('⚠️ '+(e.message||'Could not delete customer'));}
 }
 function renderMyCustomers(){
@@ -5871,11 +5909,11 @@ function startRealtimeSync(){
     if(saveDataInFlight)return;
     try{
       _jbCache=await jbRead();
-      if(_jbCache.users&&_jbCache.users.length>0){
-        users=_jbCache.users;
+      if(_jbCache){
+        applyDataSnapshot(_jbCache);
+        bindCurrentUserFromUsers();
         if(currentUser){
-          const fu=users.find(x=>normEmail(x.email)===normEmail(currentUser.email));
-          if(fu){currentUser=fu;renderSubs();updateBal();renderTx();renderMyCustomers();}
+          renderSubs();updateBal();renderTx();renderMyCustomers();
         }
       }
       if(_jbCache.pending&&currentUser)renderSubs();

@@ -1388,10 +1388,12 @@ async function collectFullDataRecoverySources(data) {
   const seen = new Set();
   const add = (snapshot) => {
     if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) return;
-    const key = JSON.stringify([
-      Array.isArray(snapshot.users) ? snapshot.users.length : 0,
-      scoreMyCustomers((snapshot.users || []).flatMap(u => (u && u.myCustomers) || []))
-    ]);
+    const key = JSON.stringify(
+      (Array.isArray(snapshot.users) ? snapshot.users : []).map((u) => ({
+        e: normalizeEmail(u && u.email),
+        s: scoreMyCustomers(u && u.myCustomers)
+      }))
+    );
     if (seen.has(key)) return;
     seen.add(key);
     sources.push(snapshot);
@@ -1420,8 +1422,9 @@ function recoverMyCustomersForUser(data, user, sources) {
   const recovered = mergeMyCustomersFromSnapshots(sources || [data], user.email);
   if (!recovered.length) return false;
   const current = Array.isArray(user.myCustomers) ? user.myCustomers : [];
-  if (scoreMyCustomers(recovered) <= scoreMyCustomers(current)) return false;
-  user.myCustomers = recovered;
+  const merged = mergeMyCustomers(current, recovered);
+  if (scoreMyCustomers(merged) < scoreMyCustomers(current)) return false;
+  user.myCustomers = merged;
   return true;
 }
 
@@ -2330,7 +2333,7 @@ async function notifyPurchaseFulfilled(user, product, planLabel, price, order, a
 app.post('/customer/my-customers', async (req, res) => {
   const session = requireSession(req, res, ['user']);
   if (!session) return;
-  const { myCustomers } = req.body || {};
+  const { myCustomers, confirmEmpty } = req.body || {};
   if (!Array.isArray(myCustomers)) return res.status(400).json({ error: 'Invalid customers list' });
   try {
     await enqueueDbWrite(async () => {
@@ -2338,7 +2341,11 @@ app.post('/customer/my-customers', async (req, res) => {
       data.users = Array.isArray(data.users) ? data.users : [];
       const user = data.users.find(u => normalizeEmail(u.email) === session.email);
       if (!user) throw new Error('User not found');
-      user.myCustomers = applyMyCustomersWrite(user.myCustomers, myCustomers, { allowEmpty: true });
+      const prev = Array.isArray(user.myCustomers) ? user.myCustomers : [];
+      if (!myCustomers.length && prev.length && !confirmEmpty) {
+        throw new Error('Refusing to wipe sub-customers without confirmation');
+      }
+      user.myCustomers = applyMyCustomersWrite(user.myCustomers, myCustomers, { allowEmpty: Boolean(confirmEmpty) });
       return writeDbFast(data, { backupSource: data });
     });
     const data = await readJsonBinRaw({ skipRecoverWrite: true });
@@ -2366,8 +2373,9 @@ app.post('/customer/my-customers/recover', async (req, res) => {
         merged = mergeMyCustomers(merged, clientCustomers);
       }
       const before = scoreMyCustomers(user.myCustomers);
-      const after = scoreMyCustomers(merged);
-      if (after > before) user.myCustomers = cloneMyCustomersList(merged);
+      const mergedFinal = mergeMyCustomers(user.myCustomers, merged);
+      const after = scoreMyCustomers(mergedFinal);
+      if (after >= before) user.myCustomers = cloneMyCustomersList(mergedFinal);
       return writeDbFast(data, { backupSource: data });
     });
     const data = await readJsonBinRaw({ skipRecoverWrite: true });
