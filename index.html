@@ -4168,6 +4168,18 @@ function openEditMyCust(custId){
   document.getElementById('addmycust-submit-btn').textContent=currentLang==='ar'?'حفظ التغييرات':'Save changes';
   openModal('addmycust-modal');
 }
+async function saveMyCustomersToServer(){
+  if(!currentUser)throw new Error('Not logged in');
+  syncCurrentUserIntoUsers();
+  const j=await rtApi('/customer/my-customers',{
+    method:'POST',
+    body:JSON.stringify({myCustomers:currentUser.myCustomers||[]})
+  });
+  if(j.data)applyDataSnapshot(j.data);
+  else bindCurrentUserFromUsers(j.user);
+  syncPausedUntil=Date.now()+8000;
+  return j;
+}
 async function saveMyCustomer(){
   const code=document.getElementById('mc-code').value;
   const phone=document.getElementById('mc-phone').value.trim();
@@ -4177,18 +4189,20 @@ async function saveMyCustomer(){
   const pass=document.getElementById('mc-pass').value.trim();
   if(!phone||!fname||!lname){document.getElementById('addmycust-err').style.display='block';return;}
   document.getElementById('addmycust-err').style.display='none';
+  try{
   syncCurrentUserIntoUsers();
   currentUser.myCustomers=currentUser.myCustomers||[];
   if(editingCustId!=null){
     const c=currentUser.myCustomers.find(x=>x.id===editingCustId);
     if(c){c.code=code;c.phone=phone;c.fname=fname;c.lname=lname;c.email=email;c.pass=pass;}
     syncCurrentUserIntoUsers();
-    await saveData();closeModal('addmycust-modal');editingCustId=null;renderMyCustomers();showToast(currentLang==='ar'?'✓ تم تحديث العميل':'✓ Customer updated');
+    await saveMyCustomersToServer();closeModal('addmycust-modal');editingCustId=null;renderMyCustomers();showToast(currentLang==='ar'?'✓ تم تحديث العميل':'✓ Customer updated');
     return;
   }
   currentUser.myCustomers.push({id:Date.now(),code,phone,fname,lname,email,pass,tgChatId:'',subs:[]});
   syncCurrentUserIntoUsers();
-  await saveData();closeModal('addmycust-modal');renderMyCustomers();showToast(currentLang==='ar'?'✓ تمت إضافة العميل':'✓ Customer added');
+  await saveMyCustomersToServer();closeModal('addmycust-modal');renderMyCustomers();showToast(currentLang==='ar'?'✓ تمت إضافة العميل':'✓ Customer added');
+  }catch(e){showToast('⚠️ '+(e.message||'Could not save customer'));}
 }
 async function deleteMyCustomer(custId){
   const c=currentUser?.myCustomers?.find(x=>x.id===custId);
@@ -4198,9 +4212,11 @@ async function deleteMyCustomer(custId){
     ?`Delete ${c.fname} ${c.lname}? This will also remove ${subCount} subscription(s) under this customer.`
     :`Delete ${c.fname} ${c.lname}?`;
   if(!confirm(msg))return;
+  try{
   currentUser.myCustomers=(currentUser.myCustomers||[]).filter(x=>x.id!==custId);
   syncCurrentUserIntoUsers();
-  await saveData();renderMyCustomers();renderSubs();showToast(currentLang==='ar'?'✓ تم حذف العميل':'✓ Customer deleted');
+  await saveMyCustomersToServer();renderMyCustomers();renderSubs();showToast(currentLang==='ar'?'✓ تم حذف العميل':'✓ Customer deleted');
+  }catch(e){showToast('⚠️ '+(e.message||'Could not delete customer'));}
 }
 function renderMyCustomers(){
   if(!currentUser)return;const el=document.getElementById('my-cust-list');const cnt=document.getElementById('my-cust-count');
@@ -4209,32 +4225,43 @@ function renderMyCustomers(){
   el.innerHTML=custs.map(c=>{
     const sh=c.subs&&c.subs.length?`<div class="cust-subs-list" id="cust-subs-${c.id}" style="display:none">${c.subs.map(s=>{
       const cleanId=(s.id||'').replace('#','');
-      return `<div class="cust-sub-row">
-      <div class="cust-sub-icon" style="background:${s.color};color:${s.tc}">${s.short}</div>
-      <div class="cust-sub-info"><div class="cust-sub-name">${esc(s.product)} · ${esc(s.plan)}</div><div class="cust-sub-cred">${isAnghamiOrder(s)
+      const credHtml=isAnghamiOrder(s)
         ?`${s.serviceLink?`<span class="cust-sub-cred-line"><a href="${esc(s.serviceLink)}" target="_blank" rel="noopener" style="color:var(--blue)">🔗 Activation link</a></span>`:''}${s.expiryDate?`<span class="cust-sub-cred-line">⏰ Exp: ${esc(s.expiryDate)}</span>`:''}`
-        :`<span class="cust-sub-cred-line">📧 ${esc(s.email)}</span><span class="cust-sub-cred-line">🔑 ${esc(s.pass)}</span>`}${orderProfileName(s)&&!isAnghamiOrder(s)?`<span class="cust-sub-cred-line">Profile: ${esc(orderProfileName(s))}</span>`:''}${s.profilePin?`<span class="cust-sub-cred-line">PIN: ${esc(s.profilePin)}</span>`:''}${s.expiryDate&&!isAnghamiOrder(s)?`<span class="cust-sub-cred-line">Exp: ${esc(s.expiryDate)}</span>`:''}</div>
-      <div style="text-align:right">
-        <div style="font-size:11px;color:var(--text3);margin-bottom:4px">${s.date}</div>
-        
-        <button onclick="copySubLinkForCust('${cleanId}',${c.id})" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:3px 7px;font-size:10px;color:var(--text2);cursor:pointer;display:block;width:100%;margin-bottom:3px">🔗 Copy Link</button>
-        <button ${jsOnClick('setSubCustProfileName',s.id,c.id)} style="background:var(--blue-bg);color:var(--blue);border:1px solid var(--blue-border);border-radius:4px;padding:3px 7px;font-size:10px;font-weight:600;cursor:pointer;display:block;width:100%">👤 ${orderProfileName(s)?'Profile: '+orderProfileName(s):'Set Profile'}</button>
-      </div></div>`;}).join('')}</div>`:'';
-    return `<div class="cust-card"><div class="cust-card-top">
-      <div class="cust-avatar">${String(c.fname||'?').charAt(0).toUpperCase()}</div>
-      <div class="cust-info"><div class="cust-name">${esc(c.fname)} ${esc(c.lname)}</div>
-      <div class="cust-phone">📱 ${esc(c.code)} ${esc(c.phone)}</div>
-      ${c.email?`<div class="cust-phone" style="font-family:var(--mono)">📧 ${esc(c.email)}</div>`:''}
-      ${c.pass?`<div class="cust-phone" style="font-family:var(--mono)">🔑 ${esc(c.pass)}</div>`:''}
-      <div class="cust-subs-count">${c.subs&&c.subs.length?c.subs.length+' subscription'+(c.subs.length!==1?'s':''):'No subscriptions yet'}</div></div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
-        <button class="btn-add-sub" onclick="openCustomerChat(${c.id})">💬 Open chat</button>
-        <button class="btn-add-sub" onclick="toggleCustomerSubs(${c.id})">📺 Subscriptions</button>
-        <button class="btn-add-sub" onclick="openAssignSub(${c.id})"><i class="ti ti-plus" style="font-size:14px"></i> Add subscription</button>
-        <button class="btn-add-sub" onclick="openEditMyCust(${c.id})">✏️ Edit</button>
-        <button class="btn-add-sub" onclick="deleteMyCustomer(${c.id})" style="color:var(--red);border-color:var(--red-border)">🗑 Delete</button>
+        :`<span class="cust-sub-cred-line">📧 ${esc(s.email)}</span><span class="cust-sub-cred-line">🔑 ${esc(s.pass)}</span>`;
+      const extraHtml=`${orderProfileName(s)&&!isAnghamiOrder(s)?`<span class="cust-sub-cred-line">Profile: ${esc(orderProfileName(s))}</span>`:''}${s.profilePin?`<span class="cust-sub-cred-line">PIN: ${esc(s.profilePin)}</span>`:''}${s.expiryDate&&!isAnghamiOrder(s)?`<span class="cust-sub-cred-line">Exp: ${esc(s.expiryDate)}</span>`:''}`;
+      return `<div class="cust-sub-row">
+        <div class="cust-sub-icon" style="background:${s.color};color:${s.tc}">${s.short}</div>
+        <div class="cust-sub-info">
+          <div class="cust-sub-name">${esc(s.product)} · ${esc(s.plan)}</div>
+          <div class="cust-sub-cred">${credHtml}${extraHtml}</div>
+        </div>
+        <div class="cust-sub-actions" style="text-align:right">
+          <div style="font-size:11px;color:var(--text3);margin-bottom:4px">${s.date}</div>
+          <button onclick="copySubLinkForCust('${cleanId}',${c.id})" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:3px 7px;font-size:10px;color:var(--text2);cursor:pointer;display:block;width:100%;margin-bottom:3px">🔗 Copy Link</button>
+          <button ${jsOnClick('setSubCustProfileName',s.id,c.id)} style="background:var(--blue-bg);color:var(--blue);border:1px solid var(--blue-border);border-radius:4px;padding:3px 7px;font-size:10px;font-weight:600;cursor:pointer;display:block;width:100%">👤 ${orderProfileName(s)?'Profile: '+orderProfileName(s):'Set Profile'}</button>
+        </div>
+      </div>`;
+    }).join('')}</div>`:'';
+    return `<div class="cust-card">
+      <div class="cust-card-top">
+        <div class="cust-avatar">${String(c.fname||'?').charAt(0).toUpperCase()}</div>
+        <div class="cust-info">
+          <div class="cust-name">${esc(c.fname)} ${esc(c.lname)}</div>
+          <div class="cust-phone">📱 ${esc(c.code)} ${esc(c.phone)}</div>
+          ${c.email?`<div class="cust-phone" style="font-family:var(--mono)">📧 ${esc(c.email)}</div>`:''}
+          ${c.pass?`<div class="cust-phone" style="font-family:var(--mono)">🔑 ${esc(c.pass)}</div>`:''}
+          <div class="cust-subs-count">${c.subs&&c.subs.length?c.subs.length+' subscription'+(c.subs.length!==1?'s':''):'No subscriptions yet'}</div>
+        </div>
+        <div class="cust-card-actions" style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+          <button class="btn-add-sub" onclick="openCustomerChat(${c.id})">💬 Open chat</button>
+          <button class="btn-add-sub" onclick="toggleCustomerSubs(${c.id})">📺 Subscriptions</button>
+          <button class="btn-add-sub" onclick="openAssignSub(${c.id})"><i class="ti ti-plus" style="font-size:14px"></i> Add subscription</button>
+          <button class="btn-add-sub" onclick="openEditMyCust(${c.id})">✏️ Edit</button>
+          <button class="btn-add-sub" onclick="deleteMyCustomer(${c.id})" style="color:var(--red);border-color:var(--red-border)">🗑 Delete</button>
+        </div>
       </div>
-    </div>${sh}</div>`;
+      ${sh}
+    </div>`;
   }).join('');
 }
 function openAssignSub(custId){

@@ -918,6 +918,24 @@ function mergeMyCustomers(prev, incoming) {
   return Array.from(byId.values());
 }
 
+function applyMyCustomersWrite(prev, incoming, options = {}) {
+  const inc = Array.isArray(incoming) ? incoming : [];
+  const prevList = Array.isArray(prev) ? prev : [];
+  if (!inc.length && prevList.length && !options.allowEmpty) return prevList;
+  const prevById = new Map();
+  prevList.forEach((c) => {
+    if (c && c.id != null) prevById.set(String(c.id), c);
+  });
+  return inc.map((c) => {
+    if (!c || c.id == null) return null;
+    const old = prevById.get(String(c.id)) || {};
+    const subs = Array.isArray(c.subs) && c.subs.length
+      ? c.subs
+      : (Array.isArray(old.subs) ? old.subs : []);
+    return { ...old, ...c, subs };
+  }).filter(Boolean);
+}
+
 function mergeUserWrite(existing, incoming, session) {
   const next = { ...(existing || {}) };
   const email = session.email;
@@ -2086,6 +2104,29 @@ async function notifyPurchaseFulfilled(user, product, planLabel, price, order, a
     return false;
   }
 }
+
+app.post('/customer/my-customers', async (req, res) => {
+  const session = requireSession(req, res, ['user']);
+  if (!session) return;
+  const { myCustomers } = req.body || {};
+  if (!Array.isArray(myCustomers)) return res.status(400).json({ error: 'Invalid customers list' });
+  try {
+    await enqueueDbWrite(async () => {
+      const data = await readDbForWrite();
+      data.users = Array.isArray(data.users) ? data.users : [];
+      const user = data.users.find(u => normalizeEmail(u.email) === session.email);
+      if (!user) throw new Error('User not found');
+      user.myCustomers = applyMyCustomersWrite(user.myCustomers, myCustomers, { allowEmpty: true });
+      return writeDbFast(data, { backupSource: data });
+    });
+    const data = await readJsonBinRaw({ skipRecoverWrite: true });
+    const user = (data.users || []).find(u => normalizeEmail(u.email) === session.email);
+    res.json({ success: true, user: sanitizeUser(user), data: safeDataForSession(data, session) });
+  } catch (e) {
+    console.error('My customers save error:', e.message);
+    res.status(500).json({ error: e.message || 'Could not save customers' });
+  }
+});
 
 app.post('/customer/profile', async (req, res) => {
   const session = requireSession(req, res, ['user']);
