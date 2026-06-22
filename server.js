@@ -1319,6 +1319,16 @@ function isValidLinkSubscription(subscription) {
   return Boolean(subscription.email && subscription.pass);
 }
 
+function validateAnghamiExtraFields(extraFields) {
+  const customerEmail = String(extraFields && extraFields.customerEmail || '').trim();
+  const customerPass = String(extraFields && extraFields.customerPass || '').trim();
+  const customerPhone = String(extraFields && extraFields.customerPhone || '').trim();
+  if (!customerEmail || !customerPass || !customerPhone) {
+    return 'Anghami account email, password, and phone are required';
+  }
+  return null;
+}
+
 function validateStockAccountForAdd(skey, rowAccount) {
   if (isAnghamiStockKey(skey)) {
     const serviceLink = String(rowAccount && rowAccount.serviceLink || '').trim();
@@ -1933,14 +1943,20 @@ function syncUserContact(user, { tgChatId, name } = {}) {
   return user;
 }
 
-async function notifyPurchasePending(user, product, planLabel, price, assignCustId) {
+async function notifyPurchasePending(user, product, planLabel, price, assignCustId, pendingOrder = {}) {
   const assignedCustomer = assignCustId !== null && assignCustId !== undefined
     ? (user.myCustomers || []).find(c => c.id === assignCustId)
     : null;
   const assignNote = assignedCustomer
     ? `\n👥 For: ${assignedCustomer.fname} ${assignedCustomer.lname}`
     : '';
-  await sendTG(TG_ADMIN, `⏳ <b>Pending Order</b>\n👤 ${user.name} (${user.email})\n📦 ${product.name} · ${planLabel}\n💵 $${Number(price).toFixed(2)}${assignNote}\n⚠️ No stock — add accounts in Stock tab to fulfill.`, 'HTML').catch((e) => console.error('Pending admin TG:', e.message));
+  let adminMsg = `⏳ <b>Pending Order</b>\n👤 ${user.name} (${user.email})\n📦 ${product.name} · ${planLabel}\n💵 $${Number(price).toFixed(2)}${assignNote}\n⚠️ No stock — add accounts in Stock tab to fulfill.`;
+  if (product && product.id === 'anghami') {
+    if (pendingOrder.customerEmail) adminMsg += `\n📧 <b>Anghami account:</b> <code>${pendingOrder.customerEmail}</code>`;
+    if (pendingOrder.customerPass) adminMsg += `\n🔑 <b>Anghami password:</b> <code>${pendingOrder.customerPass}</code>`;
+    if (pendingOrder.customerPhone) adminMsg += `\n📱 <b>Phone:</b> <code>${pendingOrder.customerPhone}</code>`;
+  }
+  await sendTG(TG_ADMIN, adminMsg, 'HTML').catch((e) => console.error('Pending admin TG:', e.message));
   if (!user.tgChatId) return false;
   try {
     await sendTG(user.tgChatId, `✅ <b>Purchase Confirmed!</b>\n\n📦 ${product.name} · ${planLabel}\n💵 $${Number(price).toFixed(2)}\n💰 New balance: $${Number(user.balance || 0).toFixed(2)}${assignNote}\n\n⏳ Your credentials will be delivered here shortly.`, 'HTML');
@@ -1964,6 +1980,9 @@ async function notifyPurchaseFulfilled(user, product, planLabel, price, order, a
   }
   if (isAnghami) {
     adminMsg += `\n\n🔗 <b>Activation link:</b> ${order.serviceLink || '—'}`;
+    if (order.customerEmail) adminMsg += `\n📧 <b>Anghami account:</b> <code>${order.customerEmail}</code>`;
+    if (order.customerPass) adminMsg += `\n🔑 <b>Anghami password:</b> <code>${order.customerPass}</code>`;
+    if (order.customerPhone) adminMsg += `\n📱 <b>Phone:</b> <code>${order.customerPhone}</code>`;
   } else {
     adminMsg += `\n\n🔐 <b>Credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`;
     if (profileLabel) adminMsg += `\n👤 Profile: <code>${profileLabel}</code>`;
@@ -2201,6 +2220,10 @@ app.post('/purchase', async (req, res) => {
       if (!user) return { error: 'User not found', status: 404 };
       syncUserContact(user, { tgChatId });
       if (user.banned) return { error: 'Your account has been suspended. Contact support.', status: 403 };
+      if (product.id === 'anghami') {
+        const anghamiError = validateAnghamiExtraFields(extraFields);
+        if (anghamiError) return { error: anghamiError, status: 400 };
+      }
       if (data.stockBlocks[purchaseBlockKey(skey, customDays)]) {
         return { error: 'This plan is temporarily unavailable.', status: 403 };
       }
@@ -2275,7 +2298,7 @@ app.post('/purchase', async (req, res) => {
     if (outcome.error) return res.status(outcome.status || 400).json({ error: outcome.error });
     if (outcome.mode === 'pending') {
       const { data, user, pendingOrder } = outcome;
-      const telegramSent = await notifyPurchasePending(user, product, planLabel, price, assignCustId);
+      const telegramSent = await notifyPurchasePending(user, product, planLabel, price, assignCustId, pendingOrder);
       return res.json({ success:true, pending:true, telegramSent, user:sanitizeUser(user), order:pendingOrder, data:safeDataForSession(data, session) });
     }
     const { data, user, order } = outcome;
