@@ -20,7 +20,7 @@ const DURATIONS_SH_FULL = [
 const SIMPLE_PLAN_PRODUCTS = [
   { id: 'disney', plans: [7, 18, 60] },
   { id: 'amazon', plans: [3, 10] },
-  { id: 'anghami', plans: [4, 8, 15] },
+  { id: 'anghami', plans: [4, 8, 15, 2] },
   { id: 'spotify', plans: [4, 10, 18] },
   { id: 'appletv', plans: [3, 8, 25] },
   { id: 'hbomax', plans: [4, 11, 35] },

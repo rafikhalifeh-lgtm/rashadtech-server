@@ -1647,7 +1647,7 @@ const DEFAULT_PRODUCTS=[
   {id:'amazon',name:'Amazon Prime',short:'AP',color:'#00A8E0',tc:'#fff',cat:'video',badge:'new',desc:'Prime Video & more',hasUserTypes:false,plans:[
     {name:'1 Month',desc:'Full access',price:3},{name:'6 Months',desc:'Full access',price:10}]},
   {id:'anghami',name:'Anghami+',short:'A',color:'#7B3FBE',tc:'#fff',cat:'music',badge:'',desc:'Instant activation link · Arab & international music',hasUserTypes:false,plans:[
-    {name:'3 Months',desc:'$4 · Unlimited',price:4},{name:'6 Months',desc:'$8 · Unlimited',price:8},{name:'1 Year',desc:'$15 · Unlimited',price:15}]},
+    {name:'1 Month',desc:'$2 · Unlimited',price:2,stockIdx:3},{name:'3 Months',desc:'$4 · Unlimited',price:4,stockIdx:0},{name:'6 Months',desc:'$8 · Unlimited',price:8,stockIdx:1},{name:'1 Year',desc:'$15 · Unlimited',price:15,stockIdx:2}]},
   {id:'spotify',name:'Spotify',short:'S',color:'#1DB954',tc:'#fff',cat:'music',badge:'',desc:'Music & podcasts',hasUserTypes:false,plans:[
     {name:'1 Month',desc:'Ad-free',price:4},{name:'3 Months',desc:'Ad-free',price:10},{name:'6 Months',desc:'Best value',price:18}]},
 
@@ -1734,7 +1734,7 @@ function applyPriceCatalog(catalog){
       });
     }else if(p.id!=='jawaker'){
       (p.plans||[]).forEach((pl,i)=>{
-        const k=sk(p.id,null,i);
+        const k=planStockKey(p.id,pl,i);
         if(prices[k]!=null)pl.price=prices[k];
       });
     }
@@ -1761,6 +1761,8 @@ const requestableServices=[
 
 let accountStock={};
 const sk=(p,u,d)=>u?`${p}__${u}__${d}`:`${p}__${d}`;
+function planStockIdx(pl,i){return pl&&pl.stockIdx!=null?pl.stockIdx:i;}
+function planStockKey(productId,pl,i){return sk(productId,null,planStockIdx(pl,i));}
 const getAccounts=k=>accountStock[k]||[];
 const isStockBlocked=k=>Boolean(_jbCache?.stockBlocks?.[k]);
 function customDayBlockKey(productId,userTypeKey){return sk(productId,userTypeKey,'custom');}
@@ -2859,7 +2861,7 @@ function filterProd(cat,el){document.querySelectorAll('.ftab').forEach(c=>c.clas
 function getProductAvail(p){
   let t=0;
   if(p.hasUserTypes)p.userTypes.forEach(ut=>ut.durations.forEach(d=>{const key=sk(p.id,ut.key,d.key);if(!isStockBlocked(key))t+=availableCount(key);}));
-  else(p.plans||[]).forEach((_,i)=>{const key=sk(p.id,null,i);if(!isStockBlocked(key))t+=availableCount(key);});
+  else(p.plans||[]).forEach((pl,i)=>{const key=planStockKey(p.id,pl,i);if(!isStockBlocked(key))t+=availableCount(key);});
   return t;
 }
 function hasUnblockedPlan(p){
@@ -2869,7 +2871,7 @@ function hasUnblockedPlan(p){
     if(ut.hasCustom&&!isCustomDaysBlocked(p,ut)&&!isStockBlocked(sk(p.id,ut.key,'1m'))&&availableCount(sk(p.id,ut.key,'1m'))>0)return true;
     return false;
   });
-  return (p.plans||[]).some((_,i)=>!isStockBlocked(sk(p.id,null,i)));
+  return (p.plans||[]).some((pl,i)=>!isStockBlocked(planStockKey(p.id,pl,i)));
 }
 function renderProducts(cat){
   const list=cat==='all'?products:products.filter(p=>p.cat===cat);
@@ -2958,7 +2960,7 @@ function renderBuyBody(){
       html+=`<div class="plan-section-label">Choose a plan</div>`;
     }
     html+=`${(p.plans||[]).map((pl,i)=>{
-      const key=sk(p.id,null,i);const blocked=isStockBlocked(key);
+      const key=planStockKey(p.id,pl,i);const blocked=isStockBlocked(key);
       return `<div class="plan-row${selPlan&&selPlan.idx===i?' sel':''}" style="${blocked?'opacity:.45;pointer-events:none':''}" ${blocked?'':'onclick="selPlanFn('+i+')"'} >
         <div><div class="plan-name">${pl.name}</div><div class="plan-desc">${pl.desc}</div></div>
         <div style="text-align:right"><div class="plan-price">${blocked?'Blocked':fmt(pl.price)}</div></div>
@@ -2978,7 +2980,7 @@ function renderConfirm(html,p){
   else if(p.hasUserTypes&&selUT&&selUT.hasCustom&&customDays>0){price=customDays*selUT.customDayRate;label=`${selUT.name} · ${customDays} days`;}
   else if(selPlan){price=selPlan.price;label=selPlan.name;}
   const bal=currentUser?currentUser.balance:0;const after=bal-price;const ok=after>=0;
-  const selectedKey=p.hasUserTypes&&selUT&&selDur?sk(p.id,selUT.key,selDur.key):(!p.hasUserTypes&&selPlan?sk(p.id,null,selPlan.idx):null);
+  const selectedKey=p.hasUserTypes&&selUT&&selDur?sk(p.id,selUT.key,selDur.key):(!p.hasUserTypes&&selPlan?planStockKey(p.id,selPlan,selPlan.idx):null);
   const blocked=(p.hasUserTypes&&selUT&&selUT.hasCustom&&customDays>0)?isCustomDaysBlocked(p,selUT):(selectedKey&&isStockBlocked(selectedKey));
   html+=`<div class="divider"></div>
   <div class="confirm-row"><span class="cl">Plan</span><span class="cv">${label}</span></div>
@@ -2992,7 +2994,7 @@ function renderConfirm(html,p){
 }
 function selUserType(i){selUT=curProd.userTypes[i];selDur=null;customDays=0;renderBuyBody();}
 function selDuration(i){const d=selUT.durations[i];if(isStockBlocked(sk(curProd.id,selUT.key,d.key)))return;selDur=d;customDays=0;renderBuyBody();}
-function selPlanFn(i){if(isStockBlocked(sk(curProd.id,null,i)))return;selPlan={idx:i,...curProd.plans[i]};renderBuyBody();}
+function selPlanFn(i){const pl=curProd.plans[i];if(isStockBlocked(planStockKey(curProd.id,pl,i)))return;selPlan={idx:i,...pl};renderBuyBody();}
 function setCustomDays(v){const n=parseInt(v)||0;if(n>0&&curProd&&selUT&&isCustomDaysBlocked(curProd,selUT))return;customDays=n;selDur=null;renderBuyBody();}
 
 // ── CUSTOM ORDER (Jawaker / PUBG / Roblox) ──
@@ -3117,7 +3119,7 @@ async function confirmPurchase(){
     else{showToast('Please select a duration');return;}
   } else {
     if(!selPlan){showToast('Please select a plan');return;}
-    price=selPlan.price;planLabel=selPlan.name;skey=sk(p.id,null,selPlan.idx);
+    price=selPlan.price;planLabel=selPlan.name;skey=planStockKey(p.id,selPlan,selPlan.idx);
     if(p.hasProfileName&&anghamiProfile)extraFields.profileName=anghamiProfile;
   }
   if(!skey){showToast('Please complete your selection');return;}
@@ -3259,7 +3261,7 @@ function subRow(o,forCustomer){
   const shahidBtns=isShahidOrder(o)?shahidActionButtons(o.id):'';
   const deliveryNote=o.telegramDeliveredAt?`<div class="delivery-proof">✓ Delivered to Telegram · ${esc(formatTs(o.telegramDeliveredAt))}</div>`:(o.deliveredAt?`<div class="delivery-proof">✓ Delivered · ${esc(formatTs(o.deliveredAt))}</div>`:'');
   const credHtml=isAnghamiOrder(o)
-    ?`<div class="sub-cred">${o.serviceLink?`<a class="cust-sub-cred-line" href="${esc(o.serviceLink)}" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:none;font-weight:600">🔗 Open Anghami activation link</a>`:'<span class="cust-sub-cred-line">Link pending</span>'}<div style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.4">${esc(ANGHAMI_CANCEL_NOTE_EN)}</div></div>`
+    ?`<div class="sub-cred">${o.serviceLink?`<a class="cust-sub-cred-line" href="${esc(o.serviceLink)}" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:none;font-weight:600">🔗 Open Anghami activation link</a>`:'<span class="cust-sub-cred-line">Link pending</span>'}${o.expiryDate?`<div class="cust-sub-cred-line" style="margin-top:6px;color:var(--orange);font-weight:600">⏰ Expires: ${esc(o.expiryDate)}</div>`:''}<div style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.4">${esc(ANGHAMI_CANCEL_NOTE_EN)}</div></div>`
     :`<div class="sub-cred"><span class="cust-sub-cred-line">📧 ${esc(o.email)}</span><span class="cust-sub-cred-line">🔑 ${esc(o.pass)}</span></div>`;
   return `<div class="sub-card"><div class="sub-icon" style="background:${ico?'#fff':o.color};overflow:hidden;padding:0">${iconHtml}</div>
     <div class="sub-info"><div class="sub-name">${esc(o.product)}</div><div class="sub-plan">${esc(o.plan)} · ${esc(o.date)}</div>
@@ -4212,7 +4214,7 @@ function renderProductPriceRows(p){
     }).join('');
   }
   if(isJawakerProduct(p))return renderJawakerPriceRows();
-  return (p.plans||[]).map((pl,i)=>adminPriceRow(pl.name,sk(p.id,null,i),pl.price)).join('');
+  return (p.plans||[]).map((pl,i)=>adminPriceRow(pl.name,planStockKey(p.id,pl,i),pl.price)).join('');
 }
 function filterAdminPrices(){
   const q=(document.getElementById('admin-prices-search')?.value||'').trim().toLowerCase();
@@ -4383,7 +4385,7 @@ function renderStockRows(p){
     return rows;
   }).join('');}
   return(p.plans||[]).map((pl,i)=>{
-    const skey=sk(p.id,null,i);const av=availableCount(skey);const tot=totalCount(skey);const [sl,sc]=stockLabel(av);
+    const skey=planStockKey(p.id,pl,i);const av=availableCount(skey);const tot=totalCount(skey);const [sl,sc]=stockLabel(av);
     const blocked=isStockBlocked(skey);
     return `<div class="admin-row"><div class="admin-icon" style="background:${p.color};overflow:hidden">${prodIcon(p,34,8)}</div>
       <div class="admin-info"><div class="admin-name">${pl.name}</div>
@@ -4534,8 +4536,9 @@ function renderShahidBulkForm(skey){
 function renderManualAddForm(skey,needsGmail,isShahidStock){
   if(isAnghamiKey(skey)){
     return `<div class="add-acc-form-title">Add Anghami activation link</div>
-      <div style="font-size:12px;color:var(--text2);margin-bottom:12px">Paste the link from your supplier (e.g. <code>open.anghami.com/...</code>). Plan is set by the row you opened — e.g. <b>3 Months = $4</b>.</div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:12px">Paste the link from your supplier (e.g. <code>open.anghami.com/...</code>). Plan is set by the row you opened — e.g. <b>1 Month = $2</b>, <b>3 Months = $4</b>.</div>
       <div class="field"><label>Activation link (required)</label><input type="url" id="new-acc-service-link" placeholder="https://open.anghami.com/..."></div>
+      <div class="field"><label>Expiry date (required) — dd/mm/yyyy</label><input type="text" id="new-acc-expiry" placeholder="e.g. 06/07/2026"><div style="font-size:11px;color:var(--text3);margin-top:4px">Subscription end date — shown to the customer after purchase.</div></div>
       <button class="inline-btn" id="btn-add-stock" onclick="addAccount()"><i class="ti ti-plus" style="font-size:13px;vertical-align:-2px;margin-right:4px"></i>Add to stock</button>`;
   }
   const isShahidOne=isShahidOneUserKey(skey);
@@ -4814,11 +4817,13 @@ async function addAccount(){
   const isAnghamiStock=isAnghamiKey(curAccModalKey);
   const serviceLink=(document.getElementById('new-acc-service-link')?.value||'').trim();
   if(isAnghamiStock){
+    const expiryDate=(document.getElementById('new-acc-expiry')?.value||'').trim();
     if(!serviceLink){showToast('Activation link is required');return;}
     if(!/^https?:\/\//i.test(serviceLink)){showToast('Enter a valid http(s) link');return;}
+    if(!expiryDate){showToast('Expiry date is required (dd/mm/yyyy)');return;}
     setAddStockBusy(true);
     try{
-      await apiStockAdd({skey:curAccModalKey,account:{serviceLink,email:'',pass:''}});
+      await apiStockAdd({skey:curAccModalKey,account:{serviceLink,expiryDate,email:'',pass:''}});
     }catch(e){
       showToast('⚠️ '+(e.message||'Save failed'));
       return;

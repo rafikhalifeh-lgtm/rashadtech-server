@@ -1304,8 +1304,11 @@ function isAnghamiSubscription(sub) {
 const ANGHAMI_CANCEL_NOTE_EN = 'NOTE: If you already have an Anghami Plus subscription, cancel it then try to click on the link again.';
 const ANGHAMI_CANCEL_NOTE_AR = 'ملاحظة: إذا كان لديك اشتراك Anghami Plus بالفعل، قم بإلغائه ثم اضغط على الرابط مرة أخرى.';
 
-function anghamiCustomerMessage(planLabel, serviceLink) {
-  return `Thanks for purchasing Anghami+!\n\n📋 ${planLabel}\n\n🔗 Here is your activation link:\n${serviceLink}\n\n${ANGHAMI_CANCEL_NOTE_EN}\n\n${ANGHAMI_CANCEL_NOTE_AR}`;
+function anghamiCustomerMessage(planLabel, serviceLink, expiryDate) {
+  let msg = `Thanks for purchasing Anghami+!\n\n📋 ${planLabel}\n\n🔗 Here is your activation link:\n${serviceLink}`;
+  if (expiryDate) msg += `\n\n⏰ Expires: ${expiryDate}`;
+  msg += `\n\n${ANGHAMI_CANCEL_NOTE_EN}\n\n${ANGHAMI_CANCEL_NOTE_AR}`;
+  return msg;
 }
 
 function isValidLinkSubscription(subscription) {
@@ -1321,6 +1324,8 @@ function validateStockAccountForAdd(skey, rowAccount) {
     const serviceLink = String(rowAccount && rowAccount.serviceLink || '').trim();
     if (!serviceLink) return 'Activation link is required for Anghami stock';
     if (!/^https?:\/\//i.test(serviceLink)) return 'Enter a valid http(s) activation link';
+    const expiryDate = String(rowAccount && rowAccount.expiryDate || '').trim();
+    if (!expiryDate) return 'Expiry date is required for Anghami stock (dd/mm/yyyy)';
     return null;
   }
   if (!rowAccount || !rowAccount.email || !rowAccount.pass) {
