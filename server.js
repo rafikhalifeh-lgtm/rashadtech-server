@@ -893,6 +893,31 @@ function mergeOwnTopupRequests(existingOwn, incomingOwn) {
   return Array.from(byId.values());
 }
 
+function mergeMyCustomers(prev, incoming) {
+  const a = Array.isArray(prev) ? prev : [];
+  const b = Array.isArray(incoming) ? incoming : [];
+  if (!b.length) return a;
+  if (!a.length) return b;
+  const byId = new Map();
+  a.forEach((c) => {
+    if (!c || c.id == null) return;
+    byId.set(String(c.id), {
+      ...c,
+      subs: Array.isArray(c.subs) ? c.subs.map(s => ({ ...s })) : []
+    });
+  });
+  b.forEach((c) => {
+    if (!c || c.id == null) return;
+    const id = String(c.id);
+    const prevC = byId.get(id) || {};
+    const subs = Array.isArray(c.subs) && c.subs.length
+      ? c.subs
+      : (Array.isArray(prevC.subs) ? prevC.subs : []);
+    byId.set(id, { ...prevC, ...c, subs });
+  });
+  return Array.from(byId.values());
+}
+
 function mergeUserWrite(existing, incoming, session) {
   const next = { ...(existing || {}) };
   const email = session.email;
@@ -907,7 +932,7 @@ function mergeUserWrite(existing, incoming, session) {
         name: incomingUser.name,
         tgChatId: String(incomingUser.tgChatId || '').trim() || String(prev.tgChatId || '').trim(),
         verified: Boolean(incomingUser.verified),
-        myCustomers: Array.isArray(incomingUser.myCustomers) ? incomingUser.myCustomers : prev.myCustomers,
+        myCustomers: mergeMyCustomers(prev.myCustomers, incomingUser.myCustomers),
         balance: Number(prev.balance || 0),
         orders: Array.isArray(prev.orders) ? prev.orders : [],
         transactions: Array.isArray(prev.transactions) ? prev.transactions : []
@@ -1204,9 +1229,7 @@ function mergeUsersPreservingWallet(existingUsers, incomingUsers) {
       balance: Number(prev.balance || 0),
       orders: Array.isArray(prev.orders) ? prev.orders : [],
       transactions: Array.isArray(prev.transactions) ? prev.transactions : [],
-      myCustomers: Array.isArray(prev.myCustomers) && prev.myCustomers.length
-        ? prev.myCustomers
-        : (Array.isArray(inc.myCustomers) ? inc.myCustomers : [])
+      myCustomers: mergeMyCustomers(prev.myCustomers, inc.myCustomers),
     };
   }).filter(Boolean);
 }

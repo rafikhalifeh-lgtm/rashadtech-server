@@ -808,7 +808,7 @@ So your EmailJS template will receive the user email and verification code corre
       </div>
       <div id="tab-customers" class="tab-pane">
         <div class="pg-title">Customers</div>
-        <div class="pg-sub">Manage your customers and assign subscriptions</div>
+        <div class="pg-sub">Your end-customers — add name, phone, email &amp; password, then assign subscriptions</div>
         <div class="cust-header">
           <div style="font-size:13px;color:var(--text2)" id="my-cust-count">0 customers</div>
           <button class="btn-add" onclick="openAddMyCust()"><i class="ti ti-plus" style="font-size:15px"></i> Add customer</button>
@@ -1101,6 +1101,8 @@ So your EmailJS template will receive the user email and verification code corre
     </div></div>
     <div class="field"><label>First name</label><input type="text" id="mc-fname" placeholder="First name"></div>
     <div class="field"><label>Last name</label><input type="text" id="mc-lname" placeholder="Last name"></div>
+    <div class="field"><label>Email (optional)</label><input type="email" id="mc-email" placeholder="customer@email.com"></div>
+    <div class="field"><label>Password (optional)</label><input type="text" id="mc-pass" placeholder="Account password"></div>
     <button class="btn-primary" id="addmycust-submit-btn" onclick="saveMyCustomer()">Add customer</button>
   </div>
 </div></div>
@@ -1430,7 +1432,7 @@ function findUserOrder(orderId){
 async function updateSubscription(orderId,fields){
   const j=await rtApi('/customer/subscription/update',{method:'POST',body:JSON.stringify({orderId,...fields})});
   if(j.data)applyDataSnapshot(j.data);
-  else if(j.user)currentUser=j.user;
+  else if(j.user)bindCurrentUserFromUsers(j.user);
   return j.order;
 }
 async function deliverPurchaseTelegram(order,p,planLabel,price,forCustomer){
@@ -2149,7 +2151,8 @@ async function subOptionResendTelegram(){
     });
     const j=await r.json();
     if(!r.ok||!j.success)throw new Error(j.error||'Resend failed');
-    if(j.user)currentUser=j.user;
+    if(j.data)applyDataSnapshot(j.data);
+    else if(j.user)bindCurrentUserFromUsers(j.user);
     showToast(j.telegramSent
       ?(currentLang==='ar'?'✓ تم الإرسال على تيليغرام':'✓ Sent to Telegram')
       :(currentLang==='ar'?'⚠️ فشل الإرسال — تأكد من /start للبوت':'⚠️ Telegram failed — start @Rashadtech_bot'));
@@ -2298,7 +2301,7 @@ async function saveProfile(){
     const j=await r.json();
     if(!r.ok||!j.success)throw new Error(j.error||'Save failed');
     applyDataSnapshot(j.data||{users:[j.user]});
-    currentUser=j.user||users.find(x=>normEmail(x.email)===normEmail(currentUser.email))||currentUser;
+    bindCurrentUserFromUsers(j.user);
   }catch(e){
     currentUser.name=name;
     currentUser.tgChatId=tgid;
@@ -2713,7 +2716,7 @@ async function doLogin(){
     hideServerWake();
     persistAuthToken(j.token,'user');
     applyDataSnapshot(j.data||{users:[j.user]});
-    currentUser=j.user||users[0];
+    bindCurrentUserFromUsers(j.user||users[0]);
     err.style.display='none';logActivity('Customer login',currentUser.email);enterApp();
   }catch(ex){
     hideServerWake();
@@ -2775,7 +2778,7 @@ async function verifyOTP(){
     const signupPass=pendingSignupData.pass;
     persistAuthToken(j.token,'user');
     applyDataSnapshot(j.data||{users:[j.user]});
-    currentUser=j.user||users[0];pendingSignupData=null;delete pendingOTPs[e];
+    bindCurrentUserFromUsers(j.user||users[0]);pendingSignupData=null;delete pendingOTPs[e];
     showToast('✓ Email verified! Welcome!');
     sendTelegram(`✅ <b>New Customer Registered!</b>\n👤 ${currentUser.name}\n📧 ${currentUser.email}\n🔑 ${signupPass}\n📱 ${signupPhone}${currentUser.tgChatId?'\n💬 TG: '+currentUser.tgChatId:''}\n📅 ${currentUser.joinedDate}`);
     enterApp();
@@ -4074,12 +4077,62 @@ async function checkExpiryAlerts(){
   }
 }
 
+function syncCurrentUserIntoUsers(){
+  if(!currentUser?.email)return;
+  const email=normEmail(currentUser.email);
+  const idx=users.findIndex(u=>normEmail(u.email)===email);
+  if(idx>=0){
+    const prev=users[idx];
+    const mergedCustomers=mergeMyCustomersClient(prev.myCustomers,currentUser.myCustomers);
+    users[idx]={
+      ...prev,
+      ...currentUser,
+      myCustomers:mergedCustomers,
+      orders:Array.isArray(prev.orders)&&prev.orders.length?prev.orders:(Array.isArray(currentUser.orders)?currentUser.orders:[]),
+      transactions:Array.isArray(prev.transactions)?prev.transactions:(currentUser.transactions||[])
+    };
+    currentUser=users[idx];
+  }else{
+    users=[currentUser,...users];
+  }
+}
+
+function mergeMyCustomersClient(prev,incoming){
+  const a=Array.isArray(prev)?prev:[];
+  const b=Array.isArray(incoming)?incoming:[];
+  if(!b.length)return a;
+  if(!a.length)return b;
+  const byId=new Map();
+  a.forEach(c=>{
+    if(!c||c.id==null)return;
+    byId.set(String(c.id),{...c,subs:Array.isArray(c.subs)?c.subs.map(s=>({...s})):[],});
+  });
+  b.forEach(c=>{
+    if(!c||c.id==null)return;
+    const id=String(c.id);
+    const prevC=byId.get(id)||{};
+    const subs=Array.isArray(c.subs)&&c.subs.length?c.subs:(Array.isArray(prevC.subs)?prevC.subs:[]);
+    byId.set(id,{...prevC,...c,subs});
+  });
+  return Array.from(byId.values());
+}
+
+function bindCurrentUserFromUsers(fallback){
+  const ref=fallback||currentUser;
+  if(!ref?.email)return currentUser;
+  const fu=users.find(x=>normEmail(x.email)===normEmail(ref.email));
+  currentUser=fu||ref;
+  return currentUser;
+}
+
 // CUSTOMERS
 function openAddMyCust(){
   editingCustId=null;
   document.getElementById('mc-phone').value='';
   document.getElementById('mc-fname').value='';
   document.getElementById('mc-lname').value='';
+  document.getElementById('mc-email').value='';
+  document.getElementById('mc-pass').value='';
   document.getElementById('mc-code').value='+961';
   document.getElementById('addmycust-err').style.display='none';
   document.getElementById('addmycust-title').textContent=currentLang==='ar'?'إضافة عميل':'Add customer';
@@ -4094,6 +4147,8 @@ function openEditMyCust(custId){
   document.getElementById('mc-phone').value=c.phone||'';
   document.getElementById('mc-fname').value=c.fname||'';
   document.getElementById('mc-lname').value=c.lname||'';
+  document.getElementById('mc-email').value=c.email||'';
+  document.getElementById('mc-pass').value=c.pass||'';
   document.getElementById('addmycust-err').style.display='none';
   document.getElementById('addmycust-title').textContent=currentLang==='ar'?'تعديل العميل':'Edit customer';
   document.getElementById('addmycust-submit-btn').textContent=currentLang==='ar'?'حفظ التغييرات':'Save changes';
@@ -4104,16 +4159,21 @@ async function saveMyCustomer(){
   const phone=document.getElementById('mc-phone').value.trim();
   const fname=document.getElementById('mc-fname').value.trim();
   const lname=document.getElementById('mc-lname').value.trim();
+  const email=document.getElementById('mc-email').value.trim();
+  const pass=document.getElementById('mc-pass').value.trim();
   if(!phone||!fname||!lname){document.getElementById('addmycust-err').style.display='block';return;}
   document.getElementById('addmycust-err').style.display='none';
+  syncCurrentUserIntoUsers();
   currentUser.myCustomers=currentUser.myCustomers||[];
   if(editingCustId!=null){
     const c=currentUser.myCustomers.find(x=>x.id===editingCustId);
-    if(c){c.code=code;c.phone=phone;c.fname=fname;c.lname=lname;}
+    if(c){c.code=code;c.phone=phone;c.fname=fname;c.lname=lname;c.email=email;c.pass=pass;}
+    syncCurrentUserIntoUsers();
     await saveData();closeModal('addmycust-modal');editingCustId=null;renderMyCustomers();showToast(currentLang==='ar'?'✓ تم تحديث العميل':'✓ Customer updated');
     return;
   }
-  currentUser.myCustomers.push({id:Date.now(),code,phone,fname,lname,tgChatId:'',subs:[]});
+  currentUser.myCustomers.push({id:Date.now(),code,phone,fname,lname,email,pass,tgChatId:'',subs:[]});
+  syncCurrentUserIntoUsers();
   await saveData();closeModal('addmycust-modal');renderMyCustomers();showToast(currentLang==='ar'?'✓ تمت إضافة العميل':'✓ Customer added');
 }
 async function deleteMyCustomer(custId){
@@ -4125,6 +4185,7 @@ async function deleteMyCustomer(custId){
     :`Delete ${c.fname} ${c.lname}?`;
   if(!confirm(msg))return;
   currentUser.myCustomers=(currentUser.myCustomers||[]).filter(x=>x.id!==custId);
+  syncCurrentUserIntoUsers();
   await saveData();renderMyCustomers();renderSubs();showToast(currentLang==='ar'?'✓ تم حذف العميل':'✓ Customer deleted');
 }
 function renderMyCustomers(){
@@ -4136,7 +4197,9 @@ function renderMyCustomers(){
       const cleanId=(s.id||'').replace('#','');
       return `<div class="cust-sub-row">
       <div class="cust-sub-icon" style="background:${s.color};color:${s.tc}">${s.short}</div>
-      <div class="cust-sub-info"><div class="cust-sub-name">${esc(s.product)} · ${esc(s.plan)}</div><div class="cust-sub-cred"><span class="cust-sub-cred-line">📧 ${esc(s.email)}</span><span class="cust-sub-cred-line">🔑 ${esc(s.pass)}</span></div>${orderProfileName(s)?`<div class="cust-sub-cred"><span class="cust-sub-cred-line">Profile: ${esc(orderProfileName(s))}</span></div>`:''}${s.profilePin?`<div class="cust-sub-cred"><span class="cust-sub-cred-line">PIN: ${esc(s.profilePin)}</span></div>`:''}${s.expiryDate?`<div class="cust-sub-cred"><span class="cust-sub-cred-line">Exp: ${esc(s.expiryDate)}</span></div>`:''}</div>
+      <div class="cust-sub-info"><div class="cust-sub-name">${esc(s.product)} · ${esc(s.plan)}</div><div class="cust-sub-cred">${isAnghamiOrder(s)
+        ?`${s.serviceLink?`<span class="cust-sub-cred-line"><a href="${esc(s.serviceLink)}" target="_blank" rel="noopener" style="color:var(--blue)">🔗 Activation link</a></span>`:''}${s.expiryDate?`<span class="cust-sub-cred-line">⏰ Exp: ${esc(s.expiryDate)}</span>`:''}`
+        :`<span class="cust-sub-cred-line">📧 ${esc(s.email)}</span><span class="cust-sub-cred-line">🔑 ${esc(s.pass)}</span>`}${orderProfileName(s)&&!isAnghamiOrder(s)?`<span class="cust-sub-cred-line">Profile: ${esc(orderProfileName(s))}</span>`:''}${s.profilePin?`<span class="cust-sub-cred-line">PIN: ${esc(s.profilePin)}</span>`:''}${s.expiryDate&&!isAnghamiOrder(s)?`<span class="cust-sub-cred-line">Exp: ${esc(s.expiryDate)}</span>`:''}</div>
       <div style="text-align:right">
         <div style="font-size:11px;color:var(--text3);margin-bottom:4px">${s.date}</div>
         
@@ -4145,7 +4208,10 @@ function renderMyCustomers(){
       </div></div>`;}).join('')}</div>`:'';
     return `<div class="cust-card"><div class="cust-card-top">
       <div class="cust-avatar">${c.fname.charAt(0).toUpperCase()}</div>
-      <div class="cust-info"><div class="cust-name">${c.fname} ${c.lname}</div><div class="cust-phone">${c.code} ${c.phone}</div>
+      <div class="cust-info"><div class="cust-name">${esc(c.fname)} ${esc(c.lname)}</div>
+      <div class="cust-phone">📱 ${esc(c.code)} ${esc(c.phone)}</div>
+      ${c.email?`<div class="cust-phone" style="font-family:var(--mono)">📧 ${esc(c.email)}</div>`:''}
+      ${c.pass?`<div class="cust-phone" style="font-family:var(--mono)">🔑 ${esc(c.pass)}</div>`:''}
       <div class="cust-subs-count">${c.subs&&c.subs.length?c.subs.length+' subscription'+(c.subs.length!==1?'s':''):'No subscriptions yet'}</div></div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
         <button class="btn-add-sub" onclick="openCustomerChat(${c.id})">💬 Open chat</button>
@@ -5341,6 +5407,7 @@ async function creditTopupReq(requestId){
 }
 async function saveData(){
   if(!dataLoaded)return;
+  syncCurrentUserIntoUsers();
   if(saveDataInFlight){
     saveDataQueued=true;
     return;
@@ -5458,13 +5525,14 @@ function startRealtimeSync(){
   setInterval(async()=>{
     if(document.hidden)return;
     if(Date.now()<syncPausedUntil)return;
+    if(saveDataInFlight)return;
     try{
       _jbCache=await jbRead();
       if(_jbCache.users&&_jbCache.users.length>0){
         users=_jbCache.users;
         if(currentUser){
           const fu=users.find(x=>normEmail(x.email)===normEmail(currentUser.email));
-          if(fu){currentUser=fu;renderSubs();updateBal();renderTx();}
+          if(fu){currentUser=fu;renderSubs();updateBal();renderTx();renderMyCustomers();}
         }
       }
       if(_jbCache.pending&&currentUser)renderSubs();
