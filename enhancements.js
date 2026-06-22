@@ -30,6 +30,7 @@ function registerEnhancements(app, deps) {
     requireSession,
     readJsonBinRaw,
     writeJsonBinRaw,
+    writeDbFast,
     normalizeEmail,
     hashPassword,
     verifyPassword,
@@ -85,14 +86,14 @@ function registerEnhancements(app, deps) {
 
   async function persistSessions() {
     try {
-      const data = await readJsonBinRaw();
+      const data = await readJsonBinRaw({ fast: true });
       const stored = {};
       const now = Date.now();
       for (const [token, item] of sessions.entries()) {
         if (item && now < Number(item.expiresAt || 0)) stored[token] = item;
       }
       data[SESSIONS_KEY] = stored;
-      await writeJsonBinRaw(data, { backupReason: 'session-sync' });
+      await writeDbFast(data, { backupReason: 'session-sync' });
     } catch (e) {
       console.error('Session persist error:', e.message);
     }
@@ -100,7 +101,7 @@ function registerEnhancements(app, deps) {
 
   async function loadPersistedSessions() {
     try {
-      const data = await readJsonBinRaw();
+      const data = await readJsonBinRaw({ fast: true });
       const stored = data[SESSIONS_KEY] || {};
       const now = Date.now();
       let loaded = 0;

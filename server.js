@@ -40,6 +40,12 @@ app.use(cors({
     cb(new Error('Not allowed by CORS'));
   }
 }));
+app.use((err, req, res, next) => {
+  if (err && String(err.message || '').includes('CORS')) {
+    return res.status(403).json({ error: 'Origin not allowed' });
+  }
+  next(err);
+});
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -63,7 +69,7 @@ const NETLIFY_DB_STORE = normalizeEnvSecret(process.env.NETLIFY_DB_STORE) || 'ra
 const NETLIFY_DB_KEY = normalizeEnvSecret(process.env.NETLIFY_DB_KEY) || 'database';
 const NETLIFY_BACKUP_MANIFEST_KEY = normalizeEnvSecret(process.env.NETLIFY_BACKUP_MANIFEST_KEY) || `${NETLIFY_DB_KEY}-backup-manifest`;
 const NETLIFY_BACKUP_PREFIX = normalizeEnvSecret(process.env.NETLIFY_BACKUP_PREFIX) || `${NETLIFY_DB_KEY}-backup-`;
-const MAX_BACKUPS = Number(process.env.MAX_BACKUPS || 100);
+const RECOVERY_SNAPSHOT_LIMIT = Number(process.env.RECOVERY_SNAPSHOT_LIMIT || 15);
 const EMAILJS_SERVICE_ID = normalizeEnvSecret(process.env.EMAILJS_SERVICE_ID) || 'service_g05xq5o';
 const EMAILJS_TEMPLATE_ID = normalizeEnvSecret(process.env.EMAILJS_TEMPLATE_ID) || 'template_e0h7eia';
 const EMAILJS_PUBLIC_KEY = normalizeEnvSecret(process.env.EMAILJS_PUBLIC_KEY) || 'LyKu6ZB_y6qoFh7Ef';
@@ -80,7 +86,7 @@ const CODE_TTL_MS = 15 * 60 * 1000;
 const SHAHID_RESET_TTL_MS = 60 * 60 * 1000;
 const EMAIL_LOOKBACK_MS = 24 * 60 * 60 * 1000;
 const SHAHID_FORGET_PASSWORD_URL = 'https://shahid.mbc.net/en/hub/forget-password';
-const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
+const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const LINK_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 const PASSWORD_HASH_PREFIX = 'pbkdf2$';
 const ACCOUNT_SERVICE_UNAVAILABLE = 'Account service is temporarily unavailable. Please try again soon.';
@@ -725,35 +731,41 @@ async function syncDbToJsonBin(force = false) {
   }
 }
 
+async function readDbForWrite() {
+  return readJsonBinRaw({ skipRecoverWrite: true, fast: true });
+}
+
+let readJsonBinInFlight = null;
+
 async function readJsonBinRaw(options = {}) {
   if (dbCache && !options.forceRefresh) return cloneData(dbCache);
-  let data = null;
-  try {
-    data = await readNetlifyDb();
-  } catch(e) {
-    console.error('Netlify database read error:', e.message);
-  }
-  if (!data) data = readFallbackDb();
-  data = markEmergencyDb(data, NETLIFY_SITE_ID && NETLIFY_BLOBS_TOKEN ? 'Netlify Blobs primary database' : 'Primary server file database', !(NETLIFY_SITE_ID && NETLIFY_BLOBS_TOKEN));
-  const loaded = data;
-  const recovered = await recoverSettingsFromBackups(loaded, { recoverBlocks: false });
-  data = recovered.data;
-  if (recovered.changed && !options.skipRecoverWrite) {
-    console.log(`Recovered settings: ${recovered.customPriceCount} custom prices (${recovered.catalogSource}), ${recovered.blockCount} blocks (${recovered.blockSource})`);
-    await writeJsonBinRaw(data, { backupReason: 'auto-recover-settings', backupSource: loaded }).catch(e => {
-      console.error('Auto-recover write error:', e.message);
-    });
-  }
-  const subRecovery = await recoverAllSubCustomers(data);
-  if (subRecovery.usersRecovered > 0 && !options.skipRecoverWrite) {
-    console.log(`Recovered sub-customers for ${subRecovery.usersRecovered} user(s) from ${subRecovery.sourcesChecked} source(s)`);
-    await writeJsonBinRaw(data, { backupReason: 'auto-recover-sub-customers', backupSource: loaded }).catch(e => {
-      console.error('Auto-recover sub-customers write error:', e.message);
-    });
-  }
-  setDbCache(data, false);
-  writeFallbackDb(data);
-  return cloneData(dbCache);
+  if (readJsonBinInFlight && !options.forceRefresh) return cloneData(await readJsonBinInFlight);
+  const run = async () => {
+    let data = null;
+    try {
+      data = await readNetlifyDb();
+    } catch(e) {
+      console.error('Netlify database read error:', e.message);
+    }
+    if (!data) data = readFallbackDb();
+    data = markEmergencyDb(data, NETLIFY_SITE_ID && NETLIFY_BLOBS_TOKEN ? 'Netlify Blobs primary database' : 'Primary server file database', !(NETLIFY_SITE_ID && NETLIFY_BLOBS_TOKEN));
+    const loaded = data;
+    if (!options.fast) {
+      const recovered = await recoverSettingsFromBackups(loaded, { recoverBlocks: false });
+      data = recovered.data;
+      if (recovered.changed && !options.skipRecoverWrite) {
+        console.log(`Recovered settings: ${recovered.customPriceCount} custom prices (${recovered.catalogSource}), ${recovered.blockCount} blocks (${recovered.blockSource})`);
+        await writeJsonBinRaw(data, { backupReason: 'auto-recover-settings', backupSource: loaded }).catch(e => {
+          console.error('Auto-recover write error:', e.message);
+        });
+      }
+    }
+    setDbCache(data, false);
+    writeFallbackDb(data);
+    return cloneData(dbCache);
+  };
+  readJsonBinInFlight = run().finally(() => { readJsonBinInFlight = null; });
+  return readJsonBinInFlight;
 }
 
 async function writeJsonBinRaw(data, options = {}) {
@@ -764,7 +776,7 @@ async function writeJsonBinRaw(data, options = {}) {
     : [];
   let backupSource = options.backupSource;
   if (!lightWrite) {
-    if (backupSource === undefined) backupSource = await readJsonBinRaw().catch(() => null);
+    if (backupSource === undefined) backupSource = await readJsonBinRaw({ fast: true }).catch(() => null);
     if (backupSource) {
       backupSource = { ...backupSource };
       delete backupSource[BACKUPS_KEY];
@@ -1045,7 +1057,7 @@ async function collectRecoverySources(data) {
 
   try {
     const manifest = await readBackupManifest();
-    for (const entry of manifest.slice(0, MAX_BACKUPS)) {
+    for (const entry of manifest.slice(0, RECOVERY_SNAPSHOT_LIMIT)) {
       try {
         const { data: snapshot } = await readBackupSnapshot(entry.id);
         addSource(`snapshot-${formatBeirutTime(entry.ts)}`, snapshot[PRICE_CATALOG_KEY], snapshot.stockBlocks);
@@ -1378,7 +1390,7 @@ async function collectFullDataRecoverySources(data) {
   embedded.forEach((backup) => { if (backup && backup.data) add(backup.data); });
   try {
     const manifest = await readBackupManifest();
-    for (const entry of manifest.slice(0, MAX_BACKUPS)) {
+    for (const entry of manifest.slice(0, RECOVERY_SNAPSHOT_LIMIT)) {
       try {
         const { data: snapshot } = await readBackupSnapshot(entry.id);
         add(snapshot);
@@ -1647,11 +1659,11 @@ app.post('/db/read', async (req, res) => {
   const session = requireSession(req, res, ['admin', 'user']);
   if (!session) return;
   try {
-    const data = await readJsonBinRaw({ skipRecoverWrite: true });
+    const data = await readJsonBinRaw({ fast: true, skipRecoverWrite: true });
     let recovered = false;
     if (session.role === 'user') {
       const user = (data.users || []).find(u => normalizeEmail(u.email) === session.email);
-      if (user && await recoverMyCustomersFromAllSources(data, user)) recovered = true;
+      if (user && recoverMyCustomersFromBackups(data, user)) recovered = true;
     }
     if (recovered) await writeDbFast(data);
     res.json({ success: true, data: safeDataForSession(data, session) });
@@ -1846,22 +1858,43 @@ app.post('/auth/login', async (req, res) => {
   const { email, password } = req.body;
   const cleanPassword = normalizeLoginPassword(password);
   try {
-    const data = await readJsonBinRaw();
+    const data = await readJsonBinRaw({ fast: true });
     const user = (data.users || []).find(u => normalizeEmail(u.email) === normalizeEmail(email));
     if (!user) return res.status(401).json({ error: 'Invalid email or password' });
     const recoveredPassword = recoverMissingPasswordFromBackups(data, user);
     if (!user.pass) return res.status(401).json({ error: 'This account needs a password reset. Please use Forgot password.' });
     if (!verifyPassword(cleanPassword, user.pass)) return res.status(401).json({ error: 'Invalid email or password' });
     if (user.banned) return res.status(403).json({ error: 'Your account has been suspended. Please contact support.' });
-    const recoveredCustomers = await recoverMyCustomersFromAllSources(data, user);
-    if (recoveredPassword || recoveredCustomers || !String(user.pass || '').startsWith(PASSWORD_HASH_PREFIX)) {
-      if (recoveredPassword || !String(user.pass || '').startsWith(PASSWORD_HASH_PREFIX)) {
-        user.pass = hashPassword(cleanPassword);
-      }
-      await writeDbFast(data);
-    }
+    const recoveredCustomers = recoverMyCustomersFromBackups(data, user);
+    const needsPassUpgrade = recoveredPassword || !String(user.pass || '').startsWith(PASSWORD_HASH_PREFIX);
+    if (needsPassUpgrade) user.pass = hashPassword(cleanPassword);
     const token = createSession('user', user.email);
-    res.json({ success: true, token, user: sanitizeUser(user), data: safeDataForSession(data, { role: 'user', email: normalizeEmail(user.email) }) });
+    const userEmail = normalizeEmail(user.email);
+    const savedCustomers = recoveredCustomers ? cloneMyCustomersList(user.myCustomers) : null;
+    const savedPass = needsPassUpgrade ? user.pass : null;
+    res.json({ success: true, token, user: sanitizeUser(user), data: safeDataForSession(data, { role: 'user', email: userEmail }) });
+    if (recoveredCustomers || needsPassUpgrade) {
+      setImmediate(() => {
+        enqueueDbWrite(async () => {
+          const fresh = await readDbForWrite();
+          const live = (fresh.users || []).find(u => normalizeEmail(u.email) === userEmail);
+          if (!live) return null;
+          if (savedPass) live.pass = savedPass;
+          if (savedCustomers) live.myCustomers = savedCustomers;
+          return writeDbFast(fresh, { backupSource: fresh });
+        }).catch(e => console.error('Login persist error:', e.message));
+      });
+    }
+    setImmediate(() => {
+      enqueueDbWrite(async () => {
+        const fresh = await readDbForWrite();
+        const live = (fresh.users || []).find(u => normalizeEmail(u.email) === userEmail);
+        if (!live) return null;
+        const changed = await recoverMyCustomersFromAllSources(fresh, live);
+        if (!changed) return null;
+        return writeDbFast(fresh, { backupReason: 'login-recover-sub-customers', backupSource: fresh });
+      }).catch(e => console.error('Login sub-customer recovery error:', e.message));
+    });
   } catch(e) {
     console.error('Login error:', e.message);
     res.status(503).json({ error: 'Login service is temporarily unavailable. Please try again soon.' });
@@ -1873,7 +1906,7 @@ app.post('/auth/admin-login', async (req, res) => {
   if (password !== ADMIN_PASSWORD || pin !== ADMIN_PIN) return res.status(401).json({ error: 'Wrong password or PIN' });
   const token = createSession('admin', 'admin');
   try {
-    const data = await readJsonBinRaw();
+    const data = await readJsonBinRaw({ fast: true });
     res.json({ success: true, token, data: safeDataForSession(data, { role: 'admin' }) });
   } catch(e) {
     console.error('Admin login error:', e.message);
@@ -1886,7 +1919,7 @@ app.post('/auth/signup-start', async (req, res) => {
   const cleanEmail = normalizeEmail(email);
   if (!name || !cleanEmail) return res.status(400).json({ error: 'Invalid signup data' });
   try {
-    const data = await readJsonBinRaw();
+    const data = await readJsonBinRaw({ fast: true });
     data.users = Array.isArray(data.users) ? data.users : [];
     if (data.users.some(u => normalizeEmail(u.email) === cleanEmail)) return res.status(409).json({ error: 'Email already registered' });
     const otp = setOtp(signupOtps, cleanEmail, { name: String(name).trim(), tgChatId: String(tgChatId || '').trim() });
@@ -1920,7 +1953,7 @@ app.post('/auth/signup', async (req, res) => {
   if (!cleanPhone) return res.status(400).json({ error: 'Phone number is required' });
   if (!verifyOtp(signupOtps, cleanEmail, otp)) return res.status(400).json({ error: 'Invalid or expired verification code' });
   try {
-    const data = await readJsonBinRaw();
+    const data = await readJsonBinRaw({ fast: true });
     data.users = Array.isArray(data.users) ? data.users : [];
     if (data.users.some(u => normalizeEmail(u.email) === cleanEmail)) return res.status(409).json({ error: 'Email already registered' });
     const user = {
@@ -1952,7 +1985,7 @@ app.post('/auth/reset-start', async (req, res) => {
   const cleanEmail = normalizeEmail(email);
   if (!cleanEmail) return res.status(400).json({ error: 'Email required' });
   try {
-    const data = await readJsonBinRaw();
+    const data = await readJsonBinRaw({ fast: true });
     const user = (data.users || []).find(u => normalizeEmail(u.email) === cleanEmail);
     let delivery = null;
     let otpForClient = null;
@@ -1983,7 +2016,7 @@ app.post('/auth/reset-start', async (req, res) => {
 app.post('/auth/user-lookup', async (req, res) => {
   const { email } = req.body;
   try {
-    const data = await readJsonBinRaw();
+    const data = await readJsonBinRaw({ fast: true });
     const user = (data.users || []).find(u => normalizeEmail(u.email) === normalizeEmail(email));
     if (!user) return res.json({ success: true, exists: false });
     res.json({ success: true, exists: true, name: user.name || normalizeEmail(email) });
@@ -1998,7 +2031,7 @@ app.post('/auth/reset-password', async (req, res) => {
   if (!email || !password || password.length < 6) return res.status(400).json({ error: 'Invalid password' });
   if (!verifyOtp(resetOtps, email, otp)) return res.status(400).json({ error: 'Invalid or expired reset code' });
   try {
-    const data = await readJsonBinRaw();
+    const data = await readJsonBinRaw({ fast: true });
     const user = (data.users || []).find(u => normalizeEmail(u.email) === normalizeEmail(email));
     if (!user) return res.status(404).json({ error: 'User not found' });
     user.pass = hashPassword(password);
@@ -3591,6 +3624,7 @@ rtEnhancements = registerEnhancements(app, {
   requireSession,
   readJsonBinRaw,
   writeJsonBinRaw,
+  writeDbFast,
   normalizeEmail,
   hashPassword,
   verifyPassword,

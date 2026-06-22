@@ -1503,14 +1503,12 @@ async function validateStoredSession(role){
     });
     clearTimeout(timer);
     if(r.status===401){clearStoredSession();return false;}
-    if(!r.ok)return false;
+    if(!r.ok)return true;
     const me=await r.json().catch(()=>({}));
     if(!me.success||me.role!==role)return false;
-    const data=await jbRead();
-    if(data)applyDataSnapshot(data);
     return true;
   }catch(e){
-    return false;
+    return authToken?true:false;
   }
 }
 
@@ -2722,9 +2720,11 @@ async function doLogin(){
     showServerWake('Signing in...');
     const j=await postJson('/auth/login',{email:e,password:p});
     hideServerWake();
+    if(!j.token)throw new Error('Login failed — no session token. Try again.');
     persistAuthToken(j.token,'user');
     applyDataSnapshot(j.data||{users:[j.user]});
     bindCurrentUserFromUsers(j.user||users[0]);
+    if(!currentUser)throw new Error('Login failed — account data missing. Try again.');
     err.style.display='none';logActivity('Customer login',currentUser.email);enterApp();
   }catch(ex){
     hideServerWake();
@@ -2867,6 +2867,11 @@ async function doAdminLogin(){
   }
 }
 function enterApp(){
+  if(!currentUser){
+    showToast('⚠️ Session error — please log in again');
+    doLogout();
+    return;
+  }
   document.getElementById('page-auth').classList.remove('active');
   document.getElementById('page-app').classList.add('active');
   document.getElementById('topbar-av').textContent=(currentUser?.name||currentUser?.email||'?').charAt(0).toUpperCase();
@@ -2879,6 +2884,7 @@ function enterApp(){
 }
 async function recoverMyCustomersOnLogin(){
   if(!currentUser?.email||!authToken)return;
+  await new Promise(r=>setTimeout(r,1500));
   const cached=readCachedMyCustomers(currentUser.email);
   let local=mergeMyCustomersClient(cached,currentUser.myCustomers);
   if(!local.length&&scoreMyCustomers(currentUser.myCustomers)>0)local=currentUser.myCustomers;
@@ -5715,6 +5721,12 @@ async function restoreCustomerSession(){
     const sess=JSON.parse(s);
     if(Date.now()-sess.ts>=SESSION_MS){clearStoredSession();return false;}
     if(!await validateStoredSession('user')){clearStoredSession();return false;}
+    try{
+      const data=await jbRead();
+      if(data)applyDataSnapshot(data);
+    }catch(e){
+      applyOfflineCacheIfAny();
+    }
     const u=users.find(x=>normEmail(x.email)===normEmail(sess.email));
     if(!u){clearStoredSession();return false;}
     currentUser=u;
