@@ -30,25 +30,41 @@ function shahidOneUserPlanKeys() {
 
 function stockAccountsForPlan(stock, skey) {
   const list = (stock && stock[skey]) || [];
-  if (!/^shahid__1user__/.test(String(skey || ''))) return list;
-  const myRank = shahidDurationRank(shahidPlanDuration(skey));
-  return list.filter(acc => {
-    const key = String(acc?.accKey || '');
-    if (!key.startsWith('shprof__')) return true;
-    for (const otherKey of shahidOneUserPlanKeys()) {
-      if (otherKey === skey) continue;
-      if (shahidDurationRank(shahidPlanDuration(otherKey)) <= myRank) continue;
-      if (((stock && stock[otherKey]) || []).some(a => a && a.accKey === key)) return false;
-    }
-    return true;
-  });
+  if (/^shahid__1user__/.test(String(skey || ''))) {
+    const myRank = shahidDurationRank(shahidPlanDuration(skey));
+    return list.filter(acc => {
+      const key = String(acc?.accKey || '');
+      if (!key.startsWith('shprof__')) return true;
+      for (const otherKey of shahidOneUserPlanKeys()) {
+        if (otherKey === skey) continue;
+        if (shahidDurationRank(shahidPlanDuration(otherKey)) <= myRank) continue;
+        if (((stock && stock[otherKey]) || []).some(a => a && a.accKey === key)) return false;
+      }
+      return true;
+    });
+  }
+  if (/^disney__1user__/.test(String(skey || ''))) {
+    const myRank = shahidDurationRank(String(skey).replace(/^disney__1user__/, ''));
+    const disneyKeys = ['disney__1user__1m', 'disney__1user__3m', 'disney__1user__1y'];
+    return list.filter(acc => {
+      const key = String(acc?.accKey || '');
+      if (!key.startsWith('dsprof__')) return true;
+      for (const otherKey of disneyKeys) {
+        if (otherKey === skey) continue;
+        if (shahidDurationRank(String(otherKey).replace(/^disney__1user__/, '')) <= myRank) continue;
+        if (((stock && stock[otherKey]) || []).some(a => a && a.accKey === key)) return false;
+      }
+      return true;
+    });
+  }
+  return list;
 }
 
 function markLinkedStockSold(stock, account, soldTo, skey) {
   if (!account) return;
   markStockSold(account, soldTo);
   const linkedKey = String(account.accKey || '');
-  if (!stock || (!linkedKey.startsWith('nfprof__') && !linkedKey.startsWith('shprof__'))) return;
+  if (!stock || (!linkedKey.startsWith('nfprof__') && !linkedKey.startsWith('shprof__') && !linkedKey.startsWith('dsprof__'))) return;
   if (linkedKey.startsWith('nfprof__')) {
     const planKey = String(skey || '');
     if (!/^netflix__1user__/.test(planKey)) return;
@@ -57,9 +73,9 @@ function markLinkedStockSold(stock, account, soldTo, skey) {
     });
     return;
   }
-  // Shahid 1-user stock is duration-specific (1m / 3m / 1y), not shared across plans.
+  // Shahid / Disney 1-user stock is duration-specific (1m / 3m / 1y), not shared across plans.
   const planKey = String(skey || '');
-  if (!/^shahid__1user__/.test(planKey)) return;
+  if (!/^shahid__1user__/.test(planKey) && !/^disney__1user__/.test(planKey)) return;
   (stock[planKey] || []).forEach(acc => {
     if (acc && acc !== account && acc.accKey === linkedKey) markStockSold(acc, soldTo);
   });

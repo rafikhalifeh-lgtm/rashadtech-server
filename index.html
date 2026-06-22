@@ -1103,7 +1103,6 @@ So your EmailJS template will receive the user email and verification code corre
     <div class="field"><label>First name</label><input type="text" id="mc-fname" placeholder="First name"></div>
     <div class="field"><label>Last name</label><input type="text" id="mc-lname" placeholder="Last name"></div>
     <div class="field"><label>Email (optional)</label><input type="email" id="mc-email" placeholder="customer@email.com"></div>
-    <div class="field"><label>Password (optional)</label><input type="text" id="mc-pass" placeholder="Account password"></div>
     <button class="btn-primary" id="addmycust-submit-btn" onclick="saveMyCustomer()">Add customer</button>
   </div>
 </div></div>
@@ -1347,6 +1346,8 @@ function normEmail(e){return String(e||'').trim().toLowerCase();}
 function accountProfileName(acc){return String(acc?.profileName||acc?.extra||'').trim();}
 function orderProfileName(o){return String(o?.profileName||o?.extra||'').trim();}
 function isShahidOrder(o){return Boolean(o&&(o.productId==='shahid'||/shahid/i.test(o.product||'')));}
+function isDisneyOrder(o){return Boolean(o&&(o.productId==='disney'||/disney/i.test(o.product||'')));}
+function isDisneyOneUserOrder(o){return isDisneyOrder(o)&&/1\s*user/i.test(String(o.plan||''));}
 function isAnghamiOrder(o){return Boolean(o&&(o.productId==='anghami'||/anghami/i.test(o.product||'')));}
 const SHAHID_FORGET_URL='https://shahid.mbc.net/en/hub/forget-password';
 let _shahidFixOrderId=null;
@@ -1653,7 +1654,7 @@ async function apiStockDelete(payload){
 
 function setAddStockBusy(busy){
   addStockInFlight=busy;
-  ['btn-add-stock','btn-add-netflix-bulk','btn-add-shahid-bulk'].forEach(id=>{
+  ['btn-add-stock','btn-add-netflix-bulk','btn-add-shahid-bulk','btn-add-disney-bulk'].forEach(id=>{
     const el=document.getElementById(id);
     if(el)el.disabled=busy;
   });
@@ -1690,6 +1691,8 @@ const DURATIONS_NF_1U=[{key:'1m',label:'1 Month',price:1.5},{key:'3m',label:'3 M
 const DURATIONS_NF_FULL=Array.from({length:12},(_,i)=>({key:`${i+1}m`,label:`${i+1} Month${i>0?'s':''}`,price:(i+1)*7}));
 const DURATIONS_SH_1U=[{key:'1m',label:'1 Month',price:1.5},{key:'3m',label:'3 Months',price:2.4},{key:'1y',label:'1 Year',price:10}];
 const DURATIONS_SH_FULL=[{key:'1m',label:'1 Month',price:5},{key:'3m',label:'3 Months',price:11.5},{key:'1y',label:'1 Year',price:33}];
+const DURATIONS_DISNEY_1U=[{key:'1m',label:'1 Month',price:2},{key:'3m',label:'3 Months',price:5},{key:'1y',label:'1 Year',price:15}];
+const DURATIONS_DISNEY_FULL=[{key:'1m',label:'1 Month',price:9.5},{key:'3m',label:'3 Months',price:27},{key:'1y',label:'1 Year',price:90}];
 const GIFT_CARD_US=[{key:'10',label:'$10',price:10.5},{key:'25',label:'$25',price:26},{key:'50',label:'$50',price:52},{key:'100',label:'$100',price:104}];
 const GIFT_CARD_UAE=[{key:'50',label:'50 AED',price:14},{key:'100',label:'100 AED',price:28},{key:'200',label:'200 AED',price:55},{key:'500',label:'500 AED',price:135}];
 const GIFT_CARD_KSA=[{key:'50',label:'50 SAR',price:14},{key:'100',label:'100 SAR',price:27},{key:'200',label:'200 SAR',price:54},{key:'500',label:'500 SAR',price:133}];
@@ -1754,8 +1757,9 @@ const DEFAULT_PRODUCTS=[
   {id:'osn',name:'OSN+',short:'OSN',color:'#111',tc:'#fff',cat:'video',badge:'',desc:'Premium TV & movies',hasUserTypes:true,userTypes:[
     {key:'1user',name:'1 User',desc:'Single profile',durations:[{key:'1m',label:'1 Month',price:2},{key:'1y',label:'1 Year',price:20}]},
     {key:'full',name:'Full User',desc:'All profiles',durations:[{key:'1m',label:'1 Month',price:8},{key:'1y',label:'1 Year',price:80}]}]},
-  {id:'disney',name:'Disney+',short:'D+',color:'#113CCF',tc:'#fff',cat:'video',badge:'new',desc:'Disney · Marvel · Star Wars',hasUserTypes:false,plans:[
-    {name:'1 Month',desc:'Full HD',price:7},{name:'3 Months',desc:'Full HD',price:18},{name:'1 Year',desc:'Full HD',price:60}]},
+  {id:'disney',name:'Disney+',short:'D+',color:'#113CCF',tc:'#fff',cat:'video',badge:'new',desc:'Disney · Marvel · Star Wars',hasUserTypes:true,userTypes:[
+    {key:'1user',name:'1 User',desc:'Phone sign-in · 1 profile',durations:DURATIONS_DISNEY_1U},
+    {key:'full',name:'Full User',desc:'Full account access',durations:DURATIONS_DISNEY_FULL}]},
   {id:'amazon',name:'Amazon Prime',short:'AP',color:'#00A8E0',tc:'#fff',cat:'video',badge:'new',desc:'Prime Video & more',hasUserTypes:false,plans:[
     {name:'1 Month',desc:'Full access',price:3},{name:'6 Months',desc:'Full access',price:10}]},
   {id:'anghami',name:'Anghami+',short:'A',color:'#7B3FBE',tc:'#fff',cat:'music',badge:'',desc:'Instant activation link · Arab & international music',hasUserTypes:false,plans:[
@@ -1903,8 +1907,29 @@ function getShahidPlanAccounts(skey){
     return true;
   });
 }
+function disneyPlanDuration(skey){
+  const m=/^disney__1user__(.+)$/.exec(String(skey||''));
+  return m?m[1]:'';
+}
+function getDisneyPlanAccounts(skey){
+  const list=getAccounts(skey);
+  if(!isDisneyOneUserKey(skey))return list;
+  const myRank=shahidDurationRank(disneyPlanDuration(skey));
+  return list.filter(acc=>{
+    const key=String(acc?.accKey||'');
+    if(!key.startsWith('dsprof__'))return true;
+    for(const otherKey of disneyOneUserPlanKeys()){
+      if(otherKey===skey)continue;
+      if(shahidDurationRank(disneyPlanDuration(otherKey))<=myRank)continue;
+      if((accountStock[otherKey]||[]).some(a=>a&&a.accKey===key))return false;
+    }
+    return true;
+  });
+}
 function stockAccountsForKey(k){
-  return isShahidOneUserKey(k)?getShahidPlanAccounts(k):getAccounts(k);
+  if(isShahidOneUserKey(k))return getShahidPlanAccounts(k);
+  if(isDisneyOneUserKey(k))return getDisneyPlanAccounts(k);
+  return getAccounts(k);
 }
 const availableCount=k=>stockAccountsForKey(k).filter(a=>!a.used).length;
 const totalCount=k=>stockAccountsForKey(k).length;
@@ -1923,6 +1948,13 @@ function markLinkedStockSoldClient(acc,soldTo,skey){
   if(linkedKey.startsWith('shprof__')){
     const planKey=String(skey||'');
     if(/^shahid__1user__/.test(planKey)){
+      (accountStock[planKey]||[]).forEach(a=>{if(a&&a.accKey===linkedKey)apply(a);});
+    }else apply(acc);
+    return;
+  }
+  if(linkedKey.startsWith('dsprof__')){
+    const planKey=String(skey||'');
+    if(/^disney__1user__/.test(planKey)){
       (accountStock[planKey]||[]).forEach(a=>{if(a&&a.accKey===linkedKey)apply(a);});
     }else apply(acc);
     return;
@@ -1963,7 +1995,9 @@ let selectedTopup=null,curProd=null,selUT=null,selDur=null,selPlan=null;
 let customDays=0,anghamiProfile='',assignCustId=null,curAccModalKey=null,accAddMode='manual';
 const NETFLIX_BULK_DEFAULTS_KEY='rt_netflix_bulk_defaults';
 const SHAHID_BULK_DEFAULTS_KEY='rt_shahid_bulk_defaults';
+const DISNEY_BULK_DEFAULTS_KEY='rt_disney_bulk_defaults';
 const SHAHID_MAX_ONE_USER_SLOTS=4;
+const DISNEY_MAX_ONE_USER_SLOTS=5;
 let pendingOTPs={},pendingResetOTPs={},pendingSignupData=null;
 const OTP_EXPIRY_MS=10*60*1000; // 10 minutes
 
@@ -2021,6 +2055,7 @@ let _sublinkProfileName=null;
 let _sublinkMainEmail=null;
 let _sublinkCodeEmail=null;
 let _sublinkInboxEmail=null;
+let _sublinkPhone=null;
 
 async function activateTV(){
   const code=document.getElementById('tv-code-input').value.trim().toUpperCase();
@@ -2364,7 +2399,7 @@ function subLinkDataFromOrder(o){
   const codeEmail=o.codeEmail||o.email||inboxEmail;
   return {
     id:o.id,product:o.product,short:o.short,color:o.color,tc:o.tc,
-    productId:o.productId,plan:o.plan,email:o.email,pass:o.pass,
+    productId:o.productId,plan:o.plan,email:o.email,pass:o.pass,phone:o.phone||'',
     expiryDate:o.expiryDate||'',profileName:o.profileName||'',
     profilePin:o.profilePin||'',serviceLink:o.serviceLink||'',accKey:o.accKey||'',mainEmail:inboxEmail,
     codeEmail,inboxEmail,
@@ -2513,20 +2548,33 @@ async function checkSubLink(){
   document.getElementById('sublink-name').textContent=found.product||'';
   document.getElementById('sublink-plan').textContent=(found.plan||'')+' · '+(found.date||'');
   const anghamiSub=isAnghamiOrder(found);
+  const disneyOneSub=isDisneyOneUserOrder(found);
   const subProf=orderProfileName(found);
   document.getElementById('sublink-email').textContent=found.email||'';
   document.getElementById('sublink-pass').textContent=found.pass||'';
+  const phoneRow=document.getElementById('sublink-phone-row');
+  const phoneEl=document.getElementById('sublink-phone');
+  if(phoneRow&&phoneEl){
+    if(disneyOneSub&&found.phone){
+      phoneRow.style.display='flex';
+      phoneEl.textContent=found.phone;
+    }else{
+      phoneRow.style.display='none';
+      phoneEl.textContent='';
+    }
+  }
   const credBlock=document.querySelector('#sublink-content [style*="YOUR CREDENTIALS"]')?.parentElement;
   const emailRow=document.getElementById('sublink-email')?.closest('div');
   const passRow=document.getElementById('sublink-pass')?.closest('div')?.parentElement?.parentElement;
   if(credBlock){
     const credTitle=credBlock.querySelector('div');
-    if(credTitle)credTitle.textContent=anghamiSub?'YOUR ANGHAMI ACTIVATION':'YOUR CREDENTIALS';
+    if(credTitle)credTitle.textContent=anghamiSub?'YOUR ANGHAMI ACTIVATION':disneyOneSub?'HOW TO SIGN IN':'YOUR CREDENTIALS';
   }
-  if(emailRow)emailRow.style.display=anghamiSub?'none':'flex';
-  if(passRow)passRow.style.display=anghamiSub?'none':'flex';
+  if(emailRow)emailRow.style.display=(anghamiSub||disneyOneSub)?'none':'flex';
+  if(passRow)passRow.style.display=(anghamiSub||disneyOneSub)?'none':'flex';
   _sublinkEmail=found.email||'';
   _sublinkPass=found.pass||'';
+  _sublinkPhone=found.phone||'';
   _sublinkProfileName=found.profileName||found.product||'Customer';
   _sublinkMainEmail=found.mainEmail||found.inboxEmail||null;
   _sublinkCodeEmail=found.codeEmail||found.email||found.mainEmail||null;
@@ -2569,7 +2617,34 @@ async function checkSubLink(){
   const qrUrl=`https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(location.href)}`;
   document.getElementById('sublink-qr').src=qrUrl;
   const isShahid=isShahidOrder(found);
-  document.getElementById('sublink-tv-section').style.display=isShahid?'none':'block';
+  const isDisney=isDisneyOrder(found);
+  const tvSection=document.getElementById('sublink-tv-section');
+  if(tvSection)tvSection.style.display=(isShahid||disneyOneSub)?'none':'block';
+  const disneyGuide=document.getElementById('sublink-disney-guide');
+  if(disneyGuide){
+    if(disneyOneSub){
+      disneyGuide.style.display='block';
+      disneyGuide.innerHTML=`<div style="font-size:12px;color:var(--text2);line-height:1.7;text-align:left">
+        <b>How to sign in to Disney+:</b><br>
+        1) Open the <b>Disney+</b> app on your phone or TV<br>
+        2) Enter your <b>phone number with country code</b> (shown above)<br>
+        3) Tap <b>Request Sign-in Code</b> below, then enter the code you receive<br>
+        4) If you have any issue, contact our agents on WhatsApp or Telegram
+      </div>`;
+    }else{
+      disneyGuide.style.display='none';
+      disneyGuide.innerHTML='';
+    }
+  }
+  const codeReqTitle=document.querySelector('#sublink-code-request [style*="SIGN-IN CODE"]');
+  const codeSecTitle=document.querySelector('#sublink-code-section [style*="SIGN-IN CODE"]');
+  const codeLabel=disneyOneSub?'DISNEY+ SIGN-IN CODE':'NETFLIX SIGN-IN CODE';
+  if(codeReqTitle)codeReqTitle.textContent=codeLabel;
+  if(codeSecTitle)codeSecTitle.textContent=codeLabel;
+  const codeBtn=document.getElementById('request-code-btn');
+  if(codeBtn)codeBtn.style.background=disneyOneSub?'#113CCF':'var(--red)';
+  const refreshBtn=document.getElementById('refresh-code-btn');
+  if(refreshBtn)refreshBtn.style.background=disneyOneSub?'#113CCF':'var(--red)';
   const shahidActions=document.getElementById('sublink-shahid-actions');
   if(shahidActions){
     if(isShahid){
@@ -2583,7 +2658,7 @@ async function checkSubLink(){
       shahidActions.innerHTML='';
     }
   }
-  if(found.accKey&&!isShahid){
+  if((found.accKey||disneyOneSub)&&!isShahid){
     _sublinkAccKey=found.accKey;
     document.getElementById('sublink-code-request').style.display='block';
     if(_codeRefreshInterval)clearInterval(_codeRefreshInterval);
@@ -4218,7 +4293,6 @@ function openAddMyCust(){
   document.getElementById('mc-fname').value='';
   document.getElementById('mc-lname').value='';
   document.getElementById('mc-email').value='';
-  document.getElementById('mc-pass').value='';
   document.getElementById('mc-code').value='+961';
   document.getElementById('addmycust-err').style.display='none';
   document.getElementById('addmycust-title').textContent=currentLang==='ar'?'إضافة عميل':'Add customer';
@@ -4234,7 +4308,6 @@ function openEditMyCust(custId){
   document.getElementById('mc-fname').value=c.fname||'';
   document.getElementById('mc-lname').value=c.lname||'';
   document.getElementById('mc-email').value=c.email||'';
-  document.getElementById('mc-pass').value=c.pass||'';
   document.getElementById('addmycust-err').style.display='none';
   document.getElementById('addmycust-title').textContent=currentLang==='ar'?'تعديل العميل':'Edit customer';
   document.getElementById('addmycust-submit-btn').textContent=currentLang==='ar'?'حفظ التغييرات':'Save changes';
@@ -4258,7 +4331,6 @@ async function saveMyCustomer(){
   const fname=document.getElementById('mc-fname').value.trim();
   const lname=document.getElementById('mc-lname').value.trim();
   const email=document.getElementById('mc-email').value.trim();
-  const pass=document.getElementById('mc-pass').value.trim();
   if(!phone||!fname||!lname){document.getElementById('addmycust-err').style.display='block';return;}
   document.getElementById('addmycust-err').style.display='none';
   try{
@@ -4266,12 +4338,12 @@ async function saveMyCustomer(){
   currentUser.myCustomers=currentUser.myCustomers||[];
   if(editingCustId!=null){
     const c=currentUser.myCustomers.find(x=>x.id===editingCustId);
-    if(c){c.code=code;c.phone=phone;c.fname=fname;c.lname=lname;c.email=email;c.pass=pass;}
+    if(c){c.code=code;c.phone=phone;c.fname=fname;c.lname=lname;c.email=email;}
     syncCurrentUserIntoUsers();
     await saveMyCustomersToServer();closeModal('addmycust-modal');editingCustId=null;renderMyCustomers();showToast(currentLang==='ar'?'✓ تم تحديث العميل':'✓ Customer updated');
     return;
   }
-  currentUser.myCustomers.push({id:Date.now(),code,phone,fname,lname,email,pass,tgChatId:'',subs:[]});
+  currentUser.myCustomers.push({id:Date.now(),code,phone,fname,lname,email,tgChatId:'',subs:[]});
   syncCurrentUserIntoUsers();
   await saveMyCustomersToServer();closeModal('addmycust-modal');renderMyCustomers();showToast(currentLang==='ar'?'✓ تمت إضافة العميل':'✓ Customer added');
   }catch(e){showToast('⚠️ '+(e.message||'Could not save customer'));}
@@ -4299,6 +4371,8 @@ function renderMyCustomers(){
       const cleanId=(s.id||'').replace('#','');
       const credHtml=isAnghamiOrder(s)
         ?`${s.serviceLink?`<span class="cust-sub-cred-line"><a href="${esc(s.serviceLink)}" target="_blank" rel="noopener" style="color:var(--blue)">🔗 Activation link</a></span>`:''}${s.expiryDate?`<span class="cust-sub-cred-line">⏰ Exp: ${esc(s.expiryDate)}</span>`:''}`
+        :isDisneyOneUserOrder(s)
+        ?`<span class="cust-sub-cred-line">📱 ${esc(s.phone||'')}</span>${orderProfileName(s)?`<span class="cust-sub-cred-line">Profile: ${esc(orderProfileName(s))}</span>`:''}`
         :`<span class="cust-sub-cred-line">📧 ${esc(s.email)}</span><span class="cust-sub-cred-line">🔑 ${esc(s.pass)}</span>`;
       const extraHtml=`${orderProfileName(s)&&!isAnghamiOrder(s)?`<span class="cust-sub-cred-line">Profile: ${esc(orderProfileName(s))}</span>`:''}${s.profilePin?`<span class="cust-sub-cred-line">PIN: ${esc(s.profilePin)}</span>`:''}${s.expiryDate&&!isAnghamiOrder(s)?`<span class="cust-sub-cred-line">Exp: ${esc(s.expiryDate)}</span>`:''}`;
       return `<div class="cust-sub-row">
@@ -4321,7 +4395,6 @@ function renderMyCustomers(){
           <div class="cust-name">${esc(c.fname)} ${esc(c.lname)}</div>
           <div class="cust-phone">📱 ${esc(c.code)} ${esc(c.phone)}</div>
           ${c.email?`<div class="cust-phone" style="font-family:var(--mono)">📧 ${esc(c.email)}</div>`:''}
-          ${c.pass?`<div class="cust-phone" style="font-family:var(--mono)">🔑 ${esc(c.pass)}</div>`:''}
           <div class="cust-subs-count">${c.subs&&c.subs.length?c.subs.length+' subscription'+(c.subs.length!==1?'s':''):'No subscriptions yet'}</div>
         </div>
         <div class="cust-card-actions" style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
@@ -4699,7 +4772,7 @@ async function toggleStockBlock(skey,blocked){
     logActivity(blocked?'Stock blocked':'Stock unblocked',skey);
   }catch(e){showToast('⚠️ '+e.message);}
 }
-function openAccModal(skey,label,focusAdd=false){curAccModalKey=skey;accAddMode=(isNetflixOneUserKey(skey)||isShahidOneUserKey(skey))?'bulk':'manual';document.getElementById('acc-modal-title').textContent=label;renderAccModal(focusAdd);openModal('accounts-modal');}
+function openAccModal(skey,label,focusAdd=false){curAccModalKey=skey;accAddMode=(isNetflixOneUserKey(skey)||isShahidOneUserKey(skey)||isDisneyOneUserKey(skey))?'bulk':'manual';document.getElementById('acc-modal-title').textContent=label;renderAccModal(focusAdd);openModal('accounts-modal');}
 function setAccAddMode(mode){accAddMode=mode;renderAccModal(true);}
 function loadNetflixBulkDefaults(){
   try{return JSON.parse(localStorage.getItem(NETFLIX_BULK_DEFAULTS_KEY)||'{}')||{};}catch(e){return {};}
@@ -4716,6 +4789,51 @@ function shahidOneUserPlanKeys(){
 function isShahidKey(k){return String(k||'').startsWith('shahid__');}
 function isShahidOneUserKey(k){return /^shahid__1user__/.test(String(k||''));}
 function isShahidFullKey(k){return /^shahid__full__/.test(String(k||''));}
+function isDisneyKey(k){return String(k||'').startsWith('disney__');}
+function isDisneyOneUserKey(k){return /^disney__1user__/.test(String(k||''));}
+function isDisneyFullKey(k){return /^disney__full__/.test(String(k||''));}
+function disneyOneUserPlanKeys(){
+  return DURATIONS_DISNEY_1U.map(d=>sk('disney','1user',d.key));
+}
+function loadDisneyBulkDefaults(){
+  try{return JSON.parse(localStorage.getItem(DISNEY_BULK_DEFAULTS_KEY)||'{}')||{};}catch(e){return {};}
+}
+function saveDisneyBulkDefaults(data){
+  try{localStorage.setItem(DISNEY_BULK_DEFAULTS_KEY,JSON.stringify(data));}catch(e){}
+}
+function disneyProfileId(account){
+  if(!account)return '';
+  if(account.accKey)return String(account.accKey);
+  return `${account.phone||''}__${accountProfileName(account)}`;
+}
+function disneyAliasAccounts(phone){
+  const clean=String(phone||'').replace(/\s+/g,'');
+  const rows=[];
+  Object.entries(accountStock||{}).forEach(([key,accs])=>{
+    if(!isDisneyKey(key))return;
+    (accs||[]).forEach(a=>{if(String(a.phone||'').replace(/\s+/g,'')===clean)rows.push({key,account:a});});
+  });
+  return rows;
+}
+function disneyBulkSlotsUsed(phone,skey){
+  const planKey=skey||curAccModalKey||'';
+  const ids=new Set();
+  disneyAliasAccounts(phone).filter(r=>!planKey||r.key===planKey).forEach(r=>{
+    if(isDisneyOneUserKey(r.key))ids.add(disneyProfileId(r.account));
+  });
+  return ids.size;
+}
+function validateDisneyAliasForAdd(skey,phone,profileName){
+  if(!isDisneyKey(skey))return '';
+  const rows=disneyAliasAccounts(phone);
+  const oneCount=disneyBulkSlotsUsed(phone,skey);
+  const fullCount=rows.filter(r=>isDisneyFullKey(r.key)).length;
+  if(isDisneyFullKey(skey)&&(oneCount>0||fullCount>0))return 'This Disney+ account is already used for 1-user slots and cannot be added again as full account.';
+  if(isDisneyOneUserKey(skey)&&fullCount>0)return 'This Disney+ account is already reserved as full and cannot be split into 1-user slots.';
+  if(isDisneyOneUserKey(skey)&&oneCount>=DISNEY_MAX_ONE_USER_SLOTS)return `This phone already has ${DISNEY_MAX_ONE_USER_SLOTS} one-user profile slots on this plan.`;
+  if(isDisneyOneUserKey(skey)&&profileName&&rows.some(r=>isDisneyOneUserKey(r.key)&&accountProfileName(r.account).toLowerCase()===String(profileName).trim().toLowerCase()))return 'This profile name is already used for this phone on Disney+.';
+  return '';
+}
 function loadShahidBulkDefaults(){
   try{return JSON.parse(localStorage.getItem(SHAHID_BULK_DEFAULTS_KEY)||'{}')||{};}catch(e){return {};}
 }
@@ -4823,6 +4941,35 @@ function renderShahidBulkForm(skey){
   </div>`).join('')}</div>
   <button class="inline-btn" id="btn-add-shahid-bulk" onclick="addShahidBulkAccounts()"><i class="ti ti-users" style="font-size:13px;vertical-align:-2px;margin-right:4px"></i>Add users to this Shahid plan</button>`;
 }
+function renderDisneyBulkForm(skey){
+  const defs=loadDisneyBulkDefaults();
+  const phone=defs.phone||'';
+  const used=phone?disneyBulkSlotsUsed(phone,skey):0;
+  const slotsLeft=Math.max(0,DISNEY_MAX_ONE_USER_SLOTS-used);
+  return `<div class="acc-add-mode-row">
+    <button type="button" class="acc-add-mode-btn${accAddMode==='bulk'?' active':''}" onclick="setAccAddMode('bulk')">⚡ Quick add profiles</button>
+    <button type="button" class="acc-add-mode-btn${accAddMode==='manual'?' active':''}" onclick="setAccAddMode('manual')">Manual (one at a time)</button>
+  </div>
+  <div class="nf-bulk-shared">
+    <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:10px;text-transform:uppercase;letter-spacing:0.5px">Shared Disney+ account</div>
+    <div class="field"><label>Phone (with country code)</label><input type="tel" id="ds-bulk-phone" placeholder="+961 79 000 000" value="${esc(defs.phone||'')}"></div>
+    <div class="field"><label>Code email (receives sign-in codes)</label><input type="email" id="ds-bulk-email" placeholder="alias@gmail.com" value="${esc(defs.email||'')}"></div>
+    <div class="field"><label>Expiry date — dd/mm/yyyy</label><input type="text" id="ds-bulk-expiry" placeholder="e.g. 15/08/2025" value="${esc(defs.expiryDate||'')}"></div>
+    <div class="field" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px">
+      <label style="color:var(--orange)">🔒 Main Gmail (Disney+ codes — admin only)</label>
+      <input type="email" id="ds-bulk-main-email" placeholder="Gmail that receives Disney+ codes" value="${esc(defs.mainEmail||'')}">
+      <input type="password" id="ds-bulk-main-pass" placeholder="Gmail app password" style="margin-top:6px">
+    </div>
+    ${phone?`<div style="font-size:11px;color:var(--text3);margin-top:8px">${used}/${DISNEY_MAX_ONE_USER_SLOTS} profiles for this phone on <b>this plan only</b> · ${slotsLeft} slot(s) left</div>`:''}
+  </div>
+  <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px">Profile names only</div>
+  <div class="nf-bulk-profiles">${[1,2,3,4,5].map(n=>`<div class="nf-bulk-row">
+    <div class="nf-bulk-row-num">${n}</div>
+    <input type="text" id="ds-bulk-name-${n}" placeholder="Profile name" value="${esc((defs.profiles&&defs.profiles[n-1]?.name)||'')}">
+    <div style="font-size:11px;color:var(--text3)">no PIN</div>
+  </div>`).join('')}</div>
+  <button class="inline-btn" id="btn-add-disney-bulk" onclick="addDisneyBulkAccounts()"><i class="ti ti-users" style="font-size:13px;vertical-align:-2px;margin-right:4px"></i>Add profiles to this Disney+ plan</button>`;
+}
 function renderManualAddForm(skey,needsGmail,isShahidStock){
   if(isAnghamiKey(skey)){
     return `<div class="add-acc-form-title">Add Anghami activation link</div>
@@ -4833,6 +4980,26 @@ function renderManualAddForm(skey,needsGmail,isShahidStock){
   }
   const isShahidOne=isShahidOneUserKey(skey);
   const isShahidFull=isShahidFullKey(skey);
+  const isDisneyOne=isDisneyOneUserKey(skey);
+  const isDisneyFull=isDisneyFullKey(skey);
+  const isDisneyStock=isDisneyKey(skey);
+  if(isDisneyOne){
+    let modeToggle=`<div class="acc-add-mode-row">
+      <button type="button" class="acc-add-mode-btn${accAddMode==='bulk'?' active':''}" onclick="setAccAddMode('bulk')">⚡ Quick add profiles</button>
+      <button type="button" class="acc-add-mode-btn${accAddMode==='manual'?' active':''}" onclick="setAccAddMode('manual')">Manual (one at a time)</button>
+    </div>`;
+    return `${modeToggle}<div class="add-acc-form-title">Add Disney+ 1-user profile</div>
+      <div class="field"><label>Phone (with country code)</label><input type="tel" id="new-acc-phone" placeholder="+961 79 000 000"></div>
+      <div class="field"><label>Code email (receives sign-in codes)</label><input type="email" id="new-acc-email" placeholder="alias@gmail.com"></div>
+      <div class="field"><label>Profile name (optional)</label><input type="text" id="new-acc-profile" placeholder="e.g. Profile 1"></div>
+      <div class="field"><label>Expiry date (optional) — dd/mm/yyyy</label><input type="text" id="new-acc-expiry" placeholder="e.g. 15/08/2025"></div>
+      <div class="field" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px">
+        <label style="color:var(--orange)">🔒 Main Gmail (for Disney+ sign-in codes — admin only)</label>
+        <input type="email" id="new-acc-main-email" placeholder="Gmail address that receives Disney+ codes">
+        <input type="password" id="new-acc-main-pass" placeholder="Gmail app password" style="margin-top:6px">
+      </div>
+      <button class="inline-btn" id="btn-add-stock" onclick="addAccount()"><i class="ti ti-plus" style="font-size:13px;vertical-align:-2px;margin-right:4px"></i>Add to stock</button>`;
+  }
   let modeToggle='';
   if(isNetflixOneUserKey(skey)){
     modeToggle=`<div class="acc-add-mode-row">
@@ -4845,8 +5012,8 @@ function renderManualAddForm(skey,needsGmail,isShahidStock){
       <button type="button" class="acc-add-mode-btn${accAddMode==='manual'?' active':''}" onclick="setAccAddMode('manual')">Manual (one at a time)</button>
     </div>`;
   }
-  const profileFields=isShahidFull?'':`<div class="field"><label>${isShahidOne?'User name (optional)':'Profile (optional)'}</label><input type="text" id="new-acc-profile" placeholder="${isShahidOne?'e.g. User 1':'e.g. Ali, Profile 1'}"></div>`;
-  const pinField=(isShahidStock||isShahidFull)?'':`<div class="field">
+  const profileFields=(isShahidFull||isDisneyFull)?'':`<div class="field"><label>${isShahidOne?'User name (optional)':isDisneyStock?'Profile (optional)':'Profile (optional)'}</label><input type="text" id="new-acc-profile" placeholder="${isShahidOne?'e.g. User 1':'e.g. Ali, Profile 1'}"></div>`;
+  const pinField=(isShahidStock||isShahidFull||isDisneyStock)?'':`<div class="field">
       <label>Profile PIN (optional — for 1 User accounts)</label>
       <input type="text" id="new-acc-profile-pin" placeholder="e.g. 1234" maxlength="6">
       <div style="font-size:11px;color:var(--text3);margin-top:4px">Fixed PIN you set for this profile. Customer will see it on their subscription link.</div>
@@ -4858,15 +5025,15 @@ function renderManualAddForm(skey,needsGmail,isShahidStock){
     <div class="field"><label>Expiry date (optional) — dd/mm/yyyy</label><input type="text" id="new-acc-expiry" placeholder="e.g. 15/08/2025"></div>
     ${pinField}
   ${needsGmail?`<div class="field" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px">
-      <label style="color:var(--orange)">🔒 Main Gmail (${isShahidStock?'for Shahid reset emails':'for Netflix sign-in codes'} — admin only, never shown to customers)</label>
-      <input type="email" id="new-acc-main-email" placeholder="${isShahidStock?'Gmail inbox that receives Shahid reset emails':'Gmail address that receives Netflix codes'}">
+      <label style="color:var(--orange)">🔒 Main Gmail (${isShahidStock?'for Shahid reset emails':isDisneyStock?'for Disney+ sign-in codes':'for Netflix sign-in codes'} — admin only, never shown to customers)</label>
+      <input type="email" id="new-acc-main-email" placeholder="${isShahidStock?'Gmail inbox that receives Shahid reset emails':isDisneyStock?'Gmail address that receives Disney+ codes':'Gmail address that receives Netflix codes'}">
       <input type="password" id="new-acc-main-pass" placeholder="Gmail app password" style="margin-top:6px">
       <div style="font-size:11px;color:var(--text3);margin-top:4px">Gmail only. Use a 16-character app password with IMAP enabled. Spaces are okay; they will be removed automatically.</div>
   </div>`:''}
     <button class="inline-btn" id="btn-add-stock" onclick="addAccount()"><i class="ti ti-plus" style="font-size:13px;vertical-align:-2px;margin-right:4px"></i>Add to stock</button>`;
 }
 function renderAccModal(showForm=false){
-  const skey=curAccModalKey;const list=stockAccountsForKey(skey);const isShahidStock=String(skey||'').startsWith('shahid__');const needsGmail=isNetflixKey(skey)||isShahidStock;let html='';
+  const skey=curAccModalKey;const list=stockAccountsForKey(skey);const isShahidStock=String(skey||'').startsWith('shahid__');const isDisneyStock=isDisneyKey(skey);const needsGmail=isNetflixKey(skey)||isShahidStock||isDisneyOneUserKey(skey);let html='';
   if(isNetflixOneUserKey(skey)){
     const mirrors=netflixMirrorCopyCount(skey);
     if(mirrors>0){
@@ -4882,6 +5049,9 @@ function renderAccModal(showForm=false){
     <div class="acc-list">${list.map((a,i)=>{const owner=a.used?findStockOwnerClient(a):null;const prof=accountProfileName(a);const anghami=isAnghamiKey(skey);return `<div class="acc-item">
       <div class="acc-item-info">${anghami
         ?`${a.serviceLink?`<div class="acc-email" style="word-break:break-all"><a href="${esc(a.serviceLink)}" target="_blank" rel="noopener" style="color:var(--blue)">${esc(a.serviceLink)}</a></div>`:'<div class="acc-email">No link</div>'}`
+        :isDisneyOneUserKey(skey)&&a.phone
+        ?`<div class="acc-email">📱 ${esc(a.phone)}</div><div class="acc-pass">📧 ${esc(a.email)}</div>
+      ${prof?`<div class="acc-extra">👤 Profile: ${esc(prof)}</div>`:''}`
         :`<div class="acc-email">${esc(a.email)}</div><div class="acc-pass">${esc(a.pass)}</div>
       ${prof?`<div class="acc-extra">👤 Profile: ${esc(prof)}</div>`:''}`}
       ${!anghami&&a.profilePin?`<div class="acc-extra">🔢 PIN: ${esc(a.profilePin)}</div>`:''}
@@ -4897,11 +5067,12 @@ function renderAccModal(showForm=false){
   html+=`<div class="add-acc-form">`;
   if(isNetflixOneUserKey(skey)&&accAddMode==='bulk')html+=renderNetflixBulkForm(skey);
   else if(isShahidOneUserKey(skey)&&accAddMode==='bulk')html+=renderShahidBulkForm(skey);
+  else if(isDisneyOneUserKey(skey)&&accAddMode==='bulk')html+=renderDisneyBulkForm(skey);
   else html+=renderManualAddForm(skey,needsGmail,isShahidStock);
   html+=`</div>`;
   document.getElementById('acc-modal-body').innerHTML=html;
   if(showForm){
-    const focusId=isNetflixOneUserKey(skey)&&accAddMode==='bulk'?'nf-bulk-email':(isShahidOneUserKey(skey)&&accAddMode==='bulk'?'sh-bulk-email':'new-acc-email');
+    const focusId=isNetflixOneUserKey(skey)&&accAddMode==='bulk'?'nf-bulk-email':(isShahidOneUserKey(skey)&&accAddMode==='bulk'?'sh-bulk-email':(isDisneyOneUserKey(skey)&&accAddMode==='bulk'?'ds-bulk-phone':'new-acc-email'));
     setTimeout(()=>document.getElementById(focusId)?.focus(),100);
   }
 }
@@ -5049,6 +5220,56 @@ async function addShahidBulkAccounts(){
   logActivity('Shahid bulk stock added',`${profiles.length} users · ${curAccModalKey}`);
   await autoFulfillPending(curAccModalKey);
 }
+async function addDisneyBulkAccounts(){
+  if(!isDisneyOneUserKey(curAccModalKey)){showToast('Quick add is only for Disney+ 1-user plans');return;}
+  if(addStockInFlight){showToast('Stock add already in progress…');return;}
+  const phone=(document.getElementById('ds-bulk-phone')?.value||'').replace(/\s+/g,' ').trim();
+  const email=document.getElementById('ds-bulk-email')?.value.trim()||'';
+  const expiryDate=document.getElementById('ds-bulk-expiry')?.value.trim()||'';
+  const mainEmail=document.getElementById('ds-bulk-main-email')?.value.trim()||'';
+  const mainPass=(document.getElementById('ds-bulk-main-pass')?.value||'').replace(/\s+/g,'');
+  if(!phone||!email){showToast('Phone and code email are required');return;}
+  const profiles=[];
+  for(let n=1;n<=DISNEY_MAX_ONE_USER_SLOTS;n++){
+    const name=document.getElementById('ds-bulk-name-'+n)?.value.trim()||'';
+    if(name)profiles.push({name,row:n});
+  }
+  if(!profiles.length){showToast('Enter at least one profile name');return;}
+  const used=disneyBulkSlotsUsed(phone);
+  if(used+profiles.length>DISNEY_MAX_ONE_USER_SLOTS){showToast(`Only ${DISNEY_MAX_ONE_USER_SLOTS-used} slot(s) left for this phone (max ${DISNEY_MAX_ONE_USER_SLOTS} profiles)`);return;}
+  const names=new Set();
+  for(const p of profiles){
+    const aliasError=validateDisneyAliasForAdd(curAccModalKey,phone,p.name);
+    if(aliasError){showToast('⚠️ '+aliasError);return;}
+    const key=p.name.toLowerCase();
+    if(names.has(key)){showToast('Duplicate profile name in this batch');return;}
+    names.add(key);
+  }
+  setAddStockBusy(true);
+  try{
+    await apiStockAdd({
+      skey:curAccModalKey,
+      accounts:profiles.map(p=>({
+        skey:curAccModalKey,
+        requestId:[phone.replace(/\s+/g,''),p.name.toLowerCase(),email,curAccModalKey].join('::'),
+        accKey:'dsprof__'+Date.now()+'_'+Math.random().toString(36).slice(2,8)+'_'+p.row,
+        account:{phone,email,pass:'',profileName:p.name,expiryDate,mainEmail:mainEmail||'',...(mainPass?{mainPass}:{})}
+      }))
+    });
+  }catch(e){
+    showToast('⚠️ '+(e.message||'Save failed'));
+    return;
+  }finally{setAddStockBusy(false);}
+  saveDisneyBulkDefaults({phone,email,expiryDate,mainEmail,profiles:profiles.map(p=>({name:p.name}))});
+  let gmailConfigured=false;
+  if(mainEmail&&mainPass){
+    try{gmailConfigured=await setupGmailMonitor(mainEmail,mainPass);}catch(e){showToast('⚠️ Profiles saved but Gmail error: '+e.message);}
+  }
+  renderAccModal(true);renderStockPanels();renderAdminExpiry();
+  showToast(gmailConfigured?`✓ Added ${profiles.length} Disney+ profile(s) + Gmail`:`✓ Added ${profiles.length} Disney+ profile(s)`);
+  logActivity('Disney bulk stock added',`${profiles.length} profiles · ${curAccModalKey}`);
+  await autoFulfillPending(curAccModalKey);
+}
 async function addNetflixBulkAccounts(){
   if(!isNetflixOneUserKey(curAccModalKey)){showToast('Quick add is only for Netflix 1-user plans');return;}
   if(addStockInFlight){showToast('Stock add already in progress…');return;}
@@ -5124,24 +5345,32 @@ async function addAccount(){
     await autoFulfillPending(curAccModalKey);
     return;
   }
-  const email=document.getElementById('new-acc-email').value.trim();
-  const pass=document.getElementById('new-acc-pass').value.trim();
-  const expiryDate=document.getElementById('new-acc-expiry').value.trim();
-  if(!email||!pass){showToast('Email and password are required');return;}
+  const email=document.getElementById('new-acc-email')?.value.trim()||'';
+  const pass=document.getElementById('new-acc-pass')?.value.trim()||'';
+  const phone=(document.getElementById('new-acc-phone')?.value||'').replace(/\s+/g,' ').trim();
+  const expiryDate=document.getElementById('new-acc-expiry')?.value.trim()||'';
+  const isDisneyOne=isDisneyOneUserKey(curAccModalKey);
+  const isDisneyStock=isDisneyKey(curAccModalKey);
+  if(isDisneyOne){
+    if(!phone||!email){showToast('Phone and code email are required');return;}
+  }else if(!email||!pass){showToast('Email and password are required');return;}
   const mainEmail=document.getElementById('new-acc-main-email')?.value.trim()||'';
   const mainPass=(document.getElementById('new-acc-main-pass')?.value||'').replace(/\s+/g,'');
   const isShahidStock=String(curAccModalKey||'').startsWith('shahid__');
   const profileName=(document.getElementById('new-acc-profile')?.value||'').trim();
-  const profilePin=(isShahidStock||isShahidFullKey(curAccModalKey))?'':(document.getElementById('new-acc-profile-pin')?.value.trim()||'');
+  const profilePin=(isShahidStock||isShahidFullKey(curAccModalKey)||isDisneyStock)?'':(document.getElementById('new-acc-profile-pin')?.value.trim()||'');
   if(isShahidStock&&mainEmail&&!/@(gmail|googlemail)\.com$/i.test(mainEmail)){showToast('⚠️ Shahid reset links require a Gmail inbox');return;}
-  const aliasError=isShahidStock?validateShahidAliasForAdd(curAccModalKey,email,profileName):validateNetflixAliasForAdd(curAccModalKey,email,profilePin);
+  const aliasError=isDisneyOne?validateDisneyAliasForAdd(curAccModalKey,phone,profileName):(isShahidStock?validateShahidAliasForAdd(curAccModalKey,email,profileName):validateNetflixAliasForAdd(curAccModalKey,email,profilePin));
   if(aliasError){showToast('⚠️ '+aliasError);return;}
-  const account={email,pass,profileName,expiryDate,profilePin,mainEmail:mainEmail||'',...(mainPass?{mainPass}:{})};
+  const account=isDisneyOne?{phone,email,pass:'',profileName,expiryDate,mainEmail:mainEmail||'',...(mainPass?{mainPass}:{})}:{email,pass,profileName,expiryDate,profilePin,mainEmail:mainEmail||'',...(mainPass?{mainPass}:{})};
   setAddStockBusy(true);
   try{
     if(isNetflixOneUserKey(curAccModalKey)){
       await apiStockAdd({skey:curAccModalKey,account});
       saveNetflixBulkDefaults({email,pass,expiryDate,mainEmail,profiles:[{name:profileName,pin:''}]});
+    }else if(isDisneyOneUserKey(curAccModalKey)){
+      await apiStockAdd({skey:curAccModalKey,account});
+      saveDisneyBulkDefaults({phone,email,expiryDate,mainEmail,profiles:[{name:profileName}]});
     }else{
       await apiStockAdd({skey:curAccModalKey,account});
       if(isShahidOneUserKey(curAccModalKey)){
@@ -5160,9 +5389,10 @@ async function addAccount(){
   const addedShahidOne=isShahidOneUserKey(curAccModalKey);
   const addedShahidFull=isShahidFullKey(curAccModalKey);
   const addedNetflixOne=isNetflixOneUserKey(curAccModalKey);
+  const addedDisneyOne=isDisneyOneUserKey(curAccModalKey);
   showToast(gmailConfigured
-    ?(addedNetflixOne?'✓ Account added to this Netflix plan + Gmail':addedShahidOne?'✓ User added to this Shahid plan + Gmail':'✓ Account added + Gmail monitoring started')
-    :(addedNetflixOne?'✓ Account added to this Netflix plan':addedShahidOne?'✓ User added to this Shahid plan':addedShahidFull?'✓ Full Shahid account added':'✓ Account added to stock'));
+    ?(addedNetflixOne?'✓ Account added to this Netflix plan + Gmail':addedDisneyOne?'✓ Profile added to this Disney+ plan + Gmail':addedShahidOne?'✓ User added to this Shahid plan + Gmail':'✓ Account added + Gmail monitoring started')
+    :(addedNetflixOne?'✓ Account added to this Netflix plan':addedDisneyOne?'✓ Profile added to this Disney+ plan':addedShahidOne?'✓ User added to this Shahid plan':addedShahidFull?'✓ Full Shahid account added':isDisneyFullKey(curAccModalKey)?'✓ Full Disney+ account added':'✓ Account added to stock'));
   logActivity('Stock added',curAccModalKey);
   await autoFulfillPending(curAccModalKey);
 }
@@ -5885,6 +6115,10 @@ if(document.readyState==='loading'){
           <span style="font-size:12px;color:var(--text2)">Email</span>
           <span id="sublink-email" style="font-family:var(--mono);font-size:13px;font-weight:600;cursor:pointer" onclick="copyText(this)"></span>
         </div>
+        <div id="sublink-phone-row" style="display:none;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <span style="font-size:12px;color:var(--text2)">Phone</span>
+          <span id="sublink-phone" style="font-family:var(--mono);font-size:13px;font-weight:600;cursor:pointer" onclick="copyText(this)"></span>
+        </div>
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
           <span style="font-size:12px;color:var(--text2)">Password</span>
           <div style="display:flex;align-items:center;gap:6px">
@@ -5915,6 +6149,7 @@ if(document.readyState==='loading'){
         </div>
       </div>
       <div id="sublink-shahid-actions" style="display:none;margin-bottom:16px;text-align:left"></div>
+      <div id="sublink-disney-guide" style="display:none;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;margin-bottom:16px"></div>
 
       <!-- Netflix TV Activation -->
       <div id="sublink-tv-section" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;margin-bottom:16px">
@@ -6039,6 +6274,10 @@ const RT_CHAT_I18N={
        a:'On <b>Shahid VIP</b> subscriptions in <b>My Subscriptions</b> use:<br>• <b>Copy info</b> — copy email & password<br>• <b>Report</b> — report a problem<br>• <b>Fix password</b> — if someone changed the Shahid password:<br>1) Open <b>Fix password</b> and read the <b>original password</b> shown (you must use this exact password)<br>2) Copy your Shahid email → open Shahid reset from the wizard → request password reset<br>3) Wait 1–2 minutes → tap <b>GET RESET LINK</b> → open the link and set the password back to the <b>original</b> one<br>⚠️ Do not use a different password — your account may be suspended.'},
       {q:['shahid','shahid vip','mbc shahid'],
        a:'Buy <b>Shahid VIP</b> from the <b>Store</b>. Credentials appear in <b>My Subscriptions</b>. Each Shahid card has <b>Copy info</b>, <b>Report</b>, and <b>Fix password</b>. If login fails because the password was changed, use <b>Fix password</b> (ask the chatbot: "Shahid password changed").'},
+      {q:['disney','disney+','ديزني'],
+       a:'Buy <b>Disney+</b> from the Store — <b>1 User</b> (phone sign-in) or <b>Full User</b>. Open your subscription link, enter your phone with country code in the Disney+ app, then tap <b>Request Sign-in Code</b> for the OTP.'},
+      {q:['disney code','disney sign in','disney login','disney+ code'],
+       a:'For <b>Disney+ 1 User</b>: open your subscription link → copy your phone number → open Disney+ app → enter phone with country code → tap <b>Request Sign-in Code</b> → enter the code. If you need help, contact support.'},
       {q:['disney','osn','spotify','anghami','product','service'],
        a:'All products are in the <b>Store</b> tab. Pick the service, select a plan, and buy with wallet balance. Credentials appear in <b>My Subscriptions</b> and on Telegram if Chat ID is set.'},
       {q:['arabic','language','عربي','english'],
@@ -6094,6 +6333,8 @@ const RT_CHAT_I18N={
        a:'في <b>اشتراكاتي</b> على اشتراك <b>شاهد VIP</b>:<br>• <b>نسخ المعلومات</b> — نسخ البريد وكلمة المرور<br>• <b>الإبلاغ</b> — الإبلاغ عن مشكلة<br>• <b>إصلاح كلمة المرور</b> — إذا غيّر أحد كلمة مرور شاهد:<br>1) افتح <b>إصلاح كلمة المرور</b> وانسخ <b>كلمة المرور الأصلية</b> المعروضة (يجب استخدامها بالضبط)<br>2) انسخ البريد → افتح صفحة إعادة التعيين من المعالج → اطلب إعادة تعيين من شاهد<br>3) انتظر 1–2 دقيقة → اضغط <b>GET RESET LINK</b> → افتح الرابط وضع نفس كلمة المرور الأصلية<br>⚠️ لا تستخدم كلمة مرور أخرى — قد يُوقَف الحساب.'},
       {q:['شاهد','شاهد vip','shahid','mbc'],
        a:'اشترِ <b>شاهد VIP</b> من <b>المتجر</b>. البيانات في <b>اشتراكاتي</b>. كل بطاقة شاهد فيها <b>نسخ المعلومات</b>، <b>الإبلاغ</b>، و<b>إصلاح كلمة المرور</b>. إذا فشل الدخول بسبب تغيير كلمة المرور، استخدم <b>إصلاح كلمة المرور</b>.'},
+      {q:['ديزني','ديزني+','disney code','كود ديزني'],
+       a:'لاشتراك <b>Disney+ مستخدم واحد</b>: افتح رابط الاشتراك → انسخ رقم الهاتف → افتح تطبيق Disney+ → أدخل الرقم مع رمز الدولة → اضغط <b>طلب كود الدخول</b> → أدخل الكود.'},
       {q:['ديزني','سبوتيفاي','منتج','disney','osn'],
        a:'كل المنتجات في <b>المتجر</b>. اختر الخدمة والخطة واشترِ من رصيد المحفظة. البيانات في <b>اشتراكاتي</b> وتيليغرام إذا أضفت Chat ID.'},
       {q:['دعم','واتساب','تواصل','contact','whatsapp'],
@@ -6208,6 +6449,28 @@ function rtMatchFaq(lower,faq){
   return bestScore>0?best:null;
 }
 
+function rtIsHumanEscalation(q){
+  const lower=String(q||'').toLowerCase();
+  return/\b(live agent|human service|human support|real (person|human)|talk to (a )?(human|agent|person|someone)|speak to (a )?(human|agent|person|someone)|i (want|need) (a )?(human|agent|person)|connect me to (a )?(human|agent)|transfer me to|customer service agent|speak with agent)\b/.test(lower)
+    ||/(عميل حي|موظف|بشري|خدمة بشرية|أريد شخص|تواصل مع موظف|أحتاج موظف)/.test(lower);
+}
+
+async function rtNotifyHumanEscalation(message){
+  try{
+    await fetch(RT_SERVER+'/chat/escalate',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        message,
+        lang:rtChatLang(),
+        page:location.pathname+location.search,
+        customerEmail:typeof currentUser!=='undefined'&&currentUser?currentUser.email:'',
+        customerName:typeof currentUser!=='undefined'&&currentUser?currentUser.name:''
+      })
+    });
+  }catch(e){console.warn('escalate',e);}
+}
+
 function rtRespond(q){
   const typing=document.getElementById('rt-typing');
   const msgs=document.getElementById('rt-msgs');
@@ -6219,6 +6482,12 @@ function rtRespond(q){
     const lower=String(q||'').toLowerCase();
     if(rtIsSensitiveQuery(q)){
       rtAddMsg(p.sensitive,'bot');
+    }else if(rtIsHumanEscalation(q)){
+      rtNotifyHumanEscalation(q);
+      const notified=rtChatLang()==='ar'
+        ?'تم إبلاغ فريق الدعم. سيتواصل معك موظف قريباً.<br><br>• <b>واتساب: <a href="https://wa.me/96179306701" target="_blank">+96179306701</a></b><br>• <b>تيليغرام: <a href="https://t.me/Rashadtech" target="_blank">@Rashadtech</a></b>'
+        :'Our support team has been notified and will contact you shortly.<br><br>• <b>WhatsApp: <a href="https://wa.me/96179306701" target="_blank">+96179306701</a></b><br>• <b>Telegram: <a href="https://t.me/Rashadtech" target="_blank">@Rashadtech</a></b>';
+      rtAddMsg(notified,'bot');
     }else{
       const match=rtMatchFaq(lower,p.faq);
       rtAddMsg(match?match.a:p.fallback,'bot');

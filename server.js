@@ -1160,6 +1160,14 @@ function netflixOneUserPlanKeys() {
 
 function stockAccountMatches(a, b) {
   if (!a || !b) return false;
+  const phoneA = String(a.phone || '').replace(/\s+/g, '');
+  const phoneB = String(b.phone || '').replace(/\s+/g, '');
+  if (phoneA && phoneB) {
+    if (phoneA !== phoneB) return false;
+    const profileA = String(a.profileName || '').trim().toLowerCase();
+    const profileB = String(b.profileName || '').trim().toLowerCase();
+    return profileA === profileB;
+  }
   const emailA = normalizeEmail(a.email);
   const emailB = normalizeEmail(b.email);
   const profileA = String(a.profileName || '').trim().toLowerCase();
@@ -1182,19 +1190,22 @@ function findDuplicateStockAccount(stock, key, accPayload) {
 }
 
 function stockAddFingerprint(rowAccount, rowKeys) {
+  const phone = String(rowAccount && rowAccount.phone || '').replace(/\s+/g, '');
   const email = normalizeEmail(rowAccount && rowAccount.email);
   const profile = String(rowAccount && rowAccount.profileName || '').trim().toLowerCase();
   const pin = String(rowAccount && rowAccount.profilePin || '').trim();
-  return [email, profile, pin, (rowKeys || []).join('|')].join('::');
+  return [phone || email, profile, pin, (rowKeys || []).join('|')].join('::');
 }
 
 function stockAccountFingerprints(acc) {
   const fps = [];
   const key = String(acc && acc.accKey || '');
   if (key) fps.push(`k:${key}`);
+  const phone = String(acc && acc.phone || '').replace(/\s+/g, '');
   const email = normalizeEmail(acc && acc.email);
   const profile = String(acc && acc.profileName || '').trim().toLowerCase();
   const pin = String(acc && acc.profilePin || '').trim();
+  if (phone) fps.push(`p:${phone}::${profile}`);
   if (email) fps.push(`f:${email}::${profile}::${pin}`);
   return fps;
 }
@@ -1467,6 +1478,30 @@ function isAnghamiStockKey(skey) {
   return String(skey || '').startsWith('anghami__');
 }
 
+function isDisneyStockKey(skey) {
+  return String(skey || '').startsWith('disney__');
+}
+
+function isDisneyOneUserStockKey(skey) {
+  return /^disney__1user__/.test(String(skey || ''));
+}
+
+function isDisneyFullStockKey(skey) {
+  return /^disney__full__/.test(String(skey || ''));
+}
+
+function isDisneyOneUserSubscription(sub) {
+  return Boolean(sub && (sub.productId === 'disney' || /disney/i.test(sub.product || '')) && /1\s*user/i.test(String(sub.plan || '')));
+}
+
+function isDisneyOneUserOrder(order) {
+  return isDisneyOneUserSubscription(order);
+}
+
+function disneyOneUserPlanKeys() {
+  return ['disney__1user__1m', 'disney__1user__3m', 'disney__1user__1y'];
+}
+
 function isAnghamiSubscription(sub) {
   return Boolean(sub && (sub.productId === 'anghami' || /anghami/i.test(sub.product || '')));
 }
@@ -1486,6 +1521,9 @@ function isValidLinkSubscription(subscription) {
   if (isAnghamiSubscription(subscription)) {
     return Boolean(String(subscription.serviceLink || '').trim() || String(subscription.profileName || '').trim());
   }
+  if (isDisneyOneUserSubscription(subscription)) {
+    return Boolean(String(subscription.phone || '').trim() || String(subscription.email || '').trim());
+  }
   return Boolean(subscription.email && subscription.pass);
 }
 
@@ -1496,6 +1534,13 @@ function validateStockAccountForAdd(skey, rowAccount) {
     if (!/^https?:\/\//i.test(serviceLink)) return 'Enter a valid http(s) activation link';
     const expiryDate = String(rowAccount && rowAccount.expiryDate || '').trim();
     if (!expiryDate) return 'Expiry date is required for Anghami stock (dd/mm/yyyy)';
+    return null;
+  }
+  if (isDisneyOneUserStockKey(skey)) {
+    const phone = String(rowAccount && rowAccount.phone || '').trim();
+    const email = String(rowAccount && rowAccount.email || '').trim();
+    if (!phone) return 'Phone number with country code is required for Disney+ 1-user stock';
+    if (!email) return 'Code email is required for Disney+ 1-user stock (receives sign-in codes)';
     return null;
   }
   if (!rowAccount || !rowAccount.email || !rowAccount.pass) {
@@ -1651,6 +1696,7 @@ async function restore(id){
 
 app.use('/auth', rateLimit('auth', 40, 15 * 60 * 1000));
 app.use('/get-code', rateLimit('get-code', 30, 5 * 60 * 1000));
+app.use('/chat/escalate', rateLimit('chat-escalate', 8, 15 * 60 * 1000));
 app.use('/notify', rateLimit('notify', 60, 5 * 60 * 1000));
 app.use('/links', rateLimit('links', 80, 5 * 60 * 1000));
 
@@ -2159,6 +2205,7 @@ function enrichSubscriptionFromLiveOrder(data, subscription, ownerEmail) {
     ...subscription,
     profileName: profileName || subscription.profileName || '',
     profilePin: order.profilePin || subscription.profilePin || '',
+    phone: order.phone || subscription.phone || '',
     serviceLink: order.serviceLink || subscription.serviceLink || '',
     expiryDate: order.expiryDate || subscription.expiryDate || ''
   };
@@ -2198,12 +2245,17 @@ async function notifyPurchaseFulfilled(user, product, planLabel, price, order, a
     : null;
   const profileLabel = orderProfileName(order);
   const isAnghami = product && product.id === 'anghami';
+  const isDisneyOne = isDisneyOneUserOrder(order);
   let adminMsg = `🎉 <b>New Purchase</b>\n\n📦 <b>Product:</b> ${product.name}\n📋 <b>Plan:</b> ${planLabel}\n💵 <b>Price:</b> $${Number(price).toFixed(2)}\n👤 <b>Buyer:</b> ${user.name} (${user.email})`;
   if (assignedCustomer) {
     adminMsg += `\n👥 <b>Assigned to:</b> ${assignedCustomer.fname} ${assignedCustomer.lname} (${assignedCustomer.code}${assignedCustomer.phone})`;
   }
   if (isAnghami) {
     adminMsg += `\n\n🔗 <b>Activation link:</b> ${order.serviceLink || '—'}`;
+  } else if (isDisneyOne) {
+    adminMsg += `\n\n📱 <b>Phone:</b> <code>${order.phone || '—'}</code>`;
+    adminMsg += `\n📧 <b>Code email:</b> <code>${order.email || '—'}</code>`;
+    if (profileLabel) adminMsg += `\n👤 Profile: <code>${profileLabel}</code>`;
   } else {
     adminMsg += `\n\n🔐 <b>Credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`;
     if (profileLabel) adminMsg += `\n👤 Profile: <code>${profileLabel}</code>`;
@@ -2224,6 +2276,7 @@ async function notifyPurchaseFulfilled(user, product, planLabel, price, order, a
     plan: planLabel,
     email: order.email,
     pass: order.pass,
+    phone: order.phone || '',
     expiryDate: order.expiryDate || '',
     profileName: order.profileName || '',
     profilePin: order.profilePin || '',
@@ -2245,10 +2298,15 @@ async function notifyPurchaseFulfilled(user, product, planLabel, price, order, a
     ? (assignedCustomer
       ? `✅ <b>Anghami+ for ${custName}</b>\n\n📋 ${planLabel}\n\n🔗 <b>Activation link:</b>\n${order.serviceLink || ''}\n\n${ANGHAMI_CANCEL_NOTE_EN}\n\n${ANGHAMI_CANCEL_NOTE_AR}`
       : `✅ <b>Thanks for purchasing Anghami+!</b>\n\n📋 ${planLabel}\n\n🔗 <b>Activation link:</b>\n${order.serviceLink || ''}\n\n${ANGHAMI_CANCEL_NOTE_EN}\n\n${ANGHAMI_CANCEL_NOTE_AR}`)
-    : (assignedCustomer
-      ? `✅ <b>${product.name} subscription for ${custName}</b>\n\n📋 ${planLabel}\n👥 <b>For:</b> ${custName}\n\n🔐 <b>Credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`
-      : `✅ <b>Your ${product.name} is ready!</b>\n\n📋 ${planLabel}\n\n🔐 <b>Your credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`);
-  if (!isAnghami && profileLabel) custMsg += `\n👤 Profile: <code>${profileLabel}</code>`;
+    : isDisneyOne
+      ? (assignedCustomer
+        ? `✅ <b>Disney+ for ${custName}</b>\n\n📋 ${planLabel}\n👥 <b>For:</b> ${custName}\n\n📱 <b>Phone:</b> <code>${order.phone || ''}</code>\nOpen Disney+ app → enter phone with country code → tap Request Sign-in Code on your subscription link.`
+        : `✅ <b>Your Disney+ is ready!</b>\n\n📋 ${planLabel}\n\n📱 <b>Phone:</b> <code>${order.phone || ''}</code>\nOpen Disney+ app → enter phone with country code → tap Request Sign-in Code on your subscription link.`)
+      : (assignedCustomer
+        ? `✅ <b>${product.name} subscription for ${custName}</b>\n\n📋 ${planLabel}\n👥 <b>For:</b> ${custName}\n\n🔐 <b>Credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`
+        : `✅ <b>Your ${product.name} is ready!</b>\n\n📋 ${planLabel}\n\n🔐 <b>Your credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`);
+  if (!isAnghami && !isDisneyOne && profileLabel) custMsg += `\n👤 Profile: <code>${profileLabel}</code>`;
+  if (isDisneyOne && profileLabel) custMsg += `\n👤 Profile: <code>${profileLabel}</code>`;
   if (order.expiryDate) custMsg += `\n⏰ Expires: ${order.expiryDate}`;
   if (order.profilePin) custMsg += `\n🔢 PIN: <code>${order.profilePin}</code>`;
   custMsg += `\n\n🔗 <b>Subscription link:</b>\n${subLink}\n\nEnjoy! 🌟`;
@@ -2257,7 +2315,9 @@ async function notifyPurchaseFulfilled(user, product, planLabel, price, order, a
     if (assignedCustomer && assignedCustomer.tgChatId && String(assignedCustomer.tgChatId) !== String(user.tgChatId)) {
       const assignMsg = isAnghami
         ? `✅ <b>Anghami+</b>\n\n📋 ${planLabel}\n\n🔗 ${order.serviceLink || ''}\n\n${ANGHAMI_CANCEL_NOTE_EN}\n\n🔗 ${subLink}`
-        : `✅ <b>${product.name} subscription</b>\n\n📋 ${planLabel}\n\n🔐 <b>Credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>${order.profilePin ? `\n🔢 PIN: <code>${order.profilePin}</code>` : ''}\n\n🔗 ${subLink}`;
+        : isDisneyOne
+          ? `✅ <b>Disney+ subscription</b>\n\n📋 ${planLabel}\n\n📱 <code>${order.phone || ''}</code>\n\n🔗 ${subLink}`
+          : `✅ <b>${product.name} subscription</b>\n\n📋 ${planLabel}\n\n🔐 <b>Credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>${order.profilePin ? `\n🔢 PIN: <code>${order.profilePin}</code>` : ''}\n\n🔗 ${subLink}`;
       await sendTG(assignedCustomer.tgChatId, assignMsg, 'HTML').catch(() => {});
     }
     return true;
@@ -2547,6 +2607,7 @@ app.post('/purchase', async (req, res) => {
         product:product.name,short:product.short,color:product.color,tc:product.tc,
         productId:product.id,plan:planLabel,price:Number(price),
         email:acc.email,pass:acc.pass,date:dateStr,expiryDate:acc.expiryDate||null,
+        ...(acc.phone ? { phone: acc.phone } : {}),
         ...(acc.serviceLink ? { serviceLink: acc.serviceLink } : {}),
         ...(accountProfileName(acc) ? { profileName: accountProfileName(acc) } : {}),
         ...(extraFields||{}),
@@ -2847,7 +2908,7 @@ app.post('/admin/stock-add', async (req, res) => {
     if (!batch.length) return res.status(400).json({ error: 'No accounts to add' });
   } else if (!keys.length || !account) {
     return res.status(400).json({ error: 'Plan key and account required' });
-  } else if (!isAnghamiStockKey(keys[0]) && (!account.email || !account.pass)) {
+  } else if (!isAnghamiStockKey(keys[0]) && !isDisneyOneUserStockKey(keys[0]) && (!account.email || !account.pass)) {
     return res.status(400).json({ error: 'Plan key and account email/password required' });
   }
   const lockKeys = [];
@@ -2874,7 +2935,9 @@ app.post('/admin/stock-add', async (req, res) => {
           ? `nfprof__${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
           : /^shahid__1user__/.test(firstKey)
             ? `shprof__${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-            : `${firstKey}__${Date.now()}_${Math.random().toString(36).slice(2, 6)}`);
+            : /^disney__1user__/.test(firstKey)
+              ? `dsprof__${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+              : `${firstKey}__${Date.now()}_${Math.random().toString(36).slice(2, 6)}`);
         const fingerprint = row.requestId || requestId || stockAddFingerprint(rowAccount, rowKeys);
         if (activeStockAdds.has(fingerprint)) {
           return { error: 'This account add is already in progress', status: 409, duplicate: true };
@@ -2885,7 +2948,8 @@ app.post('/admin/stock-add', async (req, res) => {
           used: false,
           accKey: sharedKey,
           email: isAnghamiStockKey(firstKey) ? '' : String(rowAccount.email || '').trim(),
-          pass: isAnghamiStockKey(firstKey) ? '' : String(rowAccount.pass || '').trim(),
+          pass: isAnghamiStockKey(firstKey) || isDisneyOneUserStockKey(firstKey) ? '' : String(rowAccount.pass || '').trim(),
+          ...(rowAccount.phone ? { phone: String(rowAccount.phone).trim() } : {}),
           ...(rowAccount.profileName ? { profileName: String(rowAccount.profileName).trim() } : {}),
           ...(rowAccount.serviceLink ? { serviceLink: String(rowAccount.serviceLink).trim() } : {}),
           ...(rowAccount.expiryDate ? { expiryDate: String(rowAccount.expiryDate).trim() } : {}),
@@ -3123,6 +3187,28 @@ app.post('/admin/backups/restore', async (req, res) => {
 });
 
 // ── TELEGRAM PROXY (NEW — keeps TG_TOKEN off the frontend) ─────────────
+app.post('/chat/escalate', async (req, res) => {
+  const { message, lang, page, customerEmail, customerName } = req.body || {};
+  const text = String(message || '').trim();
+  if (!text || text.length < 3) return res.status(400).json({ error: 'Message required' });
+  if (text.length > 2000) return res.status(400).json({ error: 'Message too long' });
+  try {
+    const who = customerName || customerEmail || 'Unknown visitor';
+    const contact = customerEmail ? `\n📧 <code>${customerEmail}</code>` : '';
+    const pageHint = page ? `\n🌐 Page: ${String(page).slice(0, 120)}` : '';
+    const langHint = lang ? `\n🗣 Lang: ${String(lang).slice(0, 8)}` : '';
+    await sendTG(
+      TG_ADMIN,
+      `🆘 <b>Customer wants human support</b>\n👤 ${who}${contact}${pageHint}${langHint}\n\n💬 <i>${text.replace(/</g, '&lt;').slice(0, 1500)}</i>\n\nReply on WhatsApp +96179306701 or Telegram @Rashadtech`,
+      'HTML'
+    ).catch(() => {});
+    res.json({ success: true });
+  } catch (e) {
+    console.error('Chat escalate error:', e.message);
+    res.status(500).json({ error: 'Could not notify support' });
+  }
+});
+
 app.post('/notify', async (req, res) => {
   const session = requireSession(req, res, ['admin', 'user']);
   if (!session) return;
@@ -3323,7 +3409,7 @@ app.post('/get-code', async (req, res) => {
       const monitorHint = inboxKey && !monitoredEmails[inboxKey]
         ? `\n⚠️ Gmail monitoring is not configured for inbox <code>${inboxKey}</code>. Add this Gmail in Admin stock with an app password.`
         : '';
-      await sendTG(TG_ADMIN, `🔔 <b>${name}</b> is waiting for a sign-in code!${codeKey ? `\n📧 Netflix email: <code>${codeKey}</code>` : ''}${inboxKey && inboxKey !== codeKey ? `\n📥 Gmail inbox: <code>${inboxKey}</code>` : ''}${monitorHint}\nManual fallback: /code ${codeKey || name} 1234`, 'HTML').catch(() => {});
+      await sendTG(TG_ADMIN, `🔔 <b>${name}</b> is waiting for a sign-in code!${codeKey ? `\n📧 Code email: <code>${codeKey}</code>` : ''}${inboxKey && inboxKey !== codeKey ? `\n📥 Gmail inbox: <code>${inboxKey}</code>` : ''}${monitorHint}\nManual fallback: /code ${codeKey || name} 1234`, 'HTML').catch(() => {});
     }
     return res.json({ success: false, message: 'No code found yet — check back in a moment' });
   }
@@ -3380,6 +3466,22 @@ function extractNetflixCode(parsedEmail) {
 
   const fallback = combined.match(/\b(\d{4,8})\b/);
   return fallback ? { code: fallback[1], customerSafe: fallback[1].length === 4 } : null;
+}
+
+function extractDisneyCode(parsedEmail) {
+  const subject = parsedEmail.subject || '';
+  const text = parsedEmail.text || '';
+  const html = parsedEmail.html || '';
+  const from = (parsedEmail.from || '').toString().toLowerCase();
+  const combined = `${subject} ${text} ${html}`;
+  const lower = combined.toLowerCase();
+  if (!from.includes('disney') && !lower.includes('disney')) return null;
+
+  const preferred = combined.match(/(?:code|verification|sign[\s-]?in|one[\s-]?time|otp)[^\d]{0,120}(\d{4,8})/i);
+  if (preferred) return { code: preferred[1], customerSafe: true };
+
+  const fallback = combined.match(/\b(\d{6})\b/);
+  return fallback ? { code: fallback[1], customerSafe: true } : null;
 }
 
 function extractShahidResetLink(parsedEmail) {
@@ -3534,6 +3636,15 @@ async function fetchMonitoredInboxes(targetEmail) {
             console.log(`🔐 Admin-only Netflix security code ${netflixResult.code} captured for ${email} recipients: ${recipientKeys.join(', ')}`);
             await sendTG(TG_ADMIN, `🔐 <b>Netflix Security Code Captured — ADMIN ONLY</b>\n📥 Gmail inbox: ${email}\n📧 Recipient: ${recipientKeys.join(', ')}\n🔢 Code: <b>${netflixResult.code}</b>\n\nNot shown on customer subscription links.`, 'HTML').catch(() => {});
           }
+        }
+        const disneyResult = extractDisneyCode(e);
+        if (disneyResult && disneyResult.customerSafe) {
+          recipientKeys.forEach(key => {
+            latestCodes[key] = { code: disneyResult.code, timestamp: Date.now(), service: 'disney' };
+            delete notifiedCustomers[key];
+          });
+          console.log(`📧 Disney+ sign-in code ${disneyResult.code} captured for ${email} recipients: ${recipientKeys.join(', ')}`);
+          await sendTG(TG_ADMIN, `✅ <b>Disney+ Sign-in Code Captured</b>\n📥 Gmail inbox: ${email}\n📧 Recipient: ${recipientKeys.join(', ')}\n🔢 Code: <b>${disneyResult.code}</b>`, 'HTML').catch(() => {});
         }
         const shahidResult = extractShahidResetLink(e);
         if (shahidResult && shahidResult.link) {

@@ -16,9 +16,18 @@ const DURATIONS_SH_FULL = [
   { key: '3m', price: 11.5 },
   { key: '1y', price: 33 }
 ];
+const DURATIONS_DISNEY_1U = [
+  { key: '1m', price: 2 },
+  { key: '3m', price: 5 },
+  { key: '1y', price: 15 }
+];
+const DURATIONS_DISNEY_FULL = [
+  { key: '1m', price: 9.5 },
+  { key: '3m', price: 27 },
+  { key: '1y', price: 90 }
+];
 
 const SIMPLE_PLAN_PRODUCTS = [
-  { id: 'disney', plans: [7, 18, 60] },
   { id: 'amazon', plans: [3, 10] },
   { id: 'anghami', plans: [4, 8, 15, 2] },
   { id: 'spotify', plans: [4, 10, 18] },
@@ -77,6 +86,13 @@ function buildDefaultPriceCatalog() {
   });
   DURATIONS_SH_FULL.forEach(d => {
     prices[stockKey('shahid', 'full', d.key)] = d.price;
+  });
+
+  DURATIONS_DISNEY_1U.forEach(d => {
+    prices[stockKey('disney', '1user', d.key)] = d.price;
+  });
+  DURATIONS_DISNEY_FULL.forEach(d => {
+    prices[stockKey('disney', 'full', d.key)] = d.price;
   });
 
   prices[stockKey('osn', '1user', '1m')] = 2;

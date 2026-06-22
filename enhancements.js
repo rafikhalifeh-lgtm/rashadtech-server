@@ -174,6 +174,7 @@ function registerEnhancements(app, deps) {
       price: pendingOrder.price,
       email: account.email,
       pass: account.pass,
+      ...(account.phone ? { phone: account.phone } : {}),
       date: pendingOrder.date,
       expiryDate: account.expiryDate || null,
       profileName: pendingOrder.profileName || account.profileName || account.extra || '',
