@@ -1997,7 +1997,7 @@ const NETFLIX_BULK_DEFAULTS_KEY='rt_netflix_bulk_defaults';
 const SHAHID_BULK_DEFAULTS_KEY='rt_shahid_bulk_defaults';
 const DISNEY_BULK_DEFAULTS_KEY='rt_disney_bulk_defaults';
 const SHAHID_MAX_ONE_USER_SLOTS=4;
-const DISNEY_MAX_ONE_USER_SLOTS=5;
+const DISNEY_MAX_ONE_USER_SLOTS=7;
 let pendingOTPs={},pendingResetOTPs={},pendingSignupData=null;
 const OTP_EXPIRY_MS=10*60*1000; // 10 minutes
 
@@ -4963,7 +4963,7 @@ function renderDisneyBulkForm(skey){
     ${phone?`<div style="font-size:11px;color:var(--text3);margin-top:8px">${used}/${DISNEY_MAX_ONE_USER_SLOTS} profiles for this phone on <b>this plan only</b> · ${slotsLeft} slot(s) left</div>`:''}
   </div>
   <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px">Profile names only</div>
-  <div class="nf-bulk-profiles">${[1,2,3,4,5].map(n=>`<div class="nf-bulk-row">
+  <div class="nf-bulk-profiles">${Array.from({length:DISNEY_MAX_ONE_USER_SLOTS},(_,i)=>i+1).map(n=>`<div class="nf-bulk-row">
     <div class="nf-bulk-row-num">${n}</div>
     <input type="text" id="ds-bulk-name-${n}" placeholder="Profile name" value="${esc((defs.profiles&&defs.profiles[n-1]?.name)||'')}">
     <div style="font-size:11px;color:var(--text3)">no PIN</div>
