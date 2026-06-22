@@ -75,8 +75,9 @@ const EMAILJS_TEMPLATE_ID = normalizeEnvSecret(process.env.EMAILJS_TEMPLATE_ID) 
 const EMAILJS_PUBLIC_KEY = normalizeEnvSecret(process.env.EMAILJS_PUBLIC_KEY) || 'LyKu6ZB_y6qoFh7Ef';
 const EMAILJS_PRIVATE_KEY = normalizeEnvSecret(process.env.EMAILJS_PRIVATE_KEY);
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'RkhRkh7979@';
-const ADMIN_PIN = process.env.ADMIN_PIN || '7979';
-const ADMIN_USING_DEFAULT_CREDS = !process.env.ADMIN_PASSWORD || !process.env.ADMIN_PIN;
+const ADMIN_TOTP_SECRET = normalizeEnvSecret(process.env.ADMIN_TOTP_SECRET) || 'RT2FA7KXM9PW4Q8N3H6J5L2V1';
+const ADMIN_TOTP_ISSUER = 'rashadtech.tv';
+const ADMIN_TOTP_LABEL = 'Admin';
 const adminLoginFailures = new Map();
 const ADMIN_LOGIN_MAX_FAILURES = 5;
 const ADMIN_LOGIN_LOCK_MS = 30 * 60 * 1000;
@@ -98,9 +99,6 @@ const OTP_TTL_MS = 10 * 60 * 1000;
 
 if (!API_SECRET || !TG_TOKEN || !TG_ADMIN) {
   console.error('❌ Missing required env vars: API_SECRET, TG_TOKEN, TG_ADMIN');
-}
-if (ADMIN_USING_DEFAULT_CREDS) {
-  console.warn('⚠️ ADMIN_PASSWORD and ADMIN_PIN are not set — admin login uses insecure defaults (disabled on Render/production until set).');
 }
 
 let latestCodes = {};
@@ -208,10 +206,6 @@ function normalizePhone(phone) {
 }
 
 function adminLoginBlocked(res, ip) {
-  if (ADMIN_USING_DEFAULT_CREDS && (process.env.RENDER || process.env.NODE_ENV === 'production')) {
-    res.status(503).json({ error: 'Admin login is disabled until ADMIN_PASSWORD and ADMIN_PIN are set on the server.' });
-    return true;
-  }
   const rec = adminLoginFailures.get(ip);
   if (rec && rec.lockUntil > Date.now() && rec.count >= ADMIN_LOGIN_MAX_FAILURES) {
     res.status(429).json({ error: 'Too many failed admin login attempts. Try again in 30 minutes.' });
@@ -234,6 +228,49 @@ function recordAdminLoginFailure(ip) {
 
 function clearAdminLoginFailures(ip) {
   adminLoginFailures.delete(ip);
+}
+
+const TOTP_BASE32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+
+function decodeBase32Secret(input) {
+  const str = String(input || '').toUpperCase().replace(/[^A-Z2-7]/g, '');
+  let bits = '';
+  for (const char of str) {
+    const val = TOTP_BASE32.indexOf(char);
+    if (val < 0) continue;
+    bits += val.toString(2).padStart(5, '0');
+  }
+  const bytes = [];
+  for (let i = 0; i + 8 <= bits.length; i += 8) bytes.push(parseInt(bits.slice(i, i + 8), 2));
+  return Buffer.from(bytes);
+}
+
+function totpAt(secret, counter, digits = 6) {
+  const buf = Buffer.alloc(8);
+  buf.writeBigUInt64BE(BigInt(counter));
+  const key = decodeBase32Secret(secret);
+  const hmac = crypto.createHmac('sha1', key).update(buf).digest();
+  const offset = hmac[hmac.length - 1] & 0x0f;
+  const code = (hmac.readUInt32BE(offset) & 0x7fffffff) % (10 ** digits);
+  return String(code).padStart(digits, '0');
+}
+
+function verifyAdminTotp(secret, token, window = 1) {
+  const clean = String(token || '').replace(/\D/g, '');
+  if (!/^\d{6}$/.test(clean)) return false;
+  const step = Math.floor(Date.now() / 1000 / 30);
+  for (let i = -window; i <= window; i += 1) {
+    if (totpAt(secret, step + i) === clean) return true;
+  }
+  return false;
+}
+
+function adminTotpSetupInfo() {
+  const secret = ADMIN_TOTP_SECRET;
+  const label = encodeURIComponent(`${ADMIN_TOTP_ISSUER}:${ADMIN_TOTP_LABEL}`);
+  const issuer = encodeURIComponent(ADMIN_TOTP_ISSUER);
+  const otpauth = `otpauth://totp/${label}?secret=${secret}&issuer=${issuer}&algorithm=SHA1&digits=6&period=30`;
+  return { secret, issuer: ADMIN_TOTP_ISSUER, account: ADMIN_TOTP_LABEL, otpauth };
 }
 
 function uniqueNormalizedEmails(values) {
@@ -1740,7 +1777,7 @@ button{cursor:pointer;background:#e50914;border-color:#e50914;font-weight:700}
 <p class="muted">Backups are created automatically before every save. Use restore only if data was damaged.</p>
 <div id="login">
 <input id="pass" type="password" placeholder="Admin password" style="width:100%"><br>
-<input id="pin" type="password" placeholder="Admin PIN" style="width:100%"><br>
+<input id="totp" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="Authenticator code (6 digits)" style="width:100%"><br>
 <button onclick="login()">Login</button>
 </div>
 <div id="panel" style="display:none">
@@ -1762,7 +1799,7 @@ async function api(path, opts={}){
 function summary(s){s=s||{};return (s.users||0)+' users · '+(s.stockAccounts||0)+' stock · '+(s.pending||0)+' pending · '+(s.gameorders||0)+' games';}
 async function login(){
   try{
-    const j=await api('/auth/admin-login',{method:'POST',body:JSON.stringify({password:pass.value,pin:pin.value})});
+    const j=await api('/auth/admin-login',{method:'POST',body:JSON.stringify({password:pass.value,totp:totp.value})});
     token=j.token; document.getElementById('login').style.display='none'; document.getElementById('panel').style.display='block'; await loadBackups();
   }catch(e){alert(e.message)}
 }
@@ -2061,10 +2098,15 @@ app.post('/auth/login', async (req, res) => {
 app.post('/auth/admin-login', async (req, res) => {
   const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
   if (adminLoginBlocked(res, ip)) return;
-  const { password, pin } = req.body;
-  if (password !== ADMIN_PASSWORD || pin !== ADMIN_PIN) {
+  const { password, totp, pin } = req.body || {};
+  const code = String(totp || pin || '').trim();
+  if (password !== ADMIN_PASSWORD) {
     recordAdminLoginFailure(ip);
-    return res.status(401).json({ error: 'Wrong password or PIN' });
+    return res.status(401).json({ error: 'Wrong password' });
+  }
+  if (!verifyAdminTotp(ADMIN_TOTP_SECRET, code)) {
+    recordAdminLoginFailure(ip);
+    return res.status(401).json({ error: 'Wrong authenticator code' });
   }
   clearAdminLoginFailures(ip);
   const token = createSession('admin', 'admin');
@@ -2075,6 +2117,14 @@ app.post('/auth/admin-login', async (req, res) => {
     console.error('Admin login error:', e.message);
     res.json({ success: true, token, data: { users: [], stock: {}, stockBlocks: {}, requests: [], topupreqs: [], pending: [], gameorders: [] }, warning: 'Logged in, but data could not be loaded. Try refreshing.' });
   }
+});
+
+app.post('/auth/admin-2fa-setup', (req, res) => {
+  const { password } = req.body || {};
+  if (password !== ADMIN_PASSWORD) {
+    return res.status(401).json({ error: 'Wrong password' });
+  }
+  res.json({ success: true, ...adminTotpSetupInfo() });
 });
 
 app.post('/auth/signup-start', async (req, res) => {
