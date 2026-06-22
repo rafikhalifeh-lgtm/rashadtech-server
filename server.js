@@ -58,6 +58,17 @@ function normalizeEnvSecret(value) {
   return secret.replace(/\\\$/g, '$');
 }
 
+const TOTP_BASE32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+
+function sanitizeBase32TotpSecret(input) {
+  return String(input || '').toUpperCase().replace(/[^A-Z2-7]/g, '');
+}
+
+function isValidBase32TotpSecret(secret) {
+  const clean = sanitizeBase32TotpSecret(secret);
+  return clean.length >= 16 && clean.length <= 64;
+}
+
 const API_SECRET = normalizeEnvSecret(process.env.API_SECRET);
 const TG_TOKEN   = normalizeEnvSecret(process.env.TG_TOKEN);
 const TG_ADMIN   = normalizeEnvSecret(process.env.TG_ADMIN);
@@ -75,7 +86,7 @@ const EMAILJS_TEMPLATE_ID = normalizeEnvSecret(process.env.EMAILJS_TEMPLATE_ID) 
 const EMAILJS_PUBLIC_KEY = normalizeEnvSecret(process.env.EMAILJS_PUBLIC_KEY) || 'LyKu6ZB_y6qoFh7Ef';
 const EMAILJS_PRIVATE_KEY = normalizeEnvSecret(process.env.EMAILJS_PRIVATE_KEY);
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'RkhRkh7979@';
-const ADMIN_TOTP_SECRET = normalizeEnvSecret(process.env.ADMIN_TOTP_SECRET) || 'RT2FA7KXM9PW4Q8N3H6J5L2V1';
+const ADMIN_TOTP_SECRET = sanitizeBase32TotpSecret(normalizeEnvSecret(process.env.ADMIN_TOTP_SECRET) || 'QZA7V6TTYJGUMAMUZLE57JP6AQ');
 const ADMIN_TOTP_ISSUER = 'rashadtech.tv';
 const ADMIN_TOTP_LABEL = 'Admin';
 const adminLoginFailures = new Map();
@@ -99,6 +110,9 @@ const OTP_TTL_MS = 10 * 60 * 1000;
 
 if (!API_SECRET || !TG_TOKEN || !TG_ADMIN) {
   console.error('❌ Missing required env vars: API_SECRET, TG_TOKEN, TG_ADMIN');
+}
+if (!isValidBase32TotpSecret(ADMIN_TOTP_SECRET)) {
+  console.error('❌ ADMIN_TOTP_SECRET must be 16–64 base32 characters (A–Z and 2–7 only)');
 }
 
 let latestCodes = {};
@@ -230,13 +244,13 @@ function clearAdminLoginFailures(ip) {
   adminLoginFailures.delete(ip);
 }
 
-const TOTP_BASE32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+const TOTP_BASE32_DECODE = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 
 function decodeBase32Secret(input) {
-  const str = String(input || '').toUpperCase().replace(/[^A-Z2-7]/g, '');
+  const str = sanitizeBase32TotpSecret(input);
   let bits = '';
   for (const char of str) {
-    const val = TOTP_BASE32.indexOf(char);
+    const val = TOTP_BASE32_DECODE.indexOf(char);
     if (val < 0) continue;
     bits += val.toString(2).padStart(5, '0');
   }
@@ -266,8 +280,8 @@ function verifyAdminTotp(secret, token, window = 1) {
 }
 
 function adminTotpSetupInfo() {
-  const secret = ADMIN_TOTP_SECRET;
-  const label = encodeURIComponent(`${ADMIN_TOTP_ISSUER}:${ADMIN_TOTP_LABEL}`);
+  const secret = sanitizeBase32TotpSecret(ADMIN_TOTP_SECRET);
+  const label = encodeURIComponent(`${ADMIN_TOTP_ISSUER} ${ADMIN_TOTP_LABEL}`);
   const issuer = encodeURIComponent(ADMIN_TOTP_ISSUER);
   const otpauth = `otpauth://totp/${label}?secret=${secret}&issuer=${issuer}&algorithm=SHA1&digits=6&period=30`;
   return { secret, issuer: ADMIN_TOTP_ISSUER, account: ADMIN_TOTP_LABEL, otpauth };

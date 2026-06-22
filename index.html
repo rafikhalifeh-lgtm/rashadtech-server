@@ -3014,9 +3014,9 @@ async function showAdmin2FASetup(){
     const qr=`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(j.otpauth)}`;
     box.innerHTML=`<div style="font-weight:600;margin-bottom:8px">Google Authenticator setup</div>
       <div style="margin-bottom:8px">Account: <b>${esc(j.issuer)} — ${esc(j.account)}</b></div>
-      <div style="font-family:var(--mono);word-break:break-all;margin-bottom:8px">Key: <b>${esc(j.secret)}</b></div>
+      <div style="font-family:var(--mono);word-break:break-all;margin-bottom:8px;user-select:all">Key: <b id="admin-2fa-secret">${esc(j.secret)}</b></div>
       <img src="${qr}" alt="QR code" width="180" height="180" style="display:block;margin:8px auto;border-radius:8px">
-      <div style="color:var(--text3)">Scan the QR code or enter the key manually in Google Authenticator / Authy.</div>`;
+      <div style="color:var(--text3)">Use <b>Enter a setup key</b> (not barcode from photo). Type: <b>Time based</b>. Only letters A–Z and digits 2–7 in the key.</div>`;
     box.style.display='block';
     document.getElementById('admin-err').style.display='none';
   }catch(e){
