@@ -1291,6 +1291,25 @@ function preserveSensitiveFields(existing, incoming) {
   return next;
 }
 
+function recoverMyCustomersFromBackups(data, user) {
+  if (!user) return false;
+  const current = Array.isArray(user.myCustomers) ? user.myCustomers : [];
+  if (current.length) return false;
+  const backups = Array.isArray(data && data[BACKUPS_KEY]) ? data[BACKUPS_KEY] : [];
+  for (const backup of backups) {
+    const users = backup && backup.data && Array.isArray(backup.data.users) ? backup.data.users : [];
+    const previous = users.find(item => normalizeEmail(item.email) === normalizeEmail(user.email));
+    const prevCustomers = Array.isArray(previous && previous.myCustomers) ? previous.myCustomers : [];
+    if (!prevCustomers.length) continue;
+    user.myCustomers = prevCustomers.map(c => ({
+      ...c,
+      subs: Array.isArray(c.subs) ? c.subs.map(s => ({ ...s })) : []
+    }));
+    return true;
+  }
+  return false;
+}
+
 function recoverMissingPasswordFromBackups(data, user) {
   if (!user || user.pass) return false;
   const backups = Array.isArray(data && data[BACKUPS_KEY]) ? data[BACKUPS_KEY] : [];
@@ -1514,6 +1533,12 @@ app.post('/db/read', async (req, res) => {
   if (!session) return;
   try {
     const data = await readJsonBinRaw({ skipRecoverWrite: true });
+    let recovered = false;
+    if (session.role === 'user') {
+      const user = (data.users || []).find(u => normalizeEmail(u.email) === session.email);
+      if (user && recoverMyCustomersFromBackups(data, user)) recovered = true;
+    }
+    if (recovered) await writeDbFast(data);
     res.json({ success: true, data: safeDataForSession(data, session) });
   } catch(e) {
     console.error('DB read error:', e.message);
@@ -1681,8 +1706,11 @@ app.post('/auth/login', async (req, res) => {
     if (!user.pass) return res.status(401).json({ error: 'This account needs a password reset. Please use Forgot password.' });
     if (!verifyPassword(cleanPassword, user.pass)) return res.status(401).json({ error: 'Invalid email or password' });
     if (user.banned) return res.status(403).json({ error: 'Your account has been suspended. Please contact support.' });
-    if (recoveredPassword || !String(user.pass || '').startsWith(PASSWORD_HASH_PREFIX)) {
-      user.pass = hashPassword(cleanPassword);
+    const recoveredCustomers = recoverMyCustomersFromBackups(data, user);
+    if (recoveredPassword || recoveredCustomers || !String(user.pass || '').startsWith(PASSWORD_HASH_PREFIX)) {
+      if (recoveredPassword || !String(user.pass || '').startsWith(PASSWORD_HASH_PREFIX)) {
+        user.pass = hashPassword(cleanPassword);
+      }
       await writeDbFast(data);
     }
     const token = createSession('user', user.email);

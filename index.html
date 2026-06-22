@@ -2943,6 +2943,20 @@ function switchTab(name,el){
   if(name==='transactions')renderTx();
   if(name==='subscriptions'){renderSubs();const ss=document.getElementById('subs-search');if(ss)ss.value='';}
   if(name==='requests')renderMyRequests();
+  if(name==='customers')refreshMyCustomersTab();
+}
+async function refreshMyCustomersTab(){
+  bindCurrentUserFromUsers();
+  renderMyCustomers();
+  if(!authToken||!currentUser)return;
+  try{
+    const data=await jbRead();
+    if(data){
+      applyDataSnapshot(data);
+      bindCurrentUserFromUsers();
+      renderMyCustomers();
+    }
+  }catch(e){console.warn('customers refresh:',e.message);}
 }
 async function switchAdminTab(name,el){
   document.querySelectorAll('#page-admin .tab-pane').forEach(t=>t.classList.remove('active'));
@@ -4207,7 +4221,7 @@ function renderMyCustomers(){
         <button ${jsOnClick('setSubCustProfileName',s.id,c.id)} style="background:var(--blue-bg);color:var(--blue);border:1px solid var(--blue-border);border-radius:4px;padding:3px 7px;font-size:10px;font-weight:600;cursor:pointer;display:block;width:100%">👤 ${orderProfileName(s)?'Profile: '+orderProfileName(s):'Set Profile'}</button>
       </div></div>`;}).join('')}</div>`:'';
     return `<div class="cust-card"><div class="cust-card-top">
-      <div class="cust-avatar">${c.fname.charAt(0).toUpperCase()}</div>
+      <div class="cust-avatar">${String(c.fname||'?').charAt(0).toUpperCase()}</div>
       <div class="cust-info"><div class="cust-name">${esc(c.fname)} ${esc(c.lname)}</div>
       <div class="cust-phone">📱 ${esc(c.code)} ${esc(c.phone)}</div>
       ${c.email?`<div class="cust-phone" style="font-family:var(--mono)">📧 ${esc(c.email)}</div>`:''}
