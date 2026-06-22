@@ -1707,16 +1707,20 @@ app.use('/links', rateLimit('links', 80, 5 * 60 * 1000));
 app.post('/db/read', async (req, res) => {
   const session = requireSession(req, res, ['admin', 'user']);
   if (!session) return;
+  const fullRecover = Boolean(req.body && req.body.recover);
   try {
     const data = await readJsonBinRaw({ fast: true, skipRecoverWrite: true });
     let recovered = false;
     if (session.role === 'user') {
       const user = (data.users || []).find(u => normalizeEmail(u.email) === session.email);
-      if (user && recoverMyCustomersFromBackups(data, user)) recovered = true;
+      if (user) {
+        if (recoverMyCustomersFromBackups(data, user)) recovered = true;
+        if (fullRecover && await recoverMyCustomersFromAllSources(data, user)) recovered = true;
+      }
     }
     if (recovered) await writeDbFast(data);
     res.json({ success: true, data: safeDataForSession(data, session) });
-    if (session.role === 'user') {
+    if (session.role === 'user' && !fullRecover) {
       const userEmail = session.email;
       setImmediate(() => {
         enqueueDbWrite(async () => {

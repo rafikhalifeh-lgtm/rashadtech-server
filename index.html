@@ -1547,14 +1547,16 @@ async function validateStoredSession(role){
   }
 }
 
-async function jbRead(_retry=false){
+async function jbRead(opts,_retry=false){
+  const recover=opts===true?false:Boolean(opts&&opts.recover);
+  const retry=opts===true||typeof opts==='boolean'?opts:Boolean(_retry);
   await ensureServerAwake({silent:true}).catch(()=>{});
   const controller=new AbortController();
   const timeout=setTimeout(()=>controller.abort(),45000);
   try{
     const r=await fetch(RT_SERVER+'/db/read',{
       method:'POST',headers:authHeaders(),
-      body:JSON.stringify({}),signal:controller.signal
+      body:JSON.stringify(recover?{recover:true}:{}),signal:controller.signal
     });
     clearTimeout(timeout);
     if(!r.ok)throw new Error('HTTP '+r.status);
@@ -1563,9 +1565,9 @@ async function jbRead(_retry=false){
     return res.data;
   }catch(e){
     clearTimeout(timeout);
-    if(e.name==='AbortError'&&!_retry){
+    if(e.name==='AbortError'&&!retry){
       await ensureServerAwake({force:true,silent:false}).catch(()=>{});
-      return jbRead(true);
+      return jbRead(opts,true);
     }
     if(applyOfflineCacheIfAny())return _jbCache;
     throw new Error(e.name==='AbortError'?'Server is still starting. Please wait and try again.':(e.message||'Could not load data'));
@@ -2989,7 +2991,7 @@ function enterApp(opts={}){
   try{localStorage.setItem('rt_session',JSON.stringify(session));}catch(e){}
   loadPriceCatalog().then(()=>renderProducts('all'));
   updateBal();renderAmounts();renderSubs();renderTx();renderMyCustomers();renderReqChips();renderMyRequests();renderExpiryTracker();renderMyGameOrders();
-  recoverMyCustomersOnLogin({immediate:Boolean(opts.recoverImmediate)}).catch(()=>{});
+  if(!opts.skipRecover)recoverMyCustomersOnLogin({immediate:Boolean(opts.recoverImmediate)}).catch(()=>{});
 }
 async function recoverMyCustomersOnLogin(opts={}){
   if(!currentUser?.email||!authToken)return;
@@ -2997,7 +2999,7 @@ async function recoverMyCustomersOnLogin(opts={}){
   const cached=readCachedMyCustomers(currentUser.email);
   let local=mergeMyCustomersClient(cached,currentUser.myCustomers);
   if(!local.length&&scoreMyCustomers(currentUser.myCustomers)>0)local=currentUser.myCustomers;
-  if(!local.length)return;
+  if(!local.length&&!opts.immediate)return;
   const before=scoreMyCustomers(currentUser.myCustomers);
   const j=await rtApi('/customer/my-customers/recover',{
     method:'POST',
@@ -6017,14 +6019,15 @@ async function restoreCustomerSession(){
     if(Date.now()-sess.ts>=SESSION_MS){clearStoredSession();return false;}
     if(!await validateStoredSession('user')){clearStoredSession();return false;}
     try{
-      const data=await jbRead();
+      const data=await jbRead({recover:true});
       if(data)applyDataSnapshot(data);
     }catch(e){
       applyOfflineCacheIfAny();
     }
     bindCurrentUserFromUsers({email:sess.email,myCustomers:readCachedMyCustomers(sess.email)});
     if(!currentUser){clearStoredSession();return false;}
-    enterApp({recoverImmediate:true});
+    await recoverMyCustomersOnLogin({immediate:true});
+    enterApp({skipRecover:true});
     startRealtimeSync();
     keepServerAwake();
     return true;
