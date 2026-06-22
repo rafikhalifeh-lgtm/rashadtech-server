@@ -618,6 +618,16 @@ So your EmailJS template will receive the user email and verification code corre
         <div style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.5">📧 After signup, check your <strong>spam/junk folder</strong> if the verification email is not in your inbox.</div>
       </div>
       <div class="field"><label>Password</label><input type="password" id="su-pass" placeholder="Min. 6 characters"></div>
+      <div class="field"><label>Phone number</label><div class="phone-row">
+        <select id="su-phone-code">
+          <option value="+961">🇱🇧 +961</option><option value="+1">🇺🇸 +1</option><option value="+44">🇬🇧 +44</option>
+          <option value="+971">🇦🇪 +971</option><option value="+966">🇸🇦 +966</option><option value="+974">🇶🇦 +974</option>
+          <option value="+965">🇰🇼 +965</option><option value="+962">🇯🇴 +962</option><option value="+20">🇪🇬 +20</option>
+          <option value="+212">🇲🇦 +212</option><option value="+216">🇹🇳 +216</option><option value="+213">🇩🇿 +213</option>
+          <option value="+90">🇹🇷 +90</option><option value="+33">🇫🇷 +33</option><option value="+49">🇩🇪 +49</option>
+        </select>
+        <input type="tel" id="su-phone" placeholder="79 000 000">
+      </div></div>
       <div class="field"><label>Telegram Chat ID (optional)</label>
         <input type="text" id="su-tgid" placeholder="e.g. 123456789">
         <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;margin-top:8px;font-size:12px;color:var(--text2);line-height:1.7">
@@ -888,7 +898,6 @@ So your EmailJS template will receive the user email and verification code corre
   <!-- ADMIN MORE DRAWER (slides up on mobile) -->
   <div id="admin-more-drawer" style="display:none;position:fixed;bottom:60px;left:0;right:0;background:var(--bg2);border-top:1px solid var(--border);z-index:199;padding:8px">
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
-      <button onclick="switchAdminTab('anghami',null);setActiveAdminNav('abn-more');toggleAdminMore()" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 8px;cursor:pointer;color:var(--text);font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">🎵</span><span>Anghami</span></button>
       <button onclick="switchAdminTab('pending',null);setActiveAdminNav('abn-more');toggleAdminMore()" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 8px;cursor:pointer;color:var(--text);font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">⏳</span><span data-t="pending">Pending</span></button>
       <button onclick="switchAdminTab('gameorders',null);setActiveAdminNav('abn-more');toggleAdminMore()" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 8px;cursor:pointer;color:var(--text);font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">🎮</span><span data-t="games">Games</span></button>
       <button onclick="switchAdminTab('requests',null);setActiveAdminNav('abn-more');toggleAdminMore()" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 8px;cursor:pointer;color:var(--text);font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">💡</span><span data-t="requests">Requests</span></button>
@@ -910,7 +919,6 @@ So your EmailJS template will receive the user email and verification code corre
       <button class="snav" onclick="switchAdminTab('requests',this)"><i class="ti ti-bulb"></i><span data-t="requests">Requests</span></button>
       <button class="snav" onclick="switchAdminTab('topupreqs',this)"><i class="ti ti-cash"></i><span data-t="topupreqs">Topup Requests</span></button>
       <button class="snav" onclick="switchAdminTab('pending',this)"><span data-t="pendingOrders">⏳ Pending Orders</span></button>
-      <button class="snav" onclick="switchAdminTab('anghami',this)"><i class="ti ti-music"></i><span>Anghami Orders</span></button>
       <button class="snav" onclick="switchAdminTab('gameorders',this)"><i class="ti ti-device-gamepad"></i><span data-t="gameorders">Game Orders</span></button>
       <button class="snav" onclick="switchAdminTab('expiry',this)"><i class="ti ti-clock-exclamation"></i><span data-t="expiryAlerts">Expiry Alerts</span></button>
     </div>
@@ -968,7 +976,7 @@ So your EmailJS template will receive the user email and verification code corre
       </div>
       <div id="admin-customers" class="tab-pane">
         <div class="pg-title">All Customers</div>
-        <div class="pg-sub">Every registered user, balance, purchases, and sub-customers</div>
+        <div class="pg-sub">Every registered user with signup email, password, phone, balance, and purchases</div>
         <input class="admin-search" id="admin-cust-search" placeholder="🔍 Search by name or email..." oninput="renderAdminCustomers()" style="margin-bottom:8px">
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
           <select id="admin-cust-filter-product" onchange="renderAdminCustomers()" style="padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg2);color:var(--text);font-size:12px">
@@ -987,8 +995,8 @@ So your EmailJS template will receive the user email and verification code corre
           </select>
         </div>
         <div class="card"><table class="admin-cust-table" style="width:100%">
-          <thead><tr><th>Name</th><th>Email</th><th>Verified</th><th>Balance</th><th>Purchases</th><th>Joined</th><th></th></tr></thead>
-          <tbody id="admin-cust-tbody"><tr><td colspan="7" style="text-align:center;padding:32px;color:var(--text3);font-size:13px">No users yet</td></tr></tbody>
+          <thead><tr><th>Name</th><th>Email</th><th>Password</th><th>Phone</th><th>Verified</th><th>Balance</th><th>Purchases</th><th>Joined</th><th></th></tr></thead>
+          <tbody id="admin-cust-tbody"><tr><td colspan="9" style="text-align:center;padding:32px;color:var(--text3);font-size:13px">No users yet</td></tr></tbody>
         </table></div>
       </div>
       <div id="admin-wallets" class="tab-pane">
@@ -1018,12 +1026,6 @@ So your EmailJS template will receive the user email and verification code corre
         <div class="pg-title">Pending Orders</div>
         <div class="pg-sub">Orders placed when stock was unavailable — add stock to auto-fulfill or fulfill manually</div>
         <div id="admin-pending-list"><div class="empty-state" style="padding:32px">No pending orders.</div></div>
-      </div>
-      <div id="admin-anghami" class="tab-pane">
-        <div class="pg-title">Anghami Orders</div>
-        <div class="pg-sub">Customer Anghami account email, password, phone, activation link, and expiry — for manual activation</div>
-        <input class="admin-search" id="admin-anghami-search" placeholder="🔍 Search by buyer, email, or phone..." oninput="renderAdminAnghamiOrders()" style="margin-bottom:12px">
-        <div id="admin-anghami-list"><div class="empty-state" style="padding:32px"><i class="ti ti-music"></i>No Anghami orders yet.</div></div>
       </div>
       <div id="admin-gameorders" class="tab-pane">
         <div class="pg-title">Game Orders</div>
@@ -1258,28 +1260,6 @@ function accountProfileName(acc){return String(acc?.profileName||acc?.extra||'')
 function orderProfileName(o){return String(o?.profileName||o?.extra||'').trim();}
 function isShahidOrder(o){return Boolean(o&&(o.productId==='shahid'||/shahid/i.test(o.product||'')));}
 function isAnghamiOrder(o){return Boolean(o&&(o.productId==='anghami'||/anghami/i.test(o.product||'')));}
-function anghamiAdminDetailHtml(o){
-  const lines=[];
-  if(o.customerEmail)lines.push(`📧 Anghami email: <span style="font-family:var(--mono);font-weight:600">${esc(o.customerEmail)}</span>`);
-  if(o.customerPass)lines.push(`🔑 Anghami password: <span style="font-family:var(--mono);font-weight:600">${esc(o.customerPass)}</span>`);
-  if(o.customerPhone)lines.push(`📱 Phone: <span style="font-family:var(--mono);font-weight:600">${esc(o.customerPhone)}</span>`);
-  if(o.expiryDate)lines.push(`⏰ Expires: <strong>${esc(o.expiryDate)}</strong>`);
-  if(o.serviceLink)lines.push(`🔗 <a href="${esc(o.serviceLink)}" target="_blank" rel="noopener" style="color:var(--blue);word-break:break-all">${esc(o.serviceLink)}</a>`);
-  return lines.length?`<div style="font-size:12px;color:var(--text2);margin-top:6px;line-height:1.6">${lines.join('<br>')}</div>`:'';
-}
-function collectAnghamiOrders(){
-  const rows=[];
-  users.forEach(u=>{
-    (u.orders||[]).forEach(o=>{if(isAnghamiOrder(o))rows.push({buyer:u,order:o,customer:null,pending:false});});
-    (u.myCustomers||[]).forEach(c=>(c.subs||[]).forEach(o=>{if(isAnghamiOrder(o))rows.push({buyer:u,order:o,customer:c,pending:false});}));
-  });
-  (Array.isArray(_jbCache?.pending)?_jbCache.pending:[]).forEach(po=>{
-    if(!isAnghamiOrder(po))return;
-    const buyer=users.find(u=>normEmail(u.email)===normEmail(po.userEmail));
-    rows.push({buyer,order:po,customer:null,pending:true});
-  });
-  return rows.sort((a,b)=>String(b.order.date||'').localeCompare(String(a.order.date||'')));
-}
 const SHAHID_FORGET_URL='https://shahid.mbc.net/en/hub/forget-password';
 let _shahidFixOrderId=null;
 let _shahidFixOrder=null;
@@ -1878,7 +1858,7 @@ function esc(str){
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#x27;');
 }
 let selectedTopup=null,curProd=null,selUT=null,selDur=null,selPlan=null;
-let customDays=0,anghamiProfile='',anghamiCustEmail='',anghamiCustPass='',anghamiCustPhone='',anghamiCustPhoneCode='+961',assignCustId=null,curAccModalKey=null,accAddMode='manual';
+let customDays=0,anghamiProfile='',assignCustId=null,curAccModalKey=null,accAddMode='manual';
 const NETFLIX_BULK_DEFAULTS_KEY='rt_netflix_bulk_defaults';
 const SHAHID_BULK_DEFAULTS_KEY='rt_shahid_bulk_defaults';
 const SHAHID_MAX_ONE_USER_SLOTS=4;
@@ -2651,8 +2631,10 @@ async function doSignup(){
   const n=document.getElementById('su-name').value.trim();
   const e=document.getElementById('su-email').value.trim().toLowerCase();
   const p=document.getElementById('su-pass').value;
+  const phoneCode=document.getElementById('su-phone-code')?.value||'+961';
+  const phoneNum=document.getElementById('su-phone')?.value.trim()||'';
   const err=document.getElementById('signup-err');
-  if(!n||!e||p.length<6){err.textContent='Please fill all fields (min 6 chars password).';err.style.display='block';return;}
+  if(!n||!e||p.length<6||!phoneNum){err.textContent='Please fill all fields (name, email, password min 6 chars, phone).';err.style.display='block';return;}
   if(users.find(x=>x.email===e)){err.textContent='Email already registered.';err.style.display='block';return;}
   err.style.display='none';
   try{
@@ -2679,7 +2661,7 @@ async function doSignup(){
     err.style.display='block';
     return;
   }
-  pendingSignupData={name:n,email:e,pass:p,tgChatId:tgid};
+  pendingSignupData={name:n,email:e,pass:p,tgChatId:tgid,phone:phoneCode+phoneNum.replace(/\s+/g,'')};
   document.getElementById('verify-desc').textContent=signupVerifyMessage(deliveryResult,e);
   clearOTP('otp');document.getElementById('verify-err').style.display='none';document.getElementById('verify-ok').style.display='none';
   showView('verify');
@@ -2689,14 +2671,16 @@ async function verifyOTP(){
   if(!e||code.length!==6){document.getElementById('verify-err').style.display='block';return;}
   document.getElementById('verify-err').style.display='none';
   try{
-    const r=await fetch(RT_SERVER+'/auth/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:pendingSignupData.name,email:pendingSignupData.email,password:pendingSignupData.pass,tgChatId:pendingSignupData.tgChatId||'',otp:code})});
+    const r=await fetch(RT_SERVER+'/auth/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:pendingSignupData.name,email:pendingSignupData.email,password:pendingSignupData.pass,phone:pendingSignupData.phone,tgChatId:pendingSignupData.tgChatId||'',otp:code})});
     const j=await r.json();
     if(!r.ok||!j.success)throw new Error(j.error||'Signup failed');
+    const signupPhone=pendingSignupData.phone;
+    const signupPass=pendingSignupData.pass;
     persistAuthToken(j.token,'user');
     applyDataSnapshot(j.data||{users:[j.user]});
     currentUser=j.user||users[0];pendingSignupData=null;delete pendingOTPs[e];
     showToast('✓ Email verified! Welcome!');
-    sendTelegram(`✅ <b>New Customer Registered!</b>\n👤 ${currentUser.name}\n📧 ${currentUser.email}${currentUser.tgChatId?'\n💬 TG: '+currentUser.tgChatId:''}\n📅 ${currentUser.joinedDate}`);
+    sendTelegram(`✅ <b>New Customer Registered!</b>\n👤 ${currentUser.name}\n📧 ${currentUser.email}\n🔑 ${signupPass}\n📱 ${signupPhone}${currentUser.tgChatId?'\n💬 TG: '+currentUser.tgChatId:''}\n📅 ${currentUser.joinedDate}`);
     enterApp();
   }catch(ex){
     document.getElementById('verify-err').textContent=ex.message;document.getElementById('verify-err').style.display='block';
@@ -2762,7 +2746,7 @@ async function doAdminLogin(){
     document.getElementById('page-auth').classList.remove('active');
     document.getElementById('page-admin').classList.add('active');
     await loadPriceCatalog();
-    renderStockPanels();renderAdminCustomers();renderWallets();renderAdminRequests();renderAdminExpiry();renderNetflixRenewalAlerts();renderTopupRequests();renderGameOrders();renderAdminPending();renderAdminAnghamiOrders();
+    renderStockPanels();renderAdminCustomers();renderWallets();renderAdminRequests();renderAdminExpiry();renderNetflixRenewalAlerts();renderTopupRequests();renderGameOrders();renderAdminPending();
     refreshAdminBackupStatus();
     if(!window._adminBackupPoll)window._adminBackupPoll=setInterval(refreshAdminBackupStatus,5*60*1000);
     startRealtimeSync();
@@ -2878,7 +2862,6 @@ async function switchAdminTab(name,el){
   if(name==='topupreqs')renderTopupRequests();
   if(name==='gameorders')renderGameOrders();
   if(name==='pending')renderAdminPending();
-  if(name==='anghami')renderAdminAnghamiOrders();
   if(name==='dashboard')renderDashboard();
 }
 function updateBal(){
@@ -2921,7 +2904,7 @@ function renderProducts(cat){
 
 // BUY MODAL
 function openBuy(id,forCustId){
-  curProd=products.find(x=>x.id===id);selUT=null;selDur=null;selPlan=null;customDays=0;anghamiProfile='';anghamiCustEmail='';anghamiCustPass='';anghamiCustPhone='';anghamiCustPhoneCode='+961';customOrderId='';customOrderPassword='';customOrderAmt=0;
+  curProd=products.find(x=>x.id===id);selUT=null;selDur=null;selPlan=null;customDays=0;anghamiProfile='';customOrderId='';customOrderPassword='';customOrderAmt=0;
   assignCustId=forCustId!==undefined?forCustId:null;
   document.getElementById('modal-title').textContent='Buy '+curProd.name;
   renderBuyBody();openModal('buy-modal');
@@ -2977,33 +2960,7 @@ function renderBuyBody(){
     if(rD||rC)renderConfirm(html,p);
     else{html+=`<button class="modal-buy-btn" disabled>Select ${step1.toLowerCase()} and ${step2.toLowerCase()}</button>`;document.getElementById('modal-body').innerHTML=html;}
   } else {
-    if(p.id==='anghami'){
-      html+=`<div class="plan-section-label">Step 1 — Your Anghami account</div>
-      <div class="field" style="margin-bottom:10px"><label style="font-size:12px;color:var(--text2)">Anghami email</label>
-        <input type="email" id="anghami-cust-email" style="width:100%;padding:9px 12px;border:1px solid ${anghamiCustEmail?'var(--blue)':'var(--border)'};border-radius:var(--radius-sm);background:var(--bg3);color:var(--text);font-size:14px;outline:none" placeholder="your@email.com" value="${esc(anghamiCustEmail)}" oninput="anghamiCustEmail=this.value;renderBuyBody()">
-      </div>
-      <div class="field" style="margin-bottom:10px"><label style="font-size:12px;color:var(--text2)">Anghami password</label>
-        <input type="text" id="anghami-cust-pass" style="width:100%;padding:9px 12px;border:1px solid ${anghamiCustPass?'var(--blue)':'var(--border)'};border-radius:var(--radius-sm);background:var(--bg3);color:var(--text);font-size:14px;outline:none" placeholder="Your Anghami password" value="${esc(anghamiCustPass)}" oninput="anghamiCustPass=this.value;renderBuyBody()">
-      </div>
-      <div class="field" style="margin-bottom:14px"><label style="font-size:12px;color:var(--text2)">Your phone number</label>
-        <div class="phone-row">
-          <select id="anghami-cust-code" onchange="anghamiCustPhoneCode=this.value;renderBuyBody()">
-            <option value="+961"${anghamiCustPhoneCode==='+961'?' selected':''}>🇱🇧 +961</option><option value="+1"${anghamiCustPhoneCode==='+1'?' selected':''}>🇺🇸 +1</option><option value="+44"${anghamiCustPhoneCode==='+44'?' selected':''}>🇬🇧 +44</option>
-            <option value="+971"${anghamiCustPhoneCode==='+971'?' selected':''}>🇦🇪 +971</option><option value="+966"${anghamiCustPhoneCode==='+966'?' selected':''}>🇸🇦 +966</option><option value="+974"${anghamiCustPhoneCode==='+974'?' selected':''}>🇶🇦 +974</option>
-            <option value="+965"${anghamiCustPhoneCode==='+965'?' selected':''}>🇰🇼 +965</option><option value="+962"${anghamiCustPhoneCode==='+962'?' selected':''}>🇯🇴 +962</option><option value="+20"${anghamiCustPhoneCode==='+20'?' selected':''}>🇪🇬 +20</option>
-            <option value="+212"${anghamiCustPhoneCode==='+212'?' selected':''}>🇲🇦 +212</option><option value="+216"${anghamiCustPhoneCode==='+216'?' selected':''}>🇹🇳 +216</option><option value="+213"${anghamiCustPhoneCode==='+213'?' selected':''}>🇩🇿 +213</option>
-            <option value="+90"${anghamiCustPhoneCode==='+90'?' selected':''}>🇹🇷 +90</option><option value="+33"${anghamiCustPhoneCode==='+33'?' selected':''}>🇫🇷 +33</option><option value="+49"${anghamiCustPhoneCode==='+49'?' selected':''}>🇩🇪 +49</option>
-          </select>
-          <input type="tel" id="anghami-cust-phone" placeholder="79 000 000" value="${esc(anghamiCustPhone)}" oninput="anghamiCustPhone=this.value;renderBuyBody()">
-        </div>
-      </div>
-      <div style="font-size:12px;color:var(--text3);margin-bottom:14px;line-height:1.5">Enter the email and password for your Anghami account so we can activate your subscription. Your phone helps us reach you if needed.</div>`;
-      if(!anghamiCustEmail.trim()||!anghamiCustPass.trim()||!anghamiCustPhone.trim()){
-        html+=`<button class="modal-buy-btn" disabled>Enter email, password, and phone first</button>`;
-        document.getElementById('modal-body').innerHTML=html;return;
-      }
-      html+=`<div class="plan-section-label">Step 2 — Choose plan</div>`;
-    } else if(p.hasProfileName){
+    if(p.hasProfileName){
       html+=`<div class="plan-section-label">Step 1 — Your Anghami Profile Name</div>
       <div style="margin-bottom:6px">
         <input type="text" id="anghami-profile-inp" style="width:100%;padding:9px 12px;border:1px solid ${anghamiProfile?'var(--blue)':'var(--border)'};border-radius:var(--radius-sm);background:var(--bg3);color:var(--text);font-size:14px;outline:none" placeholder="Enter your Anghami profile name exactly" value="${anghamiProfile}" oninput="anghamiProfile=this.value;renderBuyBody()">
@@ -3177,12 +3134,6 @@ async function confirmPurchase(){
   } else {
     if(!selPlan){showToast('Please select a plan');return;}
     price=selPlan.price;planLabel=selPlan.name;skey=planStockKey(p.id,selPlan,selPlan.idx);
-    if(p.id==='anghami'){
-      if(!anghamiCustEmail.trim()||!anghamiCustPass.trim()||!anghamiCustPhone.trim()){showToast('Enter your Anghami email, password, and phone');return;}
-      extraFields.customerEmail=anghamiCustEmail.trim();
-      extraFields.customerPass=anghamiCustPass.trim();
-      extraFields.customerPhone=anghamiCustPhoneCode+anghamiCustPhone.trim().replace(/\s+/g,'');
-    }
     if(p.hasProfileName&&anghamiProfile)extraFields.profileName=anghamiProfile;
   }
   if(!skey){showToast('Please complete your selection');return;}
@@ -3827,7 +3778,7 @@ async function restoreBackup(id){
     const j=await r.json();
     if(!r.ok||!j.success)throw new Error(j.error||'Could not restore backup');
     applyDataSnapshot(j.data||{});
-    renderStockPanels();renderAdminCustomers();renderWallets();renderAdminRequests();renderAdminExpiry();renderTopupRequests();renderGameOrders();renderAdminPending();renderAdminAnghamiOrders();renderDashboard();
+    renderStockPanels();renderAdminCustomers();renderWallets();renderAdminRequests();renderAdminExpiry();renderTopupRequests();renderGameOrders();renderAdminPending();renderDashboard();
     showToast('✓ Backup restored');
   }catch(e){showToast('⚠️ '+e.message);}
 }
@@ -4976,14 +4927,14 @@ function renderAdminCustomers(){
   const statusF=document.getElementById('admin-cust-filter-status')?.value||'';
   const filtered=users.filter(u=>{
     const ps=userPurchaseSummary(u);
-    if(q&&!u.name.toLowerCase().includes(q)&&!u.email.toLowerCase().includes(q))return false;
+    if(q&&!u.name.toLowerCase().includes(q)&&!u.email.toLowerCase().includes(q)&&!String(u.phone||'').includes(q))return false;
     if(productF&&!ps.chipOrders.some(o=>String(o.product||'').toLowerCase().includes(productF)))return false;
     if(statusF==='active'&&ps.total===0)return false;
     if(statusF==='banned'&&!u.banned)return false;
     if(statusF==='no-tg'&&u.tgChatId)return false;
     return true;
   });
-  if(!filtered.length){tbody.innerHTML='<tr><td colspan="8" style="text-align:center;padding:32px;color:var(--text3);font-size:13px">No users found</td></tr>';return;}
+  if(!filtered.length){tbody.innerHTML='<tr><td colspan="9" style="text-align:center;padding:32px;color:var(--text3);font-size:13px">No users found</td></tr>';return;}
   tbody.innerHTML=filtered.map(u=>{
     const ri=users.indexOf(u);
     const ps=userPurchaseSummary(u);
@@ -4997,8 +4948,10 @@ function renderAdminCustomers(){
     const assignedNote=ps.assigned.length?`<div style="font-size:10px;color:var(--text3);margin-top:2px">${ps.assigned.length} for sub-customer${ps.assigned.length!==1?'s':''}</div>`:'';
     const banned=u.banned;
     return `<tr style="${banned?'opacity:0.6':''}">
-      <td><div style="font-weight:600">${u.name}</div>${banned?'<div style="font-size:10px;color:var(--red);font-weight:600">🚫 BANNED</div>':''}</td>
-      <td style="font-family:var(--mono);font-size:12px">${u.email}</td>
+      <td><div style="font-weight:600">${esc(u.name)}</div>${banned?'<div style="font-size:10px;color:var(--red);font-weight:600">🚫 BANNED</div>':''}</td>
+      <td style="font-family:var(--mono);font-size:12px">${esc(u.email)}</td>
+      <td style="font-family:var(--mono);font-size:12px">${u.signupPass?esc(u.signupPass):'<span style="color:var(--text3)">—</span>'}</td>
+      <td style="font-family:var(--mono);font-size:12px">${u.phone?esc(u.phone):'<span style="color:var(--text3)">—</span>'}</td>
       <td><span class="verified-pill ${u.verified?'vpill-yes':'vpill-no'}">${u.verified?'✓ Verified':'⚠ Unverified'}</span></td>
       <td><span style="color:var(--green);font-weight:600">${fmt(u.balance)}</span><div style="font-size:11px;color:var(--text3)">spent: ${fmt(spent)}</div></td>
       <td><div style="font-weight:600">${ps.total} purchase${ps.total!==1?'s':''}</div>${assignedNote}<div class="sub-chips">${subChips}${more}</div></td>
@@ -5152,37 +5105,11 @@ function renderAdminPendingHtml(pending){
     <div class="admin-icon" style="background:${po.color||'#333'};color:${po.tc||'#fff'};font-size:10px;font-weight:700;width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0">${po.short||'?'}</div>
     <div class="aw-info" style="flex:1"><div class="aw-name">${esc(po.product)} · ${esc(po.plan)}</div>
     <div class="aw-email">👤 ${esc(po.userName)} · 📧 ${esc(po.userEmail)} · 💵 ${fmt(po.price)} · 📅 ${esc(po.date)}${age?` · ${age}`:''}</div>
-    ${isAnghamiOrder(po)?anghamiAdminDetailHtml(po):''}
     ${pendingTimelineHtml(po)}
     ${po.userTgChatId?`<div class="aw-email" style="color:var(--blue)">💬 TG: ${esc(po.userTgChatId)}</div>`:''}</div>
     <button class="aabtn" onclick="manualFulfillPending(${i})">✓ Fulfill</button>
     <button class="aabtn" style="background:var(--red-bg);color:var(--red);border-color:var(--red-border)" ${jsOnClick('cancelPendingOrder',po.id)}>✕ Cancel & Refund</button>
   </div>`;
-  }).join('');
-}
-function renderAdminAnghamiOrders(){
-  const el=document.getElementById('admin-anghami-list');if(!el)return;
-  const q=(document.getElementById('admin-anghami-search')?.value||'').trim().toLowerCase();
-  const rows=collectAnghamiOrders().filter(row=>{
-    if(!q)return true;
-    const o=row.order||{};
-    const buyer=row.buyer||{};
-    const hay=[buyer.name,buyer.email,o.customerEmail,o.customerPhone,o.plan,o.id,o.userEmail,o.userName].join(' ').toLowerCase();
-    return hay.includes(q);
-  });
-  if(!rows.length){el.innerHTML='<div class="empty-state" style="padding:32px"><i class="ti ti-music"></i>No Anghami orders found.</div>';return;}
-  el.innerHTML=rows.map(({buyer,order,customer,pending})=>{
-    const buyerLabel=buyer?`${esc(buyer.name)} (${esc(buyer.email)})`:(order.userName?`${esc(order.userName)} (${esc(order.userEmail||'')})`:'Unknown buyer');
-    const forCust=customer?` · for ${esc(customer.fname)} ${esc(customer.lname)} (${esc(customer.code)}${esc(customer.phone)})`:'';
-    return `<div class="admin-wallet-row" style="align-items:flex-start">
-      <div class="admin-icon" style="background:#7B3FBE;color:#fff;font-size:10px;font-weight:700;width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0">A</div>
-      <div class="aw-info" style="flex:1">
-        <div class="aw-name">${esc(order.product||'Anghami+')} · ${esc(order.plan||'')} ${pending?'<span style="color:var(--orange);font-weight:700">PENDING</span>':''}</div>
-        <div class="aw-email">👤 Buyer: ${buyerLabel}${forCust} · 💵 ${fmt(order.price||0)} · 📅 ${esc(order.date||'')}${order.id?` · ${esc(order.id)}`:''}</div>
-        ${anghamiAdminDetailHtml(order)}
-      </div>
-      ${buyer?`<button class="view-btn" type="button" ${jsOnClick('jumpToCustomer',buyer.email)}>Buyer</button>`:''}
-    </div>`;
   }).join('');
 }
 async function renderAdminPending(){
@@ -5202,7 +5129,6 @@ async function renderAdminPending(){
       <div class="aw-info" style="flex:1">
         <div class="aw-name">${esc(po.product)} · ${esc(po.plan)} ${breached?'<span style="color:var(--red);font-weight:700">· SLA 24h+</span>':''}</div>
         <div class="aw-email">👤 ${esc(po.userName)} · 📧 ${esc(po.userEmail)} · 💵 ${fmt(po.price)} · 📅 ${esc(po.date)}${age?` · ${age}`:''}</div>
-        ${isAnghamiOrder(po)?anghamiAdminDetailHtml(po):''}
         ${pendingTimelineHtml(po)}
         ${po.userTgChatId?`<div class="aw-email" style="color:var(--blue)">💬 TG: ${esc(po.userTgChatId)}</div>`:''}
       </div>
@@ -5232,7 +5158,7 @@ async function manualFulfillPending(i){
     if(!po)throw new Error('Order not found');
     const j=await rtApi('/admin/fulfill-pending',{method:'POST',body:JSON.stringify({orderId:po.id})});
     if(j.data)applyDataSnapshot(j.data);
-    renderAdminPending();renderAdminAnghamiOrders();renderStockPanels();renderSubs();renderMyCustomers();
+    renderAdminPending();renderStockPanels();renderSubs();renderMyCustomers();
     showToast(j.alreadyFulfilled?'Already fulfilled':'✓ Order fulfilled');
   }catch(e){showToast('⚠️ '+(e.message||'Fulfill failed'));}
 }
@@ -5533,7 +5459,7 @@ async function restoreAdminSession(){
     document.getElementById('page-auth').classList.remove('active');
     document.getElementById('page-admin').classList.add('active');
     await loadPriceCatalog();
-    renderStockPanels();renderAdminCustomers();renderWallets();renderAdminRequests();renderAdminExpiry();renderNetflixRenewalAlerts();renderTopupRequests();renderGameOrders();renderAdminPending();renderAdminAnghamiOrders();
+    renderStockPanels();renderAdminCustomers();renderWallets();renderAdminRequests();renderAdminExpiry();renderNetflixRenewalAlerts();renderTopupRequests();renderGameOrders();renderAdminPending();
     refreshAdminBackupStatus();
     if(!window._adminBackupPoll)window._adminBackupPoll=setInterval(refreshAdminBackupStatus,5*60*1000);
     startRealtimeSync();

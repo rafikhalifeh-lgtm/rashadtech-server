@@ -178,9 +178,6 @@ function registerEnhancements(app, deps) {
       profileName: pendingOrder.profileName || account.profileName || account.extra || '',
       profilePin: account.profilePin || '',
       serviceLink: pendingOrder.serviceLink || account.serviceLink || '',
-      customerEmail: pendingOrder.customerEmail || '',
-      customerPass: pendingOrder.customerPass || '',
-      customerPhone: pendingOrder.customerPhone || '',
       accKey: account.accKey || '',
       mainEmail: account.mainEmail || ''
     };
