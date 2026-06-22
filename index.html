@@ -2771,6 +2771,47 @@ if(typeof emailjs!=='undefined'&&EMAILJS_PUBLIC_KEY&&EMAILJS_PUBLIC_KEY!=='YOUR_
   emailjs.init({ publicKey: EMAILJS_PUBLIC_KEY });
 }
 
+async function sendMarketingEmail(toEmail, subject, message, userName){
+  if(typeof emailjs==='undefined'||!EMAILJS_PUBLIC_KEY){
+    throw new Error('EmailJS is not available in the browser');
+  }
+  const params={
+    to_email:toEmail,
+    email:toEmail,
+    user_email:toEmail,
+    recipient:toEmail,
+    to_name:userName||toEmail,
+    user_name:userName||toEmail,
+    from_name:'rashadtech.tv',
+    subject:String(subject||'Message from rashadtech.tv'),
+    title:String(subject||'Message from rashadtech.tv'),
+    message:String(message||''),
+    body:String(message||''),
+    reply_to:toEmail
+  };
+  const res=await emailjs.send(EMAILJS_SERVICE_ID,EMAILJS_TEMPLATE_ID,params);
+  if(res&&(res.status===200||res.text==='OK'))return true;
+  throw new Error(res?('EmailJS status: '+res.status):'EmailJS send failed');
+}
+
+async function deliverAdminEmailsFromBrowser(payload){
+  if(!payload?.clientEmailRequired||!Array.isArray(payload.targets)||!payload.targets.length){
+    return payload;
+  }
+  let sent=0;
+  const errors=[];
+  for(const target of payload.targets){
+    try{
+      await sendMarketingEmail(target.email,payload.subject,payload.message,target.name);
+      sent+=1;
+      await new Promise(r=>setTimeout(r,450));
+    }catch(e){
+      errors.push({ email: target.email, error: e.message || 'Send failed' });
+    }
+  }
+  return { ...payload, sent, total: payload.targets.length, errors };
+}
+
 async function sendOTPEmail(toEmail, otpCode, userName){
   if(EMAILJS_SERVICE_ID==='YOUR_SERVICE_ID'){
     showToast(`⚠️ EmailJS not set up — contact support`);
@@ -3900,10 +3941,11 @@ async function sendBroadcast(){
       await sendAnnouncement(msg, channel==='both');
     }
     if(channel==='email'||channel==='both'){
-      const j=await rtApi('/admin/broadcast-email',{
+      let j=await rtApi('/admin/broadcast-email',{
         method:'POST',
         body:JSON.stringify({subject:subject||'Offer from rashadtech.tv',message:msg})
       },120000);
+      if(j.clientEmailRequired)j=await deliverAdminEmailsFromBrowser(j);
       showToast(`✅ Email sent to ${j.sent||0} customer${(j.sent||0)!==1?'s':''}`);
       logActivity('Email broadcast',`${j.sent||0} customers`);
     }
@@ -3917,7 +3959,9 @@ async function sendProfileReminders(){
   if(!isAdmin||!authToken){showToast('Admin login required');return;}
   if(!confirm('Email all customers who are missing phone or Telegram Chat ID?'))return;
   try{
-    const j=await rtApi('/admin/profile-reminders',{method:'POST',body:JSON.stringify({})},120000);
+    showToast('Sending profile reminders… keep this tab open');
+    let j=await rtApi('/admin/profile-reminders',{method:'POST',body:JSON.stringify({})},120000);
+    if(j.clientEmailRequired)j=await deliverAdminEmailsFromBrowser(j);
     showToast(`✅ Profile reminders sent to ${j.sent||0} customer${(j.sent||0)!==1?'s':''}`);
     logActivity('Profile reminders',`${j.sent||0} sent`);
   }catch(e){showToast('⚠️ '+(e.message||'Could not send reminders'));}

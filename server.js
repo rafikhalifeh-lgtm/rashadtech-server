@@ -3420,7 +3420,14 @@ app.post('/admin/profile-reminders', async (req, res) => {
       return res.json({ success: true, dryRun: true, count: targets.length });
     }
     if (!EMAILJS_PRIVATE_KEY) {
-      return res.status(503).json({ error: 'Email not configured. Set EMAILJS_PRIVATE_KEY on Render.' });
+      return res.json({
+        success: true,
+        clientEmailRequired: true,
+        subject,
+        message,
+        total: targets.length,
+        targets: targets.map(u => ({ email: u.email, name: u.name || '' }))
+      });
     }
     let sent = 0;
     const errors = [];
@@ -3459,7 +3466,14 @@ app.post('/admin/broadcast-email', async (req, res) => {
       return res.json({ success: true, dryRun: true, count: targets.length });
     }
     if (!EMAILJS_PRIVATE_KEY) {
-      return res.status(503).json({ error: 'Email not configured. Set EMAILJS_PRIVATE_KEY on Render.' });
+      return res.json({
+        success: true,
+        clientEmailRequired: true,
+        subject: cleanSubject,
+        message: cleanMessage,
+        total: targets.length,
+        targets: targets.map(u => ({ email: u.email, name: u.name || '' }))
+      });
     }
     let sent = 0;
     const errors = [];
