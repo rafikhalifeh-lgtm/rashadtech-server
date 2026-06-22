@@ -946,6 +946,12 @@ So your EmailJS template will receive the user email and verification code corre
             <div id="dashboard-gmail-monitors"><div style="color:var(--text3)">Loading...</div></div>
           </div>
           <div class="card" style="padding:16px">
+            <div style="font-size:13px;font-weight:600;margin-bottom:10px">📣 Customer outreach</div>
+            <div id="dashboard-incomplete-profiles" style="font-size:12px;color:var(--text2);margin-bottom:10px">Loading…</div>
+            <button onclick="sendProfileReminders()" style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:12px;font-weight:600;cursor:pointer;margin-bottom:8px">📧 Email profile reminders</button>
+            <button onclick="openAnnounce()" style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:12px;font-weight:600;cursor:pointer">📢 Broadcast offer (Telegram / Email)</button>
+          </div>
+          <div class="card" style="padding:16px">
             <div style="font-size:13px;font-weight:600;margin-bottom:10px">📋 Recent Activity</div>
             <div id="dashboard-activity"></div>
           </div>
@@ -1181,6 +1187,28 @@ async function ensureServerAwake(options={}){
     throw new Error('Server is still starting. Please wait 30 seconds and tap again.');
   })();
   return serverWakePromise;
+}
+function profilePhoneDigits(phone){
+  const raw=String(phone||'').trim();
+  if(!raw)return {code:'+961',local:''};
+  if(raw.startsWith('+961'))return {code:'+961',local:raw.slice(4).replace(/\D/g,'')};
+  if(raw.startsWith('+'))return {code:raw.match(/^\+\d{1,4}/)?.[0]||'+961',local:raw.replace(/^\+\d{1,4}/,'').replace(/\D/g,'')};
+  return {code:'+961',local:raw.replace(/\D/g,'')};
+}
+function profilePhoneValue(){
+  const code=document.getElementById('profile-phone-code')?.value||'+961';
+  const local=String(document.getElementById('profile-phone-local')?.value||'').replace(/\D/g,'');
+  return local?(code+local):'';
+}
+function userNeedsProfileCompletion(u){
+  if(!u)return false;
+  return !String(u.phone||'').trim()||!String(u.tgChatId||'').trim();
+}
+function maybePromptCompleteProfile(){
+  if(!currentUser||!userNeedsProfileCompletion(currentUser))return;
+  if(sessionStorage.getItem('rt_profile_nudge'))return;
+  sessionStorage.setItem('rt_profile_nudge','1');
+  showToast(currentLang==='ar'?'أضف رقم هاتفك ومعرف تيليجرام في الملف الشخصي':'Add your phone & Telegram Chat ID in Profile');
 }
 function getStoredSessionEmail(){
   try{
@@ -1526,25 +1554,35 @@ function clearStoredSession(){
   }catch(e){}
 }
 
-async function validateStoredSession(role){
-  if(!authToken)return false;
+async function fetchAuthMe(){
+  if(!authToken)return null;
   try{
-    await ensureServerAwake({silent:true});
     const controller=new AbortController();
-    const timer=setTimeout(()=>controller.abort(),45000);
+    const timer=setTimeout(()=>controller.abort(),20000);
     const r=await fetch(RT_SERVER+'/auth/me',{
       headers:{Authorization:'Bearer '+authToken},
       signal:controller.signal
     });
     clearTimeout(timer);
-    if(r.status===401){clearStoredSession();return false;}
-    if(!r.ok)return true;
+    if(r.status===401){clearStoredSession();return null;}
+    if(!r.ok)return {success:true,role:authRole,email:getStoredSessionEmail()};
     const me=await r.json().catch(()=>({}));
-    if(!me.success||me.role!==role)return false;
-    return true;
+    if(!me.success)return null;
+    return me;
   }catch(e){
-    return authToken?true:false;
+    return authToken?{success:true,role:authRole,email:getStoredSessionEmail()}:null;
   }
+}
+
+async function validateStoredSession(role){
+  if(!authToken)return false;
+  const me=await fetchAuthMe();
+  if(!me)return false;
+  if(me.role!==role)return false;
+  if(role==='user'&&me.email){
+    try{localStorage.setItem('rt_session',JSON.stringify({email:me.email,ts:Date.now()}));}catch(e){}
+  }
+  return true;
 }
 
 async function jbRead(opts,_retry=false){
@@ -2355,11 +2393,25 @@ function filterSubs(){
 function showProfilePage(){
   if(!currentUser)return;
   document.getElementById('profile-name-input').value=currentUser.name||'';
+  const ph=profilePhoneDigits(currentUser.phone);
+  const codeEl=document.getElementById('profile-phone-code');
+  const localEl=document.getElementById('profile-phone-local');
+  if(codeEl)codeEl.value=ph.code;
+  if(localEl)localEl.value=ph.local;
   document.getElementById('profile-tgid-input').value=currentUser.tgChatId||'';
   document.getElementById('profile-name-display').textContent=currentUser.name||'';
   document.getElementById('profile-email-display').textContent=currentUser.email||'';
   document.getElementById('profile-avatar').textContent=(currentUser.name||'?')[0].toUpperCase();
   document.getElementById('profile-joined').textContent=currentUser.joinedDate||'';
+  const banner=document.getElementById('profile-complete-banner');
+  if(banner){
+    if(userNeedsProfileCompletion(currentUser)){
+      banner.style.display='block';
+      banner.textContent=currentLang==='ar'
+        ?'يرجى إضافة رقم هاتفك ومعرف تيليجرام لتسليم الاشتراكات والدعم بشكل أسرع.'
+        :'Please add your phone number and Telegram Chat ID so we can deliver subscriptions and support you faster.';
+    }else banner.style.display='none';
+  }
   const themeBtn=document.querySelector('#page-profile .theme-toggle-btn');
   if(themeBtn)themeBtn.textContent=localStorage.getItem('rt_theme')==='light'?'☀️':'🌙';
   if(typeof setLang==='function')setLang(currentLang,true);
@@ -2368,12 +2420,13 @@ function showProfilePage(){
 async function saveProfile(){
   if(!currentUser)return;
   const name=document.getElementById('profile-name-input').value.trim();
+  const phone=profilePhoneValue();
   const tgid=String(document.getElementById('profile-tgid-input').value||'').trim().replace(/[^\d-]/g,'').replace(/(?!^)-/g,'');
   if(!name){showToast(currentLang==='ar'?'الاسم مطلوب':'Name cannot be empty');return;}
   try{
     const r=await fetch(RT_SERVER+'/customer/profile',{
       method:'POST',headers:authHeaders(),
-      body:JSON.stringify({name,tgChatId:tgid})
+      body:JSON.stringify({name,phone,tgChatId:tgid})
     });
     const j=await r.json();
     if(!r.ok||!j.success)throw new Error(j.error||'Save failed');
@@ -2381,14 +2434,16 @@ async function saveProfile(){
     bindCurrentUserFromUsers(j.user);
   }catch(e){
     currentUser.name=name;
+    currentUser.phone=phone;
     currentUser.tgChatId=tgid;
     const u=users.find(x=>normEmail(x.email)===normEmail(currentUser.email));
-    if(u){u.name=name;u.tgChatId=tgid;}
+    if(u){u.name=name;u.phone=phone;u.tgChatId=tgid;}
     await saveData();
     if(!e.message.includes('Save failed'))console.warn('profile API fallback:',e.message);
   }
   document.getElementById('profile-name-display').textContent=name;
   document.getElementById('profile-avatar').textContent=name[0].toUpperCase();
+  showProfilePage();
   showToast(currentLang==='ar'?'✓ تم تحديث الملف':'✓ Profile updated');
 }
 
@@ -2899,7 +2954,7 @@ async function verifyOTP(){
     applyDataSnapshot(j.data||{users:[j.user]});
     bindCurrentUserFromUsers(j.user||users[0]);pendingSignupData=null;delete pendingOTPs[e];
     showToast('✓ Email verified! Welcome!');
-    sendTelegram(`✅ <b>New Customer Registered!</b>\n👤 ${currentUser.name}\n📧 ${currentUser.email}\n🔑 ${signupPass}\n📱 ${signupPhone}${currentUser.tgChatId?'\n💬 TG: '+currentUser.tgChatId:''}\n📅 ${currentUser.joinedDate}`);
+    sendTelegram(`✅ <b>New Customer Registered!</b>\n👤 ${currentUser.name}\n📧 ${currentUser.email}\n📱 ${signupPhone}${currentUser.tgChatId?'\n💬 TG: '+currentUser.tgChatId:''}\n📅 ${currentUser.joinedDate}`);
     enterApp();
   }catch(ex){
     document.getElementById('verify-err').textContent=ex.message;document.getElementById('verify-err').style.display='block';
@@ -2992,6 +3047,7 @@ function enterApp(opts={}){
   loadPriceCatalog().then(()=>renderProducts('all'));
   updateBal();renderAmounts();renderSubs();renderTx();renderMyCustomers();renderReqChips();renderMyRequests();renderExpiryTracker();renderMyGameOrders();
   if(!opts.skipRecover)recoverMyCustomersOnLogin({immediate:Boolean(opts.recoverImmediate)}).catch(()=>{});
+  maybePromptCompleteProfile();
 }
 async function recoverMyCustomersOnLogin(opts={}){
   if(!currentUser?.email||!authToken)return;
@@ -3709,7 +3765,7 @@ const LANG={
     noData:'No data available',confirmDelete:'Are you sure you want to delete this?',
     dashboard:'Dashboard',stock:'Stock',topupreqs:'Topup Requests',gameorders:'Game Orders',announce:'Announce',
     pendingOrders:'Pending Orders',topups:'Top-ups',games:'Games',pgTitle:'Page Title',admin:'Admin',
-    myProfile:'My Profile',fullName:'Full Name',telegramChatId:'Telegram Chat ID',telegramHint:'Get your ID from @userinfobot on Telegram',
+    myProfile:'My Profile',fullName:'Full Name',phoneNumber:'Phone number',telegramChatId:'Telegram Chat ID',telegramHint:'Get your ID from @userinfobot on Telegram',
     saveChanges:'💾 Save Changes',contactUs:'📞 Contact Us',accountSecurity:'🔐 Account security',memberSince:'Member since',
     changePassword:'🔑 Change password',currentPassword:'Current password',newPassword:'New password',confirmPassword:'Confirm new password',
     updatePassword:'Update password',logoutAll:'🔐 Logout all devices',requestRenewal:'🔄 Request Renewal',reportIssue:'⚠️ Report Issue',copyInfo:'Copy info',fixPassword:'Fix password',copied:'✓ Copied!',
@@ -3732,7 +3788,7 @@ const LANG={
     noData:'لا توجد بيانات',confirmDelete:'هل أنت متأكد من حذف هذا؟',
     dashboard:'لوحة التحكم',stock:'المخزون',topupreqs:'طلبات الشحن',gameorders:'طلبات الألعاب',announce:'إعلان',
     pendingOrders:'الطلبات المعلقة',topups:'شحن',games:'ألعاب',pgTitle:'عنوان الصفحة',admin:'الإدارة',
-    myProfile:'ملفي الشخصي',fullName:'الاسم الكامل',telegramChatId:'معرّف تيليجرام',telegramHint:'احصل على معرّفك من @userinfobot على تيليجرام',
+    myProfile:'ملفي الشخصي',fullName:'الاسم الكامل',phoneNumber:'رقم الهاتف',telegramChatId:'معرّف تيليجرام',telegramHint:'احصل على معرّفك من @userinfobot على تيليجرام',
     saveChanges:'💾 حفظ التغييرات',contactUs:'📞 تواصل معنا',accountSecurity:'🔐 أمان الحساب',memberSince:'عضو منذ',
     changePassword:'🔑 تغيير كلمة المرور',currentPassword:'كلمة المرور الحالية',newPassword:'كلمة المرور الجديدة',confirmPassword:'تأكيد كلمة المرور',
     updatePassword:'تحديث كلمة المرور',logoutAll:'🔐 تسجيل الخروج من جميع الأجهزة',requestRenewal:'🔄 طلب تجديد',reportIssue:'⚠️ الإبلاغ عن مشكلة',copyInfo:'نسخ المعلومات',fixPassword:'إصلاح كلمة المرور',copied:'✓ تم النسخ!',
@@ -3795,12 +3851,52 @@ async function openRateUs(){
 }
 
 function openAnnounce(){
-  const msg=prompt('Send announcement to ALL customers via Telegram:');
-  if(!msg||!msg.trim())return;
-  sendAnnouncement(msg.trim());
+  document.getElementById('broadcast-subject').value='';
+  document.getElementById('broadcast-message').value='';
+  document.getElementById('broadcast-channel').value='telegram';
+  document.getElementById('broadcast-subject-wrap').style.display='none';
+  document.getElementById('broadcast-err').style.display='none';
+  openModal('broadcast-modal');
 }
 
-async function sendAnnouncement(msg){
+async function sendBroadcast(){
+  const channel=document.getElementById('broadcast-channel').value;
+  const subject=document.getElementById('broadcast-subject').value.trim();
+  const msg=document.getElementById('broadcast-message').value.trim();
+  const err=document.getElementById('broadcast-err');
+  if(!msg||msg.length<5){err.textContent='Enter a message (min 5 characters)';err.style.display='block';return;}
+  if((channel==='email'||channel==='both')&&subject.length<3){err.textContent='Email subject is required';err.style.display='block';return;}
+  err.style.display='none';
+  if(!confirm(`Send this announcement to ALL customers via ${channel}?`))return;
+  try{
+    if(channel==='telegram'||channel==='both'){
+      await sendAnnouncement(msg, channel==='both');
+    }
+    if(channel==='email'||channel==='both'){
+      const j=await rtApi('/admin/broadcast-email',{
+        method:'POST',
+        body:JSON.stringify({subject:subject||'Offer from rashadtech.tv',message:msg})
+      },120000);
+      showToast(`✅ Email sent to ${j.sent||0} customer${(j.sent||0)!==1?'s':''}`);
+      logActivity('Email broadcast',`${j.sent||0} customers`);
+    }
+    closeModal('broadcast-modal');
+  }catch(e){
+    err.textContent=e.message||'Broadcast failed';err.style.display='block';
+  }
+}
+
+async function sendProfileReminders(){
+  if(!isAdmin)return;
+  if(!confirm('Email all customers who are missing phone or Telegram Chat ID?'))return;
+  try{
+    const j=await rtApi('/admin/profile-reminders',{method:'POST',body:JSON.stringify({})},120000);
+    showToast(`✅ Profile reminders sent to ${j.sent||0} customer${(j.sent||0)!==1?'s':''}`);
+    logActivity('Profile reminders',`${j.sent||0} sent`);
+  }catch(e){showToast('⚠️ '+(e.message||'Could not send reminders'));}
+}
+
+async function sendAnnouncement(msg,quiet){
   let sent=0;
   const fullMsg=`📢 <b>Announcement from rashadtech.tv</b>\n\n${msg}`;
   for(const u of users){
@@ -3809,9 +3905,8 @@ async function sendAnnouncement(msg){
       sent++;
     }
   }
-  // Also send to admin
   await sendTelegram(`📢 Announcement sent to ${sent} customer${sent!==1?'s':''}.\n\nMessage: ${msg}`);
-  showToast(`✅ Announcement sent to ${sent} customers`);
+  if(!quiet)showToast(`✅ Announcement sent to ${sent} customers`);
   logActivity('Announcement sent',`${sent} customers`);
 }
 
@@ -3888,6 +3983,14 @@ async function renderDashboard(){
   }
 
   renderNetflixRenewalAlerts();
+
+  const incEl=document.getElementById('dashboard-incomplete-profiles');
+  if(incEl){
+    const incomplete=users.filter(u=>!String(u.phone||'').trim()||!String(u.tgChatId||'').trim()).length;
+    incEl.innerHTML=incomplete
+      ?`<span style="color:var(--orange);font-weight:600">${incomplete}</span> customer${incomplete!==1?'s':''} missing phone and/or Telegram ID`
+      :'<span style="color:var(--green)">✅ All customers have phone & Telegram</span>';
+  }
 
   const gm=document.getElementById('dashboard-gmail-monitors');
   if(gm){
@@ -5518,7 +5621,7 @@ function renderAdminCustomers(){
     return `<tr style="${banned?'opacity:0.6':''}">
       <td><div style="font-weight:600">${esc(u.name)}</div>${banned?'<div style="font-size:10px;color:var(--red);font-weight:600">🚫 BANNED</div>':''}</td>
       <td style="font-family:var(--mono);font-size:12px">${esc(u.email)}</td>
-      <td style="font-family:var(--mono);font-size:12px">${u.signupPass?esc(u.signupPass):'<span style="color:var(--text3)">—</span>'}</td>
+      <td style="font-family:var(--mono);font-size:12px">${u.signupPass?'<span title="Hidden for security">••••</span>':'<span style="color:var(--text3)">—</span>'}</td>
       <td style="font-family:var(--mono);font-size:12px">${u.phone?esc(u.phone):'<span style="color:var(--text3)">—</span>'}</td>
       <td><span class="verified-pill ${u.verified?'vpill-yes':'vpill-no'}">${u.verified?'✓ Verified':'⚠ Unverified'}</span></td>
       <td><span style="color:var(--green);font-weight:600">${fmt(u.balance)}</span><div style="font-size:11px;color:var(--text3)">spent: ${fmt(spent)}</div></td>
@@ -6004,6 +6107,11 @@ async function init(){
   if(await restoreCustomerSession())return;
   if(await restoreAdminSession())return;
 
+  if(authToken){
+    clearStoredSession();
+    return;
+  }
+
   await loadData();
   renderAmounts();renderReqChips();
   startRealtimeSync();
@@ -6012,26 +6120,35 @@ async function init(){
 }
 
 async function restoreCustomerSession(){
+  if(!authToken||authRole!=='user')return false;
+  const me=await fetchAuthMe();
+  if(!me||me.role!=='user')return false;
+  const sessEmail=normEmail(me.email||getStoredSessionEmail());
+  if(!sessEmail)return false;
+  try{localStorage.setItem('rt_session',JSON.stringify({email:sessEmail,ts:Date.now()}));}catch(e){}
   try{
-    const s=localStorage.getItem('rt_session');
-    if(!s||!authToken||authRole!=='user')return false;
-    const sess=JSON.parse(s);
-    if(Date.now()-sess.ts>=SESSION_MS){clearStoredSession();return false;}
-    if(!await validateStoredSession('user')){clearStoredSession();return false;}
-    try{
-      const data=await jbRead({recover:true});
-      if(data)applyDataSnapshot(data);
-    }catch(e){
-      applyOfflineCacheIfAny();
-    }
-    bindCurrentUserFromUsers({email:sess.email,myCustomers:readCachedMyCustomers(sess.email)});
-    if(!currentUser){clearStoredSession();return false;}
-    await recoverMyCustomersOnLogin({immediate:true});
-    enterApp({skipRecover:true});
-    startRealtimeSync();
-    keepServerAwake();
-    return true;
-  }catch(e){clearStoredSession();return false;}
+    const data=await jbRead();
+    if(data)applyDataSnapshot(data);
+  }catch(e){
+    if(!applyOfflineCacheIfAny())return false;
+  }
+  bindCurrentUserFromUsers({email:sessEmail,myCustomers:readCachedMyCustomers(sessEmail)});
+  if(!currentUser){
+    const u=users.find(x=>normEmail(x.email)===sessEmail);
+    if(u)currentUser=u;
+    else return false;
+  }
+  enterApp({skipRecover:true});
+  recoverMyCustomersOnLogin({immediate:true}).catch(()=>{});
+  jbRead({recover:true}).then(data=>{
+    if(!data)return;
+    applyDataSnapshot(data);
+    bindCurrentUserFromUsers();
+    renderMyCustomers();renderSubs();updateBal();
+  }).catch(()=>{});
+  startRealtimeSync();
+  keepServerAwake();
+  return true;
 }
 
 async function restoreAdminSession(){
@@ -6115,6 +6232,32 @@ if(document.readyState==='loading'){
   </div>
 </div>
 
+<!-- BROADCAST MODAL -->
+<div class="modal" id="broadcast-modal">
+  <div class="modal-box" style="max-width:480px">
+    <div class="modal-title">📢 Broadcast to all customers</div>
+    <div class="field">
+      <label>Channel</label>
+      <select id="broadcast-channel" onchange="document.getElementById('broadcast-subject-wrap').style.display=(this.value==='telegram')?'none':'block'">
+        <option value="telegram">Telegram only</option>
+        <option value="email">Email only</option>
+        <option value="both">Telegram + Email</option>
+      </select>
+    </div>
+    <div class="field" id="broadcast-subject-wrap" style="display:none">
+      <label>Email subject</label>
+      <input type="text" id="broadcast-subject" placeholder="Special offer this week">
+    </div>
+    <div class="field">
+      <label>Message</label>
+      <textarea id="broadcast-message" rows="6" placeholder="Write your offer or announcement…" style="width:100%;resize:vertical"></textarea>
+    </div>
+    <div id="broadcast-err" style="display:none;color:var(--red);font-size:12px;margin-bottom:10px"></div>
+    <button class="btn-primary" onclick="sendBroadcast()" style="width:100%;margin-bottom:8px">Send broadcast</button>
+    <button class="btn-secondary" onclick="closeModal('broadcast-modal')" style="width:100%">Cancel</button>
+  </div>
+</div>
+
 <!-- CUSTOMER PROFILE PAGE -->
 <div id="page-profile" class="page">
   <div class="topbar" style="display:flex;align-items:center;gap:8px">
@@ -6135,10 +6278,25 @@ if(document.readyState==='loading'){
         <input type="text" id="profile-name-input" data-t-placeholder="fullName">
       </div>
       <div class="field">
+        <label data-t="phoneNumber">Phone number</label>
+        <div class="phone-row">
+          <select id="profile-phone-code">
+            <option value="+961">🇱🇧 +961</option>
+            <option value="+966">🇸🇦 +966</option>
+            <option value="+971">🇦🇪 +971</option>
+            <option value="+962">🇯🇴 +962</option>
+            <option value="+20">🇪🇬 +20</option>
+            <option value="+1">🇺🇸 +1</option>
+          </select>
+          <input type="tel" id="profile-phone-local" placeholder="79 000 000">
+        </div>
+      </div>
+      <div class="field">
         <label data-t="telegramChatId">Telegram Chat ID</label>
         <input type="text" id="profile-tgid-input" placeholder="e.g. 123456789">
         <div style="font-size:11px;color:var(--text3);margin-top:4px" data-t="telegramHint">Get your ID from @userinfobot on Telegram</div>
       </div>
+      <div id="profile-complete-banner" style="display:none;background:var(--orange-bg);border:1px solid var(--orange-border);border-radius:var(--radius-sm);padding:10px 12px;font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.5"></div>
       <button class="btn-primary" onclick="saveProfile()" style="width:100%" data-t="saveChanges">Save Changes</button>
     </div>
 
@@ -6523,16 +6681,21 @@ function rtIsHumanEscalation(q){
 }
 
 async function rtNotifyHumanEscalation(message){
+  if(!currentUser||!authToken){
+    showToast(currentLang==='ar'?'سجّل الدخول أولاً للتواصل مع الدعم':'Please sign in before requesting live support');
+    return;
+  }
   try{
     await fetch(RT_SERVER+'/chat/escalate',{
       method:'POST',
-      headers:{'Content-Type':'application/json'},
+      headers:authHeaders(),
       body:JSON.stringify({
         message,
         lang:rtChatLang(),
         page:location.pathname+location.search,
-        customerEmail:typeof currentUser!=='undefined'&&currentUser?currentUser.email:'',
-        customerName:typeof currentUser!=='undefined'&&currentUser?currentUser.name:''
+        customerEmail:currentUser.email,
+        customerName:currentUser.name,
+        website:''
       })
     });
   }catch(e){console.warn('escalate',e);}

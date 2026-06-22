@@ -76,6 +76,10 @@ const EMAILJS_PUBLIC_KEY = normalizeEnvSecret(process.env.EMAILJS_PUBLIC_KEY) ||
 const EMAILJS_PRIVATE_KEY = normalizeEnvSecret(process.env.EMAILJS_PRIVATE_KEY);
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'RkhRkh7979@';
 const ADMIN_PIN = process.env.ADMIN_PIN || '7979';
+const ADMIN_USING_DEFAULT_CREDS = !process.env.ADMIN_PASSWORD || !process.env.ADMIN_PIN;
+const adminLoginFailures = new Map();
+const ADMIN_LOGIN_MAX_FAILURES = 5;
+const ADMIN_LOGIN_LOCK_MS = 30 * 60 * 1000;
 const JSONBIN_ALLOW_PUBLIC_READ = normalizeEnvSecret(process.env.JSONBIN_ALLOW_PUBLIC_READ) === 'true';
 let FALLBACK_DB_FILE = process.env.FALLBACK_DB_FILE || (fs.existsSync('/var/data') ? '/var/data/rashadtech-db.json' : path.join(process.cwd(), '.data', 'emergency-db.json'));
 const JSONBIN_SYNC_INTERVAL_MS = Number(process.env.JSONBIN_SYNC_INTERVAL_MS || 10 * 60 * 1000);
@@ -94,6 +98,9 @@ const OTP_TTL_MS = 10 * 60 * 1000;
 
 if (!API_SECRET || !TG_TOKEN || !TG_ADMIN) {
   console.error('❌ Missing required env vars: API_SECRET, TG_TOKEN, TG_ADMIN');
+}
+if (ADMIN_USING_DEFAULT_CREDS) {
+  console.warn('⚠️ ADMIN_PASSWORD and ADMIN_PIN are not set — admin login uses insecure defaults (disabled on Render/production until set).');
 }
 
 let latestCodes = {};
@@ -191,6 +198,44 @@ function normalizeLoginPassword(password) {
   return String(password || '').replace(/\u00a0/g, ' ').trim();
 }
 
+function normalizePhone(phone) {
+  const raw = String(phone || '').replace(/\u00a0/g, ' ').trim();
+  if (!raw) return '';
+  const digits = raw.replace(/[^\d+]/g, '');
+  if (!digits) return '';
+  if (digits.startsWith('+')) return '+' + digits.slice(1).replace(/\D/g, '');
+  return digits.replace(/\D/g, '');
+}
+
+function adminLoginBlocked(res, ip) {
+  if (ADMIN_USING_DEFAULT_CREDS && (process.env.RENDER || process.env.NODE_ENV === 'production')) {
+    res.status(503).json({ error: 'Admin login is disabled until ADMIN_PASSWORD and ADMIN_PIN are set on the server.' });
+    return true;
+  }
+  const rec = adminLoginFailures.get(ip);
+  if (rec && rec.lockUntil > Date.now() && rec.count >= ADMIN_LOGIN_MAX_FAILURES) {
+    res.status(429).json({ error: 'Too many failed admin login attempts. Try again in 30 minutes.' });
+    return true;
+  }
+  return false;
+}
+
+function recordAdminLoginFailure(ip) {
+  const now = Date.now();
+  const rec = adminLoginFailures.get(ip) || { count: 0, lockUntil: now + ADMIN_LOGIN_LOCK_MS };
+  if (now > rec.lockUntil) {
+    rec.count = 0;
+    rec.lockUntil = now + ADMIN_LOGIN_LOCK_MS;
+  }
+  rec.count += 1;
+  if (rec.count >= ADMIN_LOGIN_MAX_FAILURES) rec.lockUntil = now + ADMIN_LOGIN_LOCK_MS;
+  adminLoginFailures.set(ip, rec);
+}
+
+function clearAdminLoginFailures(ip) {
+  adminLoginFailures.delete(ip);
+}
+
 function uniqueNormalizedEmails(values) {
   return [...new Set((values || []).map(normalizeEmail).filter(Boolean))];
 }
@@ -278,6 +323,49 @@ async function sendOtpEmail(email, otp, name) {
     const body = await r.text().catch(() => '');
     throw new Error(`Email OTP failed: ${r.status}${body ? ` — ${body}` : ''}`);
   }
+}
+
+function userEmailTemplateParams(email, name, subject, message) {
+  const recipient = normalizeEmail(email);
+  const body = String(message || '').trim();
+  const title = String(subject || 'Message from rashadtech.tv').trim();
+  return {
+    to_email: recipient,
+    email: recipient,
+    user_email: recipient,
+    user_name: String(name || 'Customer').trim() || 'Customer',
+    subject: title,
+    title,
+    message: body,
+    body,
+    reply_to: recipient
+  };
+}
+
+async function sendUserEmail(email, subject, message, name) {
+  if (!EMAILJS_PRIVATE_KEY) {
+    throw new Error('Server email is not configured (EMAILJS_PRIVATE_KEY missing on Render)');
+  }
+  const payload = {
+    service_id: EMAILJS_SERVICE_ID,
+    template_id: EMAILJS_TEMPLATE_ID,
+    user_id: EMAILJS_PUBLIC_KEY,
+    accessToken: EMAILJS_PRIVATE_KEY,
+    template_params: userEmailTemplateParams(email, name, subject, message)
+  };
+  const r = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  if (!r.ok) {
+    const body = await r.text().catch(() => '');
+    throw new Error(`Email failed: ${r.status}${body ? ` — ${body}` : ''}`);
+  }
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 async function deliverOtp({ email, otp, name, tgChatId, purpose }) {
@@ -981,9 +1069,11 @@ function mergeUserWrite(existing, incoming, session) {
     const idx = users.findIndex(u => normalizeEmail(u.email) === email);
     if (idx >= 0) {
       const prev = users[idx];
+      const nextPhone = normalizePhone(incomingUser.phone);
       users[idx] = {
         ...prev,
         name: incomingUser.name,
+        phone: nextPhone || normalizePhone(prev.phone) || '',
         tgChatId: String(incomingUser.tgChatId || '').trim() || String(prev.tgChatId || '').trim(),
         verified: Boolean(incomingUser.verified),
         myCustomers: mergeMyCustomers(prev.myCustomers, incomingUser.myCustomers),
@@ -1699,9 +1789,10 @@ async function restore(id){
 
 app.use('/auth', rateLimit('auth', 40, 15 * 60 * 1000));
 app.use('/get-code', rateLimit('get-code', 30, 5 * 60 * 1000));
-app.use('/chat/escalate', rateLimit('chat-escalate', 8, 15 * 60 * 1000));
+app.use('/chat/escalate', rateLimit('chat-escalate', 4, 15 * 60 * 1000));
 app.use('/notify', rateLimit('notify', 60, 5 * 60 * 1000));
 app.use('/links', rateLimit('links', 80, 5 * 60 * 1000));
+app.use('/admin', rateLimit('admin', 120, 15 * 60 * 1000));
 
 // ── JSONBIN PROXY ──────────────────────────────────────────────────────
 app.post('/db/read', async (req, res) => {
@@ -1968,8 +2059,14 @@ app.post('/auth/login', async (req, res) => {
 });
 
 app.post('/auth/admin-login', async (req, res) => {
+  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+  if (adminLoginBlocked(res, ip)) return;
   const { password, pin } = req.body;
-  if (password !== ADMIN_PASSWORD || pin !== ADMIN_PIN) return res.status(401).json({ error: 'Wrong password or PIN' });
+  if (password !== ADMIN_PASSWORD || pin !== ADMIN_PIN) {
+    recordAdminLoginFailure(ip);
+    return res.status(401).json({ error: 'Wrong password or PIN' });
+  }
+  clearAdminLoginFailures(ip);
   const token = createSession('admin', 'admin');
   try {
     const data = await readJsonBinRaw({ fast: true });
@@ -2231,12 +2328,14 @@ function enrichSubscriptionFromLiveOrder(data, subscription, ownerEmail) {
   };
 }
 
-function syncUserContact(user, { tgChatId, name } = {}) {
+function syncUserContact(user, { tgChatId, name, phone } = {}) {
   if (!user) return user;
   const nextTg = normalizeTgChatId(tgChatId);
   if (nextTg) user.tgChatId = nextTg;
   const nextName = String(name || '').trim();
   if (nextName) user.name = nextName;
+  const nextPhone = normalizePhone(phone);
+  if (nextPhone) user.phone = nextPhone;
   return user;
 }
 
@@ -2413,13 +2512,13 @@ app.post('/customer/my-customers/recover', async (req, res) => {
 app.post('/customer/profile', async (req, res) => {
   const session = requireSession(req, res, ['user']);
   if (!session) return;
-  const { name, tgChatId } = req.body || {};
+  const { name, tgChatId, phone } = req.body || {};
   try {
     const data = await readJsonBinRaw();
     data.users = Array.isArray(data.users) ? data.users : [];
     const user = data.users.find(u => normalizeEmail(u.email) === session.email);
     if (!user) return res.status(404).json({ error: 'User not found' });
-    syncUserContact(user, { name, tgChatId });
+    syncUserContact(user, { name, tgChatId, phone });
     await writeDbFast(data);
     res.json({ success: true, user: sanitizeUser(user), data: safeDataForSession(data, session) });
   } catch (e) {
@@ -3212,14 +3311,124 @@ app.post('/admin/backups/restore', async (req, res) => {
 });
 
 // ── TELEGRAM PROXY (NEW — keeps TG_TOKEN off the frontend) ─────────────
+app.get('/admin/incomplete-profiles', async (req, res) => {
+  const session = requireSession(req, res, ['admin']);
+  if (!session) return;
+  try {
+    const data = await readJsonBinRaw({ fast: true });
+    const list = (data.users || []).filter(u => !normalizePhone(u.phone) || !normalizeTgChatId(u.tgChatId));
+    res.json({
+      success: true,
+      count: list.length,
+      users: list.map(u => ({
+        email: u.email,
+        name: u.name || '',
+        phone: normalizePhone(u.phone) || '',
+        tgChatId: normalizeTgChatId(u.tgChatId) || ''
+      }))
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Could not load users' });
+  }
+});
+
+app.post('/admin/profile-reminders', async (req, res) => {
+  const session = requireSession(req, res, ['admin']);
+  if (!session) return;
+  const { dryRun } = req.body || {};
+  const subject = 'Complete your rashadtech.tv profile';
+  const message = [
+    'Hello,',
+    '',
+    'Please sign in to rashadtech.tv and open Profile to add:',
+    '• Your phone number',
+    '• Your Telegram Chat ID (from @userinfobot)',
+    '',
+    'This helps us deliver subscriptions and support you faster.',
+    '',
+    'Thank you,',
+    'RashadTech Team'
+  ].join('\n');
+  try {
+    const data = await readJsonBinRaw({ fast: true });
+    const targets = (data.users || []).filter(u => u.email && (!normalizePhone(u.phone) || !normalizeTgChatId(u.tgChatId)));
+    if (dryRun) {
+      return res.json({ success: true, dryRun: true, count: targets.length });
+    }
+    if (!EMAILJS_PRIVATE_KEY) {
+      return res.status(503).json({ error: 'Email not configured. Set EMAILJS_PRIVATE_KEY on Render.' });
+    }
+    let sent = 0;
+    const errors = [];
+    for (const user of targets) {
+      try {
+        await sendUserEmail(user.email, subject, message, user.name);
+        sent += 1;
+        await sleep(350);
+      } catch (e) {
+        errors.push({ email: user.email, error: e.message });
+      }
+    }
+    res.json({ success: true, sent, total: targets.length, errors });
+  } catch (e) {
+    console.error('Profile reminders error:', e.message);
+    res.status(500).json({ error: e.message || 'Could not send reminders' });
+  }
+});
+
+app.post('/admin/broadcast-email', async (req, res) => {
+  const session = requireSession(req, res, ['admin']);
+  if (!session) return;
+  const { subject, message, dryRun } = req.body || {};
+  const cleanSubject = String(subject || '').trim();
+  const cleanMessage = String(message || '').trim();
+  if (!cleanSubject || cleanMessage.length < 10) {
+    return res.status(400).json({ error: 'Subject and message (min 10 chars) are required' });
+  }
+  if (cleanMessage.length > 8000) {
+    return res.status(400).json({ error: 'Message is too long' });
+  }
+  try {
+    const data = await readJsonBinRaw({ fast: true });
+    const targets = (data.users || []).filter(u => u.email);
+    if (dryRun) {
+      return res.json({ success: true, dryRun: true, count: targets.length });
+    }
+    if (!EMAILJS_PRIVATE_KEY) {
+      return res.status(503).json({ error: 'Email not configured. Set EMAILJS_PRIVATE_KEY on Render.' });
+    }
+    let sent = 0;
+    const errors = [];
+    for (const user of targets) {
+      try {
+        await sendUserEmail(user.email, cleanSubject, cleanMessage, user.name);
+        sent += 1;
+        await sleep(350);
+      } catch (e) {
+        errors.push({ email: user.email, error: e.message });
+      }
+    }
+    res.json({ success: true, sent, total: targets.length, errors });
+  } catch (e) {
+    console.error('Broadcast email error:', e.message);
+    res.status(500).json({ error: e.message || 'Could not send broadcast' });
+  }
+});
+
 app.post('/chat/escalate', async (req, res) => {
-  const { message, lang, page, customerEmail, customerName } = req.body || {};
+  const { message, lang, page, customerEmail, customerName, website } = req.body || {};
+  if (website) return res.json({ success: true });
+  const session = getSession(req);
   const text = String(message || '').trim();
   if (!text || text.length < 3) return res.status(400).json({ error: 'Message required' });
   if (text.length > 2000) return res.status(400).json({ error: 'Message too long' });
+  if (!session && !customerEmail) {
+    return res.status(401).json({ error: 'Please sign in before requesting live support.' });
+  }
   try {
-    const who = customerName || customerEmail || 'Unknown visitor';
-    const contact = customerEmail ? `\n📧 <code>${customerEmail}</code>` : '';
+    const who = customerName || (session && session.email) || customerEmail || 'Unknown visitor';
+    const contactEmail = (session && session.email) || customerEmail || '';
+    const contact = contactEmail ? `\n📧 <code>${contactEmail}</code>` : '';
     const pageHint = page ? `\n🌐 Page: ${String(page).slice(0, 120)}` : '';
     const langHint = lang ? `\n🗣 Lang: ${String(lang).slice(0, 8)}` : '';
     await sendTG(
