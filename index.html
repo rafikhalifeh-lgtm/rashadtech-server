@@ -3876,6 +3876,7 @@ async function openRateUs(){
 }
 
 function openAnnounce(){
+  if(!isAdmin||!authToken){showToast('Admin login required');return;}
   document.getElementById('broadcast-subject').value='';
   document.getElementById('broadcast-message').value='';
   document.getElementById('broadcast-channel').value='telegram';
@@ -3885,6 +3886,7 @@ function openAnnounce(){
 }
 
 async function sendBroadcast(){
+  if(!isAdmin||!authToken){showToast('Admin login required');closeModal('broadcast-modal');return;}
   const channel=document.getElementById('broadcast-channel').value;
   const subject=document.getElementById('broadcast-subject').value.trim();
   const msg=document.getElementById('broadcast-message').value.trim();
@@ -3912,7 +3914,7 @@ async function sendBroadcast(){
 }
 
 async function sendProfileReminders(){
-  if(!isAdmin)return;
+  if(!isAdmin||!authToken){showToast('Admin login required');return;}
   if(!confirm('Email all customers who are missing phone or Telegram Chat ID?'))return;
   try{
     const j=await rtApi('/admin/profile-reminders',{method:'POST',body:JSON.stringify({})},120000);
@@ -3922,6 +3924,7 @@ async function sendProfileReminders(){
 }
 
 async function sendAnnouncement(msg,quiet){
+  if(!isAdmin||!authToken)throw new Error('Admin login required');
   let sent=0;
   const fullMsg=`📢 <b>Announcement from rashadtech.tv</b>\n\n${msg}`;
   for(const u of users){
@@ -6257,29 +6260,31 @@ if(document.readyState==='loading'){
   </div>
 </div>
 
-<!-- BROADCAST MODAL -->
-<div class="modal" id="broadcast-modal">
-  <div class="modal-box" style="max-width:480px">
-    <div class="modal-title">📢 Broadcast to all customers</div>
-    <div class="field">
-      <label>Channel</label>
-      <select id="broadcast-channel" onchange="document.getElementById('broadcast-subject-wrap').style.display=(this.value==='telegram')?'none':'block'">
-        <option value="telegram">Telegram only</option>
-        <option value="email">Email only</option>
-        <option value="both">Telegram + Email</option>
-      </select>
+<!-- BROADCAST MODAL (admin only) -->
+<div class="modal-wrap" id="broadcast-modal" aria-hidden="true" onclick="if(event.target===this)closeModal('broadcast-modal')">
+  <div class="modal" style="width:480px" onclick="event.stopPropagation()">
+    <div class="modal-head"><h3>📢 Broadcast to all customers</h3><button class="mclose" onclick="closeModal('broadcast-modal')">✕</button></div>
+    <div class="modal-body">
+      <div class="field">
+        <label>Channel</label>
+        <select id="broadcast-channel" onchange="document.getElementById('broadcast-subject-wrap').style.display=(this.value==='telegram')?'none':'block'">
+          <option value="telegram">Telegram only</option>
+          <option value="email">Email only</option>
+          <option value="both">Telegram + Email</option>
+        </select>
+      </div>
+      <div class="field" id="broadcast-subject-wrap" style="display:none">
+        <label>Email subject</label>
+        <input type="text" id="broadcast-subject" placeholder="Special offer this week">
+      </div>
+      <div class="field">
+        <label>Message</label>
+        <textarea id="broadcast-message" rows="6" placeholder="Write your offer or announcement…" style="width:100%;resize:vertical"></textarea>
+      </div>
+      <div id="broadcast-err" style="display:none;color:var(--red);font-size:12px;margin-bottom:10px"></div>
+      <button class="btn-primary" onclick="sendBroadcast()" style="width:100%;margin-bottom:8px">Send broadcast</button>
+      <button class="btn-secondary" onclick="closeModal('broadcast-modal')" style="width:100%">Cancel</button>
     </div>
-    <div class="field" id="broadcast-subject-wrap" style="display:none">
-      <label>Email subject</label>
-      <input type="text" id="broadcast-subject" placeholder="Special offer this week">
-    </div>
-    <div class="field">
-      <label>Message</label>
-      <textarea id="broadcast-message" rows="6" placeholder="Write your offer or announcement…" style="width:100%;resize:vertical"></textarea>
-    </div>
-    <div id="broadcast-err" style="display:none;color:var(--red);font-size:12px;margin-bottom:10px"></div>
-    <button class="btn-primary" onclick="sendBroadcast()" style="width:100%;margin-bottom:8px">Send broadcast</button>
-    <button class="btn-secondary" onclick="closeModal('broadcast-modal')" style="width:100%">Cancel</button>
   </div>
 </div>
 
