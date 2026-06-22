@@ -1120,6 +1120,81 @@ So your EmailJS template will receive the user email and verification code corre
 // ── JSONBIN.IO STORAGE ──
 // JB_BIN moved to server
 const RT_SERVER='https://rashadtech-server.onrender.com';
+const RT_OFFLINE_CACHE_KEY='rt_data_cache_v1';
+const SERVER_WAKE_MAX_MS=90000;
+const SERVER_WAKE_INTERVAL_MS=4000;
+let serverWakePromise=null;
+
+function showServerWake(msg){
+  let el=document.getElementById('server-wake-overlay');
+  if(!el){
+    el=document.createElement('div');
+    el.id='server-wake-overlay';
+    el.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
+    el.innerHTML='<div style="background:var(--bg2,#181b22);border:1px solid var(--border,#2b303b);border-radius:12px;padding:20px 24px;max-width:340px;text-align:center;color:var(--text,#f5f5f5)"><div style="font-size:28px;margin-bottom:10px">⏳</div><div id="server-wake-text" style="font-weight:600;margin-bottom:6px">Connecting to server...</div><div style="font-size:12px;color:var(--text2,#9ca3af);line-height:1.5">Free hosting may sleep when idle. First load can take up to a minute.</div></div>';
+    document.body.appendChild(el);
+  }
+  const txt=document.getElementById('server-wake-text');
+  if(txt)txt.textContent=msg||'Connecting to server...';
+  el.style.display='flex';
+}
+function hideServerWake(){
+  const el=document.getElementById('server-wake-overlay');
+  if(el)el.style.display='none';
+}
+async function pingServer(timeoutMs=8000){
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),timeoutMs);
+  try{
+    const r=await fetch(RT_SERVER+'/ping',{method:'GET',cache:'no-store',signal:controller.signal});
+    clearTimeout(timer);
+    if(!r.ok)return false;
+    const j=await r.json().catch(()=>({}));
+    return Boolean(j.ok);
+  }catch(e){
+    clearTimeout(timer);
+    return false;
+  }
+}
+async function ensureServerAwake(options={}){
+  const silent=Boolean(options.silent);
+  if(await pingServer(6000))return true;
+  if(serverWakePromise&&!options.force)return serverWakePromise;
+  serverWakePromise=(async()=>{
+    if(!silent)showServerWake('Connecting to server...');
+    const started=Date.now();
+    let attempt=0;
+    while(Date.now()-started<SERVER_WAKE_MAX_MS){
+      attempt+=1;
+      if(!silent)showServerWake(`Waking server... (${attempt})`);
+      if(await pingServer(12000)){
+        hideServerWake();
+        serverWakePromise=null;
+        return true;
+      }
+      await new Promise(r=>setTimeout(r,SERVER_WAKE_INTERVAL_MS));
+    }
+    hideServerWake();
+    serverWakePromise=null;
+    throw new Error('Server is still starting. Please wait 30 seconds and tap again.');
+  })();
+  return serverWakePromise;
+}
+function applyOfflineCacheIfAny(){
+  try{
+    const raw=localStorage.getItem(RT_OFFLINE_CACHE_KEY);
+    if(!raw)return false;
+    const cached=JSON.parse(raw);
+    if(!cached?.data)return false;
+    applyDataSnapshot(cached.data);
+    dataLoaded=true;
+    return true;
+  }catch(e){return false;}
+}
+function saveOfflineCache(data){
+  if(!data)return;
+  try{localStorage.setItem(RT_OFFLINE_CACHE_KEY,JSON.stringify({ts:Date.now(),data}));}catch(e){}
+}
 // JB_KEY moved to server
 // JB_URL removed
 let _db=true;
@@ -1211,7 +1286,8 @@ function persistAuthToken(token,role){
   }catch(e){console.warn('localStorage unavailable',e);}
 }
 
-async function postJson(path,body,timeoutMs=28000){
+async function postJson(path,body,timeoutMs=45000,_retry=false){
+  await ensureServerAwake({silent:true}).catch(()=>{});
   const controller=new AbortController();
   const timer=setTimeout(()=>controller.abort(),timeoutMs);
   try{
@@ -1225,7 +1301,11 @@ async function postJson(path,body,timeoutMs=28000){
     if(!r.ok||j.success===false)throw new Error(j.error||'Request failed');
     return j;
   }catch(e){
-    if(e.name==='AbortError')throw new Error('Server is waking up — please wait a moment and try again.');
+    if(e.name==='AbortError'&&!_retry){
+      await ensureServerAwake({force:true,silent:false}).catch(()=>{});
+      return postJson(path,body,timeoutMs,true);
+    }
+    if(e.name==='AbortError')throw new Error('Server is still starting. Please wait and try again.');
     throw e;
   }finally{clearTimeout(timer);}
 }
@@ -1238,7 +1318,8 @@ function authHeaders(){
   return headers;
 }
 
-async function rtApi(path,opts={},timeoutMs=25000){
+async function rtApi(path,opts={},timeoutMs=45000,_retry=false){
+  await ensureServerAwake({silent:true}).catch(()=>{});
   const controller=new AbortController();
   const timer=setTimeout(()=>controller.abort(),timeoutMs);
   try{
@@ -1250,7 +1331,11 @@ async function rtApi(path,opts={},timeoutMs=25000){
     return j;
   }catch(e){
     clearTimeout(timer);
-    if(e.name==='AbortError')throw new Error('Server is waking up — please try again.');
+    if(e.name==='AbortError'&&!_retry){
+      await ensureServerAwake({force:true,silent:false}).catch(()=>{});
+      return rtApi(path,opts,timeoutMs,true);
+    }
+    if(e.name==='AbortError')throw new Error('Server is still starting. Please wait and try again.');
     throw e;
   }
 }
@@ -1379,6 +1464,7 @@ function applyDataSnapshot(data){
   globalRequests=_jbCache.requests||[];
   topupRequests=_jbCache.topupreqs||[];
   dataLoaded=true;
+  if(authToken)saveOfflineCache(_jbCache);
   if(currentUser){
     const fu=users.find(x=>normEmail(x.email)===normEmail(currentUser.email));
     if(fu)currentUser=fu;
@@ -1398,8 +1484,9 @@ function clearStoredSession(){
 async function validateStoredSession(role){
   if(!authToken)return false;
   try{
+    await ensureServerAwake({silent:true});
     const controller=new AbortController();
-    const timer=setTimeout(()=>controller.abort(),12000);
+    const timer=setTimeout(()=>controller.abort(),45000);
     const r=await fetch(RT_SERVER+'/auth/me',{
       headers:{Authorization:'Bearer '+authToken},
       signal:controller.signal
@@ -1417,9 +1504,10 @@ async function validateStoredSession(role){
   }
 }
 
-async function jbRead(){
+async function jbRead(_retry=false){
+  await ensureServerAwake({silent:true}).catch(()=>{});
   const controller=new AbortController();
-  const timeout=setTimeout(()=>controller.abort(),12000);
+  const timeout=setTimeout(()=>controller.abort(),45000);
   try{
     const r=await fetch(RT_SERVER+'/db/read',{
       method:'POST',headers:authHeaders(),
@@ -1428,10 +1516,16 @@ async function jbRead(){
     clearTimeout(timeout);
     if(!r.ok)throw new Error('HTTP '+r.status);
     const res=await r.json();
+    if(res.data)saveOfflineCache(res.data);
     return res.data;
   }catch(e){
     clearTimeout(timeout);
-    throw new Error(e.name==='AbortError'?'Timeout after 12s':e.message);
+    if(e.name==='AbortError'&&!_retry){
+      await ensureServerAwake({force:true,silent:false}).catch(()=>{});
+      return jbRead(true);
+    }
+    if(applyOfflineCacheIfAny())return _jbCache;
+    throw new Error(e.name==='AbortError'?'Server is still starting. Please wait and try again.':(e.message||'Could not load data'));
   }
 }
 
@@ -2614,12 +2708,15 @@ async function doLogin(){
       return;
     }
     err.style.display='none';
+    showServerWake('Signing in...');
     const j=await postJson('/auth/login',{email:e,password:p});
+    hideServerWake();
     persistAuthToken(j.token,'user');
     applyDataSnapshot(j.data||{users:[j.user]});
     currentUser=j.user||users[0];
     err.style.display='none';logActivity('Customer login',currentUser.email);enterApp();
   }catch(ex){
+    hideServerWake();
     const err=document.getElementById('login-err');
     err.textContent=ex.message||'Invalid email or password.';err.style.display='block';
   }finally{
@@ -2851,8 +2948,8 @@ async function switchAdminTab(name,el){
   if(el)el.classList.add('active');
   const amap={stock:'abn-stock',customers:'abn-customers',wallets:'abn-wallets',topupreqs:'abn-topupreqs',requests:'abn-requests',expiry:'abn-requests',dashboard:'abn-dashboard'};
   if(amap[name])setActiveAdminNav(amap[name]);
-  // Always reload from Firebase first
-  await loadData();
+  if(!_jbCache||!users.length)await loadData();
+  else loadData().catch(()=>{});
   if(name==='wallets')renderWallets();
   if(name==='stock')renderStockPanels();
   if(name==='prices')renderAdminPrices();
@@ -5309,13 +5406,14 @@ async function refreshFromFirebase(){
   }catch(e){console.warn('refresh error:',e.message);}
 }
 
-// Keep Render server awake — ping every 14 minutes
+// Keep Render server awake — ping every 10 minutes
 function keepServerAwake(){
-  setInterval(()=>{
-    fetch(RT_SERVER+'/').catch(()=>{});
-  },14*60*1000);
-  // Also ping immediately on load
-  fetch(RT_SERVER+'/').catch(()=>{});
+  const ping=()=>fetch(RT_SERVER+'/ping',{cache:'no-store'}).catch(()=>{});
+  ping();
+  setInterval(ping,10*60*1000);
+  document.addEventListener('visibilitychange',()=>{
+    if(document.visibilityState==='visible')ping();
+  });
 }
 
 // Check expiry and send reminders
@@ -5411,14 +5509,19 @@ async function init(){
   initFirebase();
   initTheme();
   initLang();
+  keepServerAwake();
+  applyOfflineCacheIfAny();
   loadPriceCatalog().catch(()=>{});
   const params=new URLSearchParams(location.search);
   if(params.get('sub')||params.get('s')||params.get('t')){
     document.querySelectorAll('.page').forEach(p=>{p.classList.remove('active');p.style.display='none';});
     document.getElementById('page-sublink').style.display='flex';
+    try{await ensureServerAwake({silent:false});}catch(e){console.warn(e.message);}
     await checkSubLink();
     return;
   }
+
+  try{await ensureServerAwake({silent:false});}catch(e){console.warn(e.message);}
 
   if(await restoreCustomerSession())return;
   if(await restoreAdminSession())return;
@@ -5426,7 +5529,6 @@ async function init(){
   await loadData();
   renderAmounts();renderReqChips();
   startRealtimeSync();
-  keepServerAwake();
   setTimeout(checkExpiryReminders,10000);
   setTimeout(checkLowStock,15000);
 }

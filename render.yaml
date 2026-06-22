@@ -1,0 +1,8 @@
+# Optional Render Blueprint — add a cron job in the Render dashboard if this file is not used.
+# Keeps the web service warm by pinging /ping every 10 minutes.
+services:
+  - type: cron
+    name: rashadtech-keep-awake
+    schedule: "*/10 * * * *"
+    buildCommand: "echo keep-awake"
+    startCommand: "curl -fsS https://rashadtech-server.onrender.com/ping || true"

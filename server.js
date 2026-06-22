@@ -1411,7 +1411,10 @@ app.get('/', (req, res) => {
   res.json({ status: 'rashadtech server running', ok: true });
 });
 app.get('/ping', (req, res) => {
-  res.json({ ok: true, ts: Date.now() });
+  res.json({ ok: true, ts: Date.now(), ready: true });
+});
+app.get('/health', (req, res) => {
+  res.json({ ok: true, ts: Date.now(), ready: true });
 });
 
 app.get('/backup-admin', (req, res) => {
@@ -3370,25 +3373,39 @@ const whatsappBot = registerWhatsAppBot(app, {
   rateLimit,
 });
 
+function startServerKeepAlive() {
+  const base = String(process.env.RENDER_EXTERNAL_URL || `http://127.0.0.1:${process.env.PORT || 3000}`).replace(/\/$/, '');
+  const ping = () => fetch(`${base}/ping`, { cache: 'no-store' }).catch(() => {});
+  ping();
+  setInterval(ping, 10 * 60 * 1000);
+}
+
 // ── START ──────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, async () => {
+app.listen(PORT, () => {
   console.log('rashadtech server running on port ' + PORT);
-  if (rtEnhancements && rtEnhancements.loadPersistedSessions) await rtEnhancements.loadPersistedSessions();
-  await loadGmailMonitors();
-  syncDbToJsonBin(false).catch(e => console.error('Initial JSONBin sync error:', e.message));
-  try {
-    const webhookUrl = process.env.RENDER_EXTERNAL_URL + '/telegram';
-    const r = await fetch(`https://api.telegram.org/bot${TG_TOKEN}/setWebhook`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: webhookUrl })
-    });
-    const j = await r.json();
-    console.log('Webhook:', j.description);
-  } catch(e) { console.log('Webhook error:', e.message); }
-  if (whatsappBot.enabled()) {
-    console.log('WhatsApp bot: enabled — webhook', (process.env.RENDER_EXTERNAL_URL || '') + '/whatsapp');
-  } else {
-    console.log('WhatsApp bot: disabled — set WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_VERIFY_TOKEN on Render');
-  }
+  startServerKeepAlive();
+  setImmediate(async () => {
+    try {
+      if (rtEnhancements && rtEnhancements.loadPersistedSessions) await rtEnhancements.loadPersistedSessions();
+      await loadGmailMonitors();
+      syncDbToJsonBin(false).catch(e => console.error('Initial JSONBin sync error:', e.message));
+      if (process.env.RENDER_EXTERNAL_URL && TG_TOKEN) {
+        const webhookUrl = process.env.RENDER_EXTERNAL_URL + '/telegram';
+        const r = await fetch(`https://api.telegram.org/bot${TG_TOKEN}/setWebhook`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: webhookUrl })
+        });
+        const j = await r.json();
+        console.log('Webhook:', j.description);
+      }
+      if (whatsappBot.enabled()) {
+        console.log('WhatsApp bot: enabled — webhook', (process.env.RENDER_EXTERNAL_URL || '') + '/whatsapp');
+      } else {
+        console.log('WhatsApp bot: disabled — set WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_VERIFY_TOKEN on Render');
+      }
+    } catch (e) {
+      console.error('Deferred startup error:', e.message);
+    }
+  });
 });
