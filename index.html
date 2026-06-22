@@ -1182,6 +1182,13 @@ async function ensureServerAwake(options={}){
   })();
   return serverWakePromise;
 }
+function getStoredSessionEmail(){
+  try{
+    const s=localStorage.getItem('rt_session');
+    if(!s)return '';
+    return normEmail(JSON.parse(s).email||'');
+  }catch(e){return '';}
+}
 function applyOfflineCacheIfAny(){
   try{
     const raw=localStorage.getItem(RT_OFFLINE_CACHE_KEY);
@@ -1195,7 +1202,18 @@ function applyOfflineCacheIfAny(){
 }
 function saveOfflineCache(data){
   if(!data)return;
-  try{localStorage.setItem(RT_OFFLINE_CACHE_KEY,JSON.stringify({ts:Date.now(),data}));}catch(e){}
+  try{
+    const email=normEmail(currentUser?.email||getStoredSessionEmail());
+    if(email){
+      const usersList=Array.isArray(data.users)?data.users:[];
+      const u=usersList.find(x=>normEmail(x.email)===email);
+      const cached=readCachedMyCustomers(email);
+      if(u&&scoreMyCustomers(cached)>scoreMyCustomers(u.myCustomers)){
+        u.myCustomers=mergeMyCustomersClient(u.myCustomers,cached);
+      }
+    }
+    localStorage.setItem(RT_OFFLINE_CACHE_KEY,JSON.stringify({ts:Date.now(),data}));
+  }catch(e){}
 }
 // JB_KEY moved to server
 // JB_URL removed
@@ -1466,10 +1484,11 @@ async function deliverPurchaseTelegram(order,p,planLabel,price,forCustomer){
 }
 
 function applyDataSnapshot(data){
-  const keepUser=currentUser?.email?{
-    email:currentUser.email,
-    myCustomers:cloneMyCustomersListLocal(mergeMyCustomersClient(currentUser.myCustomers,readCachedMyCustomers(currentUser.email))),
-    orders:Array.isArray(currentUser.orders)?currentUser.orders.map(o=>({...o})):[]
+  const sessionEmail=normEmail(currentUser?.email||getStoredSessionEmail());
+  const keepUser=sessionEmail?{
+    email:sessionEmail,
+    myCustomers:cloneMyCustomersListLocal(mergeMyCustomersClient(currentUser?.myCustomers,readCachedMyCustomers(sessionEmail))),
+    orders:Array.isArray(currentUser?.orders)?currentUser.orders.map(o=>({...o})):[]
   }:null;
   const incoming=data||{};
   _jbCache={...(_jbCache||{}),...incoming};
@@ -1480,14 +1499,17 @@ function applyDataSnapshot(data){
   globalRequests=_jbCache.requests||[];
   topupRequests=_jbCache.topupreqs||[];
   dataLoaded=true;
+  if(sessionEmail){
+    const fu=users.find(x=>normEmail(x.email)===sessionEmail);
+    if(fu&&keepUser){
+      fu.myCustomers=mergeMyCustomersClient(fu.myCustomers,keepUser.myCustomers);
+      if((keepUser.orders||[]).length>(fu.orders||[]).length)fu.orders=keepUser.orders;
+    }
+  }
   if(authToken)saveOfflineCache(_jbCache);
   if(currentUser){
     const fu=users.find(x=>normEmail(x.email)===normEmail(currentUser.email));
     if(fu){
-      if(keepUser){
-        fu.myCustomers=mergeMyCustomersClient(fu.myCustomers,keepUser.myCustomers);
-        if((keepUser.orders||[]).length>(fu.orders||[]).length)fu.orders=keepUser.orders;
-      }
       currentUser=fu;
       syncCurrentUserIntoUsers();
     }
@@ -2953,7 +2975,7 @@ async function doAdminLogin(){
     if(btn)btn.disabled=false;
   }
 }
-function enterApp(){
+function enterApp(opts={}){
   if(!currentUser){
     showToast('⚠️ Session error — please log in again');
     doLogout();
@@ -2967,11 +2989,11 @@ function enterApp(){
   try{localStorage.setItem('rt_session',JSON.stringify(session));}catch(e){}
   loadPriceCatalog().then(()=>renderProducts('all'));
   updateBal();renderAmounts();renderSubs();renderTx();renderMyCustomers();renderReqChips();renderMyRequests();renderExpiryTracker();renderMyGameOrders();
-  recoverMyCustomersOnLogin().catch(()=>{});
+  recoverMyCustomersOnLogin({immediate:Boolean(opts.recoverImmediate)}).catch(()=>{});
 }
-async function recoverMyCustomersOnLogin(){
+async function recoverMyCustomersOnLogin(opts={}){
   if(!currentUser?.email||!authToken)return;
-  await new Promise(r=>setTimeout(r,1500));
+  if(!opts.immediate)await new Promise(r=>setTimeout(r,1500));
   const cached=readCachedMyCustomers(currentUser.email);
   let local=mergeMyCustomersClient(cached,currentUser.myCustomers);
   if(!local.length&&scoreMyCustomers(currentUser.myCustomers)>0)local=currentUser.myCustomers;
@@ -4412,7 +4434,7 @@ function renderMyCustomers(){
         :isDisneyOneUserOrder(s)
         ?`<span class="cust-sub-cred-line">📱 ${esc(s.phone||'')}</span>${orderProfileName(s)?`<span class="cust-sub-cred-line">Profile: ${esc(orderProfileName(s))}</span>`:''}`
         :`<span class="cust-sub-cred-line">📧 ${esc(s.email)}</span><span class="cust-sub-cred-line">🔑 ${esc(s.pass)}</span>`;
-      const extraHtml=`${orderProfileName(s)&&!isAnghamiOrder(s)?`<span class="cust-sub-cred-line">Profile: ${esc(orderProfileName(s))}</span>`:''}${s.profilePin?`<span class="cust-sub-cred-line">PIN: ${esc(s.profilePin)}</span>`:''}${s.expiryDate&&!isAnghamiOrder(s)?`<span class="cust-sub-cred-line">Exp: ${esc(s.expiryDate)}</span>`:''}`;
+      const extraHtml=`${orderProfileName(s)&&!isAnghamiOrder(s)&&!isDisneyOneUserOrder(s)?`<span class="cust-sub-cred-line">Profile: ${esc(orderProfileName(s))}</span>`:''}${s.profilePin?`<span class="cust-sub-cred-line">PIN: ${esc(s.profilePin)}</span>`:''}${s.expiryDate&&!isAnghamiOrder(s)?`<span class="cust-sub-cred-line">Exp: ${esc(s.expiryDate)}</span>`:''}`;
       return `<div class="cust-sub-row">
         <div class="cust-sub-icon" style="background:${s.color};color:${s.tc}">${s.short}</div>
         <div class="cust-sub-info">
@@ -5944,7 +5966,12 @@ document.addEventListener('visibilitychange',()=>{
   // When tab becomes visible again, reload latest stock
   if(document.visibilityState==='visible'){
     reloadStock();
-    if(currentUser) renderProducts(document.querySelector('#tab-store.active')?document.querySelector('.ftab.active')?.dataset?.cat||'all':'all');
+    if(currentUser){
+      bindCurrentUserFromUsers();
+      renderMyCustomers();
+      renderSubs();
+      renderProducts(document.querySelector('#tab-store.active')?document.querySelector('.ftab.active')?.dataset?.cat||'all':'all');
+    }
   }
 });
 // beforeunload save removed — can wipe data on page close
@@ -5959,7 +5986,7 @@ async function init(){
   initTheme();
   initLang();
   keepServerAwake();
-  applyOfflineCacheIfAny();
+  if(!authToken)applyOfflineCacheIfAny();
   loadPriceCatalog().catch(()=>{});
   const params=new URLSearchParams(location.search);
   if(params.get('sub')||params.get('s')||params.get('t')){
@@ -5995,10 +6022,9 @@ async function restoreCustomerSession(){
     }catch(e){
       applyOfflineCacheIfAny();
     }
-    const u=users.find(x=>normEmail(x.email)===normEmail(sess.email));
-    if(!u){clearStoredSession();return false;}
-    currentUser=u;
-    enterApp();
+    bindCurrentUserFromUsers({email:sess.email,myCustomers:readCachedMyCustomers(sess.email)});
+    if(!currentUser){clearStoredSession();return false;}
+    enterApp({recoverImmediate:true});
     startRealtimeSync();
     keepServerAwake();
     return true;

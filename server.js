@@ -1716,6 +1716,19 @@ app.post('/db/read', async (req, res) => {
     }
     if (recovered) await writeDbFast(data);
     res.json({ success: true, data: safeDataForSession(data, session) });
+    if (session.role === 'user') {
+      const userEmail = session.email;
+      setImmediate(() => {
+        enqueueDbWrite(async () => {
+          const fresh = await readDbForWrite();
+          const live = (fresh.users || []).find(u => normalizeEmail(u.email) === userEmail);
+          if (!live) return null;
+          const changed = await recoverMyCustomersFromAllSources(fresh, live);
+          if (!changed) return null;
+          return writeDbFast(fresh, { backupReason: 'read-recover-sub-customers', backupSource: fresh });
+        }).catch(e => console.error('DB read sub-customer recovery error:', e.message));
+      });
+    }
   } catch(e) {
     console.error('DB read error:', e.message);
     res.status(500).json({ error: e.message });
