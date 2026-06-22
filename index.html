@@ -953,6 +953,7 @@ So your EmailJS template will receive the user email and verification code corre
             <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px">
               <div style="font-size:13px;font-weight:600">🛡️ Backups & Restore</div>
               <button class="inline-btn" style="padding:6px 9px;font-size:11px" onclick="createManualBackup()">Backup now</button>
+              <button class="inline-btn" style="padding:6px 9px;font-size:11px" onclick="recoverAllSubCustomers()">Restore sub-customers</button>
             </div>
             <div id="dashboard-last-backup" style="font-size:12px;margin-bottom:10px;padding:10px 12px;border-radius:8px;background:var(--bg3);border:1px solid var(--border);line-height:1.5">
               <div style="font-weight:600;margin-bottom:2px">Last backup</div>
@@ -1457,6 +1458,7 @@ async function deliverPurchaseTelegram(order,p,planLabel,price,forCustomer){
 }
 
 function applyDataSnapshot(data){
+  const keepCustomers=currentUser?.email?cloneMyCustomersListLocal(currentUser.myCustomers):null;
   const incoming=data||{};
   _jbCache={...(_jbCache||{}),...incoming};
   if(incoming.pending)_jbCache.pending=incoming.pending;
@@ -1469,7 +1471,13 @@ function applyDataSnapshot(data){
   if(authToken)saveOfflineCache(_jbCache);
   if(currentUser){
     const fu=users.find(x=>normEmail(x.email)===normEmail(currentUser.email));
-    if(fu)currentUser=fu;
+    if(fu){
+      if(keepCustomers?.length){
+        const merged=mergeMyCustomersClient(fu.myCustomers,keepCustomers);
+        if(scoreMyCustomers(merged)>scoreMyCustomers(fu.myCustomers))fu.myCustomers=merged;
+      }
+      currentUser=fu;
+    }
   }
 }
 
@@ -2867,6 +2875,23 @@ function enterApp(){
   try{localStorage.setItem('rt_session',JSON.stringify(session));}catch(e){}
   loadPriceCatalog().then(()=>renderProducts('all'));
   updateBal();renderAmounts();renderSubs();renderTx();renderMyCustomers();renderReqChips();renderMyRequests();renderExpiryTracker();renderMyGameOrders();
+  recoverMyCustomersOnLogin().catch(()=>{});
+}
+async function recoverMyCustomersOnLogin(){
+  if(!currentUser?.email||!authToken)return;
+  const cached=readCachedMyCustomers(currentUser.email);
+  let local=mergeMyCustomersClient(cached,currentUser.myCustomers);
+  if(!local.length&&scoreMyCustomers(currentUser.myCustomers)>0)local=currentUser.myCustomers;
+  if(!local.length)return;
+  const before=scoreMyCustomers(currentUser.myCustomers);
+  const j=await rtApi('/customer/my-customers/recover',{
+    method:'POST',
+    body:JSON.stringify({myCustomers:local})
+  });
+  if(j.data)applyDataSnapshot(j.data);
+  else bindCurrentUserFromUsers(j.user);
+  renderMyCustomers();
+  if(scoreMyCustomers(currentUser.myCustomers)>before)showToast(`✓ Restored ${(currentUser.myCustomers||[]).length} customers`);
 }
 function doLogout(){
   currentUser=null;isAdmin=false;
@@ -2950,13 +2975,26 @@ async function refreshMyCustomersTab(){
   renderMyCustomers();
   if(!authToken||!currentUser)return;
   try{
-    const data=await jbRead();
-    if(data){
-      applyDataSnapshot(data);
-      bindCurrentUserFromUsers();
-      renderMyCustomers();
-    }
-  }catch(e){console.warn('customers refresh:',e.message);}
+    const cached=readCachedMyCustomers(currentUser.email);
+    const local=mergeMyCustomersClient(cached,currentUser.myCustomers);
+    const before=scoreMyCustomers(currentUser.myCustomers);
+    const j=await rtApi('/customer/my-customers/recover',{
+      method:'POST',
+      body:JSON.stringify({myCustomers:local})
+    });
+    if(j.data)applyDataSnapshot(j.data);
+    else bindCurrentUserFromUsers(j.user);
+    renderMyCustomers();
+    const after=(currentUser.myCustomers||[]).length;
+    if(after>before)showToast(`✓ Restored ${after} customer${after!==1?'s':''}`);
+    else if(after)showToast(`✓ ${after} customer${after!==1?'s':''} loaded`);
+  }catch(e){
+    console.warn('customers refresh:',e.message);
+    try{
+      const data=await jbRead();
+      if(data){applyDataSnapshot(data);bindCurrentUserFromUsers();renderMyCustomers();}
+    }catch(e2){}
+  }
 }
 async function switchAdminTab(name,el){
   document.querySelectorAll('#page-admin .tab-pane').forEach(t=>t.classList.remove('active'));
@@ -3883,6 +3921,17 @@ async function createManualBackup(){
     await renderBackups();
   }catch(e){showToast('⚠️ '+e.message);}
 }
+async function recoverAllSubCustomers(){
+  if(!confirm('Scan all backups and restore missing reseller sub-customers for every account?'))return;
+  try{
+    const r=await fetch(RT_SERVER+'/admin/recover-sub-customers',{method:'POST',headers:authHeaders(),body:'{}'});
+    const j=await r.json();
+    if(!r.ok||!j.success)throw new Error(j.error||'Recovery failed');
+    if(j.data)applyDataSnapshot(j.data);
+    if(j.recovered)showToast(`✓ Restored sub-customers for ${j.usersRecovered} account(s)`);
+    else showToast('No additional sub-customers found in backups');
+  }catch(e){showToast('⚠️ '+e.message);}
+}
 async function restoreBackup(id){
   if(!confirm('Restore this backup? Current data will be backed up first, then replaced by the selected snapshot.'))return;
   const confirmText=prompt('Type RESTORE to confirm:');
@@ -4129,6 +4178,23 @@ function mergeMyCustomersClient(prev,incoming){
     byId.set(id,{...prevC,...c,subs});
   });
   return Array.from(byId.values());
+}
+function scoreMyCustomers(list){
+  const customers=Array.isArray(list)?list:[];
+  const subs=customers.reduce((n,c)=>n+((c.subs||[]).length),0);
+  return customers.length*1000+subs;
+}
+function cloneMyCustomersListLocal(list){
+  return(Array.isArray(list)?list:[]).map(c=>({...c,subs:Array.isArray(c.subs)?c.subs.map(s=>({...s})):[],}));
+}
+function readCachedMyCustomers(email){
+  try{
+    const raw=localStorage.getItem(RT_OFFLINE_CACHE_KEY);
+    if(!raw)return [];
+    const cached=JSON.parse(raw);
+    const u=(cached?.data?.users||[]).find(x=>normEmail(x.email)===normEmail(email));
+    return Array.isArray(u?.myCustomers)?u.myCustomers:[];
+  }catch(e){return [];}
 }
 
 function bindCurrentUserFromUsers(fallback){

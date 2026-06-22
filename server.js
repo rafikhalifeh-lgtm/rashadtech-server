@@ -615,6 +615,23 @@ function mergeEmergencyDb(primary, fallback) {
   merged.topupreqs = mergeArrayByKey(merged.topupreqs, fallback.topupreqs, item => item && (item.id || `${normalizeEmail(item.email)}:${item.date || ''}:${item.amount || ''}`));
   merged.requests = mergeArrayByKey(merged.requests, fallback.requests, item => item && (item.id || `${normalizeEmail(item.email)}:${item.date || ''}:${item.type || ''}`));
   merged[LINK_TOKENS_KEY] = { ...(fallback[LINK_TOKENS_KEY] || {}), ...(merged[LINK_TOKENS_KEY] || {}) };
+  merged.users = (merged.users || []).map((user) => {
+    if (!user || !user.email) return user;
+    const match = (fallback.users || []).find(item => normalizeEmail(item.email) === normalizeEmail(user.email));
+    if (!match) return user;
+    const myCustomers = mergeMyCustomers(match.myCustomers, user.myCustomers);
+    return {
+      ...user,
+      myCustomers: myCustomers.length ? myCustomers : (user.myCustomers || [])
+    };
+  });
+  for (const fbUser of Array.isArray(fallback.users) ? fallback.users : []) {
+    if (!fbUser || !fbUser.email) continue;
+    const exists = merged.users.some(item => normalizeEmail(item.email) === normalizeEmail(fbUser.email));
+    if (!exists && Array.isArray(fbUser.myCustomers) && fbUser.myCustomers.length) {
+      merged.users.push({ ...fbUser });
+    }
+  }
   merged.emergencyDb = {
     active: false,
     reason: 'Merged emergency fallback data after JSONBin recovery',
@@ -725,6 +742,13 @@ async function readJsonBinRaw(options = {}) {
     console.log(`Recovered settings: ${recovered.customPriceCount} custom prices (${recovered.catalogSource}), ${recovered.blockCount} blocks (${recovered.blockSource})`);
     await writeJsonBinRaw(data, { backupReason: 'auto-recover-settings', backupSource: loaded }).catch(e => {
       console.error('Auto-recover write error:', e.message);
+    });
+  }
+  const subRecovery = await recoverAllSubCustomers(data);
+  if (subRecovery.usersRecovered > 0 && !options.skipRecoverWrite) {
+    console.log(`Recovered sub-customers for ${subRecovery.usersRecovered} user(s) from ${subRecovery.sourcesChecked} source(s)`);
+    await writeJsonBinRaw(data, { backupReason: 'auto-recover-sub-customers', backupSource: loaded }).catch(e => {
+      console.error('Auto-recover sub-customers write error:', e.message);
     });
   }
   setDbCache(data, false);
@@ -1309,23 +1333,96 @@ function preserveSensitiveFields(existing, incoming) {
   return next;
 }
 
-function recoverMyCustomersFromBackups(data, user) {
-  if (!user) return false;
-  const current = Array.isArray(user.myCustomers) ? user.myCustomers : [];
-  if (current.length) return false;
-  const backups = Array.isArray(data && data[BACKUPS_KEY]) ? data[BACKUPS_KEY] : [];
-  for (const backup of backups) {
-    const users = backup && backup.data && Array.isArray(backup.data.users) ? backup.data.users : [];
-    const previous = users.find(item => normalizeEmail(item.email) === normalizeEmail(user.email));
-    const prevCustomers = Array.isArray(previous && previous.myCustomers) ? previous.myCustomers : [];
-    if (!prevCustomers.length) continue;
-    user.myCustomers = prevCustomers.map(c => ({
-      ...c,
-      subs: Array.isArray(c.subs) ? c.subs.map(s => ({ ...s })) : []
-    }));
-    return true;
+function scoreMyCustomers(list) {
+  const customers = Array.isArray(list) ? list : [];
+  const subs = customers.reduce((n, c) => n + (Array.isArray(c.subs) ? c.subs.length : 0), 0);
+  return customers.length * 1000 + subs;
+}
+
+function cloneMyCustomersList(list) {
+  return (Array.isArray(list) ? list : []).map(c => ({
+    ...c,
+    subs: Array.isArray(c.subs) ? c.subs.map(s => ({ ...s })) : []
+  }));
+}
+
+function myCustomersFromSnapshot(snapshot, userEmail) {
+  const users = Array.isArray(snapshot && snapshot.users) ? snapshot.users : [];
+  const user = users.find(item => normalizeEmail(item.email) === normalizeEmail(userEmail));
+  return Array.isArray(user && user.myCustomers) ? user.myCustomers : [];
+}
+
+function mergeMyCustomersFromSnapshots(sources, userEmail) {
+  let merged = [];
+  for (const snapshot of sources) {
+    merged = mergeMyCustomers(merged, myCustomersFromSnapshot(snapshot, userEmail));
   }
-  return false;
+  return cloneMyCustomersList(merged);
+}
+
+async function collectFullDataRecoverySources(data) {
+  const sources = [];
+  const seen = new Set();
+  const add = (snapshot) => {
+    if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) return;
+    const key = JSON.stringify([
+      Array.isArray(snapshot.users) ? snapshot.users.length : 0,
+      scoreMyCustomers((snapshot.users || []).flatMap(u => (u && u.myCustomers) || []))
+    ]);
+    if (seen.has(key)) return;
+    seen.add(key);
+    sources.push(snapshot);
+  };
+  add(data);
+  const embedded = Array.isArray(data && data[BACKUPS_KEY]) ? data[BACKUPS_KEY] : [];
+  embedded.forEach((backup) => { if (backup && backup.data) add(backup.data); });
+  try {
+    const manifest = await readBackupManifest();
+    for (const entry of manifest.slice(0, MAX_BACKUPS)) {
+      try {
+        const { data: snapshot } = await readBackupSnapshot(entry.id);
+        add(snapshot);
+      } catch (e) {
+        console.warn('Sub-customer recovery snapshot skipped:', entry && entry.id, e.message);
+      }
+    }
+  } catch (e) {
+    console.warn('Sub-customer recovery manifest read failed:', e.message);
+  }
+  return sources;
+}
+
+function recoverMyCustomersForUser(data, user, sources) {
+  if (!user || !user.email) return false;
+  const recovered = mergeMyCustomersFromSnapshots(sources || [data], user.email);
+  if (!recovered.length) return false;
+  const current = Array.isArray(user.myCustomers) ? user.myCustomers : [];
+  if (scoreMyCustomers(recovered) <= scoreMyCustomers(current)) return false;
+  user.myCustomers = recovered;
+  return true;
+}
+
+async function recoverMyCustomersFromAllSources(data, user) {
+  if (!user) return false;
+  const sources = await collectFullDataRecoverySources(data);
+  return recoverMyCustomersForUser(data, user, sources);
+}
+
+async function recoverAllSubCustomers(data) {
+  const sources = await collectFullDataRecoverySources(data);
+  let usersRecovered = 0;
+  let customersRecovered = 0;
+  for (const user of Array.isArray(data.users) ? data.users : []) {
+    const before = scoreMyCustomers(user.myCustomers);
+    if (!recoverMyCustomersForUser(data, user, sources)) continue;
+    usersRecovered += 1;
+    customersRecovered += Math.max(0, scoreMyCustomers(user.myCustomers) - before);
+  }
+  return { usersRecovered, customersRecovered, sourcesChecked: sources.length };
+}
+
+function recoverMyCustomersFromBackups(data, user) {
+  return recoverMyCustomersForUser(data, user, [data, ...((data && data[BACKUPS_KEY]) || []).map(b => b && b.data).filter(Boolean)]);
 }
 
 function recoverMissingPasswordFromBackups(data, user) {
@@ -1554,7 +1651,7 @@ app.post('/db/read', async (req, res) => {
     let recovered = false;
     if (session.role === 'user') {
       const user = (data.users || []).find(u => normalizeEmail(u.email) === session.email);
-      if (user && recoverMyCustomersFromBackups(data, user)) recovered = true;
+      if (user && await recoverMyCustomersFromAllSources(data, user)) recovered = true;
     }
     if (recovered) await writeDbFast(data);
     res.json({ success: true, data: safeDataForSession(data, session) });
@@ -1646,6 +1743,38 @@ app.post('/admin/recover-settings', async (req, res) => {
   }
 });
 
+app.post('/admin/recover-sub-customers', async (req, res) => {
+  const session = requireSession(req, res, ['admin']);
+  if (!session) return;
+  try {
+    dbCache = null;
+    const beforeData = await readJsonBinRaw({ forceRefresh: true, skipRecoverWrite: true });
+    const data = cloneData(beforeData);
+    const result = await recoverAllSubCustomers(data);
+    if (!result.usersRecovered) {
+      return res.json({
+        success: true,
+        recovered: false,
+        usersRecovered: 0,
+        sourcesChecked: result.sourcesChecked,
+        data: safeDataForSession(data, { role: 'admin' })
+      });
+    }
+    await writeJsonBinRaw(data, { backupReason: 'manual-recover-sub-customers', backupSource: beforeData });
+    setDbCache(data, false);
+    res.json({
+      success: true,
+      recovered: true,
+      usersRecovered: result.usersRecovered,
+      sourcesChecked: result.sourcesChecked,
+      data: safeDataForSession(data, { role: 'admin' })
+    });
+  } catch (e) {
+    console.error('Recover sub-customers error:', e.message);
+    res.status(500).json({ error: e.message || 'Could not recover sub-customers' });
+  }
+});
+
 app.post('/admin/backups/restore-settings', async (req, res) => {
   const session = requireSession(req, res, ['admin']);
   if (!session) return;
@@ -1724,7 +1853,7 @@ app.post('/auth/login', async (req, res) => {
     if (!user.pass) return res.status(401).json({ error: 'This account needs a password reset. Please use Forgot password.' });
     if (!verifyPassword(cleanPassword, user.pass)) return res.status(401).json({ error: 'Invalid email or password' });
     if (user.banned) return res.status(403).json({ error: 'Your account has been suspended. Please contact support.' });
-    const recoveredCustomers = recoverMyCustomersFromBackups(data, user);
+    const recoveredCustomers = await recoverMyCustomersFromAllSources(data, user);
     if (recoveredPassword || recoveredCustomers || !String(user.pass || '').startsWith(PASSWORD_HASH_PREFIX)) {
       if (recoveredPassword || !String(user.pass || '').startsWith(PASSWORD_HASH_PREFIX)) {
         user.pass = hashPassword(cleanPassword);
@@ -2125,6 +2254,41 @@ app.post('/customer/my-customers', async (req, res) => {
   } catch (e) {
     console.error('My customers save error:', e.message);
     res.status(500).json({ error: e.message || 'Could not save customers' });
+  }
+});
+
+app.post('/customer/my-customers/recover', async (req, res) => {
+  const session = requireSession(req, res, ['user']);
+  if (!session) return;
+  const { myCustomers: clientCustomers } = req.body || {};
+  try {
+    await enqueueDbWrite(async () => {
+      const data = await readDbForWrite();
+      data.users = Array.isArray(data.users) ? data.users : [];
+      const user = data.users.find(u => normalizeEmail(u.email) === session.email);
+      if (!user) throw new Error('User not found');
+      const sources = await collectFullDataRecoverySources(data);
+      let merged = mergeMyCustomersFromSnapshots(sources, user.email);
+      if (Array.isArray(clientCustomers) && clientCustomers.length) {
+        merged = mergeMyCustomers(merged, clientCustomers);
+      }
+      const before = scoreMyCustomers(user.myCustomers);
+      const after = scoreMyCustomers(merged);
+      if (after > before) user.myCustomers = cloneMyCustomersList(merged);
+      return writeDbFast(data, { backupSource: data });
+    });
+    const data = await readJsonBinRaw({ skipRecoverWrite: true });
+    const user = (data.users || []).find(u => normalizeEmail(u.email) === session.email);
+    res.json({
+      success: true,
+      recovered: true,
+      customerCount: Array.isArray(user && user.myCustomers) ? user.myCustomers.length : 0,
+      user: sanitizeUser(user),
+      data: safeDataForSession(data, session)
+    });
+  } catch (e) {
+    console.error('My customers recover error:', e.message);
+    res.status(500).json({ error: e.message || 'Could not recover customers' });
   }
 });
 
