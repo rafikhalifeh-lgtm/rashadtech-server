@@ -1775,6 +1775,8 @@ const DURATIONS_SH_1U=[{key:'1m',label:'1 Month',price:1.5},{key:'3m',label:'3 M
 const DURATIONS_SH_FULL=[{key:'1m',label:'1 Month',price:5},{key:'3m',label:'3 Months',price:11.5},{key:'1y',label:'1 Year',price:33}];
 const DURATIONS_DISNEY_1U=[{key:'1m',label:'1 Month',price:2},{key:'3m',label:'3 Months',price:5},{key:'1y',label:'1 Year',price:15}];
 const DURATIONS_DISNEY_FULL=[{key:'1m',label:'1 Month',price:9.5},{key:'3m',label:'3 Months',price:27},{key:'1y',label:'1 Year',price:90}];
+const DURATIONS_AMAZON_3U=[{key:'1m',label:'1 Month',price:2}];
+const DURATIONS_AMAZON_FULL=[{key:'1m',label:'1 Month',price:6}];
 const GIFT_CARD_US=[{key:'10',label:'$10',price:10.5},{key:'25',label:'$25',price:26},{key:'50',label:'$50',price:52},{key:'100',label:'$100',price:104}];
 const GIFT_CARD_UAE=[{key:'50',label:'50 AED',price:14},{key:'100',label:'100 AED',price:28},{key:'200',label:'200 AED',price:55},{key:'500',label:'500 AED',price:135}];
 const GIFT_CARD_KSA=[{key:'50',label:'50 SAR',price:14},{key:'100',label:'100 SAR',price:27},{key:'200',label:'200 SAR',price:54},{key:'500',label:'500 SAR',price:133}];
@@ -1842,8 +1844,9 @@ const DEFAULT_PRODUCTS=[
   {id:'disney',name:'Disney+',short:'D+',color:'#113CCF',tc:'#fff',cat:'video',badge:'new',desc:'Disney · Marvel · Star Wars',hasUserTypes:true,userTypes:[
     {key:'1user',name:'1 User',desc:'Phone sign-in · 1 profile',durations:DURATIONS_DISNEY_1U},
     {key:'full',name:'Full User',desc:'Full account access',durations:DURATIONS_DISNEY_FULL}]},
-  {id:'amazon',name:'Amazon Prime',short:'AP',color:'#00A8E0',tc:'#fff',cat:'video',badge:'new',desc:'Prime Video & more',hasUserTypes:false,plans:[
-    {name:'1 Month',desc:'Full access',price:3},{name:'6 Months',desc:'Full access',price:10}]},
+  {id:'amazon',name:'Amazon Prime',short:'AP',color:'#00A8E0',tc:'#fff',cat:'video',badge:'new',desc:'Prime Video · email sign-in',hasUserTypes:true,userTypes:[
+    {key:'3user',name:'3 Users',desc:'Shared account · 1 month only',durations:DURATIONS_AMAZON_3U},
+    {key:'full',name:'Full User',desc:'Full account · email & password',durations:DURATIONS_AMAZON_FULL}]},
   {id:'anghami',name:'Anghami+',short:'A',color:'#7B3FBE',tc:'#fff',cat:'music',badge:'',desc:'Instant activation link · Arab & international music',hasUserTypes:false,plans:[
     {name:'1 Month',desc:'$2 · Unlimited',price:2,stockIdx:3},{name:'3 Months',desc:'$4 · Unlimited',price:4,stockIdx:0},{name:'6 Months',desc:'$8 · Unlimited',price:8,stockIdx:1},{name:'1 Year',desc:'$15 · Unlimited',price:15,stockIdx:2}]},
   {id:'spotify',name:'Spotify',short:'S',color:'#1DB954',tc:'#fff',cat:'music',badge:'',desc:'Music & podcasts',hasUserTypes:false,plans:[
@@ -5102,6 +5105,9 @@ function isShahidFullKey(k){return /^shahid__full__/.test(String(k||''));}
 function isDisneyKey(k){return String(k||'').startsWith('disney__');}
 function isDisneyOneUserKey(k){return /^disney__1user__/.test(String(k||''));}
 function isDisneyFullKey(k){return /^disney__full__/.test(String(k||''));}
+function isAmazonKey(k){return String(k||'').startsWith('amazon__');}
+function isAmazonFullKey(k){return /^amazon__full__/.test(String(k||''));}
+function isAmazon3UserKey(k){return /^amazon__3user__/.test(String(k||''));}
 function disneyOneUserPlanKeys(){
   return DURATIONS_DISNEY_1U.map(d=>sk('disney','1user',d.key));
 }
@@ -5288,6 +5294,15 @@ function renderManualAddForm(skey,needsGmail,isShahidStock){
       <div class="field"><label>Expiry date (required) — dd/mm/yyyy</label><input type="text" id="new-acc-expiry" placeholder="e.g. 06/07/2026"><div style="font-size:11px;color:var(--text3);margin-top:4px">Subscription end date — shown to the customer after purchase.</div></div>
       <button class="inline-btn" id="btn-add-stock" onclick="addAccount()"><i class="ti ti-plus" style="font-size:13px;vertical-align:-2px;margin-right:4px"></i>Add to stock</button>`;
   }
+  if(isAmazonKey(skey)){
+    const planLabel=isAmazon3UserKey(skey)?'3 Users · 1 Month':'Full User';
+    return `<div class="add-acc-form-title">Add Prime Video — ${planLabel}</div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:12px">Email and password only. No Gmail or IMAP setup needed.</div>
+      <div class="field"><label>Email</label><input type="text" id="new-acc-email" placeholder="prime@email.com"></div>
+      <div class="field"><label>Password</label><input type="text" id="new-acc-pass" placeholder="password"></div>
+      <div class="field"><label>Expiry date (optional) — dd/mm/yyyy</label><input type="text" id="new-acc-expiry" placeholder="e.g. 15/08/2025"></div>
+      <button class="inline-btn" id="btn-add-stock" onclick="addAccount()"><i class="ti ti-plus" style="font-size:13px;vertical-align:-2px;margin-right:4px"></i>Add to stock</button>`;
+  }
   const isShahidOne=isShahidOneUserKey(skey);
   const isShahidFull=isShahidFullKey(skey);
   const isDisneyOne=isDisneyOneUserKey(skey);
@@ -5322,8 +5337,8 @@ function renderManualAddForm(skey,needsGmail,isShahidStock){
       <button type="button" class="acc-add-mode-btn${accAddMode==='manual'?' active':''}" onclick="setAccAddMode('manual')">Manual (one at a time)</button>
     </div>`;
   }
-  const profileFields=(isShahidFull||isDisneyFull)?'':`<div class="field"><label>${isShahidOne?'User name (optional)':isDisneyStock?'Profile (optional)':'Profile (optional)'}</label><input type="text" id="new-acc-profile" placeholder="${isShahidOne?'e.g. User 1':'e.g. Ali, Profile 1'}"></div>`;
-  const pinField=(isShahidStock||isShahidFull||isDisneyStock)?'':`<div class="field">
+  const profileFields=(isShahidFull||isDisneyFull||isAmazonKey(skey))?'':`<div class="field"><label>${isShahidOne?'User name (optional)':isDisneyStock?'Profile (optional)':'Profile (optional)'}</label><input type="text" id="new-acc-profile" placeholder="${isShahidOne?'e.g. User 1':'e.g. Ali, Profile 1'}"></div>`;
+  const pinField=(isShahidStock||isShahidFull||isDisneyStock||isAmazonKey(skey))?'':`<div class="field">
       <label>Profile PIN (optional — for 1 User accounts)</label>
       <input type="text" id="new-acc-profile-pin" placeholder="e.g. 1234" maxlength="6">
       <div style="font-size:11px;color:var(--text3);margin-top:4px">Fixed PIN you set for this profile. Customer will see it on their subscription link.</div>
@@ -5672,7 +5687,7 @@ async function addAccount(){
   if(isShahidStock&&mainEmail&&!/@(gmail|googlemail)\.com$/i.test(mainEmail)){showToast('⚠️ Shahid reset links require a Gmail inbox');return;}
   const aliasError=isDisneyOne?validateDisneyAliasForAdd(curAccModalKey,phone,profileName):(isShahidStock?validateShahidAliasForAdd(curAccModalKey,email,profileName):validateNetflixAliasForAdd(curAccModalKey,email,profilePin));
   if(aliasError){showToast('⚠️ '+aliasError);return;}
-  const account=isDisneyOne?{phone,email,pass:'',profileName,expiryDate,mainEmail:mainEmail||'',...(mainPass?{mainPass}:{})}:{email,pass,profileName,expiryDate,profilePin,mainEmail:mainEmail||'',...(mainPass?{mainPass}:{})};
+  const account=isDisneyOne?{phone,email,pass:'',profileName,expiryDate,mainEmail:mainEmail||'',...(mainPass?{mainPass}:{})}:isAmazonKey(curAccModalKey)?{email,pass,expiryDate}:{email,pass,profileName,expiryDate,profilePin,mainEmail:mainEmail||'',...(mainPass?{mainPass}:{})};
   setAddStockBusy(true);
   try{
     if(isNetflixOneUserKey(curAccModalKey)){
@@ -5692,7 +5707,7 @@ async function addAccount(){
     return;
   }finally{setAddStockBusy(false);}
   let gmailConfigured=false;
-  if(mainEmail&&mainPass){
+  if(mainEmail&&mainPass&&!isAmazonKey(curAccModalKey)){
     try{gmailConfigured=await setupGmailMonitor(mainEmail,mainPass);}catch(e){showToast('⚠️ Account saved but email server error: '+e.message);}
   }
   renderAccModal(false);renderStockPanels();renderAdminExpiry();
@@ -5702,7 +5717,7 @@ async function addAccount(){
   const addedDisneyOne=isDisneyOneUserKey(curAccModalKey);
   showToast(gmailConfigured
     ?(addedNetflixOne?'✓ Account added to this Netflix plan + Gmail':addedDisneyOne?'✓ Profile added to this Disney+ plan + Gmail':addedShahidOne?'✓ User added to this Shahid plan + Gmail':'✓ Account added + Gmail monitoring started')
-    :(addedNetflixOne?'✓ Account added to this Netflix plan':addedDisneyOne?'✓ Profile added to this Disney+ plan':addedShahidOne?'✓ User added to this Shahid plan':addedShahidFull?'✓ Full Shahid account added':isDisneyFullKey(curAccModalKey)?'✓ Full Disney+ account added':'✓ Account added to stock'));
+    :(addedNetflixOne?'✓ Account added to this Netflix plan':addedDisneyOne?'✓ Profile added to this Disney+ plan':addedShahidOne?'✓ User added to this Shahid plan':addedShahidFull?'✓ Full Shahid account added':isDisneyFullKey(curAccModalKey)?'✓ Full Disney+ account added':isAmazonKey(curAccModalKey)?'✓ Prime Video account added':'✓ Account added to stock'));
   logActivity('Stock added',curAccModalKey);
   await autoFulfillPending(curAccModalKey);
 }
