@@ -1407,6 +1407,7 @@ function stockAccountMatches(a, b) {
 }
 
 function findDuplicateStockAccount(stock, key, accPayload) {
+  if (isAmazonStockKey(key)) return null;
   const list = Array.isArray(stock && stock[key]) ? stock[key] : [];
   return list.find(a => a && !a.used && stockAccountMatches(a, accPayload));
 }
@@ -1713,6 +1714,10 @@ function isDisneyOneUserStockKey(skey) {
 
 function isDisneyFullStockKey(skey) {
   return /^disney__full__/.test(String(skey || ''));
+}
+
+function isAmazonStockKey(skey) {
+  return String(skey || '').startsWith('amazon__');
 }
 
 function isDisneyOneUserSubscription(sub) {
