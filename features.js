@@ -159,17 +159,30 @@
   window.rtLoadMarketingEmailStatus=async function(){
     const el=document.getElementById('dashboard-marketing-email-status');
     const tipsEl=document.getElementById('dashboard-email-inbox-tips');
+    const dnsEl=document.getElementById('dashboard-email-dns-steps');
     if(!el||!isAdmin)return;
     try{
       const j=await api('/admin/marketing-email-status');
-      const provider=j.provider==='resend'?'Resend (best inbox delivery)':j.provider==='emailjs'?'EmailJS':'not configured';
+      const provider=j.provider==='resend'?'Resend (inbox delivery)':j.provider==='emailjs'?'EmailJS':'not configured';
       if(j.configured){
         el.style.color='var(--green)';
-        el.innerHTML=`✅ Marketing template ready <span style="font-family:var(--mono);color:var(--text3)">${esc(j.marketingTemplateId)}</span> · sender <b>${esc(j.fromName||'RashadTech')}</b> · ${esc(provider)}${j.serverEmailConfigured?' · server send':' · browser fallback'}`;
+        el.innerHTML=`✅ Email ready · <b>${esc(j.fromName||'RashadTech')}</b> &lt;${esc(j.fromAddress||'noreply@rashadtech.tv')}&gt; · ${esc(provider)}${j.serverEmailConfigured?' · server send':' · browser fallback'}`;
       }else{
         el.style.color='var(--orange)';
-        el.innerHTML=`⚠️ Profile reminders need a separate EmailJS template (not <span style="font-family:var(--mono)">${esc(j.otpTemplateId||'template_e0h7eia')}</span>). Subject <b>{{subject}}</b>, Body <b>{{message}}</b> or <b>{{{html_message}}}</b>.`;
+        el.innerHTML=`⚠️ Add Resend API key below for inbox delivery, or set up EmailJS marketing template <span style="font-family:var(--mono)">${esc(j.otpTemplateId||'template_e0h7eia')}</span> separately.`;
       }
+      const fromInp=document.getElementById('admin-email-from-address');
+      const replyInp=document.getElementById('admin-email-reply-to');
+      const keyHint=document.getElementById('admin-resend-key-hint');
+      if(fromInp)fromInp.value=j.fromAddress||'noreply@rashadtech.tv';
+      if(replyInp)replyInp.value=j.replyTo||'support@rashadtech.tv';
+      if(keyHint){
+        keyHint.textContent=j.resendConfigured
+          ?`Saved key: ${esc(j.resendApiKeyMasked||'configured')}${j.resendFromEnv?' (from Render env)':''}`
+          :'Get a free key at resend.com → API Keys';
+      }
+      const keyInp=document.getElementById('admin-resend-api-key');
+      if(keyInp&&!keyInp.value&&j.resendApiKeyMasked)keyInp.placeholder=j.resendApiKeyMasked;
       if(tipsEl){
         const tips=Array.isArray(j.inboxTips)?j.inboxTips:[];
         if(tips.length){
@@ -177,11 +190,47 @@
           tipsEl.innerHTML=`<div style="font-weight:600;color:var(--text2);margin-bottom:6px">📬 Keep emails out of spam</div><ul style="margin:0;padding-left:18px">${tips.map(t=>`<li style="margin-bottom:4px">${esc(t)}</li>`).join('')}</ul>`;
         }else tipsEl.style.display='none';
       }
+      if(dnsEl){
+        const steps=Array.isArray(j.dnsSteps)?j.dnsSteps:[];
+        if(steps.length){
+          dnsEl.style.display='block';
+          dnsEl.innerHTML=`<div style="font-weight:600;color:var(--text2);margin-bottom:6px">🛠 Setup steps</div><ol style="margin:0;padding-left:18px">${steps.map(t=>`<li style="margin-bottom:4px">${esc(t)}</li>`).join('')}</ol><div style="margin-top:8px"><a href="https://resend.com/domains" target="_blank" rel="noopener" style="color:var(--blue)">Open Resend domains →</a></div>`;
+        }else dnsEl.style.display='none';
+      }
     }catch(e){
       el.style.color='var(--red)';
       el.textContent=e.message||'Could not check marketing email setup';
       if(tipsEl)tipsEl.style.display='none';
+      if(dnsEl)dnsEl.style.display='none';
     }
+  };
+
+  window.rtSaveEmailDeliverySettings=async function(){
+    try{
+      const j=await api('/admin/email-settings',{
+        method:'POST',
+        body:JSON.stringify({
+          resendApiKey:document.getElementById('admin-resend-api-key')?.value||'',
+          emailFromAddress:document.getElementById('admin-email-from-address')?.value||'',
+          emailReplyTo:document.getElementById('admin-email-reply-to')?.value||''
+        })
+      });
+      const keyInp=document.getElementById('admin-resend-api-key');
+      if(keyInp)keyInp.value='';
+      showToast(j.resendConfigured?'✓ Inbox delivery settings saved':'✓ Settings saved — add Resend API key to enable');
+      rtLoadMarketingEmailStatus();
+    }catch(e){showToast('⚠️ '+(e.message||'Could not save email settings'));}
+  };
+
+  window.rtSendTestEmail=async function(){
+    const to=String(document.getElementById('admin-test-email-to')?.value||'').trim();
+    if(!to){showToast('Enter your email for the test');return;}
+    try{
+      showToast('Sending test email…');
+      const j=await api('/admin/test-email',{method:'POST',body:JSON.stringify({to})});
+      showToast('✓ '+((j.message)||'Test email sent — check inbox and spam'));
+      rtLoadMarketingEmailStatus();
+    }catch(e){showToast('⚠️ '+(e.message||'Test email failed'));}
   };
 
   window.rtSaveMarketingEmailTemplate=async function(){

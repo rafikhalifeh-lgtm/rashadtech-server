@@ -16,11 +16,14 @@ const {
   reconstructCatalogFromChangeLog
 } = require('./priceCatalog');
 const {
-  getEmailDeliverabilityStatus,
-  getActiveEmailProvider,
-  isServerEmailConfigured,
   deliverMarketingEmail,
-  deliverOtpEmail
+  deliverOtpEmail,
+  deliverTestEmail,
+  getActiveEmailProvider,
+  getEmailDeliverabilityStatus,
+  isServerEmailConfigured,
+  DEFAULT_FROM_ADDRESS,
+  DEFAULT_REPLY_TO
 } = require('./emailDelivery');
 const {
   markStockSold,
@@ -359,12 +362,22 @@ function verifyOtp(store, email, otp) {
   return true;
 }
 
-async function sendOtpEmail(email, otp, name) {
+async function loadEmailSettingsData() {
+  try {
+    return await readJsonBinRaw({ fast: true, skipRecoverWrite: true });
+  } catch (e) {
+    return { siteSettings: {} };
+  }
+}
+
+async function sendOtpEmail(email, otp, name, data) {
+  const mailData = data || await loadEmailSettingsData();
   await deliverOtpEmail({
     email,
     otp,
     name,
     subject: OTP_EMAIL_SUBJECT,
+    data: mailData,
     emailJs: {
       serviceId: EMAILJS_SERVICE_ID,
       otpTemplateId: EMAILJS_TEMPLATE_ID,
@@ -375,15 +388,17 @@ async function sendOtpEmail(email, otp, name) {
 }
 
 async function sendUserEmail(email, subject, message, name, data) {
-  const templateId = getActiveEmailProvider() === 'resend'
-    ? (resolveMarketingTemplateId(data) || EMAILJS_MARKETING_TEMPLATE_ID || 'resend')
-    : requireMarketingTemplateId(data);
+  const mailData = data || await loadEmailSettingsData();
+  const templateId = getActiveEmailProvider(mailData) === 'resend'
+    ? (resolveMarketingTemplateId(mailData) || EMAILJS_MARKETING_TEMPLATE_ID || 'resend')
+    : requireMarketingTemplateId(mailData);
   await deliverMarketingEmail({
     email,
     name,
     subject,
     message,
     templateId,
+    data: mailData,
     emailJs: {
       serviceId: EMAILJS_SERVICE_ID,
       publicKey: EMAILJS_PUBLIC_KEY,
@@ -426,15 +441,16 @@ function sleep(ms) {
 async function deliverOtp({ email, otp, name, tgChatId, purpose }) {
   let emailSent = false;
   let telegramSent = false;
-  if (isServerEmailConfigured()) {
+  const mailData = await loadEmailSettingsData();
+  if (isServerEmailConfigured(mailData)) {
     try {
-      await sendOtpEmail(email, otp, name);
+      await sendOtpEmail(email, otp, name, mailData);
       emailSent = true;
     } catch(e) {
       console.error(`${purpose || 'OTP'} email delivery error:`, e.message);
     }
   } else {
-    console.warn(`${purpose || 'OTP'}: server email skipped — set RESEND_API_KEY or EMAILJS_PRIVATE_KEY on Render`);
+    console.warn(`${purpose || 'OTP'}: server email skipped — add Resend API key in Admin → Dashboard or set RESEND_API_KEY / EMAILJS_PRIVATE_KEY on Render`);
   }
   if (tgChatId) {
     try {
@@ -3429,7 +3445,7 @@ app.get('/admin/marketing-email-status', async (req, res) => {
   try {
     const data = await readJsonBinRaw({ fast: true, skipRecoverWrite: true });
     const templateId = resolveMarketingTemplateId(data);
-    const provider = getActiveEmailProvider();
+    const provider = getActiveEmailProvider(data);
     const configured = provider === 'resend'
       ? true
       : Boolean(templateId && templateId !== EMAILJS_TEMPLATE_ID);
@@ -3438,10 +3454,80 @@ app.get('/admin/marketing-email-status', async (req, res) => {
       configured,
       marketingTemplateId: configured ? templateId : '',
       otpTemplateId: EMAILJS_TEMPLATE_ID,
-      ...getEmailDeliverabilityStatus({ setupHint: MARKETING_EMAIL_SETUP_HINT })
+      ...getEmailDeliverabilityStatus({ setupHint: MARKETING_EMAIL_SETUP_HINT }, data)
     });
   } catch (e) {
     res.status(500).json({ error: e.message || 'Could not load email settings' });
+  }
+});
+
+app.post('/admin/email-settings', async (req, res) => {
+  const session = requireSession(req, res, ['admin']);
+  if (!session) return;
+  const { resendApiKey, emailFromAddress, emailReplyTo, emailFromName, clearResendKey } = req.body || {};
+  try {
+    const data = await readJsonBinRaw();
+    data.siteSettings = { ...(data.siteSettings || {}) };
+    if (clearResendKey) delete data.siteSettings.resendApiKey;
+    const nextKey = String(resendApiKey || '').trim();
+    if (nextKey && !/^[•.]+/.test(nextKey) && !nextKey.includes('…')) {
+      data.siteSettings.resendApiKey = nextKey;
+    }
+    if (emailFromAddress !== undefined) data.siteSettings.emailFromAddress = String(emailFromAddress || '').trim();
+    if (emailReplyTo !== undefined) data.siteSettings.emailReplyTo = String(emailReplyTo || '').trim();
+    if (emailFromName !== undefined) data.siteSettings.emailFromName = String(emailFromName || '').trim();
+    await writeJsonBinRaw(data);
+    res.json({
+      success: true,
+      settings: {
+        emailFromAddress: data.siteSettings.emailFromAddress || DEFAULT_FROM_ADDRESS,
+        emailReplyTo: data.siteSettings.emailReplyTo || DEFAULT_REPLY_TO,
+        emailFromName: data.siteSettings.emailFromName || 'RashadTech',
+        hasResendKey: Boolean(data.siteSettings.resendApiKey || process.env.RESEND_API_KEY)
+      },
+      ...getEmailDeliverabilityStatus({ setupHint: MARKETING_EMAIL_SETUP_HINT }, data)
+    });
+  } catch (e) {
+    console.error('Email settings save error:', e.message);
+    res.status(500).json({ error: e.message || 'Could not save email settings' });
+  }
+});
+
+app.post('/admin/test-email', async (req, res) => {
+  const session = requireSession(req, res, ['admin']);
+  if (!session) return;
+  const to = normalizeEmail(req.body && req.body.to);
+  if (!to) return res.status(400).json({ error: 'Recipient email required' });
+  try {
+    const data = await readJsonBinRaw({ fast: true, skipRecoverWrite: true });
+    if (!isServerEmailConfigured(data)) {
+      return res.status(400).json({
+        error: 'Email is not configured. Add your Resend API key in Admin → Dashboard first.',
+        needsEmailSetup: true
+      });
+    }
+    const marketingTemplateId = resolveMarketingTemplateId(data) || EMAILJS_MARKETING_TEMPLATE_ID;
+    const result = await deliverTestEmail({
+      email: to,
+      name: 'Admin',
+      data,
+      emailJs: {
+        serviceId: EMAILJS_SERVICE_ID,
+        otpTemplateId: EMAILJS_TEMPLATE_ID,
+        marketingTemplateId,
+        publicKey: EMAILJS_PUBLIC_KEY,
+        privateKey: EMAILJS_PRIVATE_KEY
+      }
+    });
+    res.json({
+      success: true,
+      provider: result.provider,
+      to,
+      message: `Test email sent via ${result.provider}. Check inbox and spam folder.`
+    });
+  } catch (e) {
+    console.error('Test email error:', e.message);
+    res.status(500).json({ error: e.message || 'Could not send test email' });
   }
 });
 
@@ -3470,13 +3556,13 @@ app.post('/admin/profile-reminders', async (req, res) => {
     }
     let marketingTemplateId;
     try {
-      marketingTemplateId = getActiveEmailProvider() === 'resend'
+      marketingTemplateId = getActiveEmailProvider(data) === 'resend'
         ? (resolveMarketingTemplateId(data) || EMAILJS_MARKETING_TEMPLATE_ID || 'resend')
         : requireMarketingTemplateId(data);
     } catch (e) {
       return res.status(400).json({ error: e.message, needsMarketingTemplate: true });
     }
-    if (!isServerEmailConfigured()) {
+    if (!isServerEmailConfigured(data)) {
       return res.json({
         success: true,
         clientEmailRequired: true,
@@ -3526,13 +3612,13 @@ app.post('/admin/broadcast-email', async (req, res) => {
     }
     let marketingTemplateId;
     try {
-      marketingTemplateId = getActiveEmailProvider() === 'resend'
+      marketingTemplateId = getActiveEmailProvider(data) === 'resend'
         ? (resolveMarketingTemplateId(data) || EMAILJS_MARKETING_TEMPLATE_ID || 'resend')
         : requireMarketingTemplateId(data);
     } catch (e) {
       return res.status(400).json({ error: e.message, needsMarketingTemplate: true });
     }
-    if (!isServerEmailConfigured()) {
+    if (!isServerEmailConfigured(data)) {
       return res.json({
         success: true,
         clientEmailRequired: true,

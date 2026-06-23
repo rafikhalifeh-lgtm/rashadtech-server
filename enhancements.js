@@ -275,7 +275,9 @@ function registerEnhancements(app, deps) {
   app.get('/site-settings', async (req, res) => {
     try {
       const data = await readJsonBinRaw();
-      res.json({ success: true, settings: data[SITE_SETTINGS_KEY] || {} });
+      const settings = { ...(data[SITE_SETTINGS_KEY] || {}) };
+      delete settings.resendApiKey;
+      res.json({ success: true, settings });
     } catch (e) {
       res.status(500).json({ error: e.message });
     }
@@ -287,9 +289,11 @@ function registerEnhancements(app, deps) {
     try {
       const data = await readJsonBinRaw();
       data[SITE_SETTINGS_KEY] = { ...(data[SITE_SETTINGS_KEY] || {}), ...(req.body || {}) };
+      const settings = { ...data[SITE_SETTINGS_KEY] };
+      delete settings.resendApiKey;
       await writeJsonBinRaw(data);
       await appendActivity('Site settings updated', Object.keys(req.body || {}).join(', '), session.email);
-      res.json({ success: true, settings: data[SITE_SETTINGS_KEY] });
+      res.json({ success: true, settings });
     } catch (e) {
       res.status(500).json({ error: 'Could not save settings' });
     }
