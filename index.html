@@ -690,7 +690,7 @@ So your EmailJS template will receive the user email and verification code corre
       <div class="field"><label>Password</label><input type="password" id="admin-pass" placeholder="••••••••" autocomplete="current-password"></div>
       <div class="field"><label>Authenticator code</label><input type="text" id="admin-totp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6-digit code" onkeydown="if(event.key==='Enter')doAdminLogin()"></div>
       <button class="btn-primary" onclick="doAdminLogin()">Enter</button>
-      <div class="auth-switch" style="margin-top:10px"><a href="#" onclick="showAdmin2FASetup();return false" style="font-size:12px">Add to Google Authenticator</a></div>
+      <div class="auth-switch" id="admin-2fa-setup-link" style="margin-top:10px;display:none"><a href="#" onclick="showAdmin2FASetup();return false" style="font-size:12px">Add to Google Authenticator</a></div>
       <div id="admin-2fa-setup" style="display:none;margin-top:12px;padding:12px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:12px;text-align:left;line-height:1.6"></div>
       <div class="auth-switch"><a onclick="showView('login')">← Back</a></div>
     </div>
@@ -2923,9 +2923,22 @@ function otpBack(e,pfx,i){if(e.key==='Backspace'&&!document.getElementById(pfx+i
 function getOTP(pfx){return[0,1,2,3,4,5].map(i=>document.getElementById(pfx+i)?.value||'').join('');}
 function clearOTP(pfx){[0,1,2,3,4,5].forEach(i=>{const el=document.getElementById(pfx+i);if(el)el.value='';});}
 
-function showView(v){['login','signup','verify','forgot','reset','admin'].forEach(x=>{const el=document.getElementById('view-'+x);if(el)el.style.display=x===v?'block':'none';});}
+function showView(v){['login','signup','verify','forgot','reset','admin'].forEach(x=>{const el=document.getElementById('view-'+x);if(el)el.style.display=x===v?'block':'none';});if(v==='admin')refreshAdmin2faSetupUi();}
 let loginInFlight=false;
 let adminLoginInFlight=false;
+async function refreshAdmin2faSetupUi(){
+  const link=document.getElementById('admin-2fa-setup-link');
+  const box=document.getElementById('admin-2fa-setup');
+  try{
+    const j=await rtApi('/auth/admin-2fa-status');
+    const show=!!j.setupAvailable;
+    if(link)link.style.display=show?'block':'none';
+    if(box&&!show){box.style.display='none';box.innerHTML='';}
+  }catch(e){
+    if(link)link.style.display='none';
+    if(box){box.style.display='none';box.innerHTML='';}
+  }
+}
 async function doLogin(){
   if(loginInFlight)return;
   loginInFlight=true;
@@ -3079,6 +3092,13 @@ async function showAdmin2FASetup(){
     return;
   }
   try{
+    const status=await rtApi('/auth/admin-2fa-status');
+    if(!status.setupAvailable){
+      document.getElementById('admin-err').textContent='Authenticator is already set up. If you lost your device, reset ADMIN_TOTP_SECRET on Render.';
+      document.getElementById('admin-err').style.display='block';
+      if(box){box.style.display='none';box.innerHTML='';}
+      return;
+    }
     const j=await postJson('/auth/admin-2fa-setup',{password:p});
     const qr=`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(j.otpauth)}`;
     box.innerHTML=`<div style="font-weight:600;margin-bottom:8px">Google Authenticator setup</div>

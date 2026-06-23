@@ -91,6 +91,7 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'RkhRkh7979@';
 const ADMIN_TOTP_SECRET = sanitizeBase32TotpSecret(normalizeEnvSecret(process.env.ADMIN_TOTP_SECRET) || 'QZA7V6TTYJGUMAMUZLE57JP6AQ');
 const ADMIN_TOTP_ISSUER = 'rashadtech.tv';
 const ADMIN_TOTP_LABEL = 'Admin';
+const ADMIN_TOTP_SETUP_ALLOWED = process.env.ADMIN_TOTP_SETUP_ALLOWED === 'true';
 const adminLoginFailures = new Map();
 const ADMIN_LOGIN_MAX_FAILURES = 5;
 const ADMIN_LOGIN_LOCK_MS = 30 * 60 * 1000;
@@ -287,6 +288,22 @@ function adminTotpSetupInfo() {
   const issuer = encodeURIComponent(ADMIN_TOTP_ISSUER);
   const otpauth = `otpauth://totp/${label}?secret=${secret}&issuer=${issuer}&algorithm=SHA1&digits=6&period=30`;
   return { secret, issuer: ADMIN_TOTP_ISSUER, account: ADMIN_TOTP_LABEL, otpauth };
+}
+
+function isAdmin2faSetupAvailable(data) {
+  if (data?.siteSettings?.admin2faEnrolled === true) return false;
+  return ADMIN_TOTP_SETUP_ALLOWED;
+}
+
+async function markAdmin2faEnrolled() {
+  try {
+    const data = await readJsonBinRaw({ fast: true });
+    if (data?.siteSettings?.admin2faEnrolled === true) return;
+    data.siteSettings = { ...(data.siteSettings || {}), admin2faEnrolled: true };
+    await writeJsonBinRaw(data, { lightWrite: true });
+  } catch (e) {
+    console.warn('Could not persist admin2faEnrolled:', e.message);
+  }
 }
 
 function uniqueNormalizedEmails(values) {
@@ -2166,6 +2183,7 @@ app.post('/auth/admin-login', async (req, res) => {
   }
   clearAdminLoginFailures(ip);
   const token = createSession('admin', 'admin');
+  markAdmin2faEnrolled().catch(() => {});
   try {
     const data = await readJsonBinRaw({ fast: true });
     res.json({ success: true, token, data: safeDataForSession(data, { role: 'admin' }) });
@@ -2175,12 +2193,29 @@ app.post('/auth/admin-login', async (req, res) => {
   }
 });
 
-app.post('/auth/admin-2fa-setup', (req, res) => {
+app.get('/auth/admin-2fa-status', async (req, res) => {
+  try {
+    const data = await readJsonBinRaw({ fast: true, skipRecoverWrite: true });
+    res.json({ success: true, setupAvailable: isAdmin2faSetupAvailable(data) });
+  } catch (e) {
+    res.json({ success: true, setupAvailable: false });
+  }
+});
+
+app.post('/auth/admin-2fa-setup', async (req, res) => {
   const { password } = req.body || {};
   if (password !== ADMIN_PASSWORD) {
     return res.status(401).json({ error: 'Wrong password' });
   }
-  res.json({ success: true, ...adminTotpSetupInfo() });
+  try {
+    const data = await readJsonBinRaw({ fast: true, skipRecoverWrite: true });
+    if (!isAdmin2faSetupAvailable(data)) {
+      return res.status(403).json({ error: 'Authenticator is already set up. Setup is disabled for security.' });
+    }
+    res.json({ success: true, ...adminTotpSetupInfo() });
+  } catch (e) {
+    res.status(503).json({ error: 'Could not verify 2FA status' });
+  }
 });
 
 app.post('/auth/signup-start', async (req, res) => {
