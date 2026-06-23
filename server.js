@@ -3449,7 +3449,7 @@ app.post('/admin/profile-reminders', async (req, res) => {
   const session = requireSession(req, res, ['admin']);
   if (!session) return;
   const { dryRun } = req.body || {};
-  const subject = 'Complete your rashadtech.tv profile';
+  const subject = 'Complete your RashadTech profile';
   const message = [
     'Hello,',
     '',
