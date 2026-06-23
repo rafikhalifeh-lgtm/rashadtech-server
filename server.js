@@ -85,6 +85,7 @@ const EMAILJS_SERVICE_ID = normalizeEnvSecret(process.env.EMAILJS_SERVICE_ID) ||
 const EMAILJS_TEMPLATE_ID = normalizeEnvSecret(process.env.EMAILJS_TEMPLATE_ID) || 'template_e0h7eia';
 const EMAILJS_MARKETING_TEMPLATE_ID = normalizeEnvSecret(process.env.EMAILJS_MARKETING_TEMPLATE_ID) || '';
 const OTP_EMAIL_SUBJECT = normalizeEnvSecret(process.env.OTP_EMAIL_SUBJECT) || 'You received a code';
+const MARKETING_EMAIL_SETUP_HINT = 'Create a second EmailJS template (Subject: {{subject}}, Body: {{message}}), then set EMAILJS_MARKETING_TEMPLATE_ID on Render or save the template ID in Admin → Dashboard → Marketing email template.';
 const EMAILJS_PUBLIC_KEY = normalizeEnvSecret(process.env.EMAILJS_PUBLIC_KEY) || 'LyKu6ZB_y6qoFh7Ef';
 const EMAILJS_PRIVATE_KEY = normalizeEnvSecret(process.env.EMAILJS_PRIVATE_KEY);
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'RkhRkh7979@';
@@ -404,15 +405,36 @@ function marketingEmailTemplateParams(email, name, subject, message) {
     user_subject: title,
     message: body,
     body,
-    reply_to: recipient
+    content: body,
+    user_message: body,
+    email_content: body,
+    reply_to: recipient,
+    email_type: 'marketing',
+    otp_code: '',
+    verification_code: '',
+    passcode: '',
+    code: '',
+    otp: '',
+    reset_code: ''
   };
 }
 
-async function resolveMarketingTemplateId(data) {
+function resolveMarketingTemplateId(data) {
   const fromSettings = normalizeEnvSecret(data?.siteSettings?.emailjsMarketingTemplateId);
   if (fromSettings) return fromSettings;
   if (EMAILJS_MARKETING_TEMPLATE_ID) return EMAILJS_MARKETING_TEMPLATE_ID;
-  return EMAILJS_TEMPLATE_ID;
+  return '';
+}
+
+function requireMarketingTemplateId(data) {
+  const templateId = resolveMarketingTemplateId(data);
+  if (!templateId) {
+    throw new Error(`Marketing email template is not configured. ${MARKETING_EMAIL_SETUP_HINT}`);
+  }
+  if (templateId === EMAILJS_TEMPLATE_ID) {
+    throw new Error(`Profile reminders and broadcasts cannot use the verification-code EmailJS template (${EMAILJS_TEMPLATE_ID}). ${MARKETING_EMAIL_SETUP_HINT}`);
+  }
+  return templateId;
 }
 
 async function marketingEmailTemplateId(data) {
@@ -421,7 +443,7 @@ async function marketingEmailTemplateId(data) {
     const data = await readJsonBinRaw({ fast: true, skipRecoverWrite: true });
     return resolveMarketingTemplateId(data);
   } catch (e) {
-    return EMAILJS_MARKETING_TEMPLATE_ID || EMAILJS_TEMPLATE_ID;
+    return EMAILJS_MARKETING_TEMPLATE_ID || '';
   }
 }
 
@@ -455,7 +477,7 @@ async function sendUserEmail(email, subject, message, name, data) {
   if (!EMAILJS_PRIVATE_KEY) {
     throw new Error('Server email is not configured (EMAILJS_PRIVATE_KEY missing on Render)');
   }
-  const templateId = await marketingEmailTemplateId(data);
+  const templateId = requireMarketingTemplateId(data);
   const payload = {
     service_id: EMAILJS_SERVICE_ID,
     template_id: templateId,
@@ -3473,6 +3495,26 @@ app.get('/admin/incomplete-profiles', async (req, res) => {
   }
 });
 
+app.get('/admin/marketing-email-status', async (req, res) => {
+  const session = requireSession(req, res, ['admin']);
+  if (!session) return;
+  try {
+    const data = await readJsonBinRaw({ fast: true, skipRecoverWrite: true });
+    const templateId = resolveMarketingTemplateId(data);
+    const configured = Boolean(templateId && templateId !== EMAILJS_TEMPLATE_ID);
+    res.json({
+      success: true,
+      configured,
+      marketingTemplateId: configured ? templateId : '',
+      otpTemplateId: EMAILJS_TEMPLATE_ID,
+      serverEmailConfigured: Boolean(EMAILJS_PRIVATE_KEY),
+      setupHint: MARKETING_EMAIL_SETUP_HINT
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Could not load email settings' });
+  }
+});
+
 app.post('/admin/profile-reminders', async (req, res) => {
   const session = requireSession(req, res, ['admin']);
   if (!session) return;
@@ -3496,17 +3538,20 @@ app.post('/admin/profile-reminders', async (req, res) => {
     if (dryRun) {
       return res.json({ success: true, dryRun: true, count: targets.length });
     }
+    let marketingTemplateId;
+    try {
+      marketingTemplateId = requireMarketingTemplateId(data);
+    } catch (e) {
+      return res.status(400).json({ error: e.message, needsMarketingTemplate: true });
+    }
     if (!EMAILJS_PRIVATE_KEY) {
-      const marketingTemplateId = await marketingEmailTemplateId(data);
       return res.json({
         success: true,
         clientEmailRequired: true,
         subject,
         message,
         marketingTemplateId,
-        usesDedicatedMarketingTemplate: Boolean(
-          EMAILJS_MARKETING_TEMPLATE_ID || data?.siteSettings?.emailjsMarketingTemplateId
-        ),
+        usesDedicatedMarketingTemplate: true,
         total: targets.length,
         targets: targets.map(u => ({ email: u.email, name: u.name || '' }))
       });
@@ -3547,17 +3592,20 @@ app.post('/admin/broadcast-email', async (req, res) => {
     if (dryRun) {
       return res.json({ success: true, dryRun: true, count: targets.length });
     }
+    let marketingTemplateId;
+    try {
+      marketingTemplateId = requireMarketingTemplateId(data);
+    } catch (e) {
+      return res.status(400).json({ error: e.message, needsMarketingTemplate: true });
+    }
     if (!EMAILJS_PRIVATE_KEY) {
-      const marketingTemplateId = await marketingEmailTemplateId(data);
       return res.json({
         success: true,
         clientEmailRequired: true,
         subject: cleanSubject,
         message: cleanMessage,
         marketingTemplateId,
-        usesDedicatedMarketingTemplate: Boolean(
-          EMAILJS_MARKETING_TEMPLATE_ID || data?.siteSettings?.emailjsMarketingTemplateId
-        ),
+        usesDedicatedMarketingTemplate: true,
         total: targets.length,
         targets: targets.map(u => ({ email: u.email, name: u.name || '' }))
       });

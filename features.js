@@ -150,8 +150,42 @@
       if(promoInp)promoInp.value=settings.settings?.promoBanner||'';
       if(refInp)refInp.value=settings.settings?.referralCode||'';
       if(refDisc)refDisc.value=settings.settings?.referralDiscount||'';
+      const marketingTpl=document.getElementById('admin-emailjs-marketing-template');
+      if(marketingTpl)marketingTpl.value=settings.settings?.emailjsMarketingTemplateId||'';
+      rtLoadMarketingEmailStatus();
     }catch(e){console.warn('admin enhancements',e);}
   }
+
+  window.rtLoadMarketingEmailStatus=async function(){
+    const el=document.getElementById('dashboard-marketing-email-status');
+    if(!el||!isAdmin)return;
+    try{
+      const j=await api('/admin/marketing-email-status');
+      if(j.configured){
+        el.style.color='var(--green)';
+        el.innerHTML=`✅ Marketing email template ready <span style="font-family:var(--mono);color:var(--text3)">${esc(j.marketingTemplateId)}</span>${j.serverEmailConfigured?' · server send enabled':' · browser send fallback'}`;
+      }else{
+        el.style.color='var(--orange)';
+        el.innerHTML=`⚠️ Profile reminders need a separate EmailJS template (not <span style="font-family:var(--mono)">${esc(j.otpTemplateId||'template_e0h7eia')}</span>). Create one with Subject <b>{{subject}}</b> and Body <b>{{message}}</b>, then save its ID below.`;
+      }
+    }catch(e){
+      el.style.color='var(--red)';
+      el.textContent=e.message||'Could not check marketing email setup';
+    }
+  };
+
+  window.rtSaveMarketingEmailTemplate=async function(){
+    const value=String(document.getElementById('admin-emailjs-marketing-template')?.value||'').trim();
+    if(value&&value===EMAILJS_TEMPLATE_ID){
+      showToast('⚠️ Use a separate marketing template, not the verification-code template');
+      return;
+    }
+    try{
+      await api('/admin/site-settings',{method:'POST',body:JSON.stringify({emailjsMarketingTemplateId:value})});
+      showToast(value?'✓ Marketing template saved':'✓ Marketing template cleared');
+      rtLoadMarketingEmailStatus();
+    }catch(e){showToast('⚠️ '+e.message);}
+  };
 
   window.rtSaveSiteSettings=async function(){
     try{

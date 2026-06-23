@@ -950,6 +950,12 @@ So your EmailJS template will receive the user email and verification code corre
           <div class="card" style="padding:16px">
             <div style="font-size:13px;font-weight:600;margin-bottom:10px">📣 Customer outreach</div>
             <div id="dashboard-incomplete-profiles" style="font-size:12px;color:var(--text2);margin-bottom:10px">Loading…</div>
+            <div id="dashboard-marketing-email-status" style="font-size:11px;color:var(--text3);margin-bottom:10px;line-height:1.5;padding:10px;border-radius:8px;background:var(--bg3);border:1px solid var(--border)">Checking email setup…</div>
+            <div class="field" style="margin-bottom:8px">
+              <label style="font-size:11px;color:var(--text3)">Marketing EmailJS template ID</label>
+              <input type="text" id="admin-emailjs-marketing-template" placeholder="template_xxxxxxx (not the verification template)" style="width:100%;margin-top:4px">
+            </div>
+            <button onclick="rtSaveMarketingEmailTemplate()" style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px;font-size:11px;font-weight:600;cursor:pointer;margin-bottom:10px">Save marketing template ID</button>
             <button onclick="sendProfileReminders()" style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:12px;font-weight:600;cursor:pointer;margin-bottom:8px">📧 Email profile reminders</button>
             <button onclick="openAnnounce()" style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:12px;font-weight:600;cursor:pointer">📢 Broadcast offer (Telegram / Email)</button>
           </div>
@@ -2768,6 +2774,7 @@ const EMAILJS_SERVICE_ID  = 'service_g05xq5o';
 const EMAILJS_TEMPLATE_ID = 'template_e0h7eia';
 const EMAILJS_MARKETING_TEMPLATE_ID = '';
 const OTP_EMAIL_SUBJECT = 'You received a code';
+const MARKETING_EMAIL_SETUP_HINT = 'Create a second EmailJS template (Subject: {{subject}}, Body: {{message}}), then save its template ID below or set EMAILJS_MARKETING_TEMPLATE_ID on Render.';
 const EMAILJS_PUBLIC_KEY  = 'LyKu6ZB_y6qoFh7Ef';
 if(typeof emailjs!=='undefined'&&EMAILJS_PUBLIC_KEY&&EMAILJS_PUBLIC_KEY!=='YOUR_PUBLIC_KEY'){
   emailjs.init({ publicKey: EMAILJS_PUBLIC_KEY });
@@ -2800,19 +2807,36 @@ function marketingEmailParams(toEmail, subject, message, userName){
     user_subject:title,
     message:body,
     body,
-    reply_to:toEmail
+    content:body,
+    user_message:body,
+    email_content:body,
+    reply_to:toEmail,
+    email_type:'marketing',
+    otp_code:'',
+    verification_code:'',
+    passcode:'',
+    code:'',
+    otp:'',
+    reset_code:''
   };
 }
 
+function resolveMarketingTemplateIdFromPayload(payload){
+  const id=String(payload?.marketingTemplateId||EMAILJS_MARKETING_TEMPLATE_ID||'').trim();
+  if(!id)throw new Error('Marketing email template is not configured. '+MARKETING_EMAIL_SETUP_HINT);
+  if(id===EMAILJS_TEMPLATE_ID)throw new Error('Profile reminders cannot use the verification-code template ('+EMAILJS_TEMPLATE_ID+'). '+MARKETING_EMAIL_SETUP_HINT);
+  return id;
+}
+
 function resolveMarketingTemplateId(payload){
-  return payload?.marketingTemplateId||EMAILJS_MARKETING_TEMPLATE_ID||EMAILJS_TEMPLATE_ID;
+  return resolveMarketingTemplateIdFromPayload(payload);
 }
 
 async function sendMarketingEmail(toEmail, subject, message, userName, templateId){
   if(typeof emailjs==='undefined'||!EMAILJS_PUBLIC_KEY){
     throw new Error('EmailJS is not available in the browser');
   }
-  const tpl=templateId||EMAILJS_MARKETING_TEMPLATE_ID||EMAILJS_TEMPLATE_ID;
+  const tpl=resolveMarketingTemplateIdFromPayload({marketingTemplateId:templateId});
   const params=marketingEmailParams(toEmail,subject,message,userName);
   const res=await emailjs.send(EMAILJS_SERVICE_ID,tpl,params);
   if(res&&(res.status===200||res.text==='OK'))return true;
@@ -4111,6 +4135,7 @@ async function renderDashboard(){
       ?`<span style="color:var(--orange);font-weight:600">${incomplete}</span> customer${incomplete!==1?'s':''} missing phone and/or Telegram ID`
       :'<span style="color:var(--green)">✅ All customers have phone & Telegram</span>';
   }
+  if(typeof rtLoadMarketingEmailStatus==='function')rtLoadMarketingEmailStatus();
 
   const gm=document.getElementById('dashboard-gmail-monitors');
   if(gm){
