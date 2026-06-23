@@ -1244,7 +1244,7 @@ function applyOfflineCacheIfAny(){
   }catch(e){return false;}
 }
 function saveOfflineCache(data){
-  if(!data)return;
+  if(!data||isAdmin)return;
   try{
     const email=normEmail(currentUser?.email||getStoredSessionEmail());
     if(email){
@@ -1535,7 +1535,8 @@ function applyDataSnapshot(data){
   }:null;
   const incoming=data||{};
   _jbCache={...(_jbCache||{}),...incoming};
-  if(incoming.pending)_jbCache.pending=incoming.pending;
+  if(incoming.pending!==undefined)_jbCache.pending=incoming.pending;
+  if(incoming.stock!==undefined)_jbCache.stock=incoming.stock;
   if(incoming.stockBlocks!==undefined)_jbCache.stockBlocks=incoming.stockBlocks;
   users=Array.isArray(_jbCache.users)?_jbCache.users:[];
   accountStock=_jbCache.stock||{};
@@ -1560,12 +1561,14 @@ function applyDataSnapshot(data){
 }
 
 function clearStoredSession(){
+  const wasAdmin=isAdmin||authRole==='admin';
   authToken='';authRole='';isAdmin=false;currentUser=null;
   try{
     localStorage.removeItem('rt_session');
     localStorage.removeItem('rt_admin_session');
     localStorage.removeItem('rt_auth_token');
     localStorage.removeItem('rt_auth_role');
+    if(wasAdmin)localStorage.removeItem(RT_OFFLINE_CACHE_KEY);
   }catch(e){}
 }
 
@@ -1651,15 +1654,16 @@ async function jbWrite(data,timeoutMs){
 }
 
 async function apiStockAdd(payload){
-  syncPausedUntil=Date.now()+20000;
+  syncPausedUntil=Date.now()+5000;
   const acc=payload.account||{};
   const keys=payload.replicateToNetflixPlans?netflixOneUserPlanKeys():[payload.skey].filter(Boolean);
-  const requestId=payload.requestId||[
+  const baseRequestId=payload.requestId||[
     normEmail(acc.email),
     String(acc.profileName||'').trim().toLowerCase(),
     String(acc.profilePin||'').trim(),
     keys.join('|')
   ].join('::');
+  const requestId=payload.requestId?baseRequestId:`${baseRequestId}::${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
   const body={...payload,requestId};
   if(!body.accKey){
     if(_stockAddAccKeys.has(requestId))body.accKey=_stockAddAccKeys.get(requestId);
@@ -1677,6 +1681,9 @@ async function apiStockAdd(payload){
   try{
     const j=await rtApi('/admin/stock-add',{method:'POST',body:JSON.stringify(body)},45000);
     if(j.data)applyDataSnapshot(j.data);
+    else{
+      try{applyDataSnapshot(await jbRead());}catch(err){}
+    }
     return j;
   }catch(e){
     const msg=String(e.message||'');
@@ -3182,7 +3189,7 @@ async function doAdminLogin(){
     document.getElementById('page-auth').classList.remove('active');
     document.getElementById('page-admin').classList.add('active');
     await loadPriceCatalog();
-    renderStockPanels();renderAdminCustomers();renderWallets();renderAdminRequests();renderAdminExpiry();renderNetflixRenewalAlerts();renderTopupRequests();renderGameOrders();renderAdminPending();
+    renderAdminPanels();
     refreshAdminBackupStatus();
     if(!window._adminBackupPoll)window._adminBackupPoll=setInterval(refreshAdminBackupStatus,5*60*1000);
     startRealtimeSync();
@@ -3229,10 +3236,17 @@ async function recoverMyCustomersOnLogin(opts={}){
   if(scoreMyCustomers(currentUser.myCustomers)>before)showToast(`✓ Restored ${(currentUser.myCustomers||[]).length} customers`);
 }
 function doLogout(){
+  const wasAdmin=isAdmin;
   currentUser=null;isAdmin=false;
   try{fetch(RT_SERVER+'/auth/logout',{method:'POST',headers:authHeaders()});}catch(e){}
   authToken='';authRole='';
-  try{localStorage.removeItem('rt_session');localStorage.removeItem('rt_admin_session');localStorage.removeItem('rt_auth_token');localStorage.removeItem('rt_auth_role');}catch(e){}
+  try{
+    localStorage.removeItem('rt_session');
+    localStorage.removeItem('rt_admin_session');
+    localStorage.removeItem('rt_auth_token');
+    localStorage.removeItem('rt_auth_role');
+    if(wasAdmin)localStorage.removeItem(RT_OFFLINE_CACHE_KEY);
+  }catch(e){}
   ['page-app','page-admin'].forEach(id=>document.getElementById(id).classList.remove('active'));
   document.getElementById('page-auth').classList.add('active');showView('login');
   if(typeof rtSyncChatUI==='function')rtSyncChatUI();
@@ -6224,40 +6238,41 @@ function startRealtimeSync(){
           renderSubs();updateBal();renderTx();renderMyCustomers();
         }
       }
-      if(_jbCache.pending&&currentUser)renderSubs();
-      if(_jbCache.stock)accountStock=_jbCache.stock;
-      if(_jbCache.topupreqs)topupRequests=_jbCache.topupreqs;
       if(!isAdmin)return;
-      const active=document.querySelector('#page-admin .tab-pane.active')?.id;
-      if(active==='admin-wallets')renderWallets();
-      if(active==='admin-customers')renderAdminCustomers();
-      if(active==='admin-topupreqs')renderTopupRequests();
-      if(active==='admin-pending'){renderAdminPendingHtml(_jbCache.pending||[]);}
-      if(active==='admin-gameorders'){const el=document.getElementById('gameorders-list');if(el)renderGameOrdersHtml(el,_jbCache.gameorders||[]);}
-      if(active==='admin-stock')renderStockPanels();
+      renderAdminPanels();
     }catch(e){}
   },30000);
 }
 
-async function reloadStock(){
+function renderAdminPanels(){
+  renderStockPanels();renderAdminCustomers();renderWallets();renderAdminRequests();renderAdminExpiry();
+  renderNetflixRenewalAlerts();renderTopupRequests();renderGameOrders();renderAdminPending();
+}
+async function reloadAdminData(){
+  if(!authToken)return;
   try{
-    _jbCache=await jbRead();
-    if(_jbCache.stock)accountStock=_jbCache.stock;
-  }catch(e){}
+    const data=await jbRead();
+    if(data)applyDataSnapshot(data);
+  }catch(e){
+    if(isAdmin)applyOfflineCacheIfAny();
+  }
+  if(isAdmin){
+    renderAdminPanels();
+    const modal=document.getElementById('accounts-modal');
+    if(modal?.classList.contains('open')&&curAccModalKey)renderAccModal(false);
+  }else if(currentUser){
+    bindCurrentUserFromUsers();
+    renderMyCustomers();
+    renderSubs();
+    updateBal();
+    renderProducts(document.querySelector('#tab-store.active')?document.querySelector('.ftab.active')?.dataset?.cat||'all':'all');
+  }
 }
 
 // Save on tab close / hide
 document.addEventListener('visibilitychange',()=>{
-  // Don't save on hide — can overwrite Firebase with empty state
-  // When tab becomes visible again, reload latest stock
   if(document.visibilityState==='visible'){
-    reloadStock();
-    if(currentUser){
-      bindCurrentUserFromUsers();
-      renderMyCustomers();
-      renderSubs();
-      renderProducts(document.querySelector('#tab-store.active')?document.querySelector('.ftab.active')?.dataset?.cat||'all':'all');
-    }
+    reloadAdminData();
   }
 });
 // beforeunload save removed — can wipe data on page close
@@ -6342,13 +6357,30 @@ async function restoreAdminSession(){
     isAdmin=true;
     document.getElementById('page-auth').classList.remove('active');
     document.getElementById('page-admin').classList.add('active');
+    try{
+      const data=await jbRead();
+      if(data)applyDataSnapshot(data);
+    }catch(e){
+      if(!applyOfflineCacheIfAny()){
+        showToast('⚠️ Could not load admin data — please log in again');
+        clearStoredSession();
+        document.getElementById('page-admin').classList.remove('active');
+        document.getElementById('page-auth').classList.add('active');
+        return false;
+      }
+    }
     await loadPriceCatalog();
-    renderStockPanels();renderAdminCustomers();renderWallets();renderAdminRequests();renderAdminExpiry();renderNetflixRenewalAlerts();renderTopupRequests();renderGameOrders();renderAdminPending();
+    renderAdminPanels();
     refreshAdminBackupStatus();
     if(!window._adminBackupPoll)window._adminBackupPoll=setInterval(refreshAdminBackupStatus,5*60*1000);
     startRealtimeSync();
     keepServerAwake();
     if(typeof rtSyncChatUI==='function')rtSyncChatUI();
+    jbRead().then(data=>{
+      if(!data)return;
+      applyDataSnapshot(data);
+      renderAdminPanels();
+    }).catch(()=>{});
     return true;
   }catch(e){clearStoredSession();return false;}
 }
