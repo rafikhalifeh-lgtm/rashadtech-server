@@ -26,7 +26,7 @@ const DURATIONS_DISNEY_FULL = [
   { key: '3m', price: 27 },
   { key: '1y', price: 90 }
 ];
-const DURATIONS_AMAZON_3U = [{ key: '1m', price: 2 }];
+const DURATIONS_AMAZON_1U = [{ key: '1m', price: 2 }];
 const DURATIONS_AMAZON_FULL = [{ key: '1m', price: 6 }];
 
 const SIMPLE_PLAN_PRODUCTS = [
@@ -96,8 +96,8 @@ function buildDefaultPriceCatalog() {
     prices[stockKey('disney', 'full', d.key)] = d.price;
   });
 
-  DURATIONS_AMAZON_3U.forEach(d => {
-    prices[stockKey('amazon', '3user', d.key)] = d.price;
+  DURATIONS_AMAZON_1U.forEach(d => {
+    prices[stockKey('amazon', '1user', d.key)] = d.price;
   });
   DURATIONS_AMAZON_FULL.forEach(d => {
     prices[stockKey('amazon', 'full', d.key)] = d.price;
