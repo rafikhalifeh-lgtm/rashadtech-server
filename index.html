@@ -2773,9 +2773,18 @@ if(typeof emailjs!=='undefined'&&EMAILJS_PUBLIC_KEY&&EMAILJS_PUBLIC_KEY!=='YOUR_
   emailjs.init({ publicKey: EMAILJS_PUBLIC_KEY });
 }
 
+function formatMarketingEmailBody(subject, message){
+  const title=String(subject||'').trim();
+  const body=String(message||'').trim();
+  if(!title)return body;
+  if(body.toLowerCase().startsWith(title.toLowerCase()))return body;
+  return `${title}\n\n${body}`;
+}
+
 function marketingEmailParams(toEmail, subject, message, userName){
   const title=String(subject||'Message from rashadtech.tv').trim();
-  const body=String(message||'').trim();
+  const body=formatMarketingEmailBody(title,message);
+  const fromLabel=`${title.slice(0,72)} — rashadtech.tv`;
   return{
     to_email:toEmail,
     email:toEmail,
@@ -2783,10 +2792,12 @@ function marketingEmailParams(toEmail, subject, message, userName){
     recipient:toEmail,
     to_name:userName||toEmail,
     user_name:userName||toEmail,
-    from_name:'rashadtech.tv',
+    from_name:fromLabel,
     subject:title,
     title,
     email_subject:title,
+    mail_subject:title,
+    user_subject:title,
     message:body,
     body,
     reply_to:toEmail

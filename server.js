@@ -359,10 +359,19 @@ function emailJsTemplateParams(email, otp, name) {
   };
 }
 
+function formatMarketingEmailBody(subject, message) {
+  const title = String(subject || '').trim();
+  const body = String(message || '').trim();
+  if (!title) return body;
+  if (body.toLowerCase().startsWith(title.toLowerCase())) return body;
+  return `${title}\n\n${body}`;
+}
+
 function marketingEmailTemplateParams(email, name, subject, message) {
   const recipient = normalizeEmail(email);
-  const body = String(message || '').trim();
   const title = String(subject || 'Message from rashadtech.tv').trim();
+  const body = formatMarketingEmailBody(title, message);
+  const fromLabel = `${title.slice(0, 72)} — rashadtech.tv`;
   return {
     to_email: recipient,
     email: recipient,
@@ -370,18 +379,33 @@ function marketingEmailTemplateParams(email, name, subject, message) {
     recipient,
     to_name: String(name || 'Customer').trim() || 'Customer',
     user_name: String(name || 'Customer').trim() || 'Customer',
-    from_name: 'rashadtech.tv',
+    from_name: fromLabel,
     subject: title,
     title,
     email_subject: title,
+    mail_subject: title,
+    user_subject: title,
     message: body,
     body,
     reply_to: recipient
   };
 }
 
-function marketingEmailTemplateId() {
-  return EMAILJS_MARKETING_TEMPLATE_ID || EMAILJS_TEMPLATE_ID;
+async function resolveMarketingTemplateId(data) {
+  const fromSettings = normalizeEnvSecret(data?.siteSettings?.emailjsMarketingTemplateId);
+  if (fromSettings) return fromSettings;
+  if (EMAILJS_MARKETING_TEMPLATE_ID) return EMAILJS_MARKETING_TEMPLATE_ID;
+  return EMAILJS_TEMPLATE_ID;
+}
+
+async function marketingEmailTemplateId(data) {
+  if (data) return resolveMarketingTemplateId(data);
+  try {
+    const data = await readJsonBinRaw({ fast: true, skipRecoverWrite: true });
+    return resolveMarketingTemplateId(data);
+  } catch (e) {
+    return EMAILJS_MARKETING_TEMPLATE_ID || EMAILJS_TEMPLATE_ID;
+  }
 }
 
 async function sendOtpEmail(email, otp, name) {
@@ -410,13 +434,14 @@ function userEmailTemplateParams(email, name, subject, message) {
   return marketingEmailTemplateParams(email, name, subject, message);
 }
 
-async function sendUserEmail(email, subject, message, name) {
+async function sendUserEmail(email, subject, message, name, data) {
   if (!EMAILJS_PRIVATE_KEY) {
     throw new Error('Server email is not configured (EMAILJS_PRIVATE_KEY missing on Render)');
   }
+  const templateId = await marketingEmailTemplateId(data);
   const payload = {
     service_id: EMAILJS_SERVICE_ID,
-    template_id: marketingEmailTemplateId(),
+    template_id: templateId,
     user_id: EMAILJS_PUBLIC_KEY,
     accessToken: EMAILJS_PRIVATE_KEY,
     template_params: marketingEmailTemplateParams(email, name, subject, message)
@@ -3437,13 +3462,16 @@ app.post('/admin/profile-reminders', async (req, res) => {
       return res.json({ success: true, dryRun: true, count: targets.length });
     }
     if (!EMAILJS_PRIVATE_KEY) {
+      const marketingTemplateId = await marketingEmailTemplateId(data);
       return res.json({
         success: true,
         clientEmailRequired: true,
         subject,
         message,
-        marketingTemplateId: marketingEmailTemplateId(),
-        usesDedicatedMarketingTemplate: Boolean(EMAILJS_MARKETING_TEMPLATE_ID),
+        marketingTemplateId,
+        usesDedicatedMarketingTemplate: Boolean(
+          EMAILJS_MARKETING_TEMPLATE_ID || data?.siteSettings?.emailjsMarketingTemplateId
+        ),
         total: targets.length,
         targets: targets.map(u => ({ email: u.email, name: u.name || '' }))
       });
@@ -3452,7 +3480,7 @@ app.post('/admin/profile-reminders', async (req, res) => {
     const errors = [];
     for (const user of targets) {
       try {
-        await sendUserEmail(user.email, subject, message, user.name);
+        await sendUserEmail(user.email, subject, message, user.name, data);
         sent += 1;
         await sleep(350);
       } catch (e) {
@@ -3485,13 +3513,16 @@ app.post('/admin/broadcast-email', async (req, res) => {
       return res.json({ success: true, dryRun: true, count: targets.length });
     }
     if (!EMAILJS_PRIVATE_KEY) {
+      const marketingTemplateId = await marketingEmailTemplateId(data);
       return res.json({
         success: true,
         clientEmailRequired: true,
         subject: cleanSubject,
         message: cleanMessage,
-        marketingTemplateId: marketingEmailTemplateId(),
-        usesDedicatedMarketingTemplate: Boolean(EMAILJS_MARKETING_TEMPLATE_ID),
+        marketingTemplateId,
+        usesDedicatedMarketingTemplate: Boolean(
+          EMAILJS_MARKETING_TEMPLATE_ID || data?.siteSettings?.emailjsMarketingTemplateId
+        ),
         total: targets.length,
         targets: targets.map(u => ({ email: u.email, name: u.name || '' }))
       });
@@ -3500,7 +3531,7 @@ app.post('/admin/broadcast-email', async (req, res) => {
     const errors = [];
     for (const user of targets) {
       try {
-        await sendUserEmail(user.email, cleanSubject, cleanMessage, user.name);
+        await sendUserEmail(user.email, cleanSubject, cleanMessage, user.name, data);
         sent += 1;
         await sleep(350);
       } catch (e) {
