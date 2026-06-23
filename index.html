@@ -378,6 +378,11 @@ input,button,select,textarea{font-family:var(--font)}
 .shahid-ext-btn{display:inline-flex;align-items:center;gap:6px;background:#fff;color:var(--blue);border:1px solid var(--blue-border);border-radius:8px;padding:10px 14px;font-size:12px;font-weight:600;text-decoration:none;cursor:pointer}
 .shahid-reset-btn{width:100%;background:var(--blue);color:#fff;border:none;border-radius:8px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;margin-top:8px}
 .shahid-reset-link{display:block;margin-top:10px;padding:12px;background:var(--green-bg);border:1px solid var(--green-border);border-radius:8px;font-size:12px;word-break:break-all;color:var(--green);text-decoration:none}
+.cred-val{font-family:var(--mono);font-size:13px;font-weight:600;cursor:pointer;text-align:right;word-break:break-all;overflow-wrap:anywhere;max-width:68%}
+.cred-val-blur{filter:blur(4px);transition:filter 0.2s}
+#sublink-creds .cred-line{margin-bottom:8px}
+#sublink-creds .cred-line:last-child{margin-bottom:0}
+#sublink-creds-title{font-size:11px;color:var(--text3);margin-bottom:10px;font-weight:600;letter-spacing:0.5px}
 #page-sublink{display:none}
 
 /* ── MOBILE BOTTOM NAV ── */
@@ -496,6 +501,8 @@ input,button,select,textarea{font-family:var(--font)}
 
   /* Sublink page mobile */
   #page-sublink{padding:12px;padding-top:20px;align-items:flex-start}
+  #sublink-creds .cred-val{max-width:100%;text-align:left}
+  #sublink-pass-row{flex-wrap:wrap}
   #sublink-code{font-size:22px;letter-spacing:4px}
   #tv-code-input{font-size:16px;letter-spacing:2px}
 
@@ -2240,7 +2247,7 @@ function togglePassVisibility(){
   const btn=document.getElementById('pass-toggle-btn');
   if(!el)return;
   _passVisible=!_passVisible;
-  el.style.filter=_passVisible?'none':'blur(4px)';
+  el.classList.toggle('cred-val-blur',!_passVisible);
   btn.textContent=_passVisible?'🙈':'👁';
 }
 // Current subscription being actioned
@@ -2654,6 +2661,11 @@ async function checkSubLink(){
   const subProf=orderProfileName(found);
   document.getElementById('sublink-email').textContent=found.email||'';
   document.getElementById('sublink-pass').textContent=found.pass||'';
+  _passVisible=false;
+  const passEl=document.getElementById('sublink-pass');
+  if(passEl)passEl.classList.add('cred-val-blur');
+  const passBtn=document.getElementById('pass-toggle-btn');
+  if(passBtn)passBtn.textContent='👁';
   const phoneRow=document.getElementById('sublink-phone-row');
   const phoneEl=document.getElementById('sublink-phone');
   if(phoneRow&&phoneEl){
@@ -2665,13 +2677,10 @@ async function checkSubLink(){
       phoneEl.textContent='';
     }
   }
-  const credBlock=document.querySelector('#sublink-content [style*="YOUR CREDENTIALS"]')?.parentElement;
-  const emailRow=document.getElementById('sublink-email')?.closest('div');
-  const passRow=document.getElementById('sublink-pass')?.closest('div')?.parentElement?.parentElement;
-  if(credBlock){
-    const credTitle=credBlock.querySelector('div');
-    if(credTitle)credTitle.textContent=anghamiSub?'YOUR ANGHAMI ACTIVATION':disneyOneSub?'HOW TO SIGN IN':'YOUR CREDENTIALS';
-  }
+  const credTitle=document.getElementById('sublink-creds-title');
+  const emailRow=document.getElementById('sublink-email-row');
+  const passRow=document.getElementById('sublink-pass-row');
+  if(credTitle)credTitle.textContent=anghamiSub?'YOUR ANGHAMI ACTIVATION':disneyOneSub?'HOW TO SIGN IN':'YOUR CREDENTIALS';
   if(emailRow)emailRow.style.display=(anghamiSub||disneyOneSub)?'none':'flex';
   if(passRow)passRow.style.display=(anghamiSub||disneyOneSub)?'none':'flex';
   _sublinkEmail=found.email||'';
@@ -2711,8 +2720,20 @@ async function checkSubLink(){
       if(note)note.style.display='none';
     }
   }
-  if(found.expiryDate){document.getElementById('sublink-expiry-row').style.display='flex';document.getElementById('sublink-expiry').textContent=found.expiryDate;}
-  if(found.profilePin){document.getElementById('sublink-pin-row').style.display='flex';document.getElementById('sublink-profile-pin').textContent=found.profilePin;}
+  if(found.expiryDate){
+    document.getElementById('sublink-expiry-row').style.display='flex';
+    document.getElementById('sublink-expiry').textContent=found.expiryDate;
+  }else{
+    const expiryRow=document.getElementById('sublink-expiry-row');
+    if(expiryRow)expiryRow.style.display='none';
+  }
+  if(found.profilePin){
+    document.getElementById('sublink-pin-row').style.display='flex';
+    document.getElementById('sublink-profile-pin').textContent=found.profilePin;
+  }else{
+    const pinRow=document.getElementById('sublink-pin-row');
+    if(pinRow)pinRow.style.display='none';
+  }
   document.getElementById('sublink-loading').style.display='none';
   document.getElementById('sublink-content').style.display='block';
   // Generate QR code for this link
@@ -6496,43 +6517,43 @@ if(document.readyState==='loading'){
       <div id="sublink-icon" style="margin:0 auto 12px"></div>
       <div id="sublink-name" style="font-size:20px;font-weight:700;margin-bottom:4px"></div>
       <div id="sublink-plan" style="font-size:13px;color:var(--text2);margin-bottom:20px"></div>
-      <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:16px;text-align:left;margin-bottom:16px">
-        <div style="font-size:11px;color:var(--text3);margin-bottom:8px;font-weight:600;letter-spacing:0.5px">YOUR CREDENTIALS</div>
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-          <span style="font-size:12px;color:var(--text2)">Email</span>
-          <span id="sublink-email" style="font-family:var(--mono);font-size:13px;font-weight:600;cursor:pointer" onclick="copyText(this)"></span>
+      <div id="sublink-creds" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:16px;text-align:left;margin-bottom:16px">
+        <div id="sublink-creds-title">YOUR CREDENTIALS</div>
+        <div id="sublink-email-row" class="cred-line">
+          <span class="cred-label">Email</span>
+          <span id="sublink-email" class="cred-val" onclick="copyText(this)"></span>
         </div>
-        <div id="sublink-phone-row" style="display:none;justify-content:space-between;align-items:center;margin-bottom:8px">
-          <span style="font-size:12px;color:var(--text2)">Phone</span>
-          <span id="sublink-phone" style="font-family:var(--mono);font-size:13px;font-weight:600;cursor:pointer" onclick="copyText(this)"></span>
+        <div id="sublink-phone-row" class="cred-line" style="display:none">
+          <span class="cred-label">Phone</span>
+          <span id="sublink-phone" class="cred-val" onclick="copyText(this)"></span>
         </div>
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-          <span style="font-size:12px;color:var(--text2)">Password</span>
-          <div style="display:flex;align-items:center;gap:6px">
-          <span id="sublink-pass" style="font-family:var(--mono);font-size:13px;font-weight:600;cursor:pointer;filter:blur(4px);transition:filter 0.2s" onclick="copyText(this)"></span>
-          <button onclick="togglePassVisibility()" id="pass-toggle-btn" style="background:none;border:none;cursor:pointer;font-size:14px;padding:0;color:var(--text3)">👁</button>
+        <div id="sublink-pass-row" class="cred-line">
+          <span class="cred-label">Password</span>
+          <div style="display:flex;align-items:center;gap:6px;justify-content:flex-end;flex:1;min-width:0">
+            <span id="sublink-pass" class="cred-val cred-val-blur" onclick="copyText(this)"></span>
+            <button type="button" onclick="togglePassVisibility()" id="pass-toggle-btn" style="background:none;border:none;cursor:pointer;font-size:14px;padding:0;color:var(--text3);flex-shrink:0">👁</button>
+          </div>
         </div>
+        <div id="sublink-extra-row" class="cred-line" style="display:none">
+          <span class="cred-label">Profile</span>
+          <span id="sublink-extra" class="cred-val"></span>
         </div>
-        <div id="sublink-extra-row" style="display:none;justify-content:space-between;align-items:center;margin-bottom:8px">
-          <span style="font-size:12px;color:var(--text2)">Profile</span>
-          <span id="sublink-extra" style="font-family:var(--mono);font-size:13px;font-weight:600"></span>
+        <div id="sublink-expiry-row" class="cred-line" style="display:none">
+          <span class="cred-label">Expires</span>
+          <span id="sublink-expiry" class="cred-val" style="color:var(--orange)"></span>
         </div>
-        <div id="sublink-expiry-row" style="display:none;justify-content:space-between;align-items:center">
-          <span style="font-size:12px;color:var(--text2)">Expires</span>
-          <span id="sublink-expiry" style="font-size:13px;font-weight:600;color:var(--orange)"></span>
-        </div>
-        <div id="sublink-profile-row" style="display:none;justify-content:space-between;align-items:center;margin-top:8px">
-          <span style="font-size:12px;color:var(--text2)">Profile Name</span>
-          <span id="sublink-profile-name" style="font-size:13px;font-weight:600;color:var(--blue);cursor:pointer" onclick="copyText(this)"></span>
+        <div id="sublink-profile-row" class="cred-line" style="display:none">
+          <span class="cred-label">Profile Name</span>
+          <span id="sublink-profile-name" class="cred-val" style="color:var(--blue)" onclick="copyText(this)"></span>
         </div>
         <div id="sublink-service-link-row" style="display:none;margin-top:12px">
-          <div style="font-size:12px;color:var(--text2);margin-bottom:6px">Activation link</div>
+          <div class="cred-label" style="margin-bottom:6px">Activation link</div>
           <a id="sublink-service-link" href="#" target="_blank" rel="noopener" class="shahid-reset-link" style="display:block">Open link</a>
           <div id="sublink-anghami-note" style="display:none;font-size:12px;color:var(--orange);margin-top:10px;line-height:1.5">${ANGHAMI_CANCEL_NOTE_EN}<br><br>${ANGHAMI_CANCEL_NOTE_AR}</div>
         </div>
-        <div id="sublink-pin-row" style="display:none;justify-content:space-between;align-items:center;margin-top:8px">
-          <span style="font-size:12px;color:var(--text2)">Profile PIN</span>
-          <span id="sublink-profile-pin" style="font-family:var(--mono);font-size:16px;font-weight:700;letter-spacing:4px;cursor:pointer" onclick="copyText(this)"></span>
+        <div id="sublink-pin-row" class="cred-line" style="display:none">
+          <span class="cred-label">Profile PIN</span>
+          <span id="sublink-profile-pin" class="cred-val" style="font-size:16px;letter-spacing:4px" onclick="copyText(this)"></span>
         </div>
       </div>
       <div id="sublink-shahid-actions" style="display:none;margin-bottom:16px;text-align:left"></div>
