@@ -83,6 +83,8 @@ const NETLIFY_BACKUP_PREFIX = normalizeEnvSecret(process.env.NETLIFY_BACKUP_PREF
 const RECOVERY_SNAPSHOT_LIMIT = Number(process.env.RECOVERY_SNAPSHOT_LIMIT || 15);
 const EMAILJS_SERVICE_ID = normalizeEnvSecret(process.env.EMAILJS_SERVICE_ID) || 'service_g05xq5o';
 const EMAILJS_TEMPLATE_ID = normalizeEnvSecret(process.env.EMAILJS_TEMPLATE_ID) || 'template_e0h7eia';
+const EMAILJS_MARKETING_TEMPLATE_ID = normalizeEnvSecret(process.env.EMAILJS_MARKETING_TEMPLATE_ID) || '';
+const OTP_EMAIL_SUBJECT = normalizeEnvSecret(process.env.OTP_EMAIL_SUBJECT) || 'You received a code';
 const EMAILJS_PUBLIC_KEY = normalizeEnvSecret(process.env.EMAILJS_PUBLIC_KEY) || 'LyKu6ZB_y6qoFh7Ef';
 const EMAILJS_PRIVATE_KEY = normalizeEnvSecret(process.env.EMAILJS_PRIVATE_KEY);
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'RkhRkh7979@';
@@ -343,6 +345,9 @@ function emailJsTemplateParams(email, otp, name) {
     to_name: displayName,
     user_name: displayName,
     from_name: 'rashadtech.tv',
+    subject: OTP_EMAIL_SUBJECT,
+    title: OTP_EMAIL_SUBJECT,
+    email_subject: OTP_EMAIL_SUBJECT,
     otp_code: otp,
     verification_code: otp,
     passcode: otp,
@@ -352,6 +357,31 @@ function emailJsTemplateParams(email, otp, name) {
     message: `Your rashadtech.tv verification code is ${otp}. It expires in 10 minutes.`,
     reply_to: recipient
   };
+}
+
+function marketingEmailTemplateParams(email, name, subject, message) {
+  const recipient = normalizeEmail(email);
+  const body = String(message || '').trim();
+  const title = String(subject || 'Message from rashadtech.tv').trim();
+  return {
+    to_email: recipient,
+    email: recipient,
+    user_email: recipient,
+    recipient,
+    to_name: String(name || 'Customer').trim() || 'Customer',
+    user_name: String(name || 'Customer').trim() || 'Customer',
+    from_name: 'rashadtech.tv',
+    subject: title,
+    title,
+    email_subject: title,
+    message: body,
+    body,
+    reply_to: recipient
+  };
+}
+
+function marketingEmailTemplateId() {
+  return EMAILJS_MARKETING_TEMPLATE_ID || EMAILJS_TEMPLATE_ID;
 }
 
 async function sendOtpEmail(email, otp, name) {
@@ -377,20 +407,7 @@ async function sendOtpEmail(email, otp, name) {
 }
 
 function userEmailTemplateParams(email, name, subject, message) {
-  const recipient = normalizeEmail(email);
-  const body = String(message || '').trim();
-  const title = String(subject || 'Message from rashadtech.tv').trim();
-  return {
-    to_email: recipient,
-    email: recipient,
-    user_email: recipient,
-    user_name: String(name || 'Customer').trim() || 'Customer',
-    subject: title,
-    title,
-    message: body,
-    body,
-    reply_to: recipient
-  };
+  return marketingEmailTemplateParams(email, name, subject, message);
 }
 
 async function sendUserEmail(email, subject, message, name) {
@@ -399,10 +416,10 @@ async function sendUserEmail(email, subject, message, name) {
   }
   const payload = {
     service_id: EMAILJS_SERVICE_ID,
-    template_id: EMAILJS_TEMPLATE_ID,
+    template_id: marketingEmailTemplateId(),
     user_id: EMAILJS_PUBLIC_KEY,
     accessToken: EMAILJS_PRIVATE_KEY,
-    template_params: userEmailTemplateParams(email, name, subject, message)
+    template_params: marketingEmailTemplateParams(email, name, subject, message)
   };
   const r = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
     method: 'POST',
@@ -3425,6 +3442,8 @@ app.post('/admin/profile-reminders', async (req, res) => {
         clientEmailRequired: true,
         subject,
         message,
+        marketingTemplateId: marketingEmailTemplateId(),
+        usesDedicatedMarketingTemplate: Boolean(EMAILJS_MARKETING_TEMPLATE_ID),
         total: targets.length,
         targets: targets.map(u => ({ email: u.email, name: u.name || '' }))
       });
@@ -3471,6 +3490,8 @@ app.post('/admin/broadcast-email', async (req, res) => {
         clientEmailRequired: true,
         subject: cleanSubject,
         message: cleanMessage,
+        marketingTemplateId: marketingEmailTemplateId(),
+        usesDedicatedMarketingTemplate: Boolean(EMAILJS_MARKETING_TEMPLATE_ID),
         total: targets.length,
         targets: targets.map(u => ({ email: u.email, name: u.name || '' }))
       });

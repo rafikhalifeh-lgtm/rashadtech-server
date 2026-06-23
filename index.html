@@ -2766,16 +2766,17 @@ function generateOTP(){return String(Math.floor(100000+Math.random()*900000));}
 // ============================================================
 const EMAILJS_SERVICE_ID  = 'service_g05xq5o';
 const EMAILJS_TEMPLATE_ID = 'template_e0h7eia';
+const EMAILJS_MARKETING_TEMPLATE_ID = '';
+const OTP_EMAIL_SUBJECT = 'You received a code';
 const EMAILJS_PUBLIC_KEY  = 'LyKu6ZB_y6qoFh7Ef';
 if(typeof emailjs!=='undefined'&&EMAILJS_PUBLIC_KEY&&EMAILJS_PUBLIC_KEY!=='YOUR_PUBLIC_KEY'){
   emailjs.init({ publicKey: EMAILJS_PUBLIC_KEY });
 }
 
-async function sendMarketingEmail(toEmail, subject, message, userName){
-  if(typeof emailjs==='undefined'||!EMAILJS_PUBLIC_KEY){
-    throw new Error('EmailJS is not available in the browser');
-  }
-  const params={
+function marketingEmailParams(toEmail, subject, message, userName){
+  const title=String(subject||'Message from rashadtech.tv').trim();
+  const body=String(message||'').trim();
+  return{
     to_email:toEmail,
     email:toEmail,
     user_email:toEmail,
@@ -2783,13 +2784,26 @@ async function sendMarketingEmail(toEmail, subject, message, userName){
     to_name:userName||toEmail,
     user_name:userName||toEmail,
     from_name:'rashadtech.tv',
-    subject:String(subject||'Message from rashadtech.tv'),
-    title:String(subject||'Message from rashadtech.tv'),
-    message:String(message||''),
-    body:String(message||''),
+    subject:title,
+    title,
+    email_subject:title,
+    message:body,
+    body,
     reply_to:toEmail
   };
-  const res=await emailjs.send(EMAILJS_SERVICE_ID,EMAILJS_TEMPLATE_ID,params);
+}
+
+function resolveMarketingTemplateId(payload){
+  return payload?.marketingTemplateId||EMAILJS_MARKETING_TEMPLATE_ID||EMAILJS_TEMPLATE_ID;
+}
+
+async function sendMarketingEmail(toEmail, subject, message, userName, templateId){
+  if(typeof emailjs==='undefined'||!EMAILJS_PUBLIC_KEY){
+    throw new Error('EmailJS is not available in the browser');
+  }
+  const tpl=templateId||EMAILJS_MARKETING_TEMPLATE_ID||EMAILJS_TEMPLATE_ID;
+  const params=marketingEmailParams(toEmail,subject,message,userName);
+  const res=await emailjs.send(EMAILJS_SERVICE_ID,tpl,params);
   if(res&&(res.status===200||res.text==='OK'))return true;
   throw new Error(res?('EmailJS status: '+res.status):'EmailJS send failed');
 }
@@ -2802,7 +2816,7 @@ async function deliverAdminEmailsFromBrowser(payload){
   const errors=[];
   for(const target of payload.targets){
     try{
-      await sendMarketingEmail(target.email,payload.subject,payload.message,target.name);
+      await sendMarketingEmail(target.email,payload.subject,payload.message,target.name,resolveMarketingTemplateId(payload));
       sent+=1;
       await new Promise(r=>setTimeout(r,450));
     }catch(e){
@@ -2827,6 +2841,9 @@ async function sendOTPEmail(toEmail, otpCode, userName){
       to_name: userName || toEmail,
       user_name: userName || toEmail,
       from_name: 'rashadtech.tv',
+      subject: OTP_EMAIL_SUBJECT,
+      title: OTP_EMAIL_SUBJECT,
+      email_subject: OTP_EMAIL_SUBJECT,
       otp_code: otpCode,
       verification_code: otpCode,
       passcode: otpCode,
