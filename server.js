@@ -16,6 +16,13 @@ const {
   reconstructCatalogFromChangeLog
 } = require('./priceCatalog');
 const {
+  getEmailDeliverabilityStatus,
+  getActiveEmailProvider,
+  isServerEmailConfigured,
+  deliverMarketingEmail,
+  deliverOtpEmail
+} = require('./emailDelivery');
+const {
   markStockSold,
   markLinkedStockSold,
   stockAccountsForPlan,
@@ -84,7 +91,7 @@ const RECOVERY_SNAPSHOT_LIMIT = Number(process.env.RECOVERY_SNAPSHOT_LIMIT || 15
 const EMAILJS_SERVICE_ID = normalizeEnvSecret(process.env.EMAILJS_SERVICE_ID) || 'service_g05xq5o';
 const EMAILJS_TEMPLATE_ID = normalizeEnvSecret(process.env.EMAILJS_TEMPLATE_ID) || 'template_e0h7eia';
 const EMAILJS_MARKETING_TEMPLATE_ID = normalizeEnvSecret(process.env.EMAILJS_MARKETING_TEMPLATE_ID) || 'template_ldrrf9e';
-const OTP_EMAIL_SUBJECT = normalizeEnvSecret(process.env.OTP_EMAIL_SUBJECT) || 'You received a code';
+const OTP_EMAIL_SUBJECT = normalizeEnvSecret(process.env.OTP_EMAIL_SUBJECT) || 'Your RashadTech verification code';
 const MARKETING_EMAIL_SETUP_HINT = 'Create a second EmailJS template (Subject: {{subject}}, Body: {{message}}), then set EMAILJS_MARKETING_TEMPLATE_ID on Render or save the template ID in Admin → Dashboard → Marketing email template.';
 const EMAILJS_PUBLIC_KEY = normalizeEnvSecret(process.env.EMAILJS_PUBLIC_KEY) || 'LyKu6ZB_y6qoFh7Ef';
 const EMAILJS_PRIVATE_KEY = normalizeEnvSecret(process.env.EMAILJS_PRIVATE_KEY);
@@ -352,73 +359,38 @@ function verifyOtp(store, email, otp) {
   return true;
 }
 
-function emailJsTemplateParams(email, otp, name) {
-  const recipient = normalizeEmail(email);
-  const displayName = name || recipient;
-  return {
-    to_email: recipient,
-    email: recipient,
-    user_email: recipient,
-    recipient,
-    to_name: displayName,
-    user_name: displayName,
-    from_name: 'rashadtech.tv',
-    subject: OTP_EMAIL_SUBJECT,
-    title: OTP_EMAIL_SUBJECT,
-    email_subject: OTP_EMAIL_SUBJECT,
-    otp_code: otp,
-    verification_code: otp,
-    passcode: otp,
-    code: otp,
+async function sendOtpEmail(email, otp, name) {
+  await deliverOtpEmail({
+    email,
     otp,
-    reset_code: otp,
-    message: `Your rashadtech.tv verification code is ${otp}. It expires in 10 minutes.`,
-    reply_to: recipient
-  };
+    name,
+    subject: OTP_EMAIL_SUBJECT,
+    emailJs: {
+      serviceId: EMAILJS_SERVICE_ID,
+      otpTemplateId: EMAILJS_TEMPLATE_ID,
+      publicKey: EMAILJS_PUBLIC_KEY,
+      privateKey: EMAILJS_PRIVATE_KEY
+    }
+  });
 }
 
-function formatMarketingEmailBody(subject, message) {
-  const title = String(subject || '').trim();
-  const body = String(message || '').trim();
-  if (!title) return body;
-  if (body.toLowerCase().startsWith(title.toLowerCase())) return body;
-  return `${title}\n\n${body}`;
+async function sendUserEmail(email, subject, message, name, data) {
+  const templateId = getActiveEmailProvider() === 'resend'
+    ? (resolveMarketingTemplateId(data) || EMAILJS_MARKETING_TEMPLATE_ID || 'resend')
+    : requireMarketingTemplateId(data);
+  await deliverMarketingEmail({
+    email,
+    name,
+    subject,
+    message,
+    templateId,
+    emailJs: {
+      serviceId: EMAILJS_SERVICE_ID,
+      publicKey: EMAILJS_PUBLIC_KEY,
+      privateKey: EMAILJS_PRIVATE_KEY
+    }
+  });
 }
-
-function marketingEmailTemplateParams(email, name, subject, message) {
-  const recipient = normalizeEmail(email);
-  const title = String(subject || 'Message from rashadtech.tv').trim();
-  const body = formatMarketingEmailBody(title, message);
-  const fromLabel = `${title.slice(0, 72)} — rashadtech.tv`;
-  return {
-    to_email: recipient,
-    email: recipient,
-    user_email: recipient,
-    recipient,
-    to_name: String(name || 'Customer').trim() || 'Customer',
-    user_name: String(name || 'Customer').trim() || 'Customer',
-    from_name: fromLabel,
-    subject: title,
-    title,
-    email_subject: title,
-    mail_subject: title,
-    user_subject: title,
-    message: body,
-    body,
-    content: body,
-    user_message: body,
-    email_content: body,
-    reply_to: recipient,
-    email_type: 'marketing',
-    otp_code: '',
-    verification_code: '',
-    passcode: '',
-    code: '',
-    otp: '',
-    reset_code: ''
-  };
-}
-
 function resolveMarketingTemplateId(data) {
   const fromSettings = normalizeEnvSecret(data?.siteSettings?.emailjsMarketingTemplateId);
   if (fromSettings) return fromSettings;
@@ -447,55 +419,6 @@ async function marketingEmailTemplateId(data) {
   }
 }
 
-async function sendOtpEmail(email, otp, name) {
-  if (!EMAILJS_PRIVATE_KEY) {
-    throw new Error('Server email delivery is not configured (EMAILJS_PRIVATE_KEY missing)');
-  }
-  const payload = {
-    service_id: EMAILJS_SERVICE_ID,
-    template_id: EMAILJS_TEMPLATE_ID,
-    user_id: EMAILJS_PUBLIC_KEY,
-    accessToken: EMAILJS_PRIVATE_KEY,
-    template_params: emailJsTemplateParams(email, otp, name)
-  };
-  const r = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
-  if (!r.ok) {
-    const body = await r.text().catch(() => '');
-    throw new Error(`Email OTP failed: ${r.status}${body ? ` — ${body}` : ''}`);
-  }
-}
-
-function userEmailTemplateParams(email, name, subject, message) {
-  return marketingEmailTemplateParams(email, name, subject, message);
-}
-
-async function sendUserEmail(email, subject, message, name, data) {
-  if (!EMAILJS_PRIVATE_KEY) {
-    throw new Error('Server email is not configured (EMAILJS_PRIVATE_KEY missing on Render)');
-  }
-  const templateId = requireMarketingTemplateId(data);
-  const payload = {
-    service_id: EMAILJS_SERVICE_ID,
-    template_id: templateId,
-    user_id: EMAILJS_PUBLIC_KEY,
-    accessToken: EMAILJS_PRIVATE_KEY,
-    template_params: marketingEmailTemplateParams(email, name, subject, message)
-  };
-  const r = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
-  if (!r.ok) {
-    const body = await r.text().catch(() => '');
-    throw new Error(`Email failed: ${r.status}${body ? ` — ${body}` : ''}`);
-  }
-}
-
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -503,7 +426,7 @@ function sleep(ms) {
 async function deliverOtp({ email, otp, name, tgChatId, purpose }) {
   let emailSent = false;
   let telegramSent = false;
-  if (EMAILJS_PRIVATE_KEY) {
+  if (isServerEmailConfigured()) {
     try {
       await sendOtpEmail(email, otp, name);
       emailSent = true;
@@ -511,7 +434,7 @@ async function deliverOtp({ email, otp, name, tgChatId, purpose }) {
       console.error(`${purpose || 'OTP'} email delivery error:`, e.message);
     }
   } else {
-    console.warn(`${purpose || 'OTP'}: server email skipped — set EMAILJS_PRIVATE_KEY on Render and enable server API in EmailJS dashboard`);
+    console.warn(`${purpose || 'OTP'}: server email skipped — set RESEND_API_KEY or EMAILJS_PRIVATE_KEY on Render`);
   }
   if (tgChatId) {
     try {
@@ -3506,14 +3429,16 @@ app.get('/admin/marketing-email-status', async (req, res) => {
   try {
     const data = await readJsonBinRaw({ fast: true, skipRecoverWrite: true });
     const templateId = resolveMarketingTemplateId(data);
-    const configured = Boolean(templateId && templateId !== EMAILJS_TEMPLATE_ID);
+    const provider = getActiveEmailProvider();
+    const configured = provider === 'resend'
+      ? true
+      : Boolean(templateId && templateId !== EMAILJS_TEMPLATE_ID);
     res.json({
       success: true,
       configured,
       marketingTemplateId: configured ? templateId : '',
       otpTemplateId: EMAILJS_TEMPLATE_ID,
-      serverEmailConfigured: Boolean(EMAILJS_PRIVATE_KEY),
-      setupHint: MARKETING_EMAIL_SETUP_HINT
+      ...getEmailDeliverabilityStatus({ setupHint: MARKETING_EMAIL_SETUP_HINT })
     });
   } catch (e) {
     res.status(500).json({ error: e.message || 'Could not load email settings' });
@@ -3545,11 +3470,13 @@ app.post('/admin/profile-reminders', async (req, res) => {
     }
     let marketingTemplateId;
     try {
-      marketingTemplateId = requireMarketingTemplateId(data);
+      marketingTemplateId = getActiveEmailProvider() === 'resend'
+        ? (resolveMarketingTemplateId(data) || EMAILJS_MARKETING_TEMPLATE_ID || 'resend')
+        : requireMarketingTemplateId(data);
     } catch (e) {
       return res.status(400).json({ error: e.message, needsMarketingTemplate: true });
     }
-    if (!EMAILJS_PRIVATE_KEY) {
+    if (!isServerEmailConfigured()) {
       return res.json({
         success: true,
         clientEmailRequired: true,
@@ -3599,11 +3526,13 @@ app.post('/admin/broadcast-email', async (req, res) => {
     }
     let marketingTemplateId;
     try {
-      marketingTemplateId = requireMarketingTemplateId(data);
+      marketingTemplateId = getActiveEmailProvider() === 'resend'
+        ? (resolveMarketingTemplateId(data) || EMAILJS_MARKETING_TEMPLATE_ID || 'resend')
+        : requireMarketingTemplateId(data);
     } catch (e) {
       return res.status(400).json({ error: e.message, needsMarketingTemplate: true });
     }
-    if (!EMAILJS_PRIVATE_KEY) {
+    if (!isServerEmailConfigured()) {
       return res.json({
         success: true,
         clientEmailRequired: true,

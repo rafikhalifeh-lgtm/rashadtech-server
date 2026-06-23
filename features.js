@@ -158,19 +158,29 @@
 
   window.rtLoadMarketingEmailStatus=async function(){
     const el=document.getElementById('dashboard-marketing-email-status');
+    const tipsEl=document.getElementById('dashboard-email-inbox-tips');
     if(!el||!isAdmin)return;
     try{
       const j=await api('/admin/marketing-email-status');
+      const provider=j.provider==='resend'?'Resend (best inbox delivery)':j.provider==='emailjs'?'EmailJS':'not configured';
       if(j.configured){
         el.style.color='var(--green)';
-        el.innerHTML=`✅ Marketing email template ready <span style="font-family:var(--mono);color:var(--text3)">${esc(j.marketingTemplateId)}</span>${j.serverEmailConfigured?' · server send enabled':' · browser send fallback'}`;
+        el.innerHTML=`✅ Marketing template ready <span style="font-family:var(--mono);color:var(--text3)">${esc(j.marketingTemplateId)}</span> · sender <b>${esc(j.fromName||'RashadTech')}</b> · ${esc(provider)}${j.serverEmailConfigured?' · server send':' · browser fallback'}`;
       }else{
         el.style.color='var(--orange)';
-        el.innerHTML=`⚠️ Profile reminders need a separate EmailJS template (not <span style="font-family:var(--mono)">${esc(j.otpTemplateId||'template_e0h7eia')}</span>). Create one with Subject <b>{{subject}}</b> and Body <b>{{message}}</b>, then save its ID below.`;
+        el.innerHTML=`⚠️ Profile reminders need a separate EmailJS template (not <span style="font-family:var(--mono)">${esc(j.otpTemplateId||'template_e0h7eia')}</span>). Subject <b>{{subject}}</b>, Body <b>{{message}}</b> or <b>{{{html_message}}}</b>.`;
+      }
+      if(tipsEl){
+        const tips=Array.isArray(j.inboxTips)?j.inboxTips:[];
+        if(tips.length){
+          tipsEl.style.display='block';
+          tipsEl.innerHTML=`<div style="font-weight:600;color:var(--text2);margin-bottom:6px">📬 Keep emails out of spam</div><ul style="margin:0;padding-left:18px">${tips.map(t=>`<li style="margin-bottom:4px">${esc(t)}</li>`).join('')}</ul>`;
+        }else tipsEl.style.display='none';
       }
     }catch(e){
       el.style.color='var(--red)';
       el.textContent=e.message||'Could not check marketing email setup';
+      if(tipsEl)tipsEl.style.display='none';
     }
   };
 

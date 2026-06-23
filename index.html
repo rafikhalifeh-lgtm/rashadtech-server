@@ -958,6 +958,7 @@ So your EmailJS template will receive the user email and verification code corre
             <div style="font-size:13px;font-weight:600;margin-bottom:10px">📣 Customer outreach</div>
             <div id="dashboard-incomplete-profiles" style="font-size:12px;color:var(--text2);margin-bottom:10px">Loading…</div>
             <div id="dashboard-marketing-email-status" style="font-size:11px;color:var(--text3);margin-bottom:10px;line-height:1.5;padding:10px;border-radius:8px;background:var(--bg3);border:1px solid var(--border)">Checking email setup…</div>
+            <div id="dashboard-email-inbox-tips" style="font-size:11px;color:var(--text3);margin-bottom:10px;line-height:1.55;padding:10px;border-radius:8px;background:var(--bg3);border:1px solid var(--border);display:none"></div>
             <div class="field" style="margin-bottom:8px">
               <label style="font-size:11px;color:var(--text3)">Marketing EmailJS template ID</label>
               <input type="text" id="admin-emailjs-marketing-template" placeholder="template_xxxxxxx (not the verification template)" style="width:100%;margin-top:4px">
@@ -2804,8 +2805,10 @@ function generateOTP(){return String(Math.floor(100000+Math.random()*900000));}
 const EMAILJS_SERVICE_ID  = 'service_g05xq5o';
 const EMAILJS_TEMPLATE_ID = 'template_e0h7eia';
 const EMAILJS_MARKETING_TEMPLATE_ID = 'template_ldrrf9e';
-const OTP_EMAIL_SUBJECT = 'You received a code';
-const MARKETING_EMAIL_SETUP_HINT = 'Create a second EmailJS template (Subject: {{subject}}, Body: {{message}}), then save its template ID below or set EMAILJS_MARKETING_TEMPLATE_ID on Render.';
+const OTP_EMAIL_SUBJECT = 'Your RashadTech verification code';
+const EMAIL_FROM_NAME = 'RashadTech';
+const EMAIL_REPLY_TO = 'support@rashadtech.tv';
+const MARKETING_EMAIL_SETUP_HINT = 'Create a second EmailJS template (Subject: {{subject}}, Body: {{message}} or {{{html_message}}}), then save its template ID below or set EMAILJS_MARKETING_TEMPLATE_ID on Render.';
 const EMAILJS_PUBLIC_KEY  = 'LyKu6ZB_y6qoFh7Ef';
 if(typeof emailjs!=='undefined'&&EMAILJS_PUBLIC_KEY&&EMAILJS_PUBLIC_KEY!=='YOUR_PUBLIC_KEY'){
   emailjs.init({ publicKey: EMAILJS_PUBLIC_KEY });
@@ -2820,28 +2823,33 @@ function formatMarketingEmailBody(subject, message){
 }
 
 function marketingEmailParams(toEmail, subject, message, userName){
-  const title=String(subject||'Message from rashadtech.tv').trim();
+  const title=String(subject||'Message from RashadTech').trim();
+  const displayName=String(userName||toEmail||'Customer').trim()||'Customer';
   const body=formatMarketingEmailBody(title,message);
-  const fromLabel=`${title.slice(0,72)} — rashadtech.tv`;
+  const textBody=body;
+  const htmlBody=`<p style="margin:0 0 14px;">Hello ${esc(displayName)},</p>`+
+    textBody.split(/\n{2,}/).map(block=>`<p style="margin:0 0 14px;line-height:1.6;">${esc(block).replace(/\n/g,'<br>')}</p>`).join('');
   return{
     to_email:toEmail,
     email:toEmail,
     user_email:toEmail,
     recipient:toEmail,
-    to_name:userName||toEmail,
-    user_name:userName||toEmail,
-    from_name:fromLabel,
+    to_name:displayName,
+    user_name:displayName,
+    from_name:EMAIL_FROM_NAME,
     subject:title,
     title,
     email_subject:title,
     mail_subject:title,
     user_subject:title,
-    message:body,
-    body,
-    content:body,
-    user_message:body,
-    email_content:body,
-    reply_to:toEmail,
+    message:textBody,
+    body:textBody,
+    content:textBody,
+    user_message:textBody,
+    email_content:htmlBody,
+    html_message:htmlBody,
+    reply_to:EMAIL_REPLY_TO,
+    support_email:EMAIL_REPLY_TO,
     email_type:'marketing',
     otp_code:'',
     verification_code:'',
@@ -2906,7 +2914,7 @@ async function sendOTPEmail(toEmail, otpCode, userName){
       recipient: toEmail,
       to_name: userName || toEmail,
       user_name: userName || toEmail,
-      from_name: 'rashadtech.tv',
+      from_name: EMAIL_FROM_NAME,
       subject: OTP_EMAIL_SUBJECT,
       title: OTP_EMAIL_SUBJECT,
       email_subject: OTP_EMAIL_SUBJECT,
@@ -2916,8 +2924,9 @@ async function sendOTPEmail(toEmail, otpCode, userName){
       code: otpCode,
       otp: otpCode,
       reset_code: otpCode,
-      message: `Your rashadtech.tv verification code is ${otpCode}. It expires in 10 minutes.`,
-      reply_to: toEmail,
+      message: `Your RashadTech verification code is ${otpCode}. It expires in 10 minutes.`,
+      reply_to: EMAIL_REPLY_TO,
+      support_email: EMAIL_REPLY_TO,
     };
     const res=typeof emailjs.send==='function'
       ? await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, params)
