@@ -10,6 +10,39 @@ const DEFAULT_FROM_NAME = 'RashadTech';
 const DEFAULT_FROM_ADDRESS = 'noreply@rashadtech.tv';
 const DEFAULT_REPLY_TO = 'support@rashadtech.tv';
 const DEFAULT_SITE_URL = 'https://rashadtech.tv';
+const RASHADTECH_DNS_DOMAIN = 'rashadtech.tv';
+
+const RASHADTECH_RESEND_DNS_RECORDS = [
+  {
+    type: 'TXT',
+    name: 'resend._domainkey',
+    value: 'p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDKJlzx9E/vlYEkaPCoTCMvm4ExngnMs914M5KxRuHuH2PocIxroHV7wBeMoAlfhP2gX4UWfV4MZ2zdpiwKPYkAY5kKK/IVcyHC3pgVVz71Zp9D2u+zxXvOk1RTTNoB5cCtCDANw+Ctfesn+y4wv4D9z0t9Z5TgFufsPLlz9Ix5kQIDAQAB',
+    note: 'DKIM — copy the full value'
+  },
+  {
+    type: 'MX',
+    name: 'send',
+    value: 'feedback-smtp.eu-west-1.amazonses.com',
+    priority: '10',
+    note: 'Sending — EU region'
+  },
+  {
+    type: 'TXT',
+    name: 'send',
+    value: 'v=spf1 include:amazonses.com ~all',
+    note: 'SPF for sending'
+  },
+  {
+    type: 'TXT',
+    name: '_dmarc',
+    value: 'v=DMARC1; p=none;',
+    note: 'DMARC (recommended)'
+  }
+];
+
+function getRashadtechDnsRecords() {
+  return RASHADTECH_RESEND_DNS_RECORDS.map(row => ({ ...row }));
+}
 
 function resolveEmailConfig(data) {
   const settings = (data && data.siteSettings) || {};
@@ -169,12 +202,14 @@ function getEmailDeliverabilityStatus(extra = {}, data) {
     fromName: config.fromName,
     fromAddress: config.fromAddress,
     replyTo: config.replyTo,
+    dnsRecords: getRashadtechDnsRecords(),
+    dnsDomain: RASHADTECH_DNS_DOMAIN,
     dnsSteps: [
-      'Sign up at resend.com and add domain rashadtech.tv',
-      'Copy the SPF and DKIM DNS records from Resend into your domain DNS',
-      'Wait until Resend shows the domain as Verified',
-      'Paste your Resend API key below (starts with re_) and click Save',
-      'Send a test email to yourself and check inbox + spam folder'
+      'Add the 4 DNS records below in your rashadtech.tv DNS panel (copy each value)',
+      'Do NOT add inbound-smtp unless you want to receive mail on @rashadtech.tv',
+      'Wait until Resend shows rashadtech.tv as Verified (5–30 min)',
+      'Resend → API Keys → create key → paste below and Save',
+      'Send test email — check inbox; if spam once, mark Not spam'
     ],
     inboxTips: [
       provider === 'resend'
@@ -370,6 +405,61 @@ async function deliverTestEmail({ email, name, emailJs, data }) {
   return { provider: 'emailjs' };
 }
 
+async function fetchResendDomainStatus(data) {
+  const config = resolveEmailConfig(data);
+  if (!config.resendApiKey) {
+    return { configured: false, domain: RASHADTECH_DNS_DOMAIN, status: 'no_api_key' };
+  }
+  const r = await fetch('https://api.resend.com/domains', {
+    headers: { Authorization: `Bearer ${config.resendApiKey}` }
+  });
+  if (!r.ok) {
+    const body = await r.text().catch(() => '');
+    throw new Error(`Resend domains check failed: ${r.status}${body ? ` — ${body}` : ''}`);
+  }
+  const json = await r.json().catch(() => ({}));
+  const list = Array.isArray(json.data) ? json.data : [];
+  const match = list.find(d => String(d.name || '').toLowerCase() === RASHADTECH_DNS_DOMAIN)
+    || list.find(d => String(d.name || '').toLowerCase().includes('rashadtech'));
+  if (!match) {
+    return {
+      configured: true,
+      domain: RASHADTECH_DNS_DOMAIN,
+      status: 'not_found',
+      message: 'Domain rashadtech.tv not found in Resend — add it at resend.com/domains'
+    };
+  }
+  let status = String(match.status || 'unknown').toLowerCase();
+  if (status === 'pending' || status === 'not_started') {
+    try {
+      await fetch(`https://api.resend.com/domains/${match.id}/verify`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${config.resendApiKey}` }
+      });
+      const r2 = await fetch('https://api.resend.com/domains/' + match.id, {
+        headers: { Authorization: `Bearer ${config.resendApiKey}` }
+      });
+      if (r2.ok) {
+        const fresh = await r2.json().catch(() => ({}));
+        if (fresh && fresh.status) status = String(fresh.status).toLowerCase();
+      }
+    } catch (e) {}
+  }
+  return {
+    configured: true,
+    domain: match.name || RASHADTECH_DNS_DOMAIN,
+    status,
+    verified: status === 'verified',
+    region: match.region || 'eu-west-1',
+    id: match.id || null,
+    message: status === 'verified'
+      ? 'Domain verified — you can send from noreply@rashadtech.tv'
+      : status === 'failed'
+        ? 'DNS verification failed — double-check all 4 records in your DNS panel'
+        : 'Waiting for DNS — add records below and check again in a few minutes'
+  };
+}
+
 module.exports = {
   buildMarketingEmailContent,
   buildOtpEmailContent,
@@ -377,8 +467,10 @@ module.exports = {
   deliverMarketingEmail,
   deliverOtpEmail,
   deliverTestEmail,
+  fetchResendDomainStatus,
   getActiveEmailProvider,
   getEmailDeliverabilityStatus,
+  getRashadtechDnsRecords,
   isServerEmailConfigured,
   marketingTemplateParams,
   maskSecret,

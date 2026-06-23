@@ -19,6 +19,7 @@ const {
   deliverMarketingEmail,
   deliverOtpEmail,
   deliverTestEmail,
+  fetchResendDomainStatus,
   getActiveEmailProvider,
   getEmailDeliverabilityStatus,
   isServerEmailConfigured,
@@ -3528,6 +3529,19 @@ app.post('/admin/test-email', async (req, res) => {
   } catch (e) {
     console.error('Test email error:', e.message);
     res.status(500).json({ error: e.message || 'Could not send test email' });
+  }
+});
+
+app.get('/admin/resend-domain-status', async (req, res) => {
+  const session = requireSession(req, res, ['admin']);
+  if (!session) return;
+  try {
+    const data = await readJsonBinRaw({ fast: true, skipRecoverWrite: true });
+    const domainStatus = await fetchResendDomainStatus(data);
+    res.json({ success: true, ...domainStatus });
+  } catch (e) {
+    console.error('Resend domain status error:', e.message);
+    res.status(500).json({ error: e.message || 'Could not check Resend domain' });
   }
 });
 

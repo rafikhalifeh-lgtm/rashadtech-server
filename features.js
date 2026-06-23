@@ -156,6 +156,57 @@
     }catch(e){console.warn('admin enhancements',e);}
   }
 
+  window.rtCopyText=async function(text,label){
+    try{
+      await navigator.clipboard.writeText(String(text||''));
+      showToast('✓ Copied '+(label||'value'));
+    }catch(e){
+      showToast('Could not copy — select and copy manually');
+    }
+  };
+
+  function rtRenderDnsRecords(records){
+    const box=document.getElementById('dashboard-email-dns-records');
+    if(!box||!Array.isArray(records)||!records.length){if(box)box.style.display='none';return;}
+    box.style.display='block';
+    box.innerHTML=`<div style="font-weight:600;color:var(--text2);margin-bottom:8px">📋 DNS records for rashadtech.tv</div>
+      <div style="font-size:10px;color:var(--text3);margin-bottom:8px">Add these in your domain DNS. Skip inbound-smtp (receiving only).</div>
+      ${records.map((row,i)=>`<div style="border:1px solid var(--border);border-radius:8px;padding:8px;margin-bottom:8px;background:var(--bg2)">
+        <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:4px">
+          <b>${esc(row.type)} · ${esc(row.name)}</b>
+          ${row.priority?`<span style="font-size:10px;color:var(--text3)">priority ${esc(row.priority)}</span>`:''}
+        </div>
+        <div style="font-family:var(--mono);font-size:10px;word-break:break-all;line-height:1.45;color:var(--text2)">${esc(row.value)}</div>
+        ${row.note?`<div style="font-size:10px;color:var(--text3);margin-top:4px">${esc(row.note)}</div>`:''}
+        <button type="button" data-v="${encodeURIComponent(row.value)}" onclick="rtCopyText(decodeURIComponent(this.dataset.v||''),'${esc(row.name).replace(/'/g,'')}')" style="margin-top:6px;padding:4px 8px;font-size:10px;border:1px solid var(--border);border-radius:6px;background:var(--bg3);cursor:pointer">Copy value</button>
+      </div>`).join('')}`;
+  }
+
+  window.rtCheckResendDomain=async function(){
+    const el=document.getElementById('dashboard-resend-domain-status');
+    try{
+      if(el){el.style.display='block';el.style.color='var(--text3)';el.textContent='Checking Resend domain…';}
+      const j=await api('/admin/resend-domain-status');
+      if(!el)return;
+      el.style.display='block';
+      if(j.verified){
+        el.style.color='var(--green)';
+        el.innerHTML=`✅ <b>${esc(j.domain)}</b> is verified on Resend (${esc(j.region||'eu-west-1')}). Paste API key below if not saved yet, then Send test.`;
+      }else if(j.status==='no_api_key'){
+        el.style.color='var(--orange)';
+        el.innerHTML=`⚠️ Add DNS records below first, then save your Resend API key to check verification automatically.`;
+      }else if(j.status==='not_found'){
+        el.style.color='var(--orange)';
+        el.innerHTML=`⚠️ ${esc(j.message||'Domain not found in Resend')}`;
+      }else{
+        el.style.color='var(--orange)';
+        el.innerHTML=`⏳ ${esc(j.message||'DNS pending')} · Status: <b>${esc(j.status||'pending')}</b>`;
+      }
+    }catch(e){
+      if(el){el.style.display='block';el.style.color='var(--red)';el.textContent=e.message||'Could not check domain';}
+    }
+  };
+
   window.rtLoadMarketingEmailStatus=async function(){
     const el=document.getElementById('dashboard-marketing-email-status');
     const tipsEl=document.getElementById('dashboard-email-inbox-tips');
@@ -169,8 +220,9 @@
         el.innerHTML=`✅ Email ready · <b>${esc(j.fromName||'RashadTech')}</b> &lt;${esc(j.fromAddress||'noreply@rashadtech.tv')}&gt; · ${esc(provider)}${j.serverEmailConfigured?' · server send':' · browser fallback'}`;
       }else{
         el.style.color='var(--orange)';
-        el.innerHTML=`⚠️ Add Resend API key below for inbox delivery, or set up EmailJS marketing template <span style="font-family:var(--mono)">${esc(j.otpTemplateId||'template_e0h7eia')}</span> separately.`;
+        el.innerHTML=`⚠️ Step 1: Add DNS records below · Step 2: Save Resend API key · Step 3: Send test`;
       }
+      rtRenderDnsRecords(j.dnsRecords||[]);
       const fromInp=document.getElementById('admin-email-from-address');
       const replyInp=document.getElementById('admin-email-reply-to');
       const keyHint=document.getElementById('admin-resend-key-hint');
@@ -179,7 +231,7 @@
       if(keyHint){
         keyHint.textContent=j.resendConfigured
           ?`Saved key: ${esc(j.resendApiKeyMasked||'configured')}${j.resendFromEnv?' (from Render env)':''}`
-          :'Get a free key at resend.com → API Keys';
+          :'Resend → API Keys → create key (re_...)';
       }
       const keyInp=document.getElementById('admin-resend-api-key');
       if(keyInp&&!keyInp.value&&j.resendApiKeyMasked)keyInp.placeholder=j.resendApiKeyMasked;
@@ -194,8 +246,17 @@
         const steps=Array.isArray(j.dnsSteps)?j.dnsSteps:[];
         if(steps.length){
           dnsEl.style.display='block';
-          dnsEl.innerHTML=`<div style="font-weight:600;color:var(--text2);margin-bottom:6px">🛠 Setup steps</div><ol style="margin:0;padding-left:18px">${steps.map(t=>`<li style="margin-bottom:4px">${esc(t)}</li>`).join('')}</ol><div style="margin-top:8px"><a href="https://resend.com/domains" target="_blank" rel="noopener" style="color:var(--blue)">Open Resend domains →</a></div>`;
+          dnsEl.innerHTML=`<div style="font-weight:600;color:var(--text2);margin-bottom:6px">🛠 Setup steps</div><ol style="margin:0;padding-left:18px">${steps.map(t=>`<li style="margin-bottom:4px">${esc(t)}</li>`).join('')}</ol>`;
         }else dnsEl.style.display='none';
+      }
+      if(j.resendConfigured)rtCheckResendDomain();
+      else{
+        const ds=document.getElementById('dashboard-resend-domain-status');
+        if(ds){
+          ds.style.display='block';
+          ds.style.color='var(--text3)';
+          ds.textContent='After DNS records are added, save API key and click Check domain verification.';
+        }
       }
     }catch(e){
       el.style.color='var(--red)';
@@ -219,6 +280,7 @@
       if(keyInp)keyInp.value='';
       showToast(j.resendConfigured?'✓ Inbox delivery settings saved':'✓ Settings saved — add Resend API key to enable');
       rtLoadMarketingEmailStatus();
+      if(j.resendConfigured)rtCheckResendDomain();
     }catch(e){showToast('⚠️ '+(e.message||'Could not save email settings'));}
   };
 
