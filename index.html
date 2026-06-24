@@ -190,6 +190,11 @@ input,button,select,textarea{font-family:var(--font)}
 .amt-val{font-size:15px;font-weight:600}
 .topup-btn{width:100%;background:var(--red);color:#fff;border:none;border-radius:var(--radius-sm);padding:11px;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:10px}
 .topup-btn:disabled{background:var(--bg4);color:var(--text3);cursor:not-allowed}
+.whish-pay-box{display:flex;align-items:center;gap:12px;background:linear-gradient(135deg,#f3e8ff 0%,#ede9fe 100%);border:1px solid #c4b5fd;border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:14px}
+[data-theme="dark"] .whish-pay-box{background:linear-gradient(135deg,#2e1065 0%,#1e1b4b 100%);border-color:#6d28d9}
+.whish-pay-box img{height:28px;width:auto;max-width:110px;object-fit:contain;flex-shrink:0}
+.whish-pay-box .whish-pay-text{font-size:12px;color:var(--text2);line-height:1.45}
+.whish-pay-box .whish-pay-text b{color:var(--text)}
 .info-box{background:var(--orange-bg);border:1px solid var(--orange-border);border-radius:var(--radius-sm);padding:11px 14px;font-size:12px;color:var(--orange);margin-top:10px}
 /* CUSTOMERS */
 .cust-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
@@ -861,11 +866,15 @@ So your EmailJS template will receive the user email and verification code corre
               <i class="ti ti-wallet" style="font-size:26px;color:var(--text3)"></i>
             </div>
             <div style="height:1px;background:var(--border);margin-bottom:16px"></div>
+            <div class="whish-pay-box">
+              <img src="https://cdn.prod.website-files.com/6762f4acf0dd8a6b998dfa16/676d32a11708f11b333c681b_Whish%20Logo.svg" alt="Whish Money" width="110" height="28" loading="lazy">
+              <div class="whish-pay-text"><b>Payment by Whish Money only</b><br>Send the exact amount via Whish, then send the receipt on WhatsApp.</div>
+            </div>
             <div style="font-size:14px;font-weight:600;margin-bottom:4px">Top up</div>
-            <div style="font-size:12px;color:var(--text2);margin-bottom:14px">Select an amount to add</div>
+            <div style="font-size:12px;color:var(--text2);margin-bottom:14px">Select an amount, then pay with Whish Money</div>
             <div class="amounts-grid" id="amounts-grid"></div>
             <button class="topup-btn" id="topup-btn" disabled onclick="reqTopup()">Select an amount</button>
-            <div class="info-box"><i class="ti ti-brand-whatsapp" style="font-size:13px;vertical-align:-2px;margin-right:4px"></i> Contact us on WhatsApp to complete payment — balance added instantly.</div>
+            <div class="info-box">Whish → <b>+961 79 306 701</b> · then WhatsApp receipt to <a href="https://wa.me/96179306701" target="_blank" rel="noopener" style="color:inherit;font-weight:600">+961 79 306 701</a></div>
           </div>
         </div>
       </div>
@@ -1102,12 +1111,16 @@ So your EmailJS template will receive the user email and verification code corre
 
 <div class="modal-wrap" id="topup-modal"><div class="modal">
   <div class="modal-head"><h3>Top-up request</h3><button class="mclose" onclick="closeModal('topup-modal')">✕</button></div>
-  <div class="modal-body" style="text-align:center;padding:28px">
-    <i class="ti ti-circle-check" style="font-size:40px;color:var(--green);display:block;margin-bottom:12px"></i>
-    <div style="font-size:16px;font-weight:600;margin-bottom:6px">Request received!</div>
-    <div style="font-size:13px;color:var(--text2);margin-bottom:20px">Contact us to pay <strong id="topup-amt-lbl"></strong> and we'll add it instantly.</div>
-    <a href="https://wa.me/96179306701" target="_blank" style="display:block;width:100%;background:#25D366;color:#fff;border:none;border-radius:var(--radius-sm);padding:11px;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:8px;text-decoration:none;text-align:center"><i class="ti ti-brand-whatsapp" style="font-size:14px;vertical-align:-2px;margin-right:5px"></i>Contact on WhatsApp</a>
-    <button class="btn-secondary" onclick="closeModal('topup-modal')">Close</button>
+  <div class="modal-body" style="padding:24px">
+    <i class="ti ti-circle-check" style="font-size:40px;color:var(--green);display:block;margin-bottom:12px;text-align:center"></i>
+    <div style="font-size:16px;font-weight:600;margin-bottom:6px;text-align:center">Request received!</div>
+    <div style="font-size:13px;color:var(--text2);margin-bottom:16px;text-align:center">Pay <strong id="topup-amt-lbl"></strong> using <strong>Whish Money only</strong>.</div>
+    <div class="whish-pay-box" style="margin-bottom:14px">
+      <img src="https://cdn.prod.website-files.com/6762f4acf0dd8a6b998dfa16/676d32a11708f11b333c681b_Whish%20Logo.svg" alt="Whish Money" width="110" height="28" loading="lazy">
+      <div class="whish-pay-text">Send to <b>+961 79 306 701</b> on Whish<br>Use your rashadtech.tv email in the note.</div>
+    </div>
+    <a href="https://wa.me/96179306701" target="_blank" rel="noopener" style="display:block;width:100%;background:#25D366;color:#fff;border:none;border-radius:var(--radius-sm);padding:11px;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:8px;text-decoration:none;text-align:center"><i class="ti ti-brand-whatsapp" style="font-size:14px;vertical-align:-2px;margin-right:5px"></i>Send Whish receipt on WhatsApp</a>
+    <button class="btn-secondary" style="width:100%" onclick="closeModal('topup-modal')">Close</button>
   </div>
 </div></div>
 
@@ -2115,6 +2128,9 @@ function esc(str){
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#x27;');
 }
 let selectedTopup=null,curProd=null,selUT=null,selDur=null,selPlan=null;
+const topupAmts=[{v:5,l:'$5'},{v:10,l:'$10'},{v:20,l:'$20'},{v:30,l:'$30'},{v:50,l:'$50'},{v:100,l:'$100'}];
+const WHISH_LOGO_URL='https://cdn.prod.website-files.com/6762f4acf0dd8a6b998dfa16/676d32a11708f11b333c681b_Whish%20Logo.svg';
+const WHISH_PAY_PHONE='96179306701';
 let customDays=0,anghamiProfile='',assignCustId=null,curAccModalKey=null,accAddMode='manual';
 const NETFLIX_BULK_DEFAULTS_KEY='rt_netflix_bulk_defaults';
 const SHAHID_BULK_DEFAULTS_KEY='rt_shahid_bulk_defaults';
@@ -3977,7 +3993,7 @@ const LANG={
     saveChanges:'💾 Save Changes',contactUs:'📞 Contact Us',accountSecurity:'🔐 Account security',memberSince:'Member since',
     changePassword:'🔑 Change password',currentPassword:'Current password',newPassword:'New password',confirmPassword:'Confirm new password',
     updatePassword:'Update password',logoutAll:'🔐 Logout all devices',requestRenewal:'🔄 Request Renewal',reportIssue:'⚠️ Report Issue',copyInfo:'Copy info',fixPassword:'Fix password',copied:'✓ Copied!',
-    topupHelp:'To top up your wallet, contact support on WhatsApp with payment proof.',
+    topupHelp:'Wallet top-up is Whish Money only. Pay via Whish to +961 79 306 701, then send the receipt on WhatsApp.',
     netflix:'Netflix',options:'Options',active:'Active',goToStore:'Go to store',noSubscriptions:'No subscriptions yet',noNetflixSubs:'No Netflix subscriptions yet.',forSubCustomer:'For',
     analytics:'Analytics',exportOrders:'Export orders',bulkImport:'Bulk import',
     storeSub:'Instant delivery · Wallet-powered purchases',subsSub:'All purchased accounts and credentials',
@@ -4000,7 +4016,7 @@ const LANG={
     saveChanges:'💾 حفظ التغييرات',contactUs:'📞 تواصل معنا',accountSecurity:'🔐 أمان الحساب',memberSince:'عضو منذ',
     changePassword:'🔑 تغيير كلمة المرور',currentPassword:'كلمة المرور الحالية',newPassword:'كلمة المرور الجديدة',confirmPassword:'تأكيد كلمة المرور',
     updatePassword:'تحديث كلمة المرور',logoutAll:'🔐 تسجيل الخروج من جميع الأجهزة',requestRenewal:'🔄 طلب تجديد',reportIssue:'⚠️ الإبلاغ عن مشكلة',copyInfo:'نسخ المعلومات',fixPassword:'إصلاح كلمة المرور',copied:'✓ تم النسخ!',
-    topupHelp:'لشحن المحفظة، تواصل مع الدعم على واتساب وأرسل إثبات الدفع.',
+    topupHelp:'شحن المحفظة عبر Whish Money فقط. ادفع على +961 79 306 701 ثم أرسل الإيصال على واتساب.',
     netflix:'نتفليكس',options:'خيارات',active:'نشط',goToStore:'اذهب للمتجر',noSubscriptions:'لا توجد اشتراكات بعد',noNetflixSubs:'لا توجد اشتراكات نتفليكس بعد.',forSubCustomer:'لـ',
     analytics:'الإحصائيات',exportOrders:'تصدير الطلبات',bulkImport:'استيراد جماعي',
     storeSub:'توصيل فوري · شراء عبر المحفظة',subsSub:'جميع الحسابات والبيانات المشتراة',
@@ -4818,12 +4834,16 @@ function renderTx(){
 }
 
 // WALLET
-function renderAmounts(){document.getElementById('amounts-grid').innerHTML=topupAmts.map((a,i)=>`<div class="amt-btn" id="amt-${i}" onclick="selAmt(${i})"><div class="amt-val">${a.l}</div></div>`).join('');}
-function selAmt(i){document.querySelectorAll('.amt-btn').forEach(b=>b.classList.remove('sel'));document.getElementById('amt-'+i).classList.add('sel');selectedTopup=topupAmts[i];const btn=document.getElementById('topup-btn');btn.disabled=false;btn.textContent='Top up '+topupAmts[i].l;}
+function renderAmounts(){
+  const grid=document.getElementById('amounts-grid');
+  if(!grid||!Array.isArray(topupAmts)||!topupAmts.length)return;
+  grid.innerHTML=topupAmts.map((a,i)=>`<div class="amt-btn" id="amt-${i}" onclick="selAmt(${i})"><div class="amt-val">${a.l}</div></div>`).join('');
+}
+function selAmt(i){document.querySelectorAll('.amt-btn').forEach(b=>b.classList.remove('sel'));document.getElementById('amt-'+i).classList.add('sel');selectedTopup=topupAmts[i];const btn=document.getElementById('topup-btn');btn.disabled=false;btn.textContent='Request top up '+topupAmts[i].l;}
 async function reqTopup(){
   if(!selectedTopup||topupInFlight)return;
-  if(!dataLoaded||!authToken){
-    showToast('Please wait — still loading your account');
+  if(!currentUser||!authToken){
+    showToast('Please log in to top up your wallet');
     return;
   }
   topupInFlight=true;
@@ -4832,14 +4852,15 @@ async function reqTopup(){
   try{
     const j=await rtApi('/customer/topup-request',{method:'POST',body:JSON.stringify({amount:selectedTopup.v,label:selectedTopup.l})});
     if(j.data)applyDataSnapshot(j.data);
-    if(j.duplicate)showToast('You already have a pending top-up request');
-  document.getElementById('topup-amt-lbl').textContent=selectedTopup.l;
+    document.getElementById('topup-amt-lbl').textContent=selectedTopup.l;
     openModal('topup-modal');
+    if(j.duplicate)showToast('You already have a pending top-up for this amount');
+    else showToast('✓ Top-up request sent — pay with Whish Money');
   }catch(e){
     showToast('⚠️ '+(e.message||'Could not submit top-up — please try again'));
   }finally{
     topupInFlight=false;
-    if(btn&&selectedTopup){btn.disabled=false;btn.textContent='Top up '+selectedTopup.l;}
+    if(btn&&selectedTopup){btn.disabled=false;btn.textContent='Request top up '+selectedTopup.l;}
   }
 }
 
@@ -6550,8 +6571,12 @@ if(document.readyState==='loading'){
     <div class="card" style="padding:20px;margin-bottom:16px">
       <div style="font-size:14px;font-weight:600;margin-bottom:12px" data-t="accountSecurity">Account security</div>
       <button onclick="openChangePasswordModal()" style="width:100%;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:10px" data-t="changePassword">Change password</button>
-      <div style="font-size:12px;color:var(--text2);line-height:1.5" data-t="topupHelp">To top up your wallet, contact support on WhatsApp with payment proof.</div>
-      <a href="https://wa.me/96179306701" target="_blank" style="display:inline-block;margin-top:8px;font-size:12px;color:var(--green);font-weight:600">WhatsApp +96179306701</a>
+      <div style="font-size:12px;color:var(--text2);line-height:1.5" data-t="topupHelp">Wallet top-up is Whish Money only. Pay via Whish to +961 79 306 701, then send the receipt on WhatsApp.</div>
+      <div class="whish-pay-box" style="margin-top:10px">
+        <img src="https://cdn.prod.website-files.com/6762f4acf0dd8a6b998dfa16/676d32a11708f11b333c681b_Whish%20Logo.svg" alt="Whish Money" width="110" height="28" loading="lazy">
+        <div class="whish-pay-text"><b>Whish Money only</b></div>
+      </div>
+      <a href="https://wa.me/96179306701" target="_blank" rel="noopener" style="display:inline-block;margin-top:8px;font-size:12px;color:var(--green);font-weight:600">Send receipt on WhatsApp +961 79 306 701</a>
     </div>
 
     <div class="card" style="padding:20px;margin-bottom:16px">
@@ -6723,7 +6748,7 @@ const RT_CHAT_I18N={
       {q:['sub-customer','sub customer','my customers','assign','for customer'],
        a:'Use <b>My Customers</b> to add people you buy for. Tap <b>Add subscription</b> on a customer to assign a purchase. Those subs also appear in <b>My Subscriptions</b> with a <b>For:</b> badge.'},
       {q:['top up','wallet','balance','credit','pay','topup','deposit'],
-       a:'Tap <b>Wallet → Top up</b>, choose an amount, then pay via WhatsApp <b><a href="https://wa.me/96179306701" target="_blank">+96179306701</a></b>. Support credits your wallet after payment is confirmed.'},
+       a:'Tap <b>Wallet → Top up</b>, choose an amount, pay <b>only via Whish Money</b> to <b>+961 79 306 701</b>, then send the Whish receipt on <b><a href="https://wa.me/96179306701" target="_blank">WhatsApp</a></b>. Balance is added after confirmation.'},
       {q:['login','log in','netflix login','credentials','sign in to netflix'],
        a:'Open your subscription link or <b>My Subscriptions</b>, copy email and password, then log in on the service app or website. For Netflix codes, use <b>Request Sign-in Code</b> on the subscription link.'},
       {q:['tv','television','activate','smart tv','chromecast','setup'],
@@ -6786,7 +6811,7 @@ const RT_CHAT_I18N={
       {q:['عميل فرعي','عملاء','sub-customer','تعيين'],
        a:'استخدم <b>عملائي</b> لإضافة من تشتري لهم. اضغط <b>إضافة اشتراك</b> على العميل. تظهر أيضاً في <b>اشتراكاتي</b> مع علامة <b>لـ:</b>.'},
       {q:['شحن','محفظة','رصيد','top up','wallet'],
-       a:'<b>المحفظة → شحن</b>، اختر المبلغ، ثم ادفع عبر واتساب <b><a href="https://wa.me/96179306701" target="_blank">+96179306701</a></b>. يُضاف الرصيد بعد التأكيد.'},
+       a:'<b>المحفظة → شحن</b>، اختر المبلغ، ادفع <b>عبر Whish Money فقط</b> على <b>+961 79 306 701</b>، ثم أرسل إيصال Whish على <b><a href="https://wa.me/96179306701" target="_blank">واتساب</a></b>.'},
       {q:['دخول','login','نتفليكس','credentials'],
        a:'افتح رابط الاشتراك أو <b>اشتراكاتي</b>، انسخ البريد وكلمة المرور، ثم سجّل الدخول. لأكواد نتفليكس استخدم <b>طلب كود الدخول</b>.'},
       {q:['تلفزيون','tv','تفعيل','smart tv'],
