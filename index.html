@@ -1544,7 +1544,7 @@ async function updateSubscription(orderId,fields){
 }
 async function deliverPurchaseTelegram(order,p,planLabel,price,forCustomer){
   if(!currentUser?.tgChatId||!order)return false;
-  const data2={id:order.id,product:p.name,short:p.short,color:p.color,tc:p.tc,productId:p.id,plan:planLabel,email:order.email,pass:order.pass,expiryDate:order.expiryDate||'',profileName:order.profileName||'',profilePin:order.profilePin||'',serviceLink:order.serviceLink||'',accKey:order.accKey||'',mainEmail:order.mainEmail||'',codeEmail:order.email,inboxEmail:order.mainEmail||order.email};
+  const data2={id:order.id,product:p.name,short:p.short,color:p.color,tc:p.tc,productId:p.id,plan:planLabel,email:order.email,pass:order.pass,phone:order.phone||'',expiryDate:order.expiryDate||'',profileName:order.profileName||'',profilePin:order.profilePin||'',serviceLink:order.serviceLink||'',accKey:order.accKey||'',mainEmail:order.mainEmail||'',codeEmail:order.email,inboxEmail:order.mainEmail||order.email};
   const subLink=await createSubLinkUrl(data2);
   const who=forCustomer?`${forCustomer.fname} ${forCustomer.lname}`:null;
   const prof=orderProfileName(order);
@@ -2195,6 +2195,7 @@ let _sublinkMainEmail=null;
 let _sublinkCodeEmail=null;
 let _sublinkInboxEmail=null;
 let _sublinkPhone=null;
+let _sublinkIsDisney=false;
 
 async function activateTV(){
   const code=document.getElementById('tv-code-input').value.trim().toUpperCase();
@@ -2225,12 +2226,24 @@ async function requestSigninCode(){
   btn.disabled=true;
   btn.textContent='⏳ Requesting...';
   status.textContent='';
+  const codePayload={
+    profileName:_sublinkProfileName||'Customer',
+    accountKey:'default',
+    mainEmail:_sublinkMainEmail,
+    codeEmail:_sublinkCodeEmail,
+    inboxEmail:_sublinkInboxEmail,
+    linkToken:_sublinkLinkToken,
+    subEmail:_sublinkEmail,
+    subPass:_sublinkPass,
+    subPhone:_sublinkPhone||'',
+    codeType:_sublinkIsDisney?'disney':'netflix'
+  };
   try{
     const controller=new AbortController();
     const timeout=setTimeout(()=>controller.abort(),30000);
     const r=await fetch(`${RT_SERVER}/get-code`,{
       method:'POST',headers:authHeaders(),
-      body:JSON.stringify({profileName:_sublinkProfileName||'Customer',accountKey:'default',mainEmail:_sublinkMainEmail,codeEmail:_sublinkCodeEmail,inboxEmail:_sublinkInboxEmail,linkToken:_sublinkLinkToken,subEmail:_sublinkEmail,subPass:_sublinkPass}),
+      body:JSON.stringify(codePayload),
       signal:controller.signal
     });
     clearTimeout(timeout);
@@ -2267,7 +2280,18 @@ async function refreshSigninCode(){
     const timeout=setTimeout(()=>controller.abort(),60000);
     const r=await fetch(`${RT_SERVER}/get-code`,{
       method:'POST',headers:authHeaders(),
-      body:JSON.stringify({accountKey:'default',profileName:_sublinkProfileName||'unknown',codeType:'netflix',mainEmail:_sublinkMainEmail,codeEmail:_sublinkCodeEmail,inboxEmail:_sublinkInboxEmail,linkToken:_sublinkLinkToken,subEmail:_sublinkEmail,subPass:_sublinkPass}),
+      body:JSON.stringify({
+        accountKey:'default',
+        profileName:_sublinkProfileName||'unknown',
+        codeType:_sublinkIsDisney?'disney':'netflix',
+        mainEmail:_sublinkMainEmail,
+        codeEmail:_sublinkCodeEmail,
+        inboxEmail:_sublinkInboxEmail,
+        linkToken:_sublinkLinkToken,
+        subEmail:_sublinkEmail,
+        subPass:_sublinkPass,
+        subPhone:_sublinkPhone||''
+      }),
       signal:controller.signal
     });
     clearTimeout(timeout);
@@ -2733,6 +2757,7 @@ async function checkSubLink(){
   _sublinkEmail=found.email||'';
   _sublinkPass=found.pass||'';
   _sublinkPhone=found.phone||'';
+  _sublinkIsDisney=disneyOneSub;
   _sublinkProfileName=found.profileName||found.product||'Customer';
   _sublinkMainEmail=found.mainEmail||found.inboxEmail||null;
   _sublinkCodeEmail=found.codeEmail||found.email||found.mainEmail||null;
@@ -2806,11 +2831,15 @@ async function checkSubLink(){
       disneyGuide.innerHTML='';
     }
   }
-  const codeReqTitle=document.querySelector('#sublink-code-request [style*="SIGN-IN CODE"]');
-  const codeSecTitle=document.querySelector('#sublink-code-section [style*="SIGN-IN CODE"]');
+  const codeReqTitle=document.getElementById('sublink-code-title-request');
+  const codeSecTitle=document.getElementById('sublink-code-title-section');
+  const codeHelp=document.getElementById('sublink-code-help');
   const codeLabel=disneyOneSub?'DISNEY+ SIGN-IN CODE':'NETFLIX SIGN-IN CODE';
   if(codeReqTitle)codeReqTitle.textContent=codeLabel;
   if(codeSecTitle)codeSecTitle.textContent=codeLabel;
+  if(codeHelp)codeHelp.textContent=disneyOneSub
+    ?'After entering your phone in the Disney+ app, tap Request Sign-in Code, wait a few seconds, then tap Refresh.'
+    :'Need a sign-in code? Request one and we\'ll send it to you.';
   const codeBtn=document.getElementById('request-code-btn');
   if(codeBtn)codeBtn.style.background=disneyOneSub?'#113CCF':'var(--red)';
   const refreshBtn=document.getElementById('refresh-code-btn');
@@ -6665,13 +6694,13 @@ if(document.readyState==='loading'){
 
       <!-- Sign-in Code -->
       <div id="sublink-code-request" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;margin-bottom:16px;text-align:center">
-        <div style="font-size:11px;color:var(--text3);margin-bottom:8px;font-weight:600;letter-spacing:0.5px">NETFLIX SIGN-IN CODE</div>
-        <div style="font-size:12px;color:var(--text2);margin-bottom:12px">Need a sign-in code? Request one and we'll send it to you.</div>
+        <div id="sublink-code-title-request" style="font-size:11px;color:var(--text3);margin-bottom:8px;font-weight:600;letter-spacing:0.5px">NETFLIX SIGN-IN CODE</div>
+        <div id="sublink-code-help" style="font-size:12px;color:var(--text2);margin-bottom:12px">Need a sign-in code? Request one and we'll send it to you.</div>
         <button onclick="requestSigninCode()" id="request-code-btn" style="background:var(--red);color:#fff;border:none;border-radius:6px;padding:10px 20px;font-size:13px;font-weight:600;cursor:pointer;width:100%">📲 Request Sign-in Code</button>
         <div id="request-code-status" style="font-size:11px;color:var(--text3);margin-top:8px"></div>
       </div>
       <div id="sublink-code-section" style="display:none;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;margin-bottom:16px">
-        <div style="font-size:11px;color:var(--text3);margin-bottom:8px;font-weight:600;letter-spacing:0.5px">NETFLIX SIGN-IN CODE</div>
+        <div id="sublink-code-title-section" style="font-size:11px;color:var(--text3);margin-bottom:8px;font-weight:600;letter-spacing:0.5px">NETFLIX SIGN-IN CODE</div>
         <div style="display:flex;gap:8px;align-items:center">
           <div id="sublink-code" style="font-size:28px;font-weight:700;font-family:var(--mono);letter-spacing:6px;flex:1">------</div>
           <button onclick="refreshSigninCode()" id="refresh-code-btn" style="background:var(--red);color:#fff;border:none;border-radius:6px;padding:8px 12px;font-size:12px;font-weight:600;cursor:pointer">🔄 Refresh</button>

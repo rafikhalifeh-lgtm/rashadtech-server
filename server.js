@@ -1042,6 +1042,24 @@ function resolveShahidInboxEmail(data, order) {
   return { inboxEmail, accountEmail: normalizeEmail(order.email) };
 }
 
+function resolveSignInCodeEmails(data, meta) {
+  const orderLike = {
+    email: meta.codeEmail || meta.email || '',
+    mainEmail: meta.mainEmail || meta.inboxEmail || '',
+    accKey: meta.accKey || ''
+  };
+  const stockAcc = findStockAccountForOrder(data, orderLike);
+  const codeKey = normalizeEmail(
+    meta.codeEmail || meta.email || (stockAcc && stockAcc.email) || ''
+  );
+  const inboxFromMeta = normalizeEmail(meta.inboxEmail || meta.mainEmail || '');
+  const inboxFromStock = normalizeEmail(stockAcc && stockAcc.mainEmail || '');
+  const inboxKey = inboxFromMeta && isGmailAddress(inboxFromMeta)
+    ? inboxFromMeta
+    : (inboxFromStock || inboxFromMeta || codeKey);
+  return { codeKey, inboxKey, stockAcc };
+}
+
 function safeDataForSession(data, session) {
   try {
     return dataForSession(data, session);
@@ -2426,13 +2444,22 @@ function enrichSubscriptionFromLiveOrder(data, subscription, ownerEmail) {
   const { order } = findUserOrderRecord(user, subscription.id);
   if (!order) return subscription;
   const profileName = orderProfileName(order);
+  const stockAcc = findStockAccountForOrder(data, order);
+  const mainEmail = String(order.mainEmail || (stockAcc && stockAcc.mainEmail) || subscription.mainEmail || '').trim();
+  const codeEmail = String(order.email || subscription.codeEmail || subscription.email || '').trim();
+  const inboxEmail = mainEmail || String(subscription.inboxEmail || '').trim() || codeEmail;
   return {
     ...subscription,
+    email: codeEmail || subscription.email || '',
     profileName: profileName || subscription.profileName || '',
     profilePin: order.profilePin || subscription.profilePin || '',
     phone: order.phone || subscription.phone || '',
     serviceLink: order.serviceLink || subscription.serviceLink || '',
-    expiryDate: order.expiryDate || subscription.expiryDate || ''
+    expiryDate: order.expiryDate || subscription.expiryDate || '',
+    accKey: order.accKey || subscription.accKey || '',
+    mainEmail,
+    codeEmail,
+    inboxEmail
   };
 }
 
@@ -3856,11 +3883,13 @@ function authorizeCodeRequest(req, body) {
       const subEmails = [sub.email, sub.codeEmail, sub.mainEmail, sub.inboxEmail]
         .map(normalizeEmail).filter(Boolean);
       if (requested.some((email) => subEmails.includes(email))) return true;
+      if (isDisneyOneUserSubscription(sub) && String(sub.phone || body.subPhone || '').trim()) return true;
     } catch (e) {}
   }
   const subEmail = normalizeEmail(body.subEmail);
   const subPass = String(body.subPass || '');
   if (subEmail && subPass && requested.includes(subEmail)) return true;
+  if (subEmail && !subPass && requested.includes(subEmail) && String(body.subPhone || '').trim()) return true;
   return false;
 }
 
@@ -3869,19 +3898,43 @@ app.post('/get-code', async (req, res) => {
   if (!authorizeCodeRequest(req, req.body || {})) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  const { profileName, mainEmail, codeEmail, inboxEmail } = req.body;
-  
-  // codeEmail is the Netflix recipient alias; inboxEmail/mainEmail is the Gmail login inbox.
-  const codeKey = normalizeEmail(codeEmail || mainEmail);
-  const inboxKey = normalizeEmail(inboxEmail || mainEmail || codeEmail);
+  const { profileName } = req.body;
+  const data = await readJsonBinRaw().catch(() => ({}));
+  let meta = { ...req.body };
+  if (meta.linkToken) {
+    try {
+      const payload = decodeLinkToken(meta.linkToken);
+      const enriched = enrichSubscriptionFromLiveOrder(data, payload.subscription, payload.owner);
+      meta = {
+        ...meta,
+        email: meta.subEmail || enriched.email || enriched.codeEmail,
+        codeEmail: meta.codeEmail || enriched.codeEmail || enriched.email,
+        mainEmail: meta.mainEmail || enriched.mainEmail,
+        inboxEmail: meta.inboxEmail || enriched.inboxEmail,
+        accKey: meta.accKey || enriched.accKey,
+        subPhone: meta.subPhone || enriched.phone
+      };
+    } catch (e) {}
+  }
+  const { codeKey, inboxKey } = resolveSignInCodeEmails(data, meta);
+  const lookupKeys = uniqueNormalizedEmails([codeKey, inboxKey]);
   const key = codeKey || (profileName ? profileName.toLowerCase() : 'default');
   if (inboxKey) {
     await loadGmailMonitors();
     if (monitoredEmails[inboxKey]) {
       await fetchMonitoredInboxes(inboxKey);
+    } else if (!lookupKeys.some((candidate) => monitoredEmails[candidate])) {
+      await fetchMonitoredInboxes();
     }
   }
-  const entry = latestCodes[key] || (!codeEmail && inboxKey ? latestCodes[inboxKey] : null) || (codeKey ? null : latestCodes['default']);
+  let entry = null;
+  for (const candidate of lookupKeys) {
+    if (latestCodes[candidate]) {
+      entry = latestCodes[candidate];
+      break;
+    }
+  }
+  entry = entry || latestCodes[key] || (!codeKey && inboxKey ? latestCodes[inboxKey] : null) || (codeKey ? null : latestCodes['default']);
   
   if (!entry) {
     const name = profileName || 'Unknown';
@@ -3956,12 +4009,20 @@ function extractDisneyCode(parsedEmail) {
   const from = (parsedEmail.from || '').toString().toLowerCase();
   const combined = `${subject} ${text} ${html}`;
   const lower = combined.toLowerCase();
-  if (!from.includes('disney') && !lower.includes('disney')) return null;
+  if (!/disney|disneyplus|disneyaccount/i.test(from) && !/disney|disney\+|one[\s-]?time passcode|passcode/i.test(lower)) {
+    return null;
+  }
 
-  const preferred = combined.match(/(?:code|verification|sign[\s-]?in|one[\s-]?time|otp)[^\d]{0,120}(\d{4,8})/i);
+  const spaced = combined.match(/(?:code|verification|sign[\s-]?in|one[\s-]?time|passcode|otp)[^\d]{0,160}((?:\d[\s\-]*){4,8})/i);
+  if (spaced) {
+    const digits = spaced[1].replace(/\D/g, '');
+    if (digits.length >= 4 && digits.length <= 8) return { code: digits, customerSafe: true };
+  }
+
+  const preferred = combined.match(/(?:code|verification|sign[\s-]?in|one[\s-]?time|passcode|otp)[^\d]{0,120}(\d{4,8})/i);
   if (preferred) return { code: preferred[1], customerSafe: true };
 
-  const fallback = combined.match(/\b(\d{6})\b/);
+  const fallback = combined.match(/\b(\d{6})\b/) || combined.match(/\b(\d{4})\b/);
   return fallback ? { code: fallback[1], customerSafe: true } : null;
 }
 
@@ -4186,8 +4247,8 @@ app.post('/setup-gmail', async (req, res) => {
     const lastUid = previous ? Number(previous.lastUid || 0) : currentMaxUid;
     monitoredEmails[key] = { user: key, pass: appPassword, lastUid, lastCheckedAt: Date.now() };
     await persistGmailMonitors();
-    await sendTG(TG_ADMIN, `📧 Added Gmail monitoring: <code>${key}</code>\nWill capture Netflix sign-in codes and Shahid reset links automatically.`, 'HTML').catch(() => {});
-    res.json({ success: true, message: 'Gmail added for Netflix codes and Shahid reset links', gmailConfigured: true, email: key });
+    await sendTG(TG_ADMIN, `📧 Added Gmail monitoring: <code>${key}</code>\nWill capture Netflix/Disney+ sign-in codes and Shahid reset links automatically.`, 'HTML').catch(() => {});
+    res.json({ success: true, message: 'Gmail added for Netflix/Disney+ codes and Shahid reset links', gmailConfigured: true, email: key });
   } catch(e) {
     const friendlyError = describeGmailError(e);
     console.log('Gmail setup error for', key, e && (e.message || e));
