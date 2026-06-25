@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { ImapFlow } = require('imapflow');
 const { simpleParser } = require('mailparser');
+const grizzlySms = require('./grizzlySms');
 
 const app = express();
 const ALLOWED_ORIGINS = new Set([
@@ -55,6 +56,7 @@ const JSONBIN_ALLOW_PUBLIC_READ = normalizeEnvSecret(process.env.JSONBIN_ALLOW_P
 let FALLBACK_DB_FILE = process.env.FALLBACK_DB_FILE || (fs.existsSync('/var/data') ? '/var/data/rashadtech-db.json' : path.join(process.cwd(), '.data', 'emergency-db.json'));
 const JSONBIN_SYNC_INTERVAL_MS = Number(process.env.JSONBIN_SYNC_INTERVAL_MS || 10 * 60 * 1000);
 const GMAIL_MONITORS_KEY = 'gmailMonitors';
+const SMS_CONFIG_KEY = 'smsConfig';
 const BACKUPS_KEY = 'backups';
 const LINK_TOKENS_KEY = 'linkTokens';
 const CODE_TTL_MS = 15 * 60 * 1000;
@@ -300,6 +302,8 @@ function emptyDbData() {
     topupreqs: [],
     pending: [],
     gameorders: [],
+    smsorders: [],
+    [SMS_CONFIG_KEY]: grizzlySms.defaultSmsConfig(),
     [LINK_TOKENS_KEY]: {},
     [GMAIL_MONITORS_KEY]: {}
   };
@@ -633,6 +637,9 @@ async function writeJsonBinRaw(data, options = {}) {
 function stripPrivateData(data) {
   const publicData = { ...(data || {}) };
   delete publicData[GMAIL_MONITORS_KEY];
+  if (publicData[SMS_CONFIG_KEY]) {
+    publicData[SMS_CONFIG_KEY] = grizzlySms.sanitizeSmsConfigForClient(publicData[SMS_CONFIG_KEY], false);
+  }
   if (Array.isArray(publicData.users)) {
     publicData.users = publicData.users.map(sanitizeUser);
   }
@@ -674,7 +681,13 @@ function safeDataForSession(data, session) {
 
 function dataForSession(data, session) {
   const publicData = stripPrivateData(data || {});
-  if (session.role === 'admin') return publicData;
+  if (session.role === 'admin') {
+    const adminData = { ...publicData };
+    if (data && data[SMS_CONFIG_KEY]) {
+      adminData[SMS_CONFIG_KEY] = grizzlySms.sanitizeSmsConfigForClient(data[SMS_CONFIG_KEY], true);
+    }
+    return adminData;
+  }
   const user = (publicData.users || []).find(u => normalizeEmail(u.email) === session.email);
   return {
     users: user ? [sanitizeUser(user)] : [],
@@ -721,6 +734,8 @@ function mergeUserWrite(existing, incoming, session) {
   }
 
   if (existing && existing[GMAIL_MONITORS_KEY]) next[GMAIL_MONITORS_KEY] = existing[GMAIL_MONITORS_KEY];
+  if (existing && existing[SMS_CONFIG_KEY]) next[SMS_CONFIG_KEY] = existing[SMS_CONFIG_KEY];
+  if (existing && Array.isArray(existing.smsorders)) next.smsorders = existing.smsorders;
   if (existing && existing.stockBlocks) next.stockBlocks = existing.stockBlocks;
   return next;
 }
@@ -738,6 +753,18 @@ function preserveSensitiveFields(existing, incoming) {
     });
   }
   if (existing && existing[GMAIL_MONITORS_KEY]) next[GMAIL_MONITORS_KEY] = existing[GMAIL_MONITORS_KEY];
+  if (existing && existing[SMS_CONFIG_KEY]) {
+    const incomingSms = next[SMS_CONFIG_KEY] || {};
+    const existingSms = existing[SMS_CONFIG_KEY] || {};
+    next[SMS_CONFIG_KEY] = {
+      ...existingSms,
+      ...incomingSms,
+      apiKey: String(incomingSms.apiKey || existingSms.apiKey || '').trim()
+    };
+  }
+  if (existing && Array.isArray(existing.smsorders) && !Array.isArray(next.smsorders)) {
+    next.smsorders = existing.smsorders;
+  }
   if (existing && existing[LINK_TOKENS_KEY] && !next[LINK_TOKENS_KEY]) next[LINK_TOKENS_KEY] = existing[LINK_TOKENS_KEY];
   if (existing && existing[BACKUPS_KEY]) next[BACKUPS_KEY] = existing[BACKUPS_KEY];
   return next;
@@ -1660,6 +1687,183 @@ app.get('/monitored-emails', (req, res) => {
       lastCheckedAt: creds.lastCheckedAt || null
     }))
   });
+});
+
+async function readSmsConfig(data) {
+  const raw = (data && data[SMS_CONFIG_KEY]) || grizzlySms.defaultSmsConfig();
+  return {
+    ...grizzlySms.defaultSmsConfig(),
+    ...raw,
+    catalog: Array.isArray(raw.catalog) ? raw.catalog : []
+  };
+}
+
+async function getGrizzlyApiKeyFromDb() {
+  const data = await readJsonBinRaw().catch(() => ({}));
+  const config = await readSmsConfig(data);
+  return String(config.apiKey || '').trim();
+}
+
+app.get('/admin/sms/config', async (req, res) => {
+  const session = requireSession(req, res, ['admin']);
+  if (!session) return;
+  try {
+    const data = await readJsonBinRaw();
+    const config = await readSmsConfig(data);
+    res.json({
+      success: true,
+      config: grizzlySms.sanitizeSmsConfigForClient(config, true),
+      orders: Array.isArray(data.smsorders) ? data.smsorders.length : 0
+    });
+  } catch (e) {
+    res.status(500).json({ error: 'Could not load SMS settings' });
+  }
+});
+
+app.post('/admin/sms/config', async (req, res) => {
+  const session = requireSession(req, res, ['admin']);
+  if (!session) return;
+  const body = req.body || {};
+  try {
+    const data = await readJsonBinRaw();
+    const current = await readSmsConfig(data);
+    const next = {
+      ...current,
+      enabled: body.enabled !== undefined ? Boolean(body.enabled) : current.enabled,
+      storeEnabled: body.storeEnabled !== undefined ? Boolean(body.storeEnabled) : current.storeEnabled,
+      markupPercent: body.markupPercent !== undefined ? Number(body.markupPercent) : current.markupPercent,
+      usdPerCredit: body.usdPerCredit !== undefined ? Number(body.usdPerCredit) : current.usdPerCredit,
+      catalog: Array.isArray(body.catalog) ? body.catalog : current.catalog
+    };
+    if (body.apiKey !== undefined) {
+      const trimmed = String(body.apiKey || '').trim();
+      if (trimmed) next.apiKey = trimmed;
+      else if (body.clearApiKey) next.apiKey = '';
+    }
+    data[SMS_CONFIG_KEY] = next;
+    await writeJsonBinRaw(data);
+    res.json({
+      success: true,
+      config: grizzlySms.sanitizeSmsConfigForClient(next, true)
+    });
+  } catch (e) {
+    console.error('Save SMS config error:', e.message);
+    res.status(500).json({ error: 'Could not save SMS settings' });
+  }
+});
+
+app.post('/admin/sms/test', async (req, res) => {
+  const session = requireSession(req, res, ['admin']);
+  if (!session) return;
+  try {
+    const apiKey = String(req.body?.apiKey || '').trim() || await getGrizzlyApiKeyFromDb();
+    const result = await grizzlySms.getBalance(apiKey);
+    if (!result.success) return res.status(400).json(result);
+    res.json({ success: true, balance: result.balance });
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Could not test Grizzly SMS connection' });
+  }
+});
+
+app.get('/admin/sms/services', async (req, res) => {
+  const session = requireSession(req, res, ['admin']);
+  if (!session) return;
+  try {
+    const apiKey = await getGrizzlyApiKeyFromDb();
+    const result = await grizzlySms.getServices(apiKey);
+    if (!result.success) return res.status(400).json(result);
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Could not load Grizzly services' });
+  }
+});
+
+app.get('/admin/sms/countries', async (req, res) => {
+  const session = requireSession(req, res, ['admin']);
+  if (!session) return;
+  try {
+    const apiKey = await getGrizzlyApiKeyFromDb();
+    const result = await grizzlySms.getCountries(apiKey);
+    if (!result.success) return res.status(400).json(result);
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Could not load Grizzly countries' });
+  }
+});
+
+app.get('/admin/sms/prices', async (req, res) => {
+  const session = requireSession(req, res, ['admin']);
+  if (!session) return;
+  const service = String(req.query.service || '').trim();
+  const country = String(req.query.country || '').trim();
+  if (!service || !country) return res.status(400).json({ error: 'service and country are required' });
+  try {
+    const data = await readJsonBinRaw();
+    const config = await readSmsConfig(data);
+    const apiKey = String(config.apiKey || '').trim();
+    const result = await grizzlySms.getPrices(apiKey, { service, country });
+    if (!result.success) return res.status(400).json(result);
+    const cost = grizzlySms.extractGrizzlyCost(result.prices, service, country);
+    const sellPrice = cost === null
+      ? null
+      : grizzlySms.computeSellPrice(cost, config.markupPercent, config.usdPerCredit);
+    res.json({ success: true, prices: result.prices, cost, sellPrice, markupPercent: config.markupPercent });
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Could not load Grizzly prices' });
+  }
+});
+
+app.post('/admin/sms/catalog-add', async (req, res) => {
+  const session = requireSession(req, res, ['admin']);
+  if (!session) return;
+  const { service, serviceName, country, countryName, sellPrice, enabled } = req.body || {};
+  if (!service || !country) return res.status(400).json({ error: 'service and country are required' });
+  try {
+    const data = await readJsonBinRaw();
+    const config = await readSmsConfig(data);
+    const apiKey = String(config.apiKey || '').trim();
+    const priceResult = await grizzlySms.getPrices(apiKey, { service, country });
+    const cost = priceResult.success
+      ? grizzlySms.extractGrizzlyCost(priceResult.prices, service, country)
+      : null;
+    const item = {
+      id: `${service}__${country}`,
+      service: String(service).trim(),
+      serviceName: String(serviceName || service).trim(),
+      country: String(country).trim(),
+      countryName: String(countryName || country).trim(),
+      cost: cost,
+      sellPrice: sellPrice !== undefined && sellPrice !== null && sellPrice !== ''
+        ? Number(sellPrice)
+        : grizzlySms.computeSellPrice(cost, config.markupPercent, config.usdPerCredit),
+      enabled: enabled !== false,
+      updatedAt: Date.now()
+    };
+    config.catalog = (config.catalog || []).filter(row => row.id !== item.id);
+    config.catalog.unshift(item);
+    data[SMS_CONFIG_KEY] = config;
+    await writeJsonBinRaw(data);
+    res.json({ success: true, item, config: grizzlySms.sanitizeSmsConfigForClient(config, true) });
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Could not add SMS catalog item' });
+  }
+});
+
+app.post('/admin/sms/catalog-remove', async (req, res) => {
+  const session = requireSession(req, res, ['admin']);
+  if (!session) return;
+  const id = String(req.body?.id || '').trim();
+  if (!id) return res.status(400).json({ error: 'id is required' });
+  try {
+    const data = await readJsonBinRaw();
+    const config = await readSmsConfig(data);
+    config.catalog = (config.catalog || []).filter(row => row.id !== id);
+    data[SMS_CONFIG_KEY] = config;
+    await writeJsonBinRaw(data);
+    res.json({ success: true, config: grizzlySms.sanitizeSmsConfigForClient(config, true) });
+  } catch (e) {
+    res.status(500).json({ error: 'Could not remove SMS catalog item' });
+  }
 });
 
 // ── START ──────────────────────────────────────────────────────────────

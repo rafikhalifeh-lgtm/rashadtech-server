@@ -799,6 +799,7 @@ So your EmailJS template will receive the user email and verification code corre
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
       <button onclick="switchAdminTab('pending',null);setActiveAdminNav('abn-more');toggleAdminMore()" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 8px;cursor:pointer;color:var(--text);font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">⏳</span><span data-t="pending">Pending</span></button>
       <button onclick="switchAdminTab('gameorders',null);setActiveAdminNav('abn-more');toggleAdminMore()" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 8px;cursor:pointer;color:var(--text);font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">🎮</span><span data-t="games">Games</span></button>
+      <button onclick="switchAdminTab('sms',null);setActiveAdminNav('abn-more');toggleAdminMore()" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 8px;cursor:pointer;color:var(--text);font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">📱</span><span>SMS</span></button>
       <button onclick="switchAdminTab('requests',null);setActiveAdminNav('abn-more');toggleAdminMore()" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 8px;cursor:pointer;color:var(--text);font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">💡</span><span data-t="requests">Requests</span></button>
       <button onclick="switchAdminTab('expiry',null);setActiveAdminNav('abn-more');toggleAdminMore()" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 8px;cursor:pointer;color:var(--text);font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">⏰</span><span data-t="expiry">Expiry</span></button>
       <button onclick="switchAdminTab('dashboard',null);setActiveAdminNav('abn-more');toggleAdminMore()" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 8px;cursor:pointer;color:var(--text);font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">📊</span><span data-t="dashboard">Dashboard</span></button>
@@ -817,6 +818,7 @@ So your EmailJS template will receive the user email and verification code corre
       <button class="snav" onclick="switchAdminTab('topupreqs',this)"><i class="ti ti-cash"></i><span data-t="topupreqs">Topup Requests</span></button>
       <button class="snav" onclick="switchAdminTab('pending',this)"><span data-t="pendingOrders">⏳ Pending Orders</span></button>
       <button class="snav" onclick="switchAdminTab('gameorders',this)"><i class="ti ti-device-gamepad"></i><span data-t="gameorders">Game Orders</span></button>
+      <button class="snav" onclick="switchAdminTab('sms',this)"><i class="ti ti-device-mobile"></i><span>SMS Numbers</span></button>
       <button class="snav" onclick="switchAdminTab('expiry',this)"><i class="ti ti-clock-exclamation"></i><span data-t="expiryAlerts">Expiry Alerts</span></button>
     </div>
     <div class="main-content">
@@ -918,6 +920,53 @@ So your EmailJS template will receive the user email and verification code corre
         <div class="pg-title">Game Orders</div>
         <div class="pg-sub">Jawaker & PUBG orders — mark as done after charging the player</div>
         <div id="gameorders-list"><div class="empty-state" style="padding:32px">No game orders yet.</div></div>
+      </div>
+      <div id="admin-sms" class="tab-pane">
+        <div class="pg-title">SMS Numbers (Grizzly SMS)</div>
+        <div class="pg-sub">Connect your Grizzly SMS account, choose services to resell, and set your profit margin. Customer store stays off until you enable it.</div>
+        <div class="card" style="padding:16px;margin-bottom:14px">
+          <div style="font-size:13px;font-weight:700;margin-bottom:10px">Step 1 — API connection</div>
+          <div class="field" style="margin-bottom:10px">
+            <label>Grizzly SMS API key</label>
+            <input type="password" id="sms-api-key" placeholder="Paste API key from grizzlysms.com settings" autocomplete="off">
+            <div style="font-size:11px;color:var(--text3);margin-top:4px" id="sms-api-key-status">Not connected</div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="inline-btn" onclick="saveSmsApiKey()">Save API key</button>
+            <button class="inline-btn" onclick="testSmsConnection()">Test balance</button>
+          </div>
+          <div id="sms-balance-box" style="margin-top:10px;font-size:12px;color:var(--text2)"></div>
+        </div>
+        <div class="card" style="padding:16px;margin-bottom:14px">
+          <div style="font-size:13px;font-weight:700;margin-bottom:10px">Step 2 — Profit settings</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+            <div class="field"><label>Markup %</label><input type="number" id="sms-markup" min="0" max="500" step="1" value="35"></div>
+            <div class="field"><label>USD per Grizzly credit</label><input type="number" id="sms-usd-credit" min="0.01" step="0.01" value="1"></div>
+          </div>
+          <button class="inline-btn" onclick="saveSmsPricingSettings()">Save pricing settings</button>
+        </div>
+        <div class="card" style="padding:16px;margin-bottom:14px">
+          <div style="font-size:13px;font-weight:700;margin-bottom:10px">Step 3 — Add services to sell</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+            <div class="field"><label>Service</label><select id="sms-service-select" onchange="onSmsServiceChange()"><option value="">Load services first</option></select></div>
+            <div class="field"><label>Country</label><select id="sms-country-select"><option value="">Load countries first</option></select></div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+            <button class="inline-btn" onclick="loadSmsCatalogOptions()">Load services & countries</button>
+            <button class="inline-btn" onclick="previewSmsPrice()">Preview price</button>
+            <button class="inline-btn" onclick="addSmsCatalogItem()">Add to catalog</button>
+          </div>
+          <div id="sms-price-preview" style="font-size:12px;color:var(--text2);margin-bottom:10px"></div>
+          <div style="font-size:12px;color:var(--text3);margin-bottom:8px">Popular codes: <b>tg</b> Telegram · <b>wa</b> WhatsApp · <b>ig</b> Instagram · <b>fb</b> Facebook · <b>go</b> Google · <b>ds</b> Discord</div>
+          <div id="sms-catalog-list"><div class="empty-state" style="padding:20px">No SMS services added yet.</div></div>
+        </div>
+        <div class="card" style="padding:16px">
+          <div style="font-size:13px;font-weight:700;margin-bottom:10px">Step 4 — Customer store (coming next)</div>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text2);margin-bottom:8px">
+            <input type="checkbox" id="sms-store-enabled" disabled> Show SMS numbers in customer store
+          </label>
+          <div style="font-size:12px;color:var(--orange)">Store purchase flow will be added in the next step after you confirm API key + catalog.</div>
+        </div>
       </div>
       <!-- ADMIN EXPIRY -->
       <div id="admin-expiry" class="tab-pane">
@@ -2060,6 +2109,7 @@ async function switchAdminTab(name,el){
   if(name==='expiry'){renderAdminExpiry();renderNetflixRenewalAlerts();}
   if(name==='topupreqs')renderTopupRequests();
   if(name==='gameorders')renderGameOrders();
+  if(name==='sms')renderSmsAdmin();
   if(name==='pending')renderAdminPending();
   if(name==='dashboard')renderDashboard();
 }
@@ -3475,6 +3525,141 @@ async function manualFulfillPending(i){
   await sendTelegram(`✅ Fulfilled: ${po.product} · ${po.plan} for ${po.userName}`);
 }
 
+let _smsConfigCache=null;
+let _smsServicesCache=[];
+let _smsCountriesCache=[];
+
+async function smsAdminApi(path,options={}){
+  const r=await fetch(RT_SERVER+path,{
+    method:options.method||'GET',
+    headers:authHeaders(),
+    body:options.body?JSON.stringify(options.body):undefined
+  });
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok||j.success===false)throw new Error(j.error||'SMS request failed');
+  return j;
+}
+
+async function renderSmsAdmin(){
+  const statusEl=document.getElementById('sms-api-key-status');
+  const balanceEl=document.getElementById('sms-balance-box');
+  try{
+    const j=await smsAdminApi('/admin/sms/config');
+    _smsConfigCache=j.config||{};
+    if(statusEl)statusEl.textContent=_smsConfigCache.hasApiKey?'API key saved on server':'No API key saved yet';
+    const markup=document.getElementById('sms-markup');
+    const usd=document.getElementById('sms-usd-credit');
+    if(markup)markup.value=_smsConfigCache.markupPercent??35;
+    if(usd)usd.value=_smsConfigCache.usdPerCredit??1;
+    renderSmsCatalogList(_smsConfigCache.catalog||[]);
+    if(balanceEl)balanceEl.textContent='';
+  }catch(e){
+    if(statusEl)statusEl.textContent='Could not load SMS settings: '+e.message;
+  }
+}
+
+function renderSmsCatalogList(catalog){
+  const el=document.getElementById('sms-catalog-list');
+  if(!el)return;
+  if(!catalog.length){el.innerHTML='<div class="empty-state" style="padding:20px">No SMS services added yet.</div>';return;}
+  el.innerHTML=catalog.map(item=>`
+    <div class="admin-wallet-row">
+      <div class="admin-icon" style="background:#7c3aed;color:#fff;font-size:11px;font-weight:700;width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0">SMS</div>
+      <div class="aw-info" style="flex:1">
+        <div class="aw-name">${esc(item.serviceName||item.service)} · ${esc(item.countryName||item.country)}</div>
+        <div class="aw-email">Code: ${esc(item.service)} / ${esc(item.country)} · Cost: ${item.cost!=null?fmt(item.cost):'—'} · Sell: <b>${fmt(item.sellPrice||0)}</b></div>
+      </div>
+      <button class="aabtn danger" onclick="removeSmsCatalogItem('${esc(item.id)}')">Remove</button>
+    </div>`).join('');
+}
+
+async function saveSmsApiKey(){
+  const apiKey=document.getElementById('sms-api-key')?.value.trim();
+  if(!apiKey){showToast('Paste your Grizzly API key first');return;}
+  try{
+    await smsAdminApi('/admin/sms/config',{method:'POST',body:{apiKey}});
+    document.getElementById('sms-api-key').value='';
+    showToast('✓ Grizzly API key saved');
+    renderSmsAdmin();
+  }catch(e){showToast('⚠️ '+e.message);}
+}
+
+async function testSmsConnection(){
+  const apiKey=document.getElementById('sms-api-key')?.value.trim();
+  try{
+    const j=await smsAdminApi('/admin/sms/test',{method:'POST',body:apiKey?{apiKey}:{}});
+    document.getElementById('sms-balance-box').textContent='Grizzly balance: '+Number(j.balance).toFixed(2)+' credits';
+    showToast('✓ Connected to Grizzly SMS');
+  }catch(e){showToast('⚠️ '+e.message);}
+}
+
+async function saveSmsPricingSettings(){
+  const markupPercent=Number(document.getElementById('sms-markup')?.value||35);
+  const usdPerCredit=Number(document.getElementById('sms-usd-credit')?.value||1);
+  try{
+    const j=await smsAdminApi('/admin/sms/config',{method:'POST',body:{markupPercent,usdPerCredit,enabled:true}});
+    _smsConfigCache=j.config;
+    showToast('✓ SMS pricing saved');
+  }catch(e){showToast('⚠️ '+e.message);}
+}
+
+async function loadSmsCatalogOptions(){
+  try{
+    const [services,countries]=await Promise.all([
+      smsAdminApi('/admin/sms/services'),
+      smsAdminApi('/admin/sms/countries')
+    ]);
+    _smsServicesCache=services.services||[];
+    _smsCountriesCache=countries.countries||[];
+    const serviceSel=document.getElementById('sms-service-select');
+    const countrySel=document.getElementById('sms-country-select');
+    if(serviceSel){
+      serviceSel.innerHTML='<option value="">Select service</option>'+_smsServicesCache.map(s=>`<option value="${esc(s.code)}">${esc(s.name)} (${esc(s.code)})</option>`).join('');
+    }
+    if(countrySel){
+      countrySel.innerHTML='<option value="">Select country</option>'+_smsCountriesCache.map(c=>`<option value="${esc(c.code)}">${esc(c.name)} (${esc(c.code)})</option>`).join('');
+    }
+    showToast('✓ Loaded '+_smsServicesCache.length+' services');
+  }catch(e){showToast('⚠️ '+e.message);}
+}
+
+function onSmsServiceChange(){}
+
+async function previewSmsPrice(){
+  const service=document.getElementById('sms-service-select')?.value;
+  const country=document.getElementById('sms-country-select')?.value;
+  const box=document.getElementById('sms-price-preview');
+  if(!service||!country){showToast('Select service and country');return;}
+  try{
+    const j=await smsAdminApi('/admin/sms/prices?service='+encodeURIComponent(service)+'&country='+encodeURIComponent(country));
+    if(box)box.innerHTML=`Grizzly cost: <b>${j.cost!=null?fmt(j.cost):'—'}</b> · Suggested sell price: <b>${j.sellPrice!=null?fmt(j.sellPrice):'—'}</b> (markup ${j.markupPercent||0}%)`;
+  }catch(e){if(box)box.textContent=e.message;}
+}
+
+async function addSmsCatalogItem(){
+  const service=document.getElementById('sms-service-select')?.value;
+  const country=document.getElementById('sms-country-select')?.value;
+  if(!service||!country){showToast('Select service and country');return;}
+  const serviceName=_smsServicesCache.find(s=>s.code===service)?.name||service;
+  const countryName=_smsCountriesCache.find(c=>c.code===country)?.name||country;
+  try{
+    const j=await smsAdminApi('/admin/sms/catalog-add',{method:'POST',body:{service,country,serviceName,countryName}});
+    _smsConfigCache=j.config;
+    renderSmsCatalogList(j.config.catalog||[]);
+    showToast('✓ Added to SMS catalog');
+  }catch(e){showToast('⚠️ '+e.message);}
+}
+
+async function removeSmsCatalogItem(id){
+  if(!confirm('Remove this SMS service from your catalog?'))return;
+  try{
+    const j=await smsAdminApi('/admin/sms/catalog-remove',{method:'POST',body:{id}});
+    _smsConfigCache=j.config;
+    renderSmsCatalogList(j.config.catalog||[]);
+    showToast('✓ Removed');
+  }catch(e){showToast('⚠️ '+e.message);}
+}
+
 async function renderGameOrders(){
   const el=document.getElementById('gameorders-list');
   if(!el)return;
@@ -3598,9 +3783,12 @@ async function saveData(){
     // Preserve pending and gameorders (managed separately)
     const pending=_jbCache?.pending||[];
     const gameorders=_jbCache?.gameorders||[];
+    const smsorders=_jbCache?.smsorders||[];
+    const smsConfig=_jbCache?.smsConfig;
     _jbCache={
       users,stock:accountStock,requests:globalRequests,
-      topupreqs:topupRequests,pending,gameorders
+      topupreqs:topupRequests,pending,gameorders,smsorders,
+      ...(smsConfig?{smsConfig}:{})
     };
     await jbWrite(_jbCache);
   }catch(e){console.warn('save error:',e);}
