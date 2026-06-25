@@ -142,6 +142,7 @@ input,button,select,textarea{font-family:var(--font)}
 .filter-row{display:flex;gap:7px;margin-bottom:18px;flex-wrap:wrap}
 .ftab{padding:5px 14px;border-radius:20px;font-size:12px;font-weight:500;cursor:pointer;border:1px solid var(--border);background:var(--bg2);color:var(--text2)}
 .ftab.active{background:var(--red-bg);border-color:var(--red-border);color:var(--red)}
+.ftab-sms-label{display:inline-flex;align-items:center;gap:4px}
 .products-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:12px}
 .pcard{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;cursor:pointer;transition:all 0.15s}
 .pcard:hover{border-color:var(--border2);transform:translateY(-1px)}
@@ -786,13 +787,13 @@ So your EmailJS template will receive the user email and verification code corre
         <div class="pg-sub" data-t="storeSub">Instant delivery · Wallet-powered purchases</div>
         <div class="filter-row">
           <div class="ftab active" onclick="filterProd('all',this)" data-cat="all">All</div>
+          <div class="ftab" id="ftab-sms" onclick="filterProd('sms',this)" data-cat="sms" style="display:none"><span class="ftab-sms-label"><img src="https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg" width="16" height="16" alt="" style="object-fit:contain"><img src="https://upload.wikimedia.org/wikipedia/commons/8/82/Telegram_logo.svg" width="16" height="16" alt="" style="object-fit:contain;margin-left:-4px"> SMS Verify</span></div>
           <div class="ftab" onclick="filterProd('video',this)" data-cat="video">Video</div>
           <div class="ftab" onclick="filterProd('music',this)" data-cat="music">Music</div>
           <div class="ftab" onclick="filterProd('arab',this)" data-cat="arab">Arab</div>
           <div class="ftab" onclick="filterProd('games',this)" data-cat="games">🎮 Games</div>
           <div class="ftab" onclick="filterProd('tools',this)" data-cat="tools">Tools</div>
           <div class="ftab" onclick="filterProd('giftcards',this)" data-cat="giftcards">Gift Cards</div>
-          <div class="ftab" id="ftab-sms" onclick="filterProd('sms',this)" data-cat="sms" style="display:none">📱 SMS</div>
         </div>
         <div class="products-grid" id="products-grid"></div>
       </div>
@@ -1635,6 +1636,7 @@ async function deliverPurchaseTelegram(order,p,planLabel,price,forCustomer){
 
 function applyDataSnapshot(data){
   const sessionEmail=normEmail(currentUser?.email||getStoredSessionEmail());
+  const keepSmsConfig=_jbCache?.smsConfig;
   const keepUser=sessionEmail?{
     email:sessionEmail,
     myCustomers:cloneMyCustomersListLocal(mergeMyCustomersClient(currentUser?.myCustomers,readCachedMyCustomers(sessionEmail))),
@@ -1642,6 +1644,7 @@ function applyDataSnapshot(data){
   }:null;
   const incoming=data||{};
   _jbCache={...(_jbCache||{}),...incoming};
+  if(incoming.smsConfig===undefined&&keepSmsConfig)_jbCache.smsConfig=keepSmsConfig;
   if(incoming.pending!==undefined)_jbCache.pending=incoming.pending;
   if(incoming.stock!==undefined)_jbCache.stock=incoming.stock;
   if(incoming.stockBlocks!==undefined)_jbCache.stockBlocks=incoming.stockBlocks;
@@ -1945,6 +1948,17 @@ const PRODUCT_ICONS={
   itunes:'https://www.apple.com/favicon.ico',
   googleplay:'https://play.google.com/favicon.ico',
   watchit:'https://watchit.com/favicon.ico',
+};
+const SMS_SERVICE_ICONS={
+  wa:'https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg',
+  tg:'https://upload.wikimedia.org/wikipedia/commons/8/82/Telegram_logo.svg',
+  ig:'https://upload.wikimedia.org/wikipedia/commons/e/e7/Instagram_logo_2016.svg',
+  fb:'https://upload.wikimedia.org/wikipedia/commons/b/b9/2023_Facebook_icon.svg',
+  go:'https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg',
+  ds:'https://upload.wikimedia.org/wikipedia/en/9/9f/Discord_icon.svg',
+  tw:'https://upload.wikimedia.org/wikipedia/commons/6/6f/Logo_of_Twitter.svg',
+  ub:'https://upload.wikimedia.org/wikipedia/commons/c/cc/Uber_logo_2018.png',
+  lf:'https://upload.wikimedia.org/wikipedia/commons/5/5e/LINE_logo.svg'
 };
 
 function prodIcon(p,size=32,radius=8){
@@ -3361,9 +3375,8 @@ function enterApp(opts={}){
   document.getElementById('unverified-chip').style.display=currentUser.verified?'none':'inline-flex';
   const session={email:currentUser.email,ts:Date.now()};
   try{localStorage.setItem('rt_session',JSON.stringify(session));}catch(e){}
-  loadPriceCatalog().then(()=>renderProducts('all'));
+  loadPriceCatalog().then(async()=>{await refreshSmsStoreTab();renderProducts('all');});
   updateBal();renderAmounts();renderSubs();renderTx();renderMyCustomers();renderReqChips();renderMyRequests();renderExpiryTracker();renderMyGameOrders();
-  refreshSmsStoreTab();
   if(!opts.skipRecover)recoverMyCustomersOnLogin({immediate:Boolean(opts.recoverImmediate)}).catch(()=>{});
   maybePromptCompleteProfile();
 }
@@ -3540,21 +3553,42 @@ function smsServiceEmoji(code){
   const map={wa:'💬',tg:'✈️',ig:'📸',fb:'📘',go:'🔍',ds:'🎮',tw:'🐦',ub:'🚗',lf:'💚'};
   return map[String(code||'').toLowerCase()]||'📱';
 }
+function smsServiceIconHtml(code,size=40){
+  const key=String(code||'').toLowerCase();
+  const src=SMS_SERVICE_ICONS[key];
+  if(src)return `<img src="${src}" width="${size}" height="${size}" alt="" style="object-fit:contain;max-width:${size}px;max-height:${size}px;background:#fff;border-radius:10px;padding:4px" onerror="this.outerHTML='${smsServiceEmoji(key)}'">`;
+  return `<span style="font-size:${Math.round(size*0.75)}px">${smsServiceEmoji(key)}</span>`;
+}
+function smsProductCardHtml(item){
+  return `<div class="pcard" onclick="openSmsBuy('${esc(item.id)}')">
+    <div class="pcard-top" style="background:linear-gradient(135deg,#7c3aed,#5b21b6);display:flex;align-items:center;justify-content:center;min-height:88px">${smsServiceIconHtml(item.service,44)}</div>
+    <div class="pcard-body">
+      <div class="pcard-name">${esc(item.serviceName||item.service)}</div>
+      <div class="pcard-desc">${esc(item.countryName||item.country)} · SMS verify</div>
+      <div class="pcard-footer">
+        <div><div class="pfrom">from</div><div class="pprice">${fmt(item.sellPrice||0)}</div></div>
+        <button class="btn-buy" onclick="event.stopPropagation();openSmsBuy('${esc(item.id)}')">Buy</button>
+      </div>
+    </div>
+  </div>`;
+}
 async function refreshSmsStoreTab(){
   const tab=document.getElementById('ftab-sms');
   if(!tab)return;
   try{
-    if(isAdmin||isSmsStoreEnabled()){
-      const r=await fetch(RT_SERVER+'/sms/catalog');
-      const j=await r.json();
-      if(j.success&&j.enabled){
-        if(!_jbCache)_jbCache={};
-        _jbCache.smsConfig={enabled:true,storeEnabled:true,catalog:j.catalog||[]};
-      }
+    const r=await fetch(RT_SERVER+'/sms/catalog');
+    const j=await r.json();
+    if(j.success&&j.enabled&&Array.isArray(j.catalog)&&j.catalog.length){
+      if(!_jbCache)_jbCache={};
+      _jbCache.smsConfig={enabled:true,storeEnabled:true,catalog:j.catalog};
+    }else if(j.success&&!j.enabled){
+      if(_jbCache?.smsConfig)_jbCache.smsConfig={..._jbCache.smsConfig,storeEnabled:false,catalog:[]};
     }
   }catch(e){}
   const show=isSmsStoreEnabled()&&getSmsStoreCatalog().length>0;
   tab.style.display=show?'':'none';
+  const activeCat=document.querySelector('.ftab.active')?.dataset?.cat;
+  if(typeof renderProducts==='function'&&(activeCat==='all'||activeCat==='sms'))renderProducts(activeCat);
 }
 function filterProd(cat,el){document.querySelectorAll('.ftab').forEach(c=>c.classList.remove('active'));if(el)el.classList.add('active');renderProducts(cat);}
 function getProductAvail(p){
@@ -3575,42 +3609,41 @@ function hasUnblockedPlan(p){
 function renderProducts(cat){
   if(cat==='sms')return renderSmsProducts();
   const list=cat==='all'?products:products.filter(p=>p.cat===cat);
-  document.getElementById('products-grid').innerHTML=list.map(p=>{
+  const smsCatalog=getSmsStoreCatalog();
+  const smsCards=smsCatalog.map(smsProductCardHtml).join('');
+  let html='';
+  let smsInserted=false;
+  list.forEach(p=>{
     const tot=getProductAvail(p);
     let minP=p.hasUserTypes?Math.min(...p.userTypes.map(ut=>Math.min(...ut.durations.map(d=>d.price)))):Math.min(...(p.plans||[]).map(pl=>pl.price));
     const blocked=!hasUnblockedPlan(p);
     const cardClick=blocked?'':`onclick="openBuy('${p.id}',null)"`;
-    return `<div class="pcard${blocked?' oos':''}" ${cardClick}>
+    html+=`<div class="pcard${blocked?' oos':''}" ${cardClick}>
       <div class="pcard-top" style="background:${p.color}">${prodIcon(p,44,10)}${p.badge==='hot'?'<div class="hot-badge">Hot</div>':p.badge==='new'?'<div class="new-badge">New</div>':''}
       </div><div class="pcard-body"><div class="pcard-name">${p.name}</div><div class="pcard-desc">${p.desc}</div>
       <div class="pcard-footer"><div><div class="pfrom">from</div><div class="pprice">${fmt(minP)}</div></div>
       <button class="btn-buy" ${blocked?'disabled':''} onclick="event.stopPropagation();openBuy('${p.id}',null)">${blocked?'Unavailable':'Buy'}</button></div></div></div>`;
-  }).join('');
+    if(cat==='all'&&smsCards&&!smsInserted&&(p.id==='shahid'||(p.id==='netflix'&&!list.some(x=>x.id==='shahid')))){
+      html+=smsCards;
+      smsInserted=true;
+    }
+  });
+  if(cat==='all'&&smsCards&&!smsInserted)html+=smsCards;
+  document.getElementById('products-grid').innerHTML=html;
 }
 function renderSmsProducts(){
   const grid=document.getElementById('products-grid');
   if(!grid)return;
   const catalog=getSmsStoreCatalog();
   if(!currentUser){
-    grid.innerHTML='<div class="empty-state" style="grid-column:1/-1"><i class="ti ti-device-mobile"></i>Sign in to buy SMS verification numbers.</div>';
+    grid.innerHTML='<div class="empty-state" style="grid-column:1/-1"><i class="ti ti-device-mobile"></i>Sign in to buy SMS verification numbers for WhatsApp, Telegram &amp; more.</div>';
     return;
   }
   if(!catalog.length){
     grid.innerHTML='<div class="empty-state" style="grid-column:1/-1"><i class="ti ti-device-mobile"></i>SMS numbers are not available yet.<br><span style="font-size:12px;color:var(--text3)">Admin must add services in Admin → SMS Numbers.</span></div>';
     return;
   }
-  grid.innerHTML=catalog.map(item=>`
-    <div class="pcard" onclick="openSmsBuy('${esc(item.id)}')">
-      <div class="pcard-top" style="background:#7c3aed;display:flex;align-items:center;justify-content:center;font-size:34px">${smsServiceEmoji(item.service)}</div>
-      <div class="pcard-body">
-        <div class="pcard-name">${esc(item.serviceName||item.service)}</div>
-        <div class="pcard-desc">${esc(item.countryName||item.country)} verification number</div>
-        <div class="pcard-footer">
-          <div><div class="pfrom">from</div><div class="pprice">${fmt(item.sellPrice||0)}</div></div>
-          <button class="btn-buy" onclick="event.stopPropagation();openSmsBuy('${esc(item.id)}')">Buy</button>
-        </div>
-      </div>
-    </div>`).join('');
+  grid.innerHTML=`<div style="grid-column:1/-1;font-size:12px;color:var(--text2);margin-bottom:4px;padding:10px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm)">📱 <b>SMS verification numbers</b> — temporary phone numbers to receive WhatsApp, Telegram, Instagram &amp; other app codes.</div>`+catalog.map(smsProductCardHtml).join('');
 }
 async function openSmsBuy(catalogId){
   if(!currentUser){showToast('Sign in first');return;}
@@ -3623,7 +3656,7 @@ async function openSmsBuy(catalogId){
   document.getElementById('modal-title').textContent='Buy SMS Number';
   document.getElementById('modal-body').innerHTML=`
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
-      <div style="width:48px;height:48px;border-radius:12px;background:#7c3aed;color:#fff;display:flex;align-items:center;justify-content:center;font-size:24px">${smsServiceEmoji(item.service)}</div>
+      <div style="width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#5b21b6);display:flex;align-items:center;justify-content:center">${smsServiceIconHtml(item.service,28)}</div>
       <div><div style="font-size:16px;font-weight:700">${esc(item.serviceName||item.service)}</div><div style="font-size:12px;color:var(--text2)">${esc(item.countryName||item.country)}</div></div>
     </div>
     <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;margin-bottom:14px;font-size:12px;color:var(--text2);line-height:1.6">
@@ -6710,10 +6743,8 @@ async function loadData(){
 
 async function refreshFromFirebase(){
   try{
-    _jbCache=await jbRead();
-    if(_jbCache.users&&_jbCache.users.length>0)users=_jbCache.users;
-    if(_jbCache.stock)accountStock=_jbCache.stock;
-    if(_jbCache.topupreqs)topupRequests=_jbCache.topupreqs;
+    applyDataSnapshot(await jbRead());
+    await refreshSmsStoreTab();
   }catch(e){console.warn('refresh error:',e.message);}
 }
 
@@ -6771,13 +6802,11 @@ function startRealtimeSync(){
     if(Date.now()<syncPausedUntil)return;
     if(saveDataInFlight)return;
     try{
-      _jbCache=await jbRead();
-      if(_jbCache){
-        applyDataSnapshot(_jbCache);
-        bindCurrentUserFromUsers();
-        if(currentUser){
-          renderSubs();updateBal();renderTx();renderMyCustomers();
-        }
+      applyDataSnapshot(await jbRead());
+      await refreshSmsStoreTab();
+      bindCurrentUserFromUsers();
+      if(currentUser){
+        renderSubs();updateBal();renderTx();renderMyCustomers();
       }
       if(!isAdmin)return;
       renderAdminPanels();
@@ -6792,8 +6821,8 @@ function renderAdminPanels(){
 async function reloadAdminData(){
   if(!authToken)return;
   try{
-    const data=await jbRead();
-    if(data)applyDataSnapshot(data);
+    applyDataSnapshot(await jbRead());
+    await refreshSmsStoreTab();
   }catch(e){
     if(isAdmin)applyOfflineCacheIfAny();
   }
