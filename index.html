@@ -1150,9 +1150,11 @@ So your EmailJS template will receive the user email and verification code corre
             <input type="checkbox" id="sms-store-enabled" onchange="saveSmsStoreEnabled()"> Show SMS numbers in customer store
           </label>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+            <button class="inline-btn" onclick="importAllSmsServices()">Import all available services</button>
             <button class="inline-btn" onclick="seedSmsStarterCatalog()">Add popular starter pack</button>
+            <button class="inline-btn" onclick="refreshAllSmsCosts()">Refresh all Grizzly costs</button>
           </div>
-          <div style="font-size:12px;color:var(--text3);margin-bottom:8px">Starter pack: WhatsApp, Telegram, Instagram, Google, Facebook (Brazil + UK WhatsApp)</div>
+          <div style="font-size:12px;color:var(--text3);margin-bottom:8px">Import all: loads every app/country Grizzly has in stock for Brazil, UK, USA, India, and more. Customers see them inside the single <b>SMS Numbers</b> store card.</div>
           <div id="sms-orders-list"><div class="empty-state" style="padding:16px">No SMS orders yet.</div></div>
         </div>
       </div>
@@ -3130,6 +3132,10 @@ async function simulateSendOTP(email, code, name){
   }
 }
 const fmt=n=>'$'+Number(n).toFixed(2);
+function fmtSmsCredits(n){
+  if(n==null||n===''||!Number.isFinite(Number(n)))return '—';
+  return Number(n).toFixed(2)+' cr';
+}
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),4500);}
 function closeModal(id){document.getElementById(id).classList.remove('open');}
 function openModal(id){document.getElementById(id).classList.add('open');}
@@ -3558,16 +3564,43 @@ function smsServiceIconHtml(code,size=40){
   return `<span style="font-size:${Math.round(size*0.75)}px">${smsServiceEmoji(key)}</span>`;
 }
 function smsProductCardHtml(item){
-  return `<div class="plan-row" onclick="closeModal('buy-modal');openSmsBuy('${esc(item.id)}')" style="cursor:pointer;margin-bottom:0">
-    <div style="display:flex;align-items:center;gap:10px;min-width:0">
+  return `<div class="plan-row sms-picker-row" onclick="closeModal('buy-modal');openSmsBuy('${esc(item.id)}')" style="cursor:pointer;margin-bottom:0">
+    <div style="display:flex;align-items:center;gap:10px;min-width:0;flex:1">
       ${smsServiceIconHtml(item.service,34)}
       <div style="min-width:0">
-        <div class="plan-name">${esc(item.serviceName||item.service)}</div>
-        <div class="plan-desc">${esc(item.countryName||item.country)}</div>
+        <div class="plan-name">${esc(item.countryName||item.country)}</div>
+        <div class="plan-desc">${esc(item.serviceName||item.service)} verification</div>
       </div>
     </div>
     <div class="plan-price" style="flex-shrink:0">${fmt(item.sellPrice||0)}</div>
   </div>`;
+}
+function buildSmsPickerHtml(catalog){
+  const groups={};
+  catalog.forEach(item=>{
+    const key=String(item.service||'').toLowerCase();
+    if(!groups[key])groups[key]={name:item.serviceName||item.service,code:key,items:[]};
+    groups[key].items.push(item);
+  });
+  return Object.values(groups).sort((a,b)=>String(a.name).localeCompare(String(b.name))).map(g=>`
+    <div class="sms-picker-group" data-sms-group="${esc(g.code)}">
+      <div style="font-size:12px;font-weight:700;margin:10px 0 6px;display:flex;align-items:center;gap:8px">${smsServiceIconHtml(g.code,22)} ${esc(g.name)}</div>
+      ${g.items.sort((a,b)=>String(a.countryName||a.country).localeCompare(String(b.countryName||b.country))).map(smsProductCardHtml).join('')}
+    </div>`).join('');
+}
+function filterSmsPicker(q){
+  const query=String(q||'').trim().toLowerCase();
+  document.querySelectorAll('#sms-picker-list .sms-picker-group').forEach(group=>{
+    const rows=group.querySelectorAll('.sms-picker-row');
+    let any=false;
+    rows.forEach(row=>{
+      const text=(row.textContent||'').toLowerCase();
+      const show=!query||text.includes(query);
+      row.style.display=show?'':'none';
+      if(show)any=true;
+    });
+    group.style.display=any?'':'none';
+  });
 }
 function smsHubCardHtml(){
   const catalog=getSmsStoreCatalog();
@@ -3594,9 +3627,10 @@ function openSmsStoreModal(){
   if(!catalog.length){showToast('SMS numbers are not available yet');return;}
   document.getElementById('modal-title').textContent='SMS Verification Numbers';
   document.getElementById('modal-body').innerHTML=`
-    <div style="font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.55">Pick the app you need. You will get a temporary phone number, then tap <b>Refresh code</b> when the SMS arrives.</div>
-    <div style="display:flex;flex-direction:column;gap:8px;max-height:min(52vh,420px);overflow-y:auto">
-      ${catalog.map(smsProductCardHtml).join('')}
+    <div style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.55">Choose the app and country. All services are listed here — WhatsApp, Telegram, Facebook, Google, Instagram, and more.</div>
+    <input type="text" id="sms-picker-search" placeholder="Search app or country…" oninput="filterSmsPicker(this.value)" style="width:100%;padding:9px 12px;margin-bottom:10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text);font-size:13px;box-sizing:border-box">
+    <div id="sms-picker-list" style="display:flex;flex-direction:column;gap:4px;max-height:min(52vh,420px);overflow-y:auto">
+      ${buildSmsPickerHtml(catalog)}
     </div>`;
   openModal('buy-modal');
 }
@@ -6404,7 +6438,7 @@ function renderSmsCatalogList(catalog){
       <div class="admin-icon" style="background:#7c3aed;color:#fff;font-size:11px;font-weight:700;width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0">SMS</div>
       <div class="aw-info" style="flex:1">
         <div class="aw-name">${esc(item.serviceName||item.service)} · ${esc(item.countryName||item.country)}</div>
-        <div class="aw-email">Grizzly cost: ${item.cost!=null?fmt(item.cost)+' credits':'—'} · Your price: ${fmt(item.sellPrice||0)} · Code: ${esc(item.service)} / ${esc(item.country)}</div>
+        <div class="aw-email">Grizzly cost: ${fmtSmsCredits(item.cost)} · Your price: ${fmt(item.sellPrice||0)} · ${esc(item.service)} / ${esc(item.country)}</div>
       </div>
       <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
         <input type="number" id="sms-price-${esc(item.id)}" min="0.5" step="0.01" value="${Number(item.sellPrice||0).toFixed(2)}" style="width:72px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg3);color:var(--text);font-size:12px">
@@ -6454,6 +6488,17 @@ async function repriceAllSmsCatalog(){
   }catch(e){showToast('⚠️ '+e.message);}
 }
 
+async function refreshAllSmsCosts(){
+  if(!confirm('Fetch latest Grizzly costs for every catalog item? Your sell prices will stay the same.'))return;
+  try{
+    showToast('⏳ Refreshing Grizzly costs…');
+    const j=await smsAdminApi('/admin/sms/catalog-refresh-costs',{method:'POST',body:{}});
+    _smsConfigCache=j.config;
+    renderSmsCatalogList(j.config.catalog||[]);
+    showToast(`✓ Refreshed costs for ${j.updated||0} items`);
+  }catch(e){showToast('⚠️ '+e.message);}
+}
+
 async function updateSmsCatalogPrice(id){
   const input=document.getElementById('sms-price-'+id);
   const sellPrice=Number(input?.value||0);
@@ -6496,7 +6541,7 @@ async function previewSmsPrice(){
   if(!service||!country){showToast('Select service and country');return;}
   try{
     const j=await smsAdminApi('/admin/sms/prices?service='+encodeURIComponent(service)+'&country='+encodeURIComponent(country));
-    if(box)box.innerHTML=`Grizzly cost: <b>${j.cost!=null?j.cost+' credits':'—'}</b> · Suggested sell price: <b>${j.sellPrice!=null?fmt(j.sellPrice):'—'}</b> (markup ${j.markupPercent||0}%)`;
+    if(box)box.innerHTML=`Grizzly cost: <b>${fmtSmsCredits(j.cost)}</b> · Suggested sell price: <b>${j.sellPrice!=null?fmt(j.sellPrice):'—'}</b> (markup ${j.markupPercent||0}%)`;
   }catch(e){if(box)box.textContent=e.message;}
 }
 
@@ -6550,6 +6595,20 @@ async function seedSmsStarterCatalog(){
     if(store)store.checked=true;
     await saveSmsStoreEnabled();
     showToast(`✓ Added ${j.added||0} starter SMS services`);
+  }catch(e){showToast('⚠️ '+e.message);}
+}
+
+async function importAllSmsServices(){
+  if(!confirm('Import all available Grizzly SMS services for popular countries (up to 300 items)? Your custom sell prices will be kept where already set.'))return;
+  try{
+    showToast('⏳ Loading services from Grizzly…');
+    const j=await smsAdminApi('/admin/sms/catalog-import-available',{method:'POST',body:{}});
+    _smsConfigCache=j.config;
+    renderSmsCatalogList(j.config.catalog||[]);
+    const store=document.getElementById('sms-store-enabled');
+    if(store)store.checked=true;
+    await saveSmsStoreEnabled();
+    showToast(`✓ ${j.added||0} new · ${j.updated||0} updated · ${j.total||0} total`);
   }catch(e){showToast('⚠️ '+e.message);}
 }
 
