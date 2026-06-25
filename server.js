@@ -1866,6 +1866,294 @@ app.post('/admin/sms/catalog-remove', async (req, res) => {
   }
 });
 
+const SMS_STARTER_CATALOG = [
+  { service: 'wa', serviceName: 'WhatsApp', country: '73', countryName: 'Brazil' },
+  { service: 'tg', serviceName: 'Telegram', country: '73', countryName: 'Brazil' },
+  { service: 'wa', serviceName: 'WhatsApp', country: '16', countryName: 'United Kingdom' },
+  { service: 'ig', serviceName: 'Instagram', country: '73', countryName: 'Brazil' },
+  { service: 'go', serviceName: 'Google', country: '73', countryName: 'Brazil' },
+  { service: 'fb', serviceName: 'Facebook', country: '73', countryName: 'Brazil' }
+];
+
+app.post('/admin/sms/seed-starter', async (req, res) => {
+  const session = requireSession(req, res, ['admin']);
+  if (!session) return;
+  try {
+    const data = await readJsonBinRaw();
+    const config = await readSmsConfig(data);
+    const apiKey = String(config.apiKey || '').trim();
+    if (!apiKey) return res.status(400).json({ error: 'Save your Grizzly API key first' });
+    const added = [];
+    for (const row of SMS_STARTER_CATALOG) {
+      const priceResult = await grizzlySms.getPrices(apiKey, { service: row.service, country: row.country });
+      const cost = priceResult.success
+        ? grizzlySms.extractGrizzlyCost(priceResult.prices, row.service, row.country)
+        : null;
+      const item = {
+        id: `${row.service}__${row.country}`,
+        service: row.service,
+        serviceName: row.serviceName,
+        country: row.country,
+        countryName: row.countryName,
+        cost,
+        sellPrice: grizzlySms.computeSellPrice(cost, config.markupPercent, config.usdPerCredit),
+        enabled: true,
+        updatedAt: Date.now()
+      };
+      config.catalog = (config.catalog || []).filter(existing => existing.id !== item.id);
+      config.catalog.unshift(item);
+      added.push(item);
+    }
+    config.enabled = true;
+    data[SMS_CONFIG_KEY] = config;
+    await writeJsonBinRaw(data);
+    res.json({
+      success: true,
+      added: added.length,
+      config: grizzlySms.sanitizeSmsConfigForClient(config, true)
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Could not seed starter catalog' });
+  }
+});
+
+app.get('/admin/sms/orders', async (req, res) => {
+  const session = requireSession(req, res, ['admin']);
+  if (!session) return;
+  try {
+    const data = await readJsonBinRaw();
+    const orders = (data.smsorders || []).slice(0, 100);
+    res.json({ success: true, orders });
+  } catch (e) {
+    res.status(500).json({ error: 'Could not load SMS orders' });
+  }
+});
+
+app.get('/sms/catalog', async (req, res) => {
+  try {
+    const data = await readJsonBinRaw().catch(() => ({}));
+    const config = await readSmsConfig(data);
+    if (!config.storeEnabled) {
+      return res.json({ success: true, enabled: false, catalog: [] });
+    }
+    const catalog = (config.catalog || [])
+      .filter(item => item.enabled !== false)
+      .map(item => ({
+        id: item.id,
+        service: item.service,
+        serviceName: item.serviceName,
+        country: item.country,
+        countryName: item.countryName,
+        sellPrice: Number(item.sellPrice || 0)
+      }));
+    res.json({ success: true, enabled: true, catalog });
+  } catch (e) {
+    res.status(500).json({ error: 'Could not load SMS catalog' });
+  }
+});
+
+function findSmsCatalogItem(config, catalogId) {
+  return (config.catalog || []).find(item => item.id === catalogId && item.enabled !== false) || null;
+}
+
+function orderIdsMatch(a, b) {
+  const x = String(a || '').trim();
+  const y = String(b || '').trim();
+  if (x === y) return true;
+  const nx = x.replace(/^#/, '');
+  const ny = y.replace(/^#/, '');
+  return Boolean(nx && nx === ny);
+}
+
+function findUserSmsOrder(user, orderId) {
+  return (user.orders || []).find(order => orderIdsMatch(order.id, orderId) && order.productId === 'sms') || null;
+}
+
+const activeSmsPurchases = new Set();
+
+app.post('/purchase/sms', async (req, res) => {
+  const session = requireSession(req, res, ['user']);
+  if (!session) return;
+  const catalogId = String(req.body?.catalogId || '').trim();
+  if (!catalogId) return res.status(400).json({ error: 'catalogId is required' });
+  const lockKey = `${session.email}::${catalogId}`;
+  if (activeSmsPurchases.has(lockKey)) {
+    return res.status(409).json({ error: 'Purchase already in progress' });
+  }
+  activeSmsPurchases.add(lockKey);
+  try {
+    const data = await readJsonBinRaw();
+    const config = await readSmsConfig(data);
+    if (!config.storeEnabled) return res.status(403).json({ error: 'SMS store is not enabled yet' });
+    const apiKey = String(config.apiKey || '').trim();
+    if (!apiKey) return res.status(503).json({ error: 'SMS service is not configured. Please contact support.' });
+    const catalogItem = findSmsCatalogItem(config, catalogId);
+    if (!catalogItem) return res.status(404).json({ error: 'SMS service not found in catalog' });
+    const sellPrice = Number(catalogItem.sellPrice || 0);
+    if (!sellPrice) return res.status(400).json({ error: 'Invalid sell price for this SMS service' });
+
+    data.users = Array.isArray(data.users) ? data.users : [];
+    const user = data.users.find(u => normalizeEmail(u.email) === session.email);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (user.banned) return res.status(403).json({ error: 'Your account has been suspended. Contact support.' });
+    if (Number(user.balance || 0) < sellPrice) {
+      return res.status(400).json({ error: 'Insufficient balance' });
+    }
+
+    const grizzlyBalance = await grizzlySms.getBalance(apiKey);
+    if (!grizzlyBalance.success) {
+      return res.status(503).json({ error: 'Could not reach Grizzly SMS. Try again shortly.' });
+    }
+    const estimatedCost = Number(catalogItem.cost || 0);
+    if (estimatedCost && Number(grizzlyBalance.balance || 0) < estimatedCost) {
+      await sendTG(TG_ADMIN, `⚠️ <b>Grizzly SMS balance low</b>\nBalance: ${grizzlyBalance.balance}\nNeeded about: ${estimatedCost}`, 'HTML').catch(() => {});
+      return res.status(503).json({ error: 'SMS supplier balance is low. Please try again later or contact support.' });
+    }
+
+    const maxPrice = estimatedCost ? Number((estimatedCost * 1.15).toFixed(2)) : undefined;
+    const numberResult = await grizzlySms.requestNumber(apiKey, {
+      service: catalogItem.service,
+      country: catalogItem.country,
+      maxPrice
+    });
+    if (!numberResult.success) {
+      return res.status(400).json({ error: numberResult.error || 'Could not rent a number right now. Try another country.' });
+    }
+
+    const dateStr = new Date().toLocaleString('en-GB', {
+      day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+    });
+    const orderId = '#' + (Math.floor(Math.random() * 90000 + 10000));
+    user.balance = Number(user.balance || 0) - sellPrice;
+    user.transactions = Array.isArray(user.transactions) ? user.transactions : [];
+    user.orders = Array.isArray(user.orders) ? user.orders : [];
+
+    const order = {
+      id: orderId,
+      productId: 'sms',
+      product: catalogItem.serviceName || catalogItem.service,
+      short: 'SMS',
+      color: '#7c3aed',
+      tc: '#fff',
+      plan: catalogItem.countryName || catalogItem.country,
+      price: sellPrice,
+      date: dateStr,
+      phone: numberResult.phoneNumber,
+      phoneNumber: numberResult.phoneNumber,
+      activationId: numberResult.activationId,
+      smsService: catalogItem.service,
+      smsCountry: catalogItem.country,
+      smsCatalogId: catalogItem.id,
+      smsStatus: 'waiting',
+      smsCode: '',
+      supplierCost: numberResult.activationCost || catalogItem.cost || null
+    };
+    user.orders.unshift(order);
+    user.transactions.unshift({
+      type: 'purchase',
+      label: `SMS ${order.product} · ${order.plan}`,
+      amount: sellPrice,
+      balance: user.balance,
+      date: dateStr,
+      orderId
+    });
+
+    data.smsorders = Array.isArray(data.smsorders) ? data.smsorders : [];
+    data.smsorders.unshift({
+      id: orderId,
+      activationId: numberResult.activationId,
+      phoneNumber: numberResult.phoneNumber,
+      service: catalogItem.service,
+      serviceName: catalogItem.serviceName,
+      country: catalogItem.country,
+      countryName: catalogItem.countryName,
+      sellPrice,
+      supplierCost: numberResult.activationCost || catalogItem.cost || null,
+      userEmail: user.email,
+      userName: user.name,
+      userTgChatId: user.tgChatId || '',
+      status: 'waiting',
+      smsCode: '',
+      date: dateStr
+    });
+
+    await writeJsonBinRaw(data);
+    await sendTG(
+      TG_ADMIN,
+      `📱 <b>New SMS Purchase</b>\n\n${order.product} · ${order.plan}\n📞 <code>${order.phone}</code>\n💵 ${sellPrice.toFixed(2)}\n👤 ${user.name} (${user.email})`,
+      'HTML'
+    ).catch(() => {});
+
+    res.json({
+      success: true,
+      order,
+      user: sanitizeUser(user),
+      data: safeDataForSession(data, session)
+    });
+  } catch (e) {
+    console.error('SMS purchase error:', e.message);
+    res.status(500).json({ error: 'SMS purchase failed' });
+  } finally {
+    activeSmsPurchases.delete(lockKey);
+  }
+});
+
+app.post('/sms/status', async (req, res) => {
+  const session = requireSession(req, res, ['user']);
+  if (!session) return;
+  const orderId = String(req.body?.orderId || '').trim();
+  if (!orderId) return res.status(400).json({ error: 'orderId is required' });
+  try {
+    const data = await readJsonBinRaw();
+    const config = await readSmsConfig(data);
+    const apiKey = String(config.apiKey || '').trim();
+    if (!apiKey) return res.status(503).json({ error: 'SMS service is not configured' });
+    const user = (data.users || []).find(u => normalizeEmail(u.email) === session.email);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    const order = findUserSmsOrder(user, orderId);
+    if (!order) return res.status(404).json({ error: 'SMS order not found' });
+    if (order.smsStatus === 'ok' && order.smsCode) {
+      return res.json({ success: true, status: 'ok', code: order.smsCode, phone: order.phoneNumber || order.phone });
+    }
+
+    const statusResult = await grizzlySms.getStatus(apiKey, order.activationId);
+    if (statusResult.cancelled) {
+      order.smsStatus = 'cancelled';
+      const smsRow = (data.smsorders || []).find(row => orderIdsMatch(row.id, orderId));
+      if (smsRow) smsRow.status = 'cancelled';
+      await writeJsonBinRaw(data);
+      return res.json({ success: false, status: 'cancelled', message: 'Activation cancelled or expired' });
+    }
+    if (statusResult.status === 'ok' && statusResult.code) {
+      order.smsCode = statusResult.code;
+      order.smsStatus = 'ok';
+      const smsRow = (data.smsorders || []).find(row => orderIdsMatch(row.id, orderId));
+      if (smsRow) {
+        smsRow.smsCode = statusResult.code;
+        smsRow.status = 'ok';
+      }
+      await grizzlySms.setStatus(apiKey, order.activationId, 6).catch(() => {});
+      await writeJsonBinRaw(data);
+      return res.json({
+        success: true,
+        status: 'ok',
+        code: statusResult.code,
+        phone: order.phoneNumber || order.phone
+      });
+    }
+
+    res.json({
+      success: true,
+      status: statusResult.status || 'waiting',
+      phone: order.phoneNumber || order.phone,
+      message: 'Waiting for SMS code — try again in a few seconds'
+    });
+  } catch (e) {
+    console.error('SMS status error:', e.message);
+    res.status(500).json({ error: 'Could not check SMS status' });
+  }
+});
+
 // ── START ──────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, async () => {

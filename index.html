@@ -685,6 +685,7 @@ So your EmailJS template will receive the user email and verification code corre
           <div class="ftab" onclick="filterProd('music',this)" data-cat="music">Music</div>
           <div class="ftab" onclick="filterProd('arab',this)" data-cat="arab">Arab</div>
           <div class="ftab" onclick="filterProd('games',this)" data-cat="games">🎮 Games</div>
+          <div class="ftab" id="ftab-sms" onclick="filterProd('sms',this)" data-cat="sms" style="display:none">📱 SMS</div>
         </div>
         <div class="products-grid" id="products-grid"></div>
       </div>
@@ -961,11 +962,15 @@ So your EmailJS template will receive the user email and verification code corre
           <div id="sms-catalog-list"><div class="empty-state" style="padding:20px">No SMS services added yet.</div></div>
         </div>
         <div class="card" style="padding:16px">
-          <div style="font-size:13px;font-weight:700;margin-bottom:10px">Step 4 — Customer store (coming next)</div>
-          <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text2);margin-bottom:8px">
-            <input type="checkbox" id="sms-store-enabled" disabled> Show SMS numbers in customer store
+          <div style="font-size:13px;font-weight:700;margin-bottom:10px">Step 4 — Customer store</div>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text2);margin-bottom:10px">
+            <input type="checkbox" id="sms-store-enabled" onchange="saveSmsStoreEnabled()"> Show SMS numbers in customer store
           </label>
-          <div style="font-size:12px;color:var(--orange)">Store purchase flow will be added in the next step after you confirm API key + catalog.</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+            <button class="inline-btn" onclick="seedSmsStarterCatalog()">Add popular starter pack</button>
+          </div>
+          <div style="font-size:12px;color:var(--text3);margin-bottom:8px">Starter pack: WhatsApp, Telegram, Instagram, Google, Facebook (Brazil + UK WhatsApp)</div>
+          <div id="sms-orders-list"><div class="empty-state" style="padding:16px">No SMS orders yet.</div></div>
         </div>
       </div>
       <!-- ADMIN EXPIRY -->
@@ -1478,6 +1483,7 @@ function openSubOptions(orderId){
   _currentSubId=orderId;
   const o=currentUser?.orders.find(x=>x.id===orderId);
   if(!o)return;
+  if(o.productId==='sms'){openSmsOrderModal(orderId);return;}
   document.getElementById('sub-options-product').textContent=o.product+' · '+o.plan;
   const btn=document.getElementById('sub-option-autorenew-btn');
   btn.textContent=o.autoRenew?'🔁 Disable Auto-Renewal':'🔁 Enable Auto-Renewal';
@@ -2017,6 +2023,7 @@ function enterApp(){
   const session={email:currentUser.email,ts:Date.now()};
   try{localStorage.setItem('rt_session',JSON.stringify(session));}catch(e){}
   updateBal();renderProducts('all');renderAmounts();renderSubs();renderTx();renderMyCustomers();renderReqChips();renderMyRequests();renderExpiryTracker();
+  refreshSmsStoreTab();
 }
 function doLogout(){
   currentUser=null;isAdmin=false;
@@ -2120,6 +2127,35 @@ function updateBal(){
 }
 
 // STORE
+function isSmsStoreEnabled(){
+  const cfg=_jbCache?.smsConfig;
+  return Boolean(cfg&&(cfg.enabled||cfg.storeEnabled));
+}
+function getSmsStoreCatalog(){
+  const cfg=_jbCache?.smsConfig;
+  if(!isSmsStoreEnabled())return [];
+  return (cfg.catalog||[]).filter(item=>item.enabled!==false);
+}
+function smsServiceEmoji(code){
+  const map={wa:'💬',tg:'✈️',ig:'📸',fb:'📘',go:'🔍',ds:'🎮',tw:'🐦',ub:'🚗',lf:'💚'};
+  return map[String(code||'').toLowerCase()]||'📱';
+}
+async function refreshSmsStoreTab(){
+  const tab=document.getElementById('ftab-sms');
+  if(!tab)return;
+  try{
+    if(isAdmin||isSmsStoreEnabled()){
+      const r=await fetch(RT_SERVER+'/sms/catalog');
+      const j=await r.json();
+      if(j.success&&j.enabled){
+        if(!_jbCache)_jbCache={};
+        _jbCache.smsConfig={enabled:true,storeEnabled:true,catalog:j.catalog||[]};
+      }
+    }
+  }catch(e){}
+  const show=isSmsStoreEnabled()&&getSmsStoreCatalog().length>0;
+  tab.style.display=show?'':'none';
+}
 function filterProd(cat,el){document.querySelectorAll('.ftab').forEach(c=>c.classList.remove('active'));if(el)el.classList.add('active');renderProducts(cat);}
 function getProductAvail(p){
   let t=0;
@@ -2133,6 +2169,7 @@ function hasUnblockedPlan(p){
   return (p.plans||[]).some((_,i)=>!isStockBlocked(sk(p.id,null,i)));
 }
 function renderProducts(cat){
+  if(cat==='sms')return renderSmsProducts();
   const list=cat==='all'?products:products.filter(p=>p.cat===cat);
   document.getElementById('products-grid').innerHTML=list.map(p=>{
     const tot=getProductAvail(p);
@@ -2145,6 +2182,73 @@ function renderProducts(cat){
       <div class="pcard-footer"><div><div class="pfrom">from</div><div class="pprice">${fmt(minP)}</div></div>
       <button class="btn-buy" ${blocked?'disabled':''} onclick="event.stopPropagation();openBuy('${p.id}',null)">${blocked?'Unavailable':'Buy'}</button></div></div></div>`;
   }).join('');
+}
+function renderSmsProducts(){
+  const grid=document.getElementById('products-grid');
+  if(!grid)return;
+  const catalog=getSmsStoreCatalog();
+  if(!currentUser){
+    grid.innerHTML='<div class="empty-state" style="grid-column:1/-1"><i class="ti ti-device-mobile"></i>Sign in to buy SMS verification numbers.</div>';
+    return;
+  }
+  if(!catalog.length){
+    grid.innerHTML='<div class="empty-state" style="grid-column:1/-1"><i class="ti ti-device-mobile"></i>SMS numbers are not available yet.<br><span style="font-size:12px;color:var(--text3)">Admin must add services in Admin → SMS Numbers.</span></div>';
+    return;
+  }
+  grid.innerHTML=catalog.map(item=>`
+    <div class="pcard" onclick="openSmsBuy('${esc(item.id)}')">
+      <div class="pcard-top" style="background:#7c3aed;display:flex;align-items:center;justify-content:center;font-size:34px">${smsServiceEmoji(item.service)}</div>
+      <div class="pcard-body">
+        <div class="pcard-name">${esc(item.serviceName||item.service)}</div>
+        <div class="pcard-desc">${esc(item.countryName||item.country)} verification number</div>
+        <div class="pcard-footer">
+          <div><div class="pfrom">from</div><div class="pprice">${fmt(item.sellPrice||0)}</div></div>
+          <button class="btn-buy" onclick="event.stopPropagation();openSmsBuy('${esc(item.id)}')">Buy</button>
+        </div>
+      </div>
+    </div>`).join('');
+}
+async function openSmsBuy(catalogId){
+  if(!currentUser){showToast('Sign in first');return;}
+  const item=getSmsStoreCatalog().find(x=>x.id===catalogId);
+  if(!item){showToast('SMS service not found');return;}
+  const bal=Number(currentUser.balance||0);
+  const price=Number(item.sellPrice||0);
+  const after=bal-price;
+  const ok=after>=0;
+  document.getElementById('modal-title').textContent='Buy SMS Number';
+  document.getElementById('modal-body').innerHTML=`
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+      <div style="width:48px;height:48px;border-radius:12px;background:#7c3aed;color:#fff;display:flex;align-items:center;justify-content:center;font-size:24px">${smsServiceEmoji(item.service)}</div>
+      <div><div style="font-size:16px;font-weight:700">${esc(item.serviceName||item.service)}</div><div style="font-size:12px;color:var(--text2)">${esc(item.countryName||item.country)}</div></div>
+    </div>
+    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;margin-bottom:14px;font-size:12px;color:var(--text2);line-height:1.6">
+      You will receive a temporary phone number instantly. Use it in ${esc(item.serviceName||item.service)} to get the verification SMS, then tap <b>Refresh code</b> on your order.
+    </div>
+    <div class="confirm-row"><span class="cl">Price</span><span class="cv">${fmt(price)}</span></div>
+    <div class="confirm-row"><span class="cl">Your balance</span><span class="cv">${fmt(bal)}</span></div>
+    <div class="confirm-row"><span class="cl">After purchase</span><span class="cv" style="color:${ok?'var(--green)':'var(--red)'}">${fmt(Math.max(0,after))}</span></div>
+    <button class="modal-buy-btn" ${ok?'':'disabled'} onclick="confirmSmsPurchase('${esc(item.id)}')">${ok?'Buy number now':'Insufficient balance'}</button>`;
+  openModal('buy-modal');
+}
+let smsPurchaseInFlight=false;
+async function confirmSmsPurchase(catalogId){
+  if(smsPurchaseInFlight)return;
+  smsPurchaseInFlight=true;
+  try{
+    const r=await fetch(RT_SERVER+'/purchase/sms',{method:'POST',headers:authHeaders(),body:JSON.stringify({catalogId})});
+    const j=await r.json();
+    if(!r.ok||!j.success)throw new Error(j.error||'Purchase failed');
+    if(j.user)currentUser=j.user;
+    if(j.data)applyDataSnapshot(j.data);
+    updateBal();renderTx();renderSubs();closeModal('buy-modal');
+    showToast('✓ Number purchased!');
+    if(j.order)openSmsOrderModal(j.order.id);
+    if(currentUser?.tgChatId&&j.order){
+      await sendTelegramToUser(currentUser.tgChatId,`✅ <b>SMS number ready</b>\n\n${j.order.product} · ${j.order.plan}\n📞 <code>${j.order.phone}</code>\n\nOpen My Subscriptions → Options → View SMS code`);
+    }
+  }catch(e){showToast('⚠️ '+e.message);}
+  finally{smsPurchaseInFlight=false;}
 }
 
 // BUY MODAL
@@ -2484,6 +2588,17 @@ async function confirmPurchase(){
 }
 
 function subRow(o){
+  if(o.productId==='sms'){
+    const status=o.smsStatus==='ok'?'Code ready':(o.smsStatus==='cancelled'?'Expired':'Waiting for SMS');
+    const statusColor=o.smsStatus==='ok'?'var(--green)':(o.smsStatus==='cancelled'?'var(--red)':'var(--orange)');
+    return `<div class="sub-card"><div class="sub-icon" style="background:#7c3aed;color:#fff;display:flex;align-items:center;justify-content:center;font-size:18px">📱</div>
+      <div class="sub-info"><div class="sub-name">${esc(o.product)}</div><div class="sub-plan">${esc(o.plan)} · ${esc(o.date||'')}</div>
+      <div class="sub-cred">📞 ${esc(o.phone||o.phoneNumber||'—')}</div>
+      <div class="sub-cred" style="color:${statusColor}">${status}${o.smsCode?` · Code: ${esc(o.smsCode)}`:''}</div></div>
+      <div class="sub-right"><div class="sub-price">${fmt(o.price)}</div><span class="active-badge">SMS</span>
+      <button onclick="openSmsOrderModal('${esc(o.id)}')" style="background:#7c3aed;color:#fff;border:none;border-radius:6px;padding:6px 10px;font-size:12px;font-weight:600;cursor:pointer;margin-top:4px;display:block;width:100%">View number</button>
+      </div></div>`;
+  }
   let ex='';if(o.extra)ex+=`<div class="sub-cred">Extra: ${o.extra}</div>`;if(o.profileName)ex+=`<div class="sub-cred">Profile: ${o.profileName}</div>`;
   const ico=PRODUCT_ICONS[o.productId];
   const iconHtml=ico?`<img src="${ico}" width="40" height="40" style="border-radius:9px;object-fit:contain;background:#fff;padding:2px" onerror="this.outerHTML='<div style=\'width:40px;height:40px;border-radius:9px;background:${o.color};color:${o.tc};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700\'>${o.short}</div>'">`:`<div style="width:40px;height:40px;border-radius:9px;background:${o.color};color:${o.tc};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700">${o.short}</div>`;
@@ -3551,7 +3666,10 @@ async function renderSmsAdmin(){
     const usd=document.getElementById('sms-usd-credit');
     if(markup)markup.value=_smsConfigCache.markupPercent??35;
     if(usd)usd.value=_smsConfigCache.usdPerCredit??1;
+    const store=document.getElementById('sms-store-enabled');
+    if(store)store.checked=Boolean(_smsConfigCache.storeEnabled);
     renderSmsCatalogList(_smsConfigCache.catalog||[]);
+    renderSmsOrders();
     if(balanceEl)balanceEl.textContent='';
   }catch(e){
     if(statusEl)statusEl.textContent='Could not load SMS settings: '+e.message;
@@ -3658,6 +3776,108 @@ async function removeSmsCatalogItem(id){
     renderSmsCatalogList(j.config.catalog||[]);
     showToast('✓ Removed');
   }catch(e){showToast('⚠️ '+e.message);}
+}
+
+async function saveSmsStoreEnabled(){
+  const storeEnabled=Boolean(document.getElementById('sms-store-enabled')?.checked);
+  try{
+    const j=await smsAdminApi('/admin/sms/config',{method:'POST',body:{storeEnabled,enabled:true}});
+    _smsConfigCache=j.config;
+    if(_jbCache)_jbCache.smsConfig={...(_jbCache.smsConfig||{}),enabled:storeEnabled,storeEnabled,catalog:j.config.catalog||[]};
+    await refreshSmsStoreTab();
+    showToast(storeEnabled?'✓ SMS store enabled for customers':'SMS store hidden from customers');
+  }catch(e){showToast('⚠️ '+e.message);}
+}
+
+async function seedSmsStarterCatalog(){
+  if(!confirm('Add WhatsApp, Telegram, Instagram, Google, Facebook starter services with current markup?'))return;
+  try{
+    const j=await smsAdminApi('/admin/sms/seed-starter',{method:'POST',body:{}});
+    _smsConfigCache=j.config;
+    renderSmsCatalogList(j.config.catalog||[]);
+    const store=document.getElementById('sms-store-enabled');
+    if(store)store.checked=true;
+    await saveSmsStoreEnabled();
+    showToast(`✓ Added ${j.added||0} starter SMS services`);
+  }catch(e){showToast('⚠️ '+e.message);}
+}
+
+async function renderSmsOrders(){
+  const el=document.getElementById('sms-orders-list');
+  if(!el)return;
+  try{
+    const j=await smsAdminApi('/admin/sms/orders');
+    const orders=j.orders||[];
+    if(!orders.length){el.innerHTML='<div class="empty-state" style="padding:16px">No SMS orders yet.</div>';return;}
+    el.innerHTML=`<div style="font-size:12px;font-weight:700;margin-bottom:8px">Recent SMS orders</div>`+orders.slice(0,20).map(o=>`
+      <div class="admin-wallet-row">
+        <div class="aw-info" style="flex:1">
+          <div class="aw-name">${esc(o.serviceName||o.service)} · ${esc(o.countryName||o.country)}</div>
+          <div class="aw-email">📞 ${esc(o.phoneNumber||'—')} · 👤 ${esc(o.userName||o.userEmail||'')} · ${esc(o.date||'')}</div>
+          <div class="aw-email" style="color:${o.status==='ok'?'var(--green)':'var(--orange)'}">${esc(o.status||'waiting')}${o.smsCode?` · Code: ${esc(o.smsCode)}`:''}</div>
+        </div>
+        <div style="font-weight:700">${fmt(o.sellPrice||0)}</div>
+      </div>`).join('');
+  }catch(e){el.innerHTML='<div class="empty-state" style="padding:16px">'+esc(e.message)+'</div>';}
+}
+
+let _smsOrderPollTimer=null;
+function openSmsOrderModal(orderId){
+  const o=currentUser?.orders.find(x=>x.id===orderId||x.id==='#'+String(orderId).replace('#',''));
+  if(!o)return;
+  _currentSubId=o.id;
+  const phone=o.phone||o.phoneNumber||'—';
+  const code=o.smsCode||'------';
+  document.getElementById('sms-order-title').textContent=o.product+' · '+o.plan;
+  document.getElementById('sms-order-phone').textContent=phone;
+  document.getElementById('sms-order-code').textContent=code;
+  const statusEl=document.getElementById('sms-order-status');
+  if(statusEl){
+    statusEl.textContent=o.smsStatus==='ok'?'✓ Code received':(o.smsStatus==='cancelled'?'Activation expired — contact support':'Waiting for SMS — tap Refresh code');
+    statusEl.style.color=o.smsStatus==='ok'?'var(--green)':(o.smsStatus==='cancelled'?'var(--red)':'var(--text3)');
+  }
+  openModal('sms-order-modal');
+  if(_smsOrderPollTimer)clearInterval(_smsOrderPollTimer);
+  if(o.smsStatus!=='ok'&&o.smsStatus!=='cancelled'){
+    _smsOrderPollTimer=setInterval(()=>refreshSmsOrderCode(true),8000);
+  }
+}
+async function refreshSmsOrderCode(silent){
+  const o=currentUser?.orders.find(x=>x.id===_currentSubId);
+  if(!o)return;
+  const btn=document.getElementById('sms-refresh-btn');
+  const statusEl=document.getElementById('sms-order-status');
+  if(btn){btn.disabled=true;btn.textContent='⏳ Checking...';}
+  try{
+    const r=await fetch(RT_SERVER+'/sms/status',{method:'POST',headers:authHeaders(),body:JSON.stringify({orderId:o.id})});
+    const j=await r.json();
+    if(j.code){
+      o.smsCode=j.code;
+      o.smsStatus='ok';
+      document.getElementById('sms-order-code').textContent=j.code;
+      if(statusEl){statusEl.textContent='✓ Code received — enter it in the app';statusEl.style.color='var(--green)';}
+      if(_smsOrderPollTimer){clearInterval(_smsOrderPollTimer);_smsOrderPollTimer=null;}
+      renderSubs();
+      if(!silent)showToast('✓ SMS code received');
+    }else if(j.status==='cancelled'){
+      o.smsStatus='cancelled';
+      if(statusEl){statusEl.textContent='Activation expired — contact support for help';statusEl.style.color='var(--red)';}
+      if(_smsOrderPollTimer){clearInterval(_smsOrderPollTimer);_smsOrderPollTimer=null;}
+    }else if(statusEl&&!silent){
+      statusEl.textContent=j.message||'No code yet — wait a few seconds and try again';
+    }
+  }catch(e){if(!silent)showToast('⚠️ '+e.message);}
+  finally{if(btn){btn.disabled=false;btn.textContent='🔄 Refresh code';}}
+}
+function copySmsPhone(){
+  const phone=document.getElementById('sms-order-phone')?.textContent||'';
+  if(!phone||phone==='—')return;
+  navigator.clipboard.writeText(phone).then(()=>showToast('✓ Phone copied')).catch(()=>{});
+}
+function copySmsCode(){
+  const code=document.getElementById('sms-order-code')?.textContent||'';
+  if(!code||code==='------')return;
+  navigator.clipboard.writeText(code).then(()=>showToast('✓ Code copied')).catch(()=>{});
 }
 
 async function renderGameOrders(){
@@ -3984,6 +4204,31 @@ if(document.readyState==='loading'){
   init();
 }
 </script>
+<!-- SMS ORDER MODAL -->
+<div class="modal-wrap" id="sms-order-modal" aria-hidden="true" onclick="closeModal('sms-order-modal')">
+  <div class="modal" onclick="event.stopPropagation()" style="max-width:360px">
+    <div class="modal-title" id="sms-order-title">SMS Number</div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.6">Use this phone number in the app, request the verification SMS, then tap <b>Refresh code</b>.</div>
+    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;margin-bottom:12px">
+      <div style="font-size:11px;color:var(--text3);margin-bottom:6px;font-weight:600">PHONE NUMBER</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <div id="sms-order-phone" style="font-size:22px;font-weight:700;font-family:var(--mono);flex:1">—</div>
+        <button class="inline-btn" onclick="copySmsPhone()">Copy</button>
+      </div>
+    </div>
+    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;margin-bottom:12px">
+      <div style="font-size:11px;color:var(--text3);margin-bottom:6px;font-weight:600">SMS CODE</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <div id="sms-order-code" style="font-size:28px;font-weight:700;font-family:var(--mono);letter-spacing:4px;flex:1">------</div>
+        <button class="inline-btn" onclick="copySmsCode()">Copy</button>
+      </div>
+      <div id="sms-order-status" style="font-size:11px;color:var(--text3);margin-top:8px">Waiting for SMS</div>
+    </div>
+    <button class="modal-buy-btn" id="sms-refresh-btn" style="background:#7c3aed" onclick="refreshSmsOrderCode(false)">🔄 Refresh code</button>
+    <button class="btn-secondary" onclick="closeModal('sms-order-modal')" style="width:100%;margin-top:10px">Close</button>
+  </div>
+</div>
+
 <!-- SUBSCRIPTION OPTIONS MODAL -->
 <div class="modal-wrap" id="sub-options-modal" aria-hidden="true" onclick="closeModal('sub-options-modal')">
   <div class="modal" onclick="event.stopPropagation()" style="max-width:340px">
