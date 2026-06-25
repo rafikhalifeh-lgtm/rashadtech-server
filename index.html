@@ -142,7 +142,6 @@ input,button,select,textarea{font-family:var(--font)}
 .filter-row{display:flex;gap:7px;margin-bottom:18px;flex-wrap:wrap}
 .ftab{padding:5px 14px;border-radius:20px;font-size:12px;font-weight:500;cursor:pointer;border:1px solid var(--border);background:var(--bg2);color:var(--text2)}
 .ftab.active{background:var(--red-bg);border-color:var(--red-border);color:var(--red)}
-.ftab-sms-label{display:inline-flex;align-items:center;gap:4px}
 .products-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:12px}
 .pcard{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;cursor:pointer;transition:all 0.15s}
 .pcard:hover{border-color:var(--border2);transform:translateY(-1px)}
@@ -787,7 +786,6 @@ So your EmailJS template will receive the user email and verification code corre
         <div class="pg-sub" data-t="storeSub">Instant delivery · Wallet-powered purchases</div>
         <div class="filter-row">
           <div class="ftab active" onclick="filterProd('all',this)" data-cat="all">All</div>
-          <div class="ftab" id="ftab-sms" onclick="filterProd('sms',this)" data-cat="sms" style="display:none"><span class="ftab-sms-label"><img src="https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg" width="16" height="16" alt="" style="object-fit:contain"><img src="https://upload.wikimedia.org/wikipedia/commons/8/82/Telegram_logo.svg" width="16" height="16" alt="" style="object-fit:contain;margin-left:-4px"> SMS Verify</span></div>
           <div class="ftab" onclick="filterProd('video',this)" data-cat="video">Video</div>
           <div class="ftab" onclick="filterProd('music',this)" data-cat="music">Music</div>
           <div class="ftab" onclick="filterProd('arab',this)" data-cat="arab">Arab</div>
@@ -3560,21 +3558,49 @@ function smsServiceIconHtml(code,size=40){
   return `<span style="font-size:${Math.round(size*0.75)}px">${smsServiceEmoji(key)}</span>`;
 }
 function smsProductCardHtml(item){
-  return `<div class="pcard" onclick="openSmsBuy('${esc(item.id)}')">
-    <div class="pcard-top" style="background:linear-gradient(135deg,#7c3aed,#5b21b6);display:flex;align-items:center;justify-content:center;min-height:88px">${smsServiceIconHtml(item.service,44)}</div>
+  return `<div class="plan-row" onclick="closeModal('buy-modal');openSmsBuy('${esc(item.id)}')" style="cursor:pointer;margin-bottom:0">
+    <div style="display:flex;align-items:center;gap:10px;min-width:0">
+      ${smsServiceIconHtml(item.service,34)}
+      <div style="min-width:0">
+        <div class="plan-name">${esc(item.serviceName||item.service)}</div>
+        <div class="plan-desc">${esc(item.countryName||item.country)}</div>
+      </div>
+    </div>
+    <div class="plan-price" style="flex-shrink:0">${fmt(item.sellPrice||0)}</div>
+  </div>`;
+}
+function smsHubCardHtml(){
+  const catalog=getSmsStoreCatalog();
+  if(!catalog.length)return '';
+  const prices=catalog.map(x=>Number(x.sellPrice||0)).filter(n=>n>0);
+  const minPrice=prices.length?Math.min(...prices):0;
+  const services=[...new Set(catalog.map(x=>String(x.service||'').toLowerCase()).filter(Boolean))].slice(0,5);
+  const icons=services.map(s=>smsServiceIconHtml(s,30)).join('');
+  return `<div class="pcard" onclick="openSmsStoreModal()">
+    <div class="pcard-top" style="background:linear-gradient(135deg,#7c3aed,#5b21b6);display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;padding:14px;min-height:88px">${icons}</div>
     <div class="pcard-body">
-      <div class="pcard-name">${esc(item.serviceName||item.service)}</div>
-      <div class="pcard-desc">${esc(item.countryName||item.country)} · SMS verify</div>
+      <div class="pcard-name">SMS Numbers</div>
+      <div class="pcard-desc">WhatsApp · Telegram · Facebook &amp; more</div>
       <div class="pcard-footer">
-        <div><div class="pfrom">from</div><div class="pprice">${fmt(item.sellPrice||0)}</div></div>
-        <button class="btn-buy" onclick="event.stopPropagation();openSmsBuy('${esc(item.id)}')">Buy</button>
+        <div><div class="pfrom">from</div><div class="pprice">${fmt(minPrice)}</div></div>
+        <button class="btn-buy" onclick="event.stopPropagation();openSmsStoreModal()">Choose</button>
       </div>
     </div>
   </div>`;
 }
+function openSmsStoreModal(){
+  if(!currentUser){showToast('Sign in first');switchTab('store',null);return;}
+  const catalog=getSmsStoreCatalog();
+  if(!catalog.length){showToast('SMS numbers are not available yet');return;}
+  document.getElementById('modal-title').textContent='SMS Verification Numbers';
+  document.getElementById('modal-body').innerHTML=`
+    <div style="font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.55">Pick the app you need. You will get a temporary phone number, then tap <b>Refresh code</b> when the SMS arrives.</div>
+    <div style="display:flex;flex-direction:column;gap:8px;max-height:min(52vh,420px);overflow-y:auto">
+      ${catalog.map(smsProductCardHtml).join('')}
+    </div>`;
+  openModal('buy-modal');
+}
 async function refreshSmsStoreTab(){
-  const tab=document.getElementById('ftab-sms');
-  if(!tab)return;
   try{
     const r=await fetch(RT_SERVER+'/sms/catalog');
     const j=await r.json();
@@ -3585,10 +3611,8 @@ async function refreshSmsStoreTab(){
       if(_jbCache?.smsConfig)_jbCache.smsConfig={..._jbCache.smsConfig,storeEnabled:false,catalog:[]};
     }
   }catch(e){}
-  const show=isSmsStoreEnabled()&&getSmsStoreCatalog().length>0;
-  tab.style.display=show?'':'none';
-  const activeCat=document.querySelector('.ftab.active')?.dataset?.cat;
-  if(typeof renderProducts==='function'&&(activeCat==='all'||activeCat==='sms'))renderProducts(activeCat);
+  const activeCat=document.querySelector('.ftab.active')?.dataset?.cat||'all';
+  if(typeof renderProducts==='function'&&document.getElementById('tab-store')?.classList.contains('active'))renderProducts(activeCat);
 }
 function filterProd(cat,el){document.querySelectorAll('.ftab').forEach(c=>c.classList.remove('active'));if(el)el.classList.add('active');renderProducts(cat);}
 function getProductAvail(p){
@@ -3607,10 +3631,8 @@ function hasUnblockedPlan(p){
   return (p.plans||[]).some((pl,i)=>!isStockBlocked(planStockKey(p.id,pl,i)));
 }
 function renderProducts(cat){
-  if(cat==='sms')return renderSmsProducts();
   const list=cat==='all'?products:products.filter(p=>p.cat===cat);
-  const smsCatalog=getSmsStoreCatalog();
-  const smsCards=smsCatalog.map(smsProductCardHtml).join('');
+  const smsHub=smsHubCardHtml();
   let html='';
   let smsInserted=false;
   list.forEach(p=>{
@@ -3623,27 +3645,13 @@ function renderProducts(cat){
       </div><div class="pcard-body"><div class="pcard-name">${p.name}</div><div class="pcard-desc">${p.desc}</div>
       <div class="pcard-footer"><div><div class="pfrom">from</div><div class="pprice">${fmt(minP)}</div></div>
       <button class="btn-buy" ${blocked?'disabled':''} onclick="event.stopPropagation();openBuy('${p.id}',null)">${blocked?'Unavailable':'Buy'}</button></div></div></div>`;
-    if(cat==='all'&&smsCards&&!smsInserted&&(p.id==='shahid'||(p.id==='netflix'&&!list.some(x=>x.id==='shahid')))){
-      html+=smsCards;
+    if(cat==='all'&&smsHub&&!smsInserted&&(p.id==='shahid'||(p.id==='netflix'&&!list.some(x=>x.id==='shahid')))){
+      html+=smsHub;
       smsInserted=true;
     }
   });
-  if(cat==='all'&&smsCards&&!smsInserted)html+=smsCards;
+  if(cat==='all'&&smsHub&&!smsInserted)html+=smsHub;
   document.getElementById('products-grid').innerHTML=html;
-}
-function renderSmsProducts(){
-  const grid=document.getElementById('products-grid');
-  if(!grid)return;
-  const catalog=getSmsStoreCatalog();
-  if(!currentUser){
-    grid.innerHTML='<div class="empty-state" style="grid-column:1/-1"><i class="ti ti-device-mobile"></i>Sign in to buy SMS verification numbers for WhatsApp, Telegram &amp; more.</div>';
-    return;
-  }
-  if(!catalog.length){
-    grid.innerHTML='<div class="empty-state" style="grid-column:1/-1"><i class="ti ti-device-mobile"></i>SMS numbers are not available yet.<br><span style="font-size:12px;color:var(--text3)">Admin must add services in Admin → SMS Numbers.</span></div>';
-    return;
-  }
-  grid.innerHTML=`<div style="grid-column:1/-1;font-size:12px;color:var(--text2);margin-bottom:4px;padding:10px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm)">📱 <b>SMS verification numbers</b> — temporary phone numbers to receive WhatsApp, Telegram, Instagram &amp; other app codes.</div>`+catalog.map(smsProductCardHtml).join('');
 }
 async function openSmsBuy(catalogId){
   if(!currentUser){showToast('Sign in first');return;}
