@@ -3653,6 +3653,25 @@ function renderProducts(cat){
   if(cat==='all'&&smsHub&&!smsInserted)html+=smsHub;
   document.getElementById('products-grid').innerHTML=html;
 }
+function smsDisclaimerHtml(){
+  return `<div style="background:var(--orange-bg);border:1px solid var(--orange-border);border-radius:var(--radius-sm);padding:12px;margin-bottom:14px">
+    <div style="font-size:11px;font-weight:700;color:var(--orange);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.3px">Important</div>
+    <div style="font-size:12px;color:var(--text2);line-height:1.55;margin-bottom:10px">RashadTech is <b>not responsible</b> if WhatsApp or any other app bans, blocks, or restricts an account linked to this temporary number. Virtual numbers can be flagged — you use this service at your own risk.</div>
+    <label style="display:flex;align-items:flex-start;gap:8px;font-size:12px;color:var(--text);cursor:pointer">
+      <input type="checkbox" id="sms-disclaimer-check" onchange="updateSmsBuyButton()" style="margin-top:2px;flex-shrink:0;width:16px;height:16px">
+      <span>I understand and accept that RashadTech is <b>not responsible</b> for WhatsApp bans or account blocks.</span>
+    </label>
+  </div>`;
+}
+function updateSmsBuyButton(){
+  const btn=document.getElementById('sms-buy-btn');
+  const chk=document.getElementById('sms-disclaimer-check');
+  if(!btn)return;
+  const accepted=Boolean(chk?.checked);
+  const balanceOk=btn.dataset.balanceOk==='1';
+  btn.disabled=!accepted||!balanceOk;
+  btn.textContent=!balanceOk?'Insufficient balance':(accepted?'Buy number now':'Confirm notice above to continue');
+}
 async function openSmsBuy(catalogId){
   if(!currentUser){showToast('Sign in first');return;}
   const item=getSmsStoreCatalog().find(x=>x.id===catalogId);
@@ -3673,12 +3692,18 @@ async function openSmsBuy(catalogId){
     <div class="confirm-row"><span class="cl">Price</span><span class="cv">${fmt(price)}</span></div>
     <div class="confirm-row"><span class="cl">Your balance</span><span class="cv">${fmt(bal)}</span></div>
     <div class="confirm-row"><span class="cl">After purchase</span><span class="cv" style="color:${ok?'var(--green)':'var(--red)'}">${fmt(Math.max(0,after))}</span></div>
-    <button class="modal-buy-btn" ${ok?'':'disabled'} onclick="confirmSmsPurchase('${esc(item.id)}')">${ok?'Buy number now':'Insufficient balance'}</button>`;
+    ${smsDisclaimerHtml()}
+    <button class="modal-buy-btn" id="sms-buy-btn" data-balance-ok="${ok?'1':'0'}" disabled onclick="confirmSmsPurchase('${esc(item.id)}')">${ok?'Confirm notice above to continue':'Insufficient balance'}</button>`;
   openModal('buy-modal');
 }
 let smsPurchaseInFlight=false;
 async function confirmSmsPurchase(catalogId){
   if(smsPurchaseInFlight)return;
+  if(!document.getElementById('sms-disclaimer-check')?.checked){
+    showToast('Please tick the box to confirm you accept the WhatsApp ban notice');
+    updateSmsBuyButton();
+    return;
+  }
   smsPurchaseInFlight=true;
   try{
     const r=await fetch(RT_SERVER+'/purchase/sms',{method:'POST',headers:authHeaders(),body:JSON.stringify({catalogId})});
