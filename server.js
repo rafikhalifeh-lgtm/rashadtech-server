@@ -1866,6 +1866,64 @@ app.post('/admin/sms/catalog-remove', async (req, res) => {
   }
 });
 
+app.post('/admin/sms/catalog-update', async (req, res) => {
+  const session = requireSession(req, res, ['admin']);
+  if (!session) return;
+  const id = String(req.body?.id || '').trim();
+  const sellPrice = Number(req.body?.sellPrice);
+  if (!id) return res.status(400).json({ error: 'id is required' });
+  if (!Number.isFinite(sellPrice) || sellPrice <= 0) {
+    return res.status(400).json({ error: 'Enter a valid sell price greater than 0' });
+  }
+  try {
+    const data = await readJsonBinRaw();
+    const config = await readSmsConfig(data);
+    const item = (config.catalog || []).find(row => row.id === id);
+    if (!item) return res.status(404).json({ error: 'Catalog item not found' });
+    item.sellPrice = Math.round(sellPrice * 100) / 100;
+    item.updatedAt = Date.now();
+    data[SMS_CONFIG_KEY] = config;
+    await writeJsonBinRaw(data);
+    res.json({ success: true, item, config: grizzlySms.sanitizeSmsConfigForClient(config, true) });
+  } catch (e) {
+    res.status(500).json({ error: 'Could not update SMS price' });
+  }
+});
+
+app.post('/admin/sms/catalog-reprice-all', async (req, res) => {
+  const session = requireSession(req, res, ['admin']);
+  if (!session) return;
+  try {
+    const data = await readJsonBinRaw();
+    const config = await readSmsConfig(data);
+    const apiKey = String(config.apiKey || '').trim();
+    if (!apiKey) return res.status(400).json({ error: 'Save your Grizzly API key first' });
+    let updated = 0;
+    for (const item of config.catalog || []) {
+      const priceResult = await grizzlySms.getPrices(apiKey, {
+        service: item.service,
+        country: item.country
+      });
+      const cost = priceResult.success
+        ? grizzlySms.extractGrizzlyCost(priceResult.prices, item.service, item.country)
+        : item.cost;
+      if (cost != null) item.cost = cost;
+      item.sellPrice = grizzlySms.computeSellPrice(cost, config.markupPercent, config.usdPerCredit);
+      item.updatedAt = Date.now();
+      updated += 1;
+    }
+    data[SMS_CONFIG_KEY] = config;
+    await writeJsonBinRaw(data);
+    res.json({
+      success: true,
+      updated,
+      config: grizzlySms.sanitizeSmsConfigForClient(config, true)
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Could not reprice catalog' });
+  }
+});
+
 const SMS_STARTER_CATALOG = [
   { service: 'wa', serviceName: 'WhatsApp', country: '73', countryName: 'Brazil' },
   { service: 'tg', serviceName: 'Telegram', country: '73', countryName: 'Brazil' },
