@@ -4388,9 +4388,7 @@ async function sendAnnouncement(msg,quiet){
 async function renderDashboard(){
   // Reload fresh data first
   try{
-    _jbCache=await jbRead();
-    if(_jbCache.users&&_jbCache.users.length>0)users=_jbCache.users;
-    if(_jbCache.stock)accountStock=_jbCache.stock;
+    applyDataSnapshot(await jbRead());
   }catch(e){}
   // Draw revenue chart
   drawRevenueChart();
