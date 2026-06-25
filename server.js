@@ -35,6 +35,7 @@ const {
   formatBeirutTime,
   initGameOrder
 } = require('./orderHelpers');
+const { SMS_CONFIG_KEY, grizzlySms, registerSmsRoutes } = require('./smsRoutes');
 
 const app = express();
 const ALLOWED_ORIGINS = new Set([
@@ -572,6 +573,8 @@ function emptyDbData() {
     topupreqs: [],
     pending: [],
     gameorders: [],
+    smsorders: [],
+    [SMS_CONFIG_KEY]: grizzlySms.defaultSmsConfig(),
     [LINK_TOKENS_KEY]: {},
     [GMAIL_MONITORS_KEY]: {}
   };
@@ -968,6 +971,9 @@ function stripPrivateData(data) {
   const publicData = { ...(data || {}) };
   delete publicData[GMAIL_MONITORS_KEY];
   delete publicData.sessions;
+  if (publicData[SMS_CONFIG_KEY]) {
+    publicData[SMS_CONFIG_KEY] = grizzlySms.sanitizeSmsConfigForClient(publicData[SMS_CONFIG_KEY], false);
+  }
   if (Array.isArray(publicData.users)) {
     publicData.users = publicData.users.map(u => sanitizeUser(u, { admin: true }));
   }
@@ -1073,7 +1079,13 @@ function safeDataForSession(data, session) {
 
 function dataForSession(data, session) {
   const publicData = stripPrivateData(data || {});
-  if (session.role === 'admin') return publicData;
+  if (session.role === 'admin') {
+    const adminData = { ...publicData };
+    if (data && data[SMS_CONFIG_KEY]) {
+      adminData[SMS_CONFIG_KEY] = grizzlySms.sanitizeSmsConfigForClient(data[SMS_CONFIG_KEY], true);
+    }
+    return adminData;
+  }
   const user = (publicData.users || []).find(u => normalizeEmail(u.email) === session.email);
   return {
     users: user ? [sanitizeUser(user)] : [],
@@ -1199,6 +1211,8 @@ function mergeUserWrite(existing, incoming, session) {
   }
 
   if (existing && existing[GMAIL_MONITORS_KEY]) next[GMAIL_MONITORS_KEY] = existing[GMAIL_MONITORS_KEY];
+  if (existing && existing[SMS_CONFIG_KEY]) next[SMS_CONFIG_KEY] = existing[SMS_CONFIG_KEY];
+  if (existing && Array.isArray(existing.smsorders)) next.smsorders = existing.smsorders;
   if (existing && existing.stockBlocks) next.stockBlocks = existing.stockBlocks;
   return next;
 }
@@ -1491,12 +1505,14 @@ function preserveSensitiveFields(existing, incoming) {
     LINK_TOKENS_KEY,
     BACKUPS_KEY,
     PRICE_CATALOG_KEY,
+    SMS_CONFIG_KEY,
     'priceChangeLog',
     'siteSettings',
     'activityLog',
     'revokedLinks',
     'sessions',
-    'gameorders'
+    'gameorders',
+    'smsorders'
   ];
   preserveKeys.forEach(key => {
     if (existing && existing[key] !== undefined && (next[key] === undefined || next[key] === null)) {
@@ -1533,6 +1549,18 @@ function preserveSensitiveFields(existing, incoming) {
   }
   if (existing && Array.isArray(existing.gameorders) && (!incoming || !Array.isArray(incoming.gameorders))) {
     next.gameorders = existing.gameorders;
+  }
+  if (existing && existing[SMS_CONFIG_KEY]) {
+    const incomingSms = next[SMS_CONFIG_KEY] || {};
+    const existingSms = existing[SMS_CONFIG_KEY] || {};
+    next[SMS_CONFIG_KEY] = {
+      ...existingSms,
+      ...incomingSms,
+      apiKey: String(incomingSms.apiKey || existingSms.apiKey || '').trim()
+    };
+  }
+  if (existing && Array.isArray(existing.smsorders) && !Array.isArray(next.smsorders)) {
+    next.smsorders = existing.smsorders;
   }
   return next;
 }
@@ -4270,6 +4298,18 @@ app.get('/monitored-emails', (req, res) => {
       status: creds.lastCheckedAt ? 'connected' : 'unknown'
     }))
   });
+});
+
+registerSmsRoutes(app, {
+  requireSession,
+  readJsonBinRaw,
+  writeJsonBinRaw,
+  normalizeEmail,
+  sanitizeUser,
+  safeDataForSession,
+  sendTG,
+  TG_ADMIN,
+  orderIdsMatch
 });
 
 let rtEnhancements = null;
