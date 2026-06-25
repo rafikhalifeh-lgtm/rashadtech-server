@@ -60,15 +60,38 @@ async function getBalance(apiKey) {
   return { success: false, error: grizzlyErrorMessage(data) };
 }
 
+function normalizeListItem(code, value, nameKeys = ['eng', 'rus', 'name']) {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const id = String(value.id ?? value.code ?? code).trim();
+    let name = '';
+    for (const key of nameKeys) {
+      if (value[key]) {
+        name = String(value[key]).trim();
+        break;
+      }
+    }
+    return { code: id || String(code).trim(), name: name || id || String(code).trim() };
+  }
+  return {
+    code: String(code).trim(),
+    name: String(value || code).trim()
+  };
+}
+
 async function getServices(apiKey) {
   const data = await requestGrizzly({ action: 'getServicesList' }, apiKey);
   if (!data || typeof data !== 'object') {
     return { success: false, error: grizzlyErrorMessage(data) };
   }
-  const services = Object.entries(data).map(([code, name]) => ({
-    code: String(code).trim(),
-    name: String(name || code).trim()
-  })).filter(item => item.code).sort((a, b) => a.name.localeCompare(b.name));
+  let services = [];
+  if (Array.isArray(data.services)) {
+    services = data.services.map(item => normalizeListItem(item.code, item));
+  } else {
+    services = Object.entries(data)
+      .filter(([key]) => key !== 'status')
+      .map(([code, name]) => normalizeListItem(code, name));
+  }
+  services = services.filter(item => item.code).sort((a, b) => a.name.localeCompare(b.name));
   return { success: true, services };
 }
 
@@ -77,10 +100,11 @@ async function getCountries(apiKey) {
   if (!data || typeof data !== 'object') {
     return { success: false, error: grizzlyErrorMessage(data) };
   }
-  const countries = Object.entries(data).map(([code, name]) => ({
-    code: String(code).trim(),
-    name: String(name || code).trim()
-  })).filter(item => item.code).sort((a, b) => a.name.localeCompare(b.name));
+  const countries = Object.entries(data)
+    .filter(([key]) => key !== 'status')
+    .map(([code, value]) => normalizeListItem(code, value))
+    .filter(item => item.code)
+    .sort((a, b) => a.name.localeCompare(b.name));
   return { success: true, countries };
 }
 
@@ -97,16 +121,38 @@ async function getPrices(apiKey, { service, country } = {}) {
 
 function extractGrizzlyCost(prices, service, country) {
   if (!prices || typeof prices !== 'object') return null;
-  const serviceNode = prices[service] || prices[String(service || '').toLowerCase()];
-  if (!serviceNode || typeof serviceNode !== 'object') return null;
-  const countryNode = serviceNode[country] || serviceNode[String(country)];
-  if (!countryNode) return null;
-  if (typeof countryNode === 'object') {
-    const cost = Number(countryNode.cost ?? countryNode.price ?? countryNode.rate);
+  const serviceKey = String(service || '').trim();
+  const countryKey = String(country || '').trim();
+
+  const readCost = (node) => {
+    if (node == null) return null;
+    if (typeof node === 'object') {
+      const cost = Number(node.cost ?? node.price ?? node.rate);
+      return Number.isFinite(cost) ? cost : null;
+    }
+    const cost = Number(node);
     return Number.isFinite(cost) ? cost : null;
-  }
-  const cost = Number(countryNode);
-  return Number.isFinite(cost) ? cost : null;
+  };
+
+  // Grizzly / sms-activate format: country -> service -> { cost, count }
+  const countryNode = prices[countryKey] || prices[Number(countryKey)];
+  const fromCountryFirst = readCost(
+    countryNode && typeof countryNode === 'object'
+      ? (countryNode[serviceKey] || countryNode[serviceKey.toLowerCase()])
+      : null
+  );
+  if (fromCountryFirst != null) return fromCountryFirst;
+
+  // Legacy format: service -> country
+  const serviceNode = prices[serviceKey] || prices[serviceKey.toLowerCase()];
+  const fromServiceFirst = readCost(
+    serviceNode && typeof serviceNode === 'object'
+      ? (serviceNode[countryKey] || serviceNode[Number(countryKey)])
+      : null
+  );
+  if (fromServiceFirst != null) return fromServiceFirst;
+
+  return null;
 }
 
 async function requestNumber(apiKey, { service, country, maxPrice } = {}) {

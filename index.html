@@ -1092,7 +1092,16 @@ So your EmailJS template will receive the user email and verification code corre
       </div>
       <div id="admin-sms" class="tab-pane">
         <div class="pg-title">SMS Numbers (Grizzly SMS)</div>
-        <div class="pg-sub">Connect your Grizzly SMS account, choose services to resell, and set your profit margin. Customer store stays off until you enable it.</div>
+        <div class="pg-sub">Sell temporary phone numbers for WhatsApp, Telegram, etc. Customers pay from wallet — you keep the profit.</div>
+        <div class="card" style="padding:14px;margin-bottom:14px;background:var(--bg3);border:1px solid var(--border)">
+          <div style="font-size:13px;font-weight:700;margin-bottom:8px">How it works</div>
+          <ol style="margin:0;padding-left:18px;font-size:12px;color:var(--text2);line-height:1.7">
+            <li><b>You</b> connect Grizzly and choose which services/countries to sell (below).</li>
+            <li><b>Customer</b> buys from Store → 📱 SMS — wallet is charged your sell price.</li>
+            <li><b>Server</b> rents a number from Grizzly automatically and shows it to the customer.</li>
+            <li><b>Customer</b> enters the number in WhatsApp/Telegram/etc., then taps <b>Refresh code</b> to get the SMS.</li>
+          </ol>
+        </div>
         <div class="card" style="padding:16px;margin-bottom:14px">
           <div style="font-size:13px;font-weight:700;margin-bottom:10px">Step 1 — API connection</div>
           <div class="field" style="margin-bottom:10px">
@@ -1107,16 +1116,18 @@ So your EmailJS template will receive the user email and verification code corre
           <div id="sms-balance-box" style="margin-top:10px;font-size:12px;color:var(--text2)"></div>
         </div>
         <div class="card" style="padding:16px;margin-bottom:14px">
-          <div style="font-size:13px;font-weight:700;margin-bottom:10px">Step 2 — Profit settings</div>
+          <div style="font-size:13px;font-weight:700;margin-bottom:10px">Step 2 — Your profit</div>
+          <div style="font-size:12px;color:var(--text3);margin-bottom:10px;line-height:1.5">Grizzly charges you in <b>credits</b>. Set how much you mark up when selling to customers. Example: Grizzly cost 1 credit × $1 × 300% markup = <b>$4.00</b> sell price.</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
             <div class="field"><label>Markup %</label><input type="number" id="sms-markup" min="0" max="500" step="1" value="35"></div>
-            <div class="field"><label>USD per Grizzly credit</label><input type="number" id="sms-usd-credit" min="0.01" step="0.01" value="1"></div>
+            <div class="field"><label>USD per Grizzly credit</label><input type="number" id="sms-usd-credit" min="0.01" step="0.01" value="1" placeholder="1.00"></div>
           </div>
           <button class="inline-btn" onclick="saveSmsPricingSettings()">Save pricing settings</button>
           <button class="inline-btn" onclick="repriceAllSmsCatalog()" style="margin-left:8px">Recalculate all prices from markup %</button>
         </div>
         <div class="card" style="padding:16px;margin-bottom:14px">
-          <div style="font-size:13px;font-weight:700;margin-bottom:10px">Step 3 — Add services to sell</div>
+          <div style="font-size:13px;font-weight:700;margin-bottom:10px">Step 3 — What to sell</div>
+          <div style="font-size:12px;color:var(--text3);margin-bottom:10px;line-height:1.5">Click <b>Load services &amp; countries</b> first, then pick a service (e.g. WhatsApp) and country (e.g. Brazil). Use <b>Preview price</b> to see Grizzly cost vs your sell price, then <b>Add to catalog</b>. Or use <b>Add popular starter pack</b> in Step 4.</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
             <div class="field"><label>Service</label><select id="sms-service-select" onchange="onSmsServiceChange()"><option value="">Load services first</option></select></div>
             <div class="field"><label>Country</label><select id="sms-country-select"><option value="">Load countries first</option></select></div>
@@ -6329,7 +6340,7 @@ function renderSmsCatalogList(catalog){
       <div class="admin-icon" style="background:#7c3aed;color:#fff;font-size:11px;font-weight:700;width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0">SMS</div>
       <div class="aw-info" style="flex:1">
         <div class="aw-name">${esc(item.serviceName||item.service)} · ${esc(item.countryName||item.country)}</div>
-        <div class="aw-email">Grizzly cost: ${item.cost!=null?fmt(item.cost):'—'} · Code: ${esc(item.service)} / ${esc(item.country)}</div>
+        <div class="aw-email">Grizzly cost: ${item.cost!=null?fmt(item.cost)+' credits':'—'} · Your price: ${fmt(item.sellPrice||0)} · Code: ${esc(item.service)} / ${esc(item.country)}</div>
       </div>
       <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
         <input type="number" id="sms-price-${esc(item.id)}" min="0.5" step="0.01" value="${Number(item.sellPrice||0).toFixed(2)}" style="width:72px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg3);color:var(--text);font-size:12px">
@@ -6421,7 +6432,7 @@ async function previewSmsPrice(){
   if(!service||!country){showToast('Select service and country');return;}
   try{
     const j=await smsAdminApi('/admin/sms/prices?service='+encodeURIComponent(service)+'&country='+encodeURIComponent(country));
-    if(box)box.innerHTML=`Grizzly cost: <b>${j.cost!=null?fmt(j.cost):'—'}</b> · Suggested sell price: <b>${j.sellPrice!=null?fmt(j.sellPrice):'—'}</b> (markup ${j.markupPercent||0}%)`;
+    if(box)box.innerHTML=`Grizzly cost: <b>${j.cost!=null?j.cost+' credits':'—'}</b> · Suggested sell price: <b>${j.sellPrice!=null?fmt(j.sellPrice):'—'}</b> (markup ${j.markupPercent||0}%)`;
   }catch(e){if(box)box.textContent=e.message;}
 }
 
