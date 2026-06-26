@@ -262,6 +262,7 @@ function defaultSmsConfig() {
     apiKey: '',
     markupPercent: 35,
     usdPerCredit: 1,
+    profitUsd: 1,
     catalog: []
   };
 }
@@ -286,21 +287,29 @@ function sanitizeSmsConfigForClient(config, isAdmin) {
     hasApiKey: Boolean(String(base.apiKey || '').trim()),
     markupPercent: Number(base.markupPercent || 0),
     usdPerCredit: Number(base.usdPerCredit || 1),
+    profitUsd: Number(base.profitUsd ?? 1),
     catalog: Array.isArray(base.catalog) ? base.catalog : []
   };
 }
 
-function computeSellPrice(cost, markupPercent, usdPerCredit) {
+function computeSellPrice(cost, markupPercent, usdPerCredit, profitUsd = 1) {
   const base = Number(cost || 0) * Number(usdPerCredit || 1);
   const markup = Number(markupPercent || 0);
-  const sell = base * (1 + markup / 100);
+  const profit = Number(profitUsd ?? 1);
+  const sell = base * (1 + markup / 100) + (Number.isFinite(profit) ? profit : 1);
   return Math.max(0.5, Math.ceil(sell * 100) / 100);
+}
+
+function computeSellPriceFromConfig(cost, config) {
+  const cfg = config || {};
+  return computeSellPrice(cost, cfg.markupPercent, cfg.usdPerCredit, cfg.profitUsd);
 }
 
 module.exports = {
   defaultSmsConfig,
   sanitizeSmsConfigForClient,
   computeSellPrice,
+  computeSellPriceFromConfig,
   getBalance,
   getServices,
   getCountries,

@@ -80,6 +80,7 @@ function registerSmsRoutes(app, deps) {
         storeEnabled: body.storeEnabled !== undefined ? Boolean(body.storeEnabled) : current.storeEnabled,
         markupPercent: body.markupPercent !== undefined ? Number(body.markupPercent) : current.markupPercent,
         usdPerCredit: body.usdPerCredit !== undefined ? Number(body.usdPerCredit) : current.usdPerCredit,
+        profitUsd: body.profitUsd !== undefined ? Number(body.profitUsd) : current.profitUsd,
         catalog: Array.isArray(body.catalog) ? body.catalog : current.catalog
       };
       if (body.apiKey !== undefined) {
@@ -147,8 +148,8 @@ function registerSmsRoutes(app, deps) {
       const cost = grizzlySms.extractGrizzlyCost(result.prices, service, country);
       const sellPrice = cost === null
         ? null
-        : grizzlySms.computeSellPrice(cost, config.markupPercent, config.usdPerCredit);
-      res.json({ success: true, prices: result.prices, cost, sellPrice, markupPercent: config.markupPercent });
+        : grizzlySms.computeSellPriceFromConfig(cost, config);
+      res.json({ success: true, prices: result.prices, cost, sellPrice, markupPercent: config.markupPercent, profitUsd: config.profitUsd });
     } catch (e) {
       res.status(500).json({ error: e.message || 'Could not load Grizzly prices' });
     }
@@ -176,7 +177,7 @@ function registerSmsRoutes(app, deps) {
         cost,
         sellPrice: sellPrice !== undefined && sellPrice !== null && sellPrice !== ''
           ? Number(sellPrice)
-          : grizzlySms.computeSellPrice(cost, config.markupPercent, config.usdPerCredit),
+          : grizzlySms.computeSellPriceFromConfig(cost, config),
         enabled: enabled !== false,
         updatedAt: Date.now()
       };
@@ -273,7 +274,7 @@ function registerSmsRoutes(app, deps) {
           ? grizzlySms.extractGrizzlyCost(priceResult.prices, item.service, item.country)
           : item.cost;
         if (cost != null) item.cost = cost;
-        item.sellPrice = grizzlySms.computeSellPrice(cost, config.markupPercent, config.usdPerCredit);
+        item.sellPrice = grizzlySms.computeSellPriceFromConfig(cost, config);
         item.updatedAt = Date.now();
         updated += 1;
       }
@@ -340,7 +341,7 @@ function registerSmsRoutes(app, deps) {
             country: row.country,
             countryName: countryNames[row.country] || row.country,
             cost: row.cost,
-            sellPrice: grizzlySms.computeSellPrice(row.cost, config.markupPercent, config.usdPerCredit),
+            sellPrice: grizzlySms.computeSellPriceFromConfig(row.cost, config),
             enabled: true,
             updatedAt: Date.now()
           };
@@ -400,7 +401,7 @@ function registerSmsRoutes(app, deps) {
           country: row.country,
           countryName: row.countryName,
           cost,
-          sellPrice: grizzlySms.computeSellPrice(cost, config.markupPercent, config.usdPerCredit),
+          sellPrice: grizzlySms.computeSellPriceFromConfig(cost, config),
           enabled: true,
           updatedAt: Date.now()
         };

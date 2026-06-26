@@ -1116,10 +1116,11 @@ So your EmailJS template will receive the user email and verification code corre
         </div>
         <div class="card" style="padding:16px;margin-bottom:14px">
           <div style="font-size:13px;font-weight:700;margin-bottom:10px">Step 2 — Your profit</div>
-          <div style="font-size:12px;color:var(--text3);margin-bottom:10px;line-height:1.5">Grizzly charges you in <b>credits</b>. Set how much you mark up when selling to customers. Example: Grizzly cost 1 credit × $1 × 300% markup = <b>$4.00</b> sell price.</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+          <div style="font-size:12px;color:var(--text3);margin-bottom:10px;line-height:1.5">Grizzly charges you in <b>credits</b>. Sell price = (cost × USD/credit × markup) + <b>$1 profit</b> on every service. Example: 1 credit × $1 × 35% markup + $1 = <b>$2.35</b>.</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px">
             <div class="field"><label>Markup %</label><input type="number" id="sms-markup" min="0" max="500" step="1" value="35"></div>
             <div class="field"><label>USD per Grizzly credit</label><input type="number" id="sms-usd-credit" min="0.01" step="0.01" value="1" placeholder="1.00"></div>
+            <div class="field"><label>Profit per service ($)</label><input type="number" id="sms-profit-usd" min="0" step="0.01" value="1" placeholder="1.00"></div>
           </div>
           <button class="inline-btn" onclick="saveSmsPricingSettings()">Save pricing settings</button>
           <button class="inline-btn" onclick="repriceAllSmsCatalog()" style="margin-left:8px">Recalculate all prices from markup %</button>
@@ -6458,8 +6459,10 @@ async function renderSmsAdmin(){
     if(statusEl)statusEl.textContent=_smsConfigCache.hasApiKey?'API key saved on server':'No API key saved yet';
     const markup=document.getElementById('sms-markup');
     const usd=document.getElementById('sms-usd-credit');
+    const profit=document.getElementById('sms-profit-usd');
     if(markup)markup.value=_smsConfigCache.markupPercent??35;
     if(usd)usd.value=_smsConfigCache.usdPerCredit??1;
+    if(profit)profit.value=_smsConfigCache.profitUsd??1;
     const store=document.getElementById('sms-store-enabled');
     if(store)store.checked=Boolean(_smsConfigCache.storeEnabled);
     renderSmsCatalogList(_smsConfigCache.catalog||[]);
@@ -6512,8 +6515,9 @@ async function testSmsConnection(){
 async function saveSmsPricingSettings(){
   const markupPercent=Number(document.getElementById('sms-markup')?.value||35);
   const usdPerCredit=Number(document.getElementById('sms-usd-credit')?.value||1);
+  const profitUsd=Number(document.getElementById('sms-profit-usd')?.value??1);
   try{
-    const j=await smsAdminApi('/admin/sms/config',{method:'POST',body:{markupPercent,usdPerCredit,enabled:true}});
+    const j=await smsAdminApi('/admin/sms/config',{method:'POST',body:{markupPercent,usdPerCredit,profitUsd,enabled:true}});
     _smsConfigCache=j.config;
     showToast('✓ SMS pricing saved');
   }catch(e){showToast('⚠️ '+e.message);}
@@ -6582,7 +6586,7 @@ async function previewSmsPrice(){
   if(!service||!country){showToast('Select service and country');return;}
   try{
     const j=await smsAdminApi('/admin/sms/prices?service='+encodeURIComponent(service)+'&country='+encodeURIComponent(country));
-    if(box)box.innerHTML=`Grizzly cost: <b>${fmtSmsCredits(j.cost)}</b> · Suggested sell price: <b>${j.sellPrice!=null?fmt(j.sellPrice):'—'}</b> (markup ${j.markupPercent||0}%)`;
+    if(box)box.innerHTML=`Grizzly cost: <b>${fmtSmsCredits(j.cost)}</b> · Suggested sell price: <b>${j.sellPrice!=null?fmt(j.sellPrice):'—'}</b> (markup ${j.markupPercent||0}% + ${fmt(j.profitUsd??1)} profit)`;
   }catch(e){if(box)box.textContent=e.message;}
 }
 
