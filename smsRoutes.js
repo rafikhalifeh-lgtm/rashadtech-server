@@ -4,14 +4,11 @@ const SMS_CONFIG_KEY = 'smsConfig';
 const SMS_STARTER_CATALOG = [
   { service: 'wa', serviceName: 'WhatsApp', country: '73', countryName: 'Brazil' },
   { service: 'tg', serviceName: 'Telegram', country: '73', countryName: 'Brazil' },
-  { service: 'wa', serviceName: 'WhatsApp', country: '16', countryName: 'United Kingdom' },
+  { service: 'fb', serviceName: 'Facebook', country: '73', countryName: 'Brazil' },
   { service: 'ig', serviceName: 'Instagram', country: '73', countryName: 'Brazil' },
-  { service: 'go', serviceName: 'Google', country: '73', countryName: 'Brazil' },
-  { service: 'fb', serviceName: 'Facebook', country: '73', countryName: 'Brazil' }
+  { service: 'lf', serviceName: 'TikTok', country: '73', countryName: 'Brazil' },
+  { service: 'wa', serviceName: 'WhatsApp', country: '16', countryName: 'United Kingdom' }
 ];
-
-const POPULAR_SMS_COUNTRIES = ['73', '16', '187', '22', '6', '12', '4', '1', '2', '63', '15', '48'];
-const POPULAR_SMS_SERVICES = ['wa', 'tg', 'fb', 'ig', 'go', 'ds', 'tw', 'ub', 'lf', 'mm', 'vk', 'ok', 'vi', 'nf', 'am', 'pp'];
 
 const activeSmsPurchases = new Set();
 
@@ -299,45 +296,43 @@ function registerSmsRoutes(app, deps) {
         grizzlySms.getServices(apiKey),
         grizzlySms.getCountries(apiKey)
       ]);
-      const serviceNames = Object.fromEntries(
-        (servicesResult.services || []).map(s => [String(s.code), String(s.name || s.code)])
-      );
+      const serviceNames = {
+        ...grizzlySms.POPULAR_SMS_APP_NAMES,
+        ...Object.fromEntries(
+          (servicesResult.services || []).map(s => [String(s.code), String(s.name || s.code)])
+        )
+      };
       const countryNames = Object.fromEntries(
         (countriesResult.countries || []).map(c => [String(c.code), String(c.name || c.code)])
       );
 
-      const countries = Array.isArray(req.body?.countries) && req.body.countries.length
-        ? req.body.countries.map(c => String(c).trim()).filter(Boolean)
-        : POPULAR_SMS_COUNTRIES;
-      const maxItems = Math.min(Math.max(Number(req.body?.maxItems) || 300, 1), 500);
-      const maxPerCountry = Math.max(15, Math.ceil(maxItems / Math.max(countries.length, 1)));
+      const services = Array.isArray(req.body?.services) && req.body.services.length
+        ? req.body.services.map(s => String(s).trim().toLowerCase()).filter(Boolean)
+        : grizzlySms.POPULAR_SMS_APP_CODES;
 
-      const catalog = Array.isArray(config.catalog) ? [...config.catalog] : [];
-      const byId = new Map(catalog.map(item => [item.id, item]));
+      const byId = new Map();
+      for (const item of config.catalog || []) {
+        if (grizzlySms.isPopularSmsService(item.service)) {
+          byId.set(item.id, item);
+        }
+      }
       let added = 0;
       let updated = 0;
       let scanned = 0;
 
-      const sortImportRows = rows => [...rows].sort((a, b) => {
-        const ap = POPULAR_SMS_SERVICES.includes(String(a.service || '').toLowerCase()) ? 0 : 1;
-        const bp = POPULAR_SMS_SERVICES.includes(String(b.service || '').toLowerCase()) ? 0 : 1;
-        if (ap !== bp) return ap - bp;
-        return String(a.service).localeCompare(String(b.service));
-      });
-
-      for (const country of countries) {
-        const priceResult = await grizzlySms.getPrices(apiKey, { country });
+      for (const service of services) {
+        if (!grizzlySms.isPopularSmsService(service)) continue;
+        const priceResult = await grizzlySms.getPrices(apiKey, { service });
         if (!priceResult.success) continue;
-        const rows = sortImportRows(
-          grizzlySms.flattenGrizzlyPrices(priceResult.prices, { countryHint: country })
-        ).slice(0, maxPerCountry);
+        const rows = grizzlySms.flattenGrizzlyPrices(priceResult.prices, { serviceHint: service })
+          .filter(row => String(row.service).toLowerCase() === service);
         for (const row of rows) {
           scanned += 1;
           const id = `${row.service}__${row.country}`;
           const item = {
             id,
             service: row.service,
-            serviceName: serviceNames[row.service] || row.service,
+            serviceName: serviceNames[row.service] || serviceNames[service] || row.service,
             country: row.country,
             countryName: countryNames[row.country] || row.country,
             cost: row.cost,
@@ -356,10 +351,12 @@ function registerSmsRoutes(app, deps) {
         }
       }
 
+      const serviceOrder = new Map(grizzlySms.POPULAR_SMS_APP_CODES.map((code, i) => [code, i]));
       config.catalog = [...byId.values()].sort((a, b) => {
-        const an = `${a.serviceName || a.service} ${a.countryName || a.country}`;
-        const bn = `${b.serviceName || b.service} ${b.countryName || b.country}`;
-        return an.localeCompare(bn);
+        const as = serviceOrder.get(String(a.service).toLowerCase()) ?? 99;
+        const bs = serviceOrder.get(String(b.service).toLowerCase()) ?? 99;
+        if (as !== bs) return as - bs;
+        return String(a.countryName || a.country).localeCompare(String(b.countryName || b.country));
       });
       config.enabled = true;
       data[SMS_CONFIG_KEY] = config;
@@ -370,13 +367,12 @@ function registerSmsRoutes(app, deps) {
         updated,
         scanned,
         total: config.catalog.length,
-        countries: countries.length,
-        maxPerCountry,
+        services: services.length,
         config: grizzlySms.sanitizeSmsConfigForClient(config, true)
       });
     } catch (e) {
       console.error('SMS catalog import error:', e.message);
-      res.status(500).json({ error: e.message || 'Could not import available SMS services' });
+      res.status(500).json({ error: e.message || 'Could not import popular SMS apps' });
     }
   });
 
@@ -436,7 +432,7 @@ function registerSmsRoutes(app, deps) {
       const config = readSmsConfig(data);
       if (!config.storeEnabled) return res.json({ success: true, enabled: false, catalog: [] });
       const catalog = (config.catalog || [])
-        .filter(item => item.enabled !== false)
+        .filter(item => item.enabled !== false && grizzlySms.isPopularSmsService(item.service))
         .map(item => ({
           id: item.id,
           service: item.service,

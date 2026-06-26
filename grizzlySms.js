@@ -1,5 +1,25 @@
 const GRIZZLY_API_ORIGIN = 'https://api.grizzlysms.com';
 
+/** Popular apps only — Grizzly service codes (lf = TikTok). */
+const POPULAR_SMS_APP_CODES = ['wa', 'fb', 'tg', 'ig', 'lf', 'go', 'tw', 'ds', 'mm', 'vi', 'am'];
+const POPULAR_SMS_APP_NAMES = {
+  wa: 'WhatsApp',
+  fb: 'Facebook',
+  tg: 'Telegram',
+  ig: 'Instagram',
+  lf: 'TikTok',
+  go: 'Google',
+  tw: 'Twitter / X',
+  ds: 'Discord',
+  mm: 'Microsoft',
+  vi: 'Viber',
+  am: 'Amazon'
+};
+
+function isPopularSmsService(code) {
+  return POPULAR_SMS_APP_CODES.includes(String(code || '').toLowerCase());
+}
+
 async function requestGrizzly(params, apiKey) {
   if (!apiKey) throw new Error('Grizzly SMS API key is not configured');
   const url = new URL('/stubs/handler_api.php', `${GRIZZLY_API_ORIGIN}/`);
@@ -133,6 +153,7 @@ function flattenGrizzlyPrices(prices, options = {}) {
   const rows = [];
   if (!prices || typeof prices !== 'object') return rows;
   const countryHint = options.countryHint != null ? String(options.countryHint) : '';
+  const serviceHint = options.serviceHint != null ? String(options.serviceHint) : '';
 
   const pushRow = (country, service, node) => {
     const cost = readCostNode(node);
@@ -152,6 +173,10 @@ function flattenGrizzlyPrices(prices, options = {}) {
     }
 
     if (/^\d+$/.test(keyA)) {
+      if (serviceHint && readCostNode(nodeA) != null) {
+        pushRow(keyA, serviceHint, nodeA);
+        continue;
+      }
       for (const [serviceKey, nodeB] of Object.entries(nodeA)) {
         pushRow(keyA, serviceKey, nodeB);
       }
@@ -306,6 +331,9 @@ function computeSellPriceFromConfig(cost, config) {
 }
 
 module.exports = {
+  POPULAR_SMS_APP_CODES,
+  POPULAR_SMS_APP_NAMES,
+  isPopularSmsService,
   defaultSmsConfig,
   sanitizeSmsConfigForClient,
   computeSellPrice,
