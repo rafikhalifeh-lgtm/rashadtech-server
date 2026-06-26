@@ -1,9 +1,10 @@
 const GRIZZLY_API_ORIGIN = 'https://api.grizzlysms.com';
 
-/** Popular apps only — Grizzly service codes (lf = TikTok). */
-const POPULAR_SMS_APP_CODES = ['wa', 'fb', 'tg', 'ig', 'lf', 'go', 'tw', 'ds', 'mm', 'vi', 'am'];
+/** Popular apps only — Grizzly service codes (lf = TikTok, bye = WhatsApp Business). */
+const POPULAR_SMS_APP_CODES = ['wa', 'bye', 'fb', 'tg', 'ig', 'lf', 'go', 'tw', 'ds', 'mm', 'vi', 'am'];
 const POPULAR_SMS_APP_NAMES = {
   wa: 'WhatsApp',
+  bye: 'WhatsApp Business',
   fb: 'Facebook',
   tg: 'Telegram',
   ig: 'Instagram',
