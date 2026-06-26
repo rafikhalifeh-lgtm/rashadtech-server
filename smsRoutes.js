@@ -3,6 +3,7 @@ const grizzlySms = require('./grizzlySms');
 const SMS_CONFIG_KEY = 'smsConfig';
 const SMS_STARTER_CATALOG = [
   { service: 'wa', serviceName: 'WhatsApp', country: '73', countryName: 'Brazil' },
+  { service: 'bye', serviceName: 'WhatsApp Business', country: '73', countryName: 'Brazil' },
   { service: 'tg', serviceName: 'Telegram', country: '73', countryName: 'Brazil' },
   { service: 'fb', serviceName: 'Facebook', country: '73', countryName: 'Brazil' },
   { service: 'ig', serviceName: 'Instagram', country: '73', countryName: 'Brazil' },
