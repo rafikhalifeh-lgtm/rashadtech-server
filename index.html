@@ -6524,7 +6524,7 @@ async function saveSmsPricingSettings(){
 }
 
 async function repriceAllSmsCatalog(){
-  if(!confirm('Update every catalog item sell price using current markup % and latest Grizzly costs?'))return;
+  if(!confirm('Update every catalog sell price using markup %, USD/credit, and $1 profit per service?'))return;
   try{
     const j=await smsAdminApi('/admin/sms/catalog-reprice-all',{method:'POST',body:{}});
     _smsConfigCache=j.config;
