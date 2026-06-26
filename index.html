@@ -1154,7 +1154,7 @@ So your EmailJS template will receive the user email and verification code corre
             <button class="inline-btn" onclick="seedSmsStarterCatalog()">Add popular starter pack</button>
             <button class="inline-btn" onclick="refreshAllSmsCosts()">Refresh all Grizzly costs</button>
           </div>
-          <div style="font-size:12px;color:var(--text3);margin-bottom:8px">Import all: loads every app/country Grizzly has in stock for Brazil, UK, USA, India, and more. Customers see them inside the single <b>SMS Numbers</b> store card.</div>
+          <div style="font-size:12px;color:var(--text3);margin-bottom:8px">Import all: adds services from Brazil, UK, USA, India, and more (~25 per country). Popular apps are imported first in each country. Your manual items are kept.</div>
           <div id="sms-orders-list"><div class="empty-state" style="padding:16px">No SMS orders yet.</div></div>
         </div>
       </div>
@@ -1955,11 +1955,12 @@ const SMS_SERVICE_ICONS={
   ig:'https://upload.wikimedia.org/wikipedia/commons/e/e7/Instagram_logo_2016.svg',
   fb:'https://upload.wikimedia.org/wikipedia/commons/b/b9/2023_Facebook_icon.svg',
   go:'https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg',
-  ds:'https://upload.wikimedia.org/wikipedia/en/9/9f/Discord_icon.svg',
+  ds:'https://upload.wikimedia.org/wikipedia/commons/9/9f/Discord_icon.svg',
   tw:'https://upload.wikimedia.org/wikipedia/commons/6/6f/Logo_of_Twitter.svg',
   ub:'https://upload.wikimedia.org/wikipedia/commons/c/cc/Uber_logo_2018.png',
   lf:'https://upload.wikimedia.org/wikipedia/commons/5/5e/LINE_logo.svg'
 };
+const SMS_POPULAR_SERVICES=['wa','tg','fb','ig','go','ds','tw','ub','lf'];
 
 function prodIcon(p,size=32,radius=8){
   const ico=PRODUCT_ICONS[p.id];
@@ -3563,6 +3564,9 @@ function smsServiceIconHtml(code,size=40){
   if(src)return `<img src="${src}" width="${size}" height="${size}" alt="" style="object-fit:contain;max-width:${size}px;max-height:${size}px;background:#fff;border-radius:10px;padding:4px" onerror="this.outerHTML='${smsServiceEmoji(key)}'">`;
   return `<span style="font-size:${Math.round(size*0.75)}px">${smsServiceEmoji(key)}</span>`;
 }
+function isSmsPopularService(code){
+  return SMS_POPULAR_SERVICES.includes(String(code||'').toLowerCase());
+}
 function smsProductCardHtml(item){
   return `<div class="plan-row sms-picker-row" onclick="closeModal('buy-modal');openSmsBuy('${esc(item.id)}')" style="cursor:pointer;margin-bottom:0">
     <div style="display:flex;align-items:center;gap:10px;min-width:0;flex:1">
@@ -3582,7 +3586,12 @@ function buildSmsPickerHtml(catalog){
     if(!groups[key])groups[key]={name:item.serviceName||item.service,code:key,items:[]};
     groups[key].items.push(item);
   });
-  return Object.values(groups).sort((a,b)=>String(a.name).localeCompare(String(b.name))).map(g=>`
+  return Object.values(groups).sort((a,b)=>{
+    const ap=isSmsPopularService(a.code)?0:1;
+    const bp=isSmsPopularService(b.code)?0:1;
+    if(ap!==bp)return ap-bp;
+    return String(a.name).localeCompare(String(b.name));
+  }).map(g=>`
     <div class="sms-picker-group" data-sms-group="${esc(g.code)}">
       <div style="font-size:12px;font-weight:700;margin:10px 0 6px;display:flex;align-items:center;gap:8px">${smsServiceIconHtml(g.code,22)} ${esc(g.name)}</div>
       ${g.items.sort((a,b)=>String(a.countryName||a.country).localeCompare(String(b.countryName||b.country))).map(smsProductCardHtml).join('')}
@@ -3601,6 +3610,37 @@ function filterSmsPicker(q){
     });
     group.style.display=any?'':'none';
   });
+}
+function smsCategoryChoiceHtml(mode,title,desc,icons){
+  return `<button type="button" class="plan-row sms-category-btn" onclick="openSmsPickerCategory('${mode}')" style="width:100%;text-align:left;border:1px solid var(--border);background:var(--bg3);cursor:pointer;margin-bottom:10px;padding:14px;border-radius:var(--radius-sm)">
+    <div style="display:flex;align-items:center;gap:12px">
+      <div style="display:flex;gap:4px;flex-wrap:wrap;min-width:88px">${icons}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:14px;font-weight:700;color:var(--text)">${esc(title)}</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:4px;line-height:1.45">${esc(desc)}</div>
+      </div>
+      <div style="color:var(--text3);font-size:18px">›</div>
+    </div>
+  </button>`;
+}
+function openSmsPickerCategory(mode){
+  const catalog=getSmsStoreCatalog();
+  const popular=isSmsPopularService;
+  const filtered=catalog.filter(item=>mode==='popular'?popular(item.service):!popular(item.service));
+  if(!filtered.length){
+    showToast(mode==='popular'?'No popular SMS services in catalog yet':'No other SMS services in catalog yet');
+    return;
+  }
+  const title=mode==='popular'?'Popular apps':'Other apps';
+  document.getElementById('modal-title').textContent='SMS · '+title;
+  document.getElementById('modal-body').innerHTML=`
+    <button type="button" class="inline-btn" onclick="openSmsStoreModal()" style="margin-bottom:10px">← Back</button>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.55">${mode==='popular'?'WhatsApp, Telegram, Facebook, Instagram, Google, and more.':'All other verification apps from your catalog.'}</div>
+    <input type="text" id="sms-picker-search" placeholder="Search country or app…" oninput="filterSmsPicker(this.value)" style="width:100%;padding:9px 12px;margin-bottom:10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text);font-size:13px;box-sizing:border-box">
+    <div id="sms-picker-list" style="display:flex;flex-direction:column;gap:4px;max-height:min(52vh,420px);overflow-y:auto">
+      ${buildSmsPickerHtml(filtered)}
+    </div>`;
+  openModal('buy-modal');
 }
 function smsHubCardHtml(){
   const catalog=getSmsStoreCatalog();
@@ -3625,13 +3665,14 @@ function openSmsStoreModal(){
   if(!currentUser){showToast('Sign in first');switchTab('store',null);return;}
   const catalog=getSmsStoreCatalog();
   if(!catalog.length){showToast('SMS numbers are not available yet');return;}
+  const popularCount=catalog.filter(item=>isSmsPopularService(item.service)).length;
+  const otherCount=catalog.length-popularCount;
+  const popularIcons=SMS_POPULAR_SERVICES.slice(0,5).map(s=>smsServiceIconHtml(s,28)).join('');
   document.getElementById('modal-title').textContent='SMS Verification Numbers';
   document.getElementById('modal-body').innerHTML=`
-    <div style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.55">Choose the app and country. All services are listed here — WhatsApp, Telegram, Facebook, Google, Instagram, and more.</div>
-    <input type="text" id="sms-picker-search" placeholder="Search app or country…" oninput="filterSmsPicker(this.value)" style="width:100%;padding:9px 12px;margin-bottom:10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text);font-size:13px;box-sizing:border-box">
-    <div id="sms-picker-list" style="display:flex;flex-direction:column;gap:4px;max-height:min(52vh,420px);overflow-y:auto">
-      ${buildSmsPickerHtml(catalog)}
-    </div>`;
+    <div style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.55">Choose a category, then pick the app and country.</div>
+    ${smsCategoryChoiceHtml('popular','Popular',`WhatsApp · Telegram · Facebook · Instagram · Google${popularCount?` · ${popularCount} options`:''}`,popularIcons)}
+    ${smsCategoryChoiceHtml('other','Other',`All other apps in your catalog${otherCount?` · ${otherCount} options`:''}`,`<span style="font-size:28px">📱</span>`)}`;
   openModal('buy-modal');
 }
 async function refreshSmsStoreTab(){
@@ -6599,7 +6640,7 @@ async function seedSmsStarterCatalog(){
 }
 
 async function importAllSmsServices(){
-  if(!confirm('Import all available Grizzly SMS services for popular countries (up to 300 items)? Your custom sell prices will be kept where already set.'))return;
+  if(!confirm('Import available Grizzly SMS services for Brazil, UK, USA, India, and more (~25 per country)? Your manual items and custom prices are kept.'))return;
   try{
     showToast('⏳ Loading services from Grizzly…');
     const j=await smsAdminApi('/admin/sms/catalog-import-available',{method:'POST',body:{}});
@@ -6608,7 +6649,8 @@ async function importAllSmsServices(){
     const store=document.getElementById('sms-store-enabled');
     if(store)store.checked=true;
     await saveSmsStoreEnabled();
-    showToast(`✓ ${j.added||0} new · ${j.updated||0} updated · ${j.total||0} total`);
+    const per=j.maxPerCountry?` · ~${j.maxPerCountry}/country`:'';
+    showToast(`✓ ${j.added||0} new · ${j.updated||0} updated · ${j.total||0} total${per}`);
   }catch(e){showToast('⚠️ '+e.message);}
 }
 

@@ -11,6 +11,7 @@ const SMS_STARTER_CATALOG = [
 ];
 
 const POPULAR_SMS_COUNTRIES = ['73', '16', '187', '22', '6', '12', '4', '1', '2', '63', '15', '48'];
+const POPULAR_SMS_SERVICES = ['wa', 'tg', 'fb', 'ig', 'go', 'ds', 'tw', 'ub', 'lf', 'mm', 'vk', 'ok', 'vi', 'nf', 'am', 'pp'];
 
 const activeSmsPurchases = new Set();
 
@@ -308,6 +309,7 @@ function registerSmsRoutes(app, deps) {
         ? req.body.countries.map(c => String(c).trim()).filter(Boolean)
         : POPULAR_SMS_COUNTRIES;
       const maxItems = Math.min(Math.max(Number(req.body?.maxItems) || 300, 1), 500);
+      const maxPerCountry = Math.max(15, Math.ceil(maxItems / Math.max(countries.length, 1)));
 
       const catalog = Array.isArray(config.catalog) ? [...config.catalog] : [];
       const byId = new Map(catalog.map(item => [item.id, item]));
@@ -315,13 +317,20 @@ function registerSmsRoutes(app, deps) {
       let updated = 0;
       let scanned = 0;
 
+      const sortImportRows = rows => [...rows].sort((a, b) => {
+        const ap = POPULAR_SMS_SERVICES.includes(String(a.service || '').toLowerCase()) ? 0 : 1;
+        const bp = POPULAR_SMS_SERVICES.includes(String(b.service || '').toLowerCase()) ? 0 : 1;
+        if (ap !== bp) return ap - bp;
+        return String(a.service).localeCompare(String(b.service));
+      });
+
       for (const country of countries) {
-        if (added + updated >= maxItems) break;
         const priceResult = await grizzlySms.getPrices(apiKey, { country });
         if (!priceResult.success) continue;
-        const rows = grizzlySms.flattenGrizzlyPrices(priceResult.prices, { countryHint: country });
+        const rows = sortImportRows(
+          grizzlySms.flattenGrizzlyPrices(priceResult.prices, { countryHint: country })
+        ).slice(0, maxPerCountry);
         for (const row of rows) {
-          if (added + updated >= maxItems) break;
           scanned += 1;
           const id = `${row.service}__${row.country}`;
           const item = {
@@ -360,6 +369,8 @@ function registerSmsRoutes(app, deps) {
         updated,
         scanned,
         total: config.catalog.length,
+        countries: countries.length,
+        maxPerCountry,
         config: grizzlySms.sanitizeSmsConfigForClient(config, true)
       });
     } catch (e) {
