@@ -1712,6 +1712,34 @@ function isAmazonStockKey(skey) {
   return String(skey || '').startsWith('amazon__');
 }
 
+function isCanvaStockKey(skey) {
+  return String(skey || '').startsWith('canva__');
+}
+
+function isCanvaOwnStockKey(skey) {
+  return /^canva__own__/.test(String(skey || ''));
+}
+
+function isCanvaNewStockKey(skey) {
+  return /^canva__new__/.test(String(skey || ''));
+}
+
+function isCanvaNewSubscription(sub) {
+  return Boolean(sub && (sub.productId === 'canva' || /canva/i.test(sub.product || '')) && /new account/i.test(String(sub.plan || '')));
+}
+
+function isCanvaOwnSubscription(sub) {
+  return Boolean(sub && (sub.productId === 'canva' || /canva/i.test(sub.product || '')) && /use my email/i.test(String(sub.plan || '')));
+}
+
+function isCanvaNewOrder(order) {
+  return isCanvaNewSubscription(order);
+}
+
+function isCanvaOwnOrder(order) {
+  return isCanvaOwnSubscription(order);
+}
+
 function isDisneyOneUserSubscription(sub) {
   return Boolean(sub && (sub.productId === 'disney' || /disney/i.test(sub.product || '')) && /1\s*user/i.test(String(sub.plan || '')));
 }
@@ -1746,6 +1774,9 @@ function isValidLinkSubscription(subscription) {
   if (isDisneyOneUserSubscription(subscription)) {
     return Boolean(String(subscription.phone || '').trim() || String(subscription.email || '').trim());
   }
+  if (isCanvaNewSubscription(subscription) || isCanvaOwnSubscription(subscription)) {
+    return Boolean(String(subscription.email || '').trim());
+  }
   return Boolean(subscription.email && subscription.pass);
 }
 
@@ -1763,6 +1794,15 @@ function validateStockAccountForAdd(skey, rowAccount) {
     const email = String(rowAccount && rowAccount.email || '').trim();
     if (!phone) return 'Phone number with country code is required for Disney+ 1-user stock';
     if (!email) return 'Code email is required for Disney+ 1-user stock (receives sign-in codes)';
+    return null;
+  }
+  if (isCanvaNewStockKey(skey)) {
+    const email = String(rowAccount && rowAccount.email || '').trim();
+    const expiryDate = String(rowAccount && rowAccount.expiryDate || '').trim();
+    const mainEmail = String(rowAccount && rowAccount.mainEmail || '').trim();
+    if (!email) return 'Alias email is required for Canva stock';
+    if (!expiryDate) return 'Expiry date is required for Canva stock (dd/mm/yyyy)';
+    if (!mainEmail) return 'Main Gmail is required for Canva sign-in codes';
     return null;
   }
   if (!rowAccount || !rowAccount.email || !rowAccount.pass) {
@@ -2508,17 +2548,25 @@ function syncUserContact(user, { tgChatId, name, phone } = {}) {
   return user;
 }
 
-async function notifyPurchasePending(user, product, planLabel, price, assignCustId) {
+async function notifyPurchasePending(user, product, planLabel, price, assignCustId, pendingOrder = null) {
   const assignedCustomer = assignCustId !== null && assignCustId !== undefined
     ? (user.myCustomers || []).find(c => c.id === assignCustId)
     : null;
   const assignNote = assignedCustomer
     ? `\n👥 For: ${assignedCustomer.fname} ${assignedCustomer.lname}`
     : '';
-  await sendTG(TG_ADMIN, `⏳ <b>Pending Order</b>\n👤 ${user.name} (${user.email})\n📦 ${product.name} · ${planLabel}\n💵 $${Number(price).toFixed(2)}${assignNote}\n⚠️ No stock — add accounts in Stock tab to fulfill.`, 'HTML').catch((e) => console.error('Pending admin TG:', e.message));
+  const canvaEmail = pendingOrder && String(pendingOrder.customerCanvaEmail || '').trim();
+  const isCanvaOwn = product && product.id === 'canva' && canvaEmail;
+  const adminMsg = isCanvaOwn
+    ? `⏳ <b>Canva Pro — activate by email</b>\n👤 ${user.name} (${user.email})\n📧 <b>Customer Canva email:</b> <code>${canvaEmail}</code>\n📦 ${product.name} · ${planLabel}\n💵 $${Number(price).toFixed(2)}${assignNote}\n\nActivate Pro on this email, then tap Fulfill in Admin → Pending Orders.`
+    : `⏳ <b>Pending Order</b>\n👤 ${user.name} (${user.email})\n📦 ${product.name} · ${planLabel}\n💵 $${Number(price).toFixed(2)}${assignNote}\n⚠️ No stock — add accounts in Stock tab to fulfill.`;
+  await sendTG(TG_ADMIN, adminMsg, 'HTML').catch((e) => console.error('Pending admin TG:', e.message));
   if (!user.tgChatId) return false;
   try {
-    await sendTG(user.tgChatId, `✅ <b>Purchase Confirmed!</b>\n\n📦 ${product.name} · ${planLabel}\n💵 $${Number(price).toFixed(2)}\n💰 New balance: $${Number(user.balance || 0).toFixed(2)}${assignNote}\n\n⏳ Your credentials will be delivered here shortly.`, 'HTML');
+    const custMsg = isCanvaOwn
+      ? `✅ <b>Purchase Confirmed!</b>\n\n📦 ${product.name} · ${planLabel}\n📧 Canva email: <code>${canvaEmail}</code>\n💵 $${Number(price).toFixed(2)}${assignNote}\n💰 New balance: $${Number(user.balance || 0).toFixed(2)}\n\n⏳ We will activate Canva Pro on your email shortly.`
+      : `✅ <b>Purchase Confirmed!</b>\n\n📦 ${product.name} · ${planLabel}\n💵 $${Number(price).toFixed(2)}${assignNote}\n💰 New balance: $${Number(user.balance || 0).toFixed(2)}\n\n⏳ Your credentials will be delivered here shortly.`;
+    await sendTG(user.tgChatId, custMsg, 'HTML');
     return true;
   } catch (e) {
     console.error('Pending customer TG:', e.message);
@@ -2534,6 +2582,8 @@ async function notifyPurchaseFulfilled(user, product, planLabel, price, order, a
   const profileLabel = orderProfileName(order);
   const isAnghami = product && product.id === 'anghami';
   const isDisneyOne = isDisneyOneUserOrder(order);
+  const isCanvaNew = isCanvaNewOrder(order);
+  const isCanvaOwn = isCanvaOwnOrder(order);
   let adminMsg = `🎉 <b>New Purchase</b>\n\n📦 <b>Product:</b> ${product.name}\n📋 <b>Plan:</b> ${planLabel}\n💵 <b>Price:</b> $${Number(price).toFixed(2)}\n👤 <b>Buyer:</b> ${user.name} (${user.email})`;
   if (assignedCustomer) {
     adminMsg += `\n👥 <b>Assigned to:</b> ${assignedCustomer.fname} ${assignedCustomer.lname} (${assignedCustomer.code}${assignedCustomer.phone})`;
@@ -2544,6 +2594,8 @@ async function notifyPurchaseFulfilled(user, product, planLabel, price, order, a
     adminMsg += `\n\n📱 <b>Phone:</b> <code>${order.phone || '—'}</code>`;
     adminMsg += `\n📧 <b>Code email:</b> <code>${order.email || '—'}</code>`;
     if (profileLabel) adminMsg += `\n👤 Profile: <code>${profileLabel}</code>`;
+  } else if (isCanvaNew || isCanvaOwn) {
+    adminMsg += `\n\n📧 <b>Canva email:</b> <code>${order.email || '—'}</code>`;
   } else {
     adminMsg += `\n\n🔐 <b>Credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`;
     if (profileLabel) adminMsg += `\n👤 Profile: <code>${profileLabel}</code>`;
@@ -2590,10 +2642,18 @@ async function notifyPurchaseFulfilled(user, product, planLabel, price, order, a
       ? (assignedCustomer
         ? `✅ <b>Disney+ for ${custName}</b>\n\n📋 ${planLabel}\n👥 <b>For:</b> ${custName}\n\n📱 <b>Phone:</b> <code>${order.phone || ''}</code>\nOpen Disney+ app → enter phone with country code → tap Request Sign-in Code on your subscription link.`
         : `✅ <b>Your Disney+ is ready!</b>\n\n📋 ${planLabel}\n\n📱 <b>Phone:</b> <code>${order.phone || ''}</code>\nOpen Disney+ app → enter phone with country code → tap Request Sign-in Code on your subscription link.`)
-      : (assignedCustomer
+      : isCanvaNew
+        ? (assignedCustomer
+          ? `✅ <b>Canva Pro for ${custName}</b>\n\n📋 ${planLabel}\n👥 <b>For:</b> ${custName}\n\n📧 <b>Email:</b> <code>${order.email || ''}</code>\nGo to canva.com → enter email → tap Request Sign-in Code on your subscription link.`
+          : `✅ <b>Your Canva Pro is ready!</b>\n\n📋 ${planLabel}\n\n📧 <b>Email:</b> <code>${order.email || ''}</code>\nGo to canva.com → enter email → tap Request Sign-in Code on your subscription link.`)
+        : isCanvaOwn
+          ? (assignedCustomer
+            ? `✅ <b>Canva Pro activated for ${custName}</b>\n\n📋 ${planLabel}\n👥 <b>For:</b> ${custName}\n\n📧 <b>Email:</b> <code>${order.email || ''}</code>\nPro is now active on this Canva account. Sign in and enjoy!`
+            : `✅ <b>Your Canva Pro is active!</b>\n\n📋 ${planLabel}\n\n📧 <b>Email:</b> <code>${order.email || ''}</code>\nPro is now enabled on your Canva account. Sign in and enjoy!`)
+          : (assignedCustomer
         ? `✅ <b>${product.name} subscription for ${custName}</b>\n\n📋 ${planLabel}\n👥 <b>For:</b> ${custName}\n\n🔐 <b>Credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`
         : `✅ <b>Your ${product.name} is ready!</b>\n\n📋 ${planLabel}\n\n🔐 <b>Your credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`);
-  if (!isAnghami && !isDisneyOne && profileLabel) custMsg += `\n👤 Profile: <code>${profileLabel}</code>`;
+  if (!isAnghami && !isDisneyOne && !isCanvaNew && !isCanvaOwn && profileLabel) custMsg += `\n👤 Profile: <code>${profileLabel}</code>`;
   if (isDisneyOne && profileLabel) custMsg += `\n👤 Profile: <code>${profileLabel}</code>`;
   if (order.expiryDate) custMsg += `\n⏰ Expires: ${order.expiryDate}`;
   if (order.profilePin) custMsg += `\n🔢 PIN: <code>${order.profilePin}</code>`;
@@ -2605,7 +2665,11 @@ async function notifyPurchaseFulfilled(user, product, planLabel, price, order, a
         ? `✅ <b>Anghami+</b>\n\n📋 ${planLabel}\n\n🔗 ${order.serviceLink || ''}\n\n${ANGHAMI_CANCEL_NOTE_EN}\n\n🔗 ${subLink}`
         : isDisneyOne
           ? `✅ <b>Disney+ subscription</b>\n\n📋 ${planLabel}\n\n📱 <code>${order.phone || ''}</code>\n\n🔗 ${subLink}`
-          : `✅ <b>${product.name} subscription</b>\n\n📋 ${planLabel}\n\n🔐 <b>Credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>${order.profilePin ? `\n🔢 PIN: <code>${order.profilePin}</code>` : ''}\n\n🔗 ${subLink}`;
+          : isCanvaNew
+            ? `✅ <b>Canva Pro</b>\n\n📋 ${planLabel}\n\n📧 <code>${order.email || ''}</code>\n\n🔗 ${subLink}`
+            : isCanvaOwn
+              ? `✅ <b>Canva Pro activated</b>\n\n📋 ${planLabel}\n\n📧 <code>${order.email || ''}</code>\n\n🔗 ${subLink}`
+              : `✅ <b>${product.name} subscription</b>\n\n📋 ${planLabel}\n\n🔐 <b>Credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>${order.profilePin ? `\n🔢 PIN: <code>${order.profilePin}</code>` : ''}\n\n🔗 ${subLink}`;
       await sendTG(assignedCustomer.tgChatId, assignMsg, 'HTML').catch(() => {});
     }
     return true;
@@ -2855,10 +2919,16 @@ app.post('/purchase', async (req, res) => {
       if (data.stockBlocks[purchaseBlockKey(skey, customDays)]) {
         return { error: 'This plan is temporarily unavailable.', status: 403 };
       }
+      if (isCanvaOwnStockKey(skey)) {
+        const customerCanvaEmail = String(extraFields?.customerCanvaEmail || '').trim();
+        if (!customerCanvaEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerCanvaEmail)) {
+          return { error: 'Please enter a valid Canva email', status: 400 };
+        }
+      }
       if (Number(user.balance || 0) < Number(price)) return { error: 'Insufficient balance', status: 400 };
 
       const dateStr = formatBeirutTime();
-      const acc = pickAvailableAccount(data, skey);
+      const acc = isCanvaOwnStockKey(skey) ? null : pickAvailableAccount(data, skey);
       user.transactions = Array.isArray(user.transactions) ? user.transactions : [];
 
       if (!acc) {
@@ -2927,7 +2997,7 @@ app.post('/purchase', async (req, res) => {
     if (outcome.error) return res.status(outcome.status || 400).json({ error: outcome.error });
     if (outcome.mode === 'pending') {
       const { data, user, pendingOrder } = outcome;
-      const telegramSent = await notifyPurchasePending(user, product, planLabel, price, assignCustId);
+      const telegramSent = await notifyPurchasePending(user, product, planLabel, price, assignCustId, pendingOrder);
       return res.json({ success:true, pending:true, telegramSent, user:sanitizeUser(user), order:pendingOrder, data:safeDataForSession(data, session) });
     }
     const { data, user, order } = outcome;
@@ -4060,6 +4130,30 @@ function extractDisneyCode(parsedEmail) {
   return fallback ? { code: fallback[1], customerSafe: true } : null;
 }
 
+function extractCanvaCode(parsedEmail) {
+  const subject = parsedEmail.subject || '';
+  const text = parsedEmail.text || '';
+  const html = parsedEmail.html || '';
+  const from = (parsedEmail.from || '').toString().toLowerCase();
+  const combined = `${subject} ${text} ${html}`;
+  const lower = combined.toLowerCase();
+  if (!/canva/i.test(from) && !/canva|verification code|sign[\s-]?in|one[\s-]?time/i.test(lower)) {
+    return null;
+  }
+
+  const spaced = combined.match(/(?:code|verification|sign[\s-]?in|one[\s-]?time|passcode|otp)[^\d]{0,160}((?:\d[\s\-]*){4,8})/i);
+  if (spaced) {
+    const digits = spaced[1].replace(/\D/g, '');
+    if (digits.length >= 4 && digits.length <= 8) return { code: digits, customerSafe: true };
+  }
+
+  const preferred = combined.match(/(?:code|verification|sign[\s-]?in|one[\s-]?time|passcode|otp)[^\d]{0,120}(\d{4,8})/i);
+  if (preferred) return { code: preferred[1], customerSafe: true };
+
+  const fallback = combined.match(/\b(\d{6})\b/) || combined.match(/\b(\d{4})\b/);
+  return fallback ? { code: fallback[1], customerSafe: true } : null;
+}
+
 function extractShahidResetLink(parsedEmail) {
   const subject = parsedEmail.subject || '';
   const text = parsedEmail.text || '';
@@ -4221,6 +4315,15 @@ async function fetchMonitoredInboxes(targetEmail) {
           });
           console.log(`📧 Disney+ sign-in code ${disneyResult.code} captured for ${email} recipients: ${recipientKeys.join(', ')}`);
           await sendTG(TG_ADMIN, `✅ <b>Disney+ Sign-in Code Captured</b>\n📥 Gmail inbox: ${email}\n📧 Recipient: ${recipientKeys.join(', ')}\n🔢 Code: <b>${disneyResult.code}</b>`, 'HTML').catch(() => {});
+        }
+        const canvaResult = extractCanvaCode(e);
+        if (canvaResult && canvaResult.customerSafe) {
+          recipientKeys.forEach(key => {
+            latestCodes[key] = { code: canvaResult.code, timestamp: Date.now(), service: 'canva' };
+            delete notifiedCustomers[key];
+          });
+          console.log(`📧 Canva sign-in code ${canvaResult.code} captured for ${email} recipients: ${recipientKeys.join(', ')}`);
+          await sendTG(TG_ADMIN, `✅ <b>Canva Sign-in Code Captured</b>\n📥 Gmail inbox: ${email}\n📧 Recipient: ${recipientKeys.join(', ')}\n🔢 Code: <b>${canvaResult.code}</b>`, 'HTML').catch(() => {});
         }
         const shahidResult = extractShahidResetLink(e);
         if (shahidResult && shahidResult.link) {

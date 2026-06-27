@@ -1521,6 +1521,9 @@ function isShahidOrder(o){return Boolean(o&&(o.productId==='shahid'||/shahid/i.t
 function isDisneyOrder(o){return Boolean(o&&(o.productId==='disney'||/disney/i.test(o.product||'')));}
 function isDisneyOneUserOrder(o){return isDisneyOrder(o)&&/1\s*user/i.test(String(o.plan||''));}
 function isAnghamiOrder(o){return Boolean(o&&(o.productId==='anghami'||/anghami/i.test(o.product||'')));}
+function isCanvaOrder(o){return Boolean(o&&(o.productId==='canva'||/canva/i.test(o.product||'')));}
+function isCanvaNewOrder(o){return isCanvaOrder(o)&&/new account/i.test(String(o.plan||''));}
+function isCanvaOwnOrder(o){return isCanvaOrder(o)&&/use my email/i.test(String(o.plan||''));}
 const SHAHID_FORGET_URL='https://shahid.mbc.net/en/hub/forget-password';
 let _shahidFixOrderId=null;
 let _shahidFixOrder=null;
@@ -1906,6 +1909,7 @@ const DURATIONS_DISNEY_1U=[{key:'1m',label:'1 Month',price:2},{key:'3m',label:'3
 const DURATIONS_DISNEY_FULL=[{key:'1m',label:'1 Month',price:9.5},{key:'3m',label:'3 Months',price:27},{key:'1y',label:'1 Year',price:90}];
 const DURATIONS_AMAZON_1U=[{key:'1m',label:'1 Month',price:2}];
 const DURATIONS_AMAZON_FULL=[{key:'1m',label:'1 Month',price:6}];
+const DURATIONS_CANVA=[{key:'1m',label:'1 Month',price:2},{key:'3m',label:'3 Months',price:5}];
 const GIFT_CARD_US=[{key:'10',label:'$10',price:10.5},{key:'25',label:'$25',price:26},{key:'50',label:'$50',price:52},{key:'100',label:'$100',price:104}];
 const GIFT_CARD_UAE=[{key:'50',label:'50 AED',price:14},{key:'100',label:'100 AED',price:28},{key:'200',label:'200 AED',price:55},{key:'500',label:'500 AED',price:135}];
 const GIFT_CARD_KSA=[{key:'50',label:'50 SAR',price:14},{key:'100',label:'100 SAR',price:27},{key:'200',label:'200 SAR',price:54},{key:'500',label:'500 SAR',price:133}];
@@ -2045,8 +2049,9 @@ const DEFAULT_PRODUCTS=[
   // ── TOOLS ──
   {id:'chatgpt',name:'ChatGPT Plus',short:'GPT',color:'#10A37F',tc:'#fff',cat:'tools',badge:'hot',desc:'GPT-4 · faster responses',hasUserTypes:false,plans:[
     {name:'1 Month',desc:'Plus account',price:5},{name:'3 Months',desc:'Plus account',price:13},{name:'1 Year',desc:'Best value',price:45}]},
-  {id:'canva',name:'Canva Pro',short:'CV',color:'#00C4CC',tc:'#fff',cat:'tools',badge:'new',desc:'Design & templates',hasUserTypes:false,plans:[
-    {name:'1 Month',desc:'Pro access',price:3},{name:'3 Months',desc:'Pro access',price:8},{name:'1 Year',desc:'Best value',price:25}]},
+  {id:'canva',name:'Canva Pro',short:'CV',color:'#00C4CC',tc:'#fff',cat:'tools',badge:'new',desc:'Design & templates · email sign-in',hasUserTypes:true,userTypes:[
+    {key:'own',name:'Use my email',desc:'Activate Pro on your Canva account',noStock:true,durations:DURATIONS_CANVA},
+    {key:'new',name:'New account',desc:'Fresh alias email · sign-in code',durations:DURATIONS_CANVA}]},
   {id:'linkedin',name:'LinkedIn Premium',short:'in',color:'#0A66C2',tc:'#fff',cat:'tools',badge:'',desc:'Career & networking',hasUserTypes:false,plans:[
     {name:'1 Month',desc:'Premium',price:6},{name:'3 Months',desc:'Premium',price:16},{name:'1 Year',desc:'Best value',price:55}]},
 
@@ -2225,7 +2230,7 @@ let selectedTopup=null,curProd=null,selUT=null,selDur=null,selPlan=null;
 const topupAmts=[{v:5,l:'$5'},{v:10,l:'$10'},{v:20,l:'$20'},{v:30,l:'$30'},{v:50,l:'$50'},{v:100,l:'$100'}];
 const WHISH_LOGO_URL='https://cdn.prod.website-files.com/6762f4acf0dd8a6b998dfa16/676d32a11708f11b333c681b_Whish%20Logo.svg';
 const WHISH_PAY_PHONE='96179306701';
-let customDays=0,anghamiProfile='',assignCustId=null,curAccModalKey=null,accAddMode='manual';
+let customDays=0,anghamiProfile='',canvaEmail='',assignCustId=null,curAccModalKey=null,accAddMode='manual';
 const NETFLIX_BULK_DEFAULTS_KEY='rt_netflix_bulk_defaults';
 const SHAHID_BULK_DEFAULTS_KEY='rt_shahid_bulk_defaults';
 const DISNEY_BULK_DEFAULTS_KEY='rt_disney_bulk_defaults';
@@ -2290,6 +2295,7 @@ let _sublinkCodeEmail=null;
 let _sublinkInboxEmail=null;
 let _sublinkPhone=null;
 let _sublinkIsDisney=false;
+let _sublinkIsCanva=false;
 
 async function activateTV(){
   const code=document.getElementById('tv-code-input').value.trim().toUpperCase();
@@ -2330,7 +2336,7 @@ async function requestSigninCode(){
     subEmail:_sublinkEmail,
     subPass:_sublinkPass,
     subPhone:_sublinkPhone||'',
-    codeType:_sublinkIsDisney?'disney':'netflix'
+    codeType:_sublinkIsDisney?'disney':_sublinkIsCanva?'canva':'netflix'
   };
   try{
     const controller=new AbortController();
@@ -2377,7 +2383,7 @@ async function refreshSigninCode(){
       body:JSON.stringify({
         accountKey:'default',
         profileName:_sublinkProfileName||'unknown',
-        codeType:_sublinkIsDisney?'disney':'netflix',
+        codeType:_sublinkIsDisney?'disney':_sublinkIsCanva?'canva':'netflix',
         mainEmail:_sublinkMainEmail,
         codeEmail:_sublinkCodeEmail,
         inboxEmail:_sublinkInboxEmail,
@@ -2824,6 +2830,8 @@ async function checkSubLink(){
   document.getElementById('sublink-plan').textContent=(found.plan||'')+' · '+(found.date||'');
   const anghamiSub=isAnghamiOrder(found);
   const disneyOneSub=isDisneyOneUserOrder(found);
+  const canvaNewSub=isCanvaNewOrder(found);
+  const canvaOwnSub=isCanvaOwnOrder(found);
   const subProf=orderProfileName(found);
   document.getElementById('sublink-email').textContent=found.email||'';
   document.getElementById('sublink-pass').textContent=found.pass||'';
@@ -2846,13 +2854,14 @@ async function checkSubLink(){
   const credTitle=document.getElementById('sublink-creds-title');
   const emailRow=document.getElementById('sublink-email-row');
   const passRow=document.getElementById('sublink-pass-row');
-  if(credTitle)credTitle.textContent=anghamiSub?'YOUR ANGHAMI ACTIVATION':disneyOneSub?'HOW TO SIGN IN':'YOUR CREDENTIALS';
+  if(credTitle)credTitle.textContent=anghamiSub?'YOUR ANGHAMI ACTIVATION':(disneyOneSub||canvaNewSub)?'HOW TO SIGN IN':canvaOwnSub?'YOUR CANVA ACCOUNT':'YOUR CREDENTIALS';
   if(emailRow)emailRow.style.display=(anghamiSub||disneyOneSub)?'none':'flex';
-  if(passRow)passRow.style.display=(anghamiSub||disneyOneSub)?'none':'flex';
+  if(passRow)passRow.style.display=(anghamiSub||disneyOneSub||canvaNewSub||canvaOwnSub)?'none':'flex';
   _sublinkEmail=found.email||'';
   _sublinkPass=found.pass||'';
   _sublinkPhone=found.phone||'';
   _sublinkIsDisney=disneyOneSub;
+  _sublinkIsCanva=canvaNewSub;
   _sublinkProfileName=found.profileName||found.product||'Customer';
   _sublinkMainEmail=found.mainEmail||found.inboxEmail||null;
   _sublinkCodeEmail=found.codeEmail||found.email||found.mainEmail||null;
@@ -2909,7 +2918,7 @@ async function checkSubLink(){
   const isShahid=isShahidOrder(found);
   const isDisney=isDisneyOrder(found);
   const tvSection=document.getElementById('sublink-tv-section');
-  if(tvSection)tvSection.style.display=(isShahid||disneyOneSub)?'none':'block';
+  if(tvSection)tvSection.style.display=(isShahid||disneyOneSub||canvaNewSub||canvaOwnSub)?'none':'block';
   const disneyGuide=document.getElementById('sublink-disney-guide');
   if(disneyGuide){
     if(disneyOneSub){
@@ -2921,6 +2930,21 @@ async function checkSubLink(){
         3) Tap <b>Request Sign-in Code</b> below, then enter the code you receive<br>
         4) If you have any issue, contact our agents on WhatsApp or Telegram
       </div>`;
+    }else if(canvaNewSub){
+      disneyGuide.style.display='block';
+      disneyGuide.innerHTML=`<div style="font-size:12px;color:var(--text2);line-height:1.7;text-align:left">
+        <b>How to sign in to Canva:</b><br>
+        1) Go to <b>canva.com</b> or open the Canva app<br>
+        2) Enter the <b>email</b> shown above and choose email sign-in<br>
+        3) Tap <b>Request Sign-in Code</b> below, then enter the code you receive<br>
+        4) If you have any issue, contact our agents on WhatsApp or Telegram
+      </div>`;
+    }else if(canvaOwnSub){
+      disneyGuide.style.display='block';
+      disneyGuide.innerHTML=`<div style="font-size:12px;color:var(--text2);line-height:1.7;text-align:left">
+        <b>Your Canva Pro is active!</b><br>
+        Sign in to Canva with the email above. Pro features should already be enabled on your account.
+      </div>`;
     }else{
       disneyGuide.style.display='none';
       disneyGuide.innerHTML='';
@@ -2929,16 +2953,18 @@ async function checkSubLink(){
   const codeReqTitle=document.getElementById('sublink-code-title-request');
   const codeSecTitle=document.getElementById('sublink-code-title-section');
   const codeHelp=document.getElementById('sublink-code-help');
-  const codeLabel=disneyOneSub?'DISNEY+ SIGN-IN CODE':'NETFLIX SIGN-IN CODE';
+  const codeLabel=disneyOneSub?'DISNEY+ SIGN-IN CODE':_sublinkIsCanva?'CANVA SIGN-IN CODE':'NETFLIX SIGN-IN CODE';
   if(codeReqTitle)codeReqTitle.textContent=codeLabel;
   if(codeSecTitle)codeSecTitle.textContent=codeLabel;
   if(codeHelp)codeHelp.textContent=disneyOneSub
     ?'After entering your phone in the Disney+ app, tap Request Sign-in Code, wait a few seconds, then tap Refresh.'
-    :'Need a sign-in code? Request one and we\'ll send it to you.';
+    :_sublinkIsCanva
+      ?'After entering your email on Canva, tap Request Sign-in Code, wait a few seconds, then tap Refresh.'
+      :'Need a sign-in code? Request one and we\'ll send it to you.';
   const codeBtn=document.getElementById('request-code-btn');
-  if(codeBtn)codeBtn.style.background=disneyOneSub?'#113CCF':'var(--red)';
+  if(codeBtn)codeBtn.style.background=disneyOneSub?'#113CCF':_sublinkIsCanva?'#00C4CC':'var(--red)';
   const refreshBtn=document.getElementById('refresh-code-btn');
-  if(refreshBtn)refreshBtn.style.background=disneyOneSub?'#113CCF':'var(--red)';
+  if(refreshBtn)refreshBtn.style.background=disneyOneSub?'#113CCF':_sublinkIsCanva?'#00C4CC':'var(--red)';
   const shahidActions=document.getElementById('sublink-shahid-actions');
   if(shahidActions){
     if(isShahid){
@@ -2952,7 +2978,7 @@ async function checkSubLink(){
       shahidActions.innerHTML='';
     }
   }
-  if((found.accKey||disneyOneSub)&&!isShahid){
+  if((found.accKey||disneyOneSub||canvaNewSub)&&!isShahid){
     _sublinkAccKey=found.accKey;
     document.getElementById('sublink-code-request').style.display='block';
     if(_codeRefreshInterval)clearInterval(_codeRefreshInterval);
@@ -3690,13 +3716,17 @@ async function refreshSmsStoreTab(force){
 function filterProd(cat,el){document.querySelectorAll('.ftab').forEach(c=>c.classList.remove('active'));if(el)el.classList.add('active');renderProducts(cat);}
 function getProductAvail(p){
   let t=0;
-  if(p.hasUserTypes)p.userTypes.forEach(ut=>ut.durations.forEach(d=>{const key=sk(p.id,ut.key,d.key);if(!isStockBlocked(key))t+=availableCount(key);}));
+  if(p.hasUserTypes)p.userTypes.forEach(ut=>{
+    if(ut.noStock)return;
+    ut.durations.forEach(d=>{const key=sk(p.id,ut.key,d.key);if(!isStockBlocked(key))t+=availableCount(key);});
+  });
   else(p.plans||[]).forEach((pl,i)=>{const key=planStockKey(p.id,pl,i);if(!isStockBlocked(key))t+=availableCount(key);});
   return t;
 }
 function hasUnblockedPlan(p){
   if(p.hasCustomOrder)return true;
   if(p.hasUserTypes)return p.userTypes.some(ut=>{
+    if(ut.noStock)return ut.durations.some(d=>!isStockBlocked(sk(p.id,ut.key,d.key)));
     if(ut.durations.some(d=>!isStockBlocked(sk(p.id,ut.key,d.key))))return true;
     if(ut.hasCustom&&!isCustomDaysBlocked(p,ut)&&!isStockBlocked(sk(p.id,ut.key,'1m'))&&availableCount(sk(p.id,ut.key,'1m'))>0)return true;
     return false;
@@ -3796,7 +3826,7 @@ async function confirmSmsPurchase(catalogId){
 
 // BUY MODAL
 function openBuy(id,forCustId){
-  curProd=products.find(x=>x.id===id);selUT=null;selDur=null;selPlan=null;customDays=0;anghamiProfile='';customOrderId='';customOrderPassword='';customOrderAmt=0;
+  curProd=products.find(x=>x.id===id);selUT=null;selDur=null;selPlan=null;customDays=0;anghamiProfile='';canvaEmail='';customOrderId='';customOrderPassword='';customOrderAmt=0;
   assignCustId=forCustId!==undefined?forCustId:null;
   document.getElementById('modal-title').textContent='Buy '+curProd.name;
   renderBuyBody();openModal('buy-modal');
@@ -3846,6 +3876,20 @@ function renderBuyBody(){
         <span style="font-size:13px;color:var(--text2)">days</span>
         <span style="font-size:14px;font-weight:700;margin-left:auto">${customBlocked?'Blocked':(customDays>0?fmt(customDays*selUT.customDayRate):'')}</span></div>`;
         if(customBlocked)html+=`<div style="font-size:11px;color:var(--red);margin-bottom:10px">Custom days are temporarily unavailable.</div>`;
+      }
+      if(p.id==='canva'&&selUT.key==='own'&&selDur){
+        html+=`<div class="plan-section-label" style="margin-top:2px">Step 3 — Your Canva email</div>
+        <div style="margin-bottom:6px">
+          <input type="email" id="canva-email-inp" style="width:100%;padding:9px 12px;border:1px solid ${canvaEmail?'var(--blue)':'var(--border)'};border-radius:var(--radius-sm);background:var(--bg3);color:var(--text);font-size:14px;outline:none" placeholder="Enter the email on your Canva account" value="${canvaEmail}" oninput="canvaEmail=this.value.trim();renderBuyBody()">
+        </div>
+        <div style="background:var(--blue-bg);border:1px solid var(--blue-border);border-radius:var(--radius-sm);padding:9px 12px;font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.5">
+          We will activate Canva Pro on this email. Your order stays <b>pending</b> until activation is complete — you will be notified on Telegram.
+        </div>`;
+        if(!canvaEmail||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(canvaEmail)){
+          html+=`<button class="modal-buy-btn" disabled>Enter your Canva email</button>`;
+          document.getElementById('modal-body').innerHTML=html;
+          return;
+        }
       }
     }
     const rD=selUT&&selDur;const rC=selUT&&selUT.hasCustom&&customDays>0;
@@ -4023,6 +4067,11 @@ async function confirmPurchase(){
       price=customDays*selUT.customDayRate;planLabel=`${selUT.name} · ${customDays} days`;skey=sk(p.id,selUT.key,'1m');
     }
     else{showToast('Please select a duration');return;}
+    if(p.id==='canva'&&selUT?.key==='own'){
+      const ce=String(canvaEmail||'').trim();
+      if(!ce||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(ce)){showToast('Enter a valid Canva email');return;}
+      extraFields.customerCanvaEmail=ce;
+    }
   } else {
     if(!selPlan){showToast('Please select a plan');return;}
     price=selPlan.price;planLabel=selPlan.name;skey=planStockKey(p.id,selPlan,selPlan.idx);
@@ -4181,6 +4230,12 @@ function subRow(o,forCustomer){
   const deliveryNote=o.telegramDeliveredAt?`<div class="delivery-proof">✓ Delivered to Telegram · ${esc(formatTs(o.telegramDeliveredAt))}</div>`:(o.deliveredAt?`<div class="delivery-proof">✓ Delivered · ${esc(formatTs(o.deliveredAt))}</div>`:'');
   const credHtml=isAnghamiOrder(o)
     ?`<div class="sub-cred">${o.serviceLink?`<a class="cust-sub-cred-line" href="${esc(o.serviceLink)}" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:none;font-weight:600">🔗 Open Anghami activation link</a>`:'<span class="cust-sub-cred-line">Link pending</span>'}${o.expiryDate?`<div class="cust-sub-cred-line" style="margin-top:6px;color:var(--orange);font-weight:600">⏰ Expires: ${esc(o.expiryDate)}</div>`:''}<div style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.4">${esc(ANGHAMI_CANCEL_NOTE_EN)}</div></div>`
+    :isCanvaNewOrder(o)
+    ?`<div class="sub-cred"><span class="cust-sub-cred-line">📧 ${esc(o.email)}</span><span class="cust-sub-cred-line" style="color:var(--text3)">Sign in with email + code on your subscription link</span></div>`
+    :isCanvaOwnOrder(o)
+    ?`<div class="sub-cred"><span class="cust-sub-cred-line">📧 ${esc(o.email)}</span><span class="cust-sub-cred-line" style="color:var(--green)">Activated on your Canva account</span></div>`
+    :isDisneyOneUserOrder(o)
+    ?`<div class="sub-cred"><span class="cust-sub-cred-line">📱 ${esc(o.phone||'')}</span>${orderProfileName(o)?`<span class="cust-sub-cred-line">Profile: ${esc(orderProfileName(o))}</span>`:''}</div>`
     :`<div class="sub-cred"><span class="cust-sub-cred-line">📧 ${esc(o.email)}</span><span class="cust-sub-cred-line">🔑 ${esc(o.pass)}</span></div>`;
   return `<div class="sub-card"><div class="sub-icon" style="background:${ico?'#fff':o.color};overflow:hidden;padding:0">${iconHtml}</div>
     <div class="sub-info"><div class="sub-name">${esc(o.product)}</div><div class="sub-plan">${esc(o.plan)} · ${esc(o.date)}</div>
@@ -4204,6 +4259,7 @@ function pendingSubRow(o){
       <div style="font-size:11px;color:var(--text3);margin-top:4px">Order ${esc(o.id||'')} · ${esc(o.date||'')}${pendingAgeLabel(o)?` · ${pendingAgeLabel(o)}`:''}</div>
       ${pendingTimelineHtml(o)}
       <div style="font-size:11px;color:var(--orange);margin-top:6px">Credentials will appear here once your order is fulfilled.</div>
+      ${o.customerCanvaEmail?`<div style="font-size:11px;color:var(--blue);margin-top:4px">📧 Canva email: <b>${esc(o.customerCanvaEmail)}</b></div>`:''}
     </div>
   </div>`;
 }
@@ -5469,6 +5525,11 @@ function renderStockPanels(){
 }
 function renderStockRows(p){
   if(p.hasUserTypes){return p.userTypes.map(ut=>{
+    if(ut.noStock){
+      return `<div class="admin-row"><div class="admin-icon" style="background:${p.color};overflow:hidden">${prodIcon(p,34,8)}</div>
+      <div class="admin-info"><div class="admin-name">${ut.name}</div>
+      <div class="admin-sub">Manual activation — customer enters Canva email at checkout; you receive a Telegram alert to activate.</div></div></div>`;
+    }
     let rows=ut.durations.map(d=>{
     const skey=sk(p.id,ut.key,d.key);const av=availableCount(skey);const tot=totalCount(skey);const [sl,sc]=stockLabel(av);
     const blocked=isStockBlocked(skey);
@@ -5545,6 +5606,9 @@ function isDisneyFullKey(k){return /^disney__full__/.test(String(k||''));}
 function isAmazonKey(k){return String(k||'').startsWith('amazon__');}
 function isAmazonFullKey(k){return /^amazon__full__/.test(String(k||''));}
 function isAmazonOneUserKey(k){return /^amazon__1user__/.test(String(k||''));}
+function isCanvaKey(k){return String(k||'').startsWith('canva__');}
+function isCanvaOwnKey(k){return /^canva__own__/.test(String(k||''));}
+function isCanvaNewKey(k){return /^canva__new__/.test(String(k||''));}
 function disneyOneUserPlanKeys(){
   return DURATIONS_DISNEY_1U.map(d=>sk('disney','1user',d.key));
 }
@@ -5740,6 +5804,19 @@ function renderManualAddForm(skey,needsGmail,isShahidStock){
       <div class="field"><label>Expiry date (optional) — dd/mm/yyyy</label><input type="text" id="new-acc-expiry" placeholder="e.g. 15/08/2025"></div>
       <button class="inline-btn" id="btn-add-stock" onclick="addAccount()"><i class="ti ti-plus" style="font-size:13px;vertical-align:-2px;margin-right:4px"></i>Add to stock</button>`;
   }
+  if(isCanvaNewKey(skey)){
+    return `<div class="add-acc-form-title">Add Canva Pro — New account</div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:12px">Alias email for the Canva account. Customers sign in with email + sign-in code (no password).</div>
+      <div class="field"><label>Alias email (required)</label><input type="email" id="new-acc-email" placeholder="alias@gmail.com"></div>
+      <div class="field"><label>Expiry date (required) — dd/mm/yyyy</label><input type="text" id="new-acc-expiry" placeholder="e.g. 06/07/2026"></div>
+      <div class="field" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px">
+        <label style="color:var(--orange)">🔒 Main Gmail (receives Canva sign-in codes — admin only)</label>
+        <input type="email" id="new-acc-main-email" placeholder="Gmail address that receives Canva codes">
+        <input type="password" id="new-acc-main-pass" placeholder="Gmail app password" style="margin-top:6px">
+        <div style="font-size:11px;color:var(--text3);margin-top:4px">Gmail only. Use a 16-character app password with IMAP enabled.</div>
+      </div>
+      <button class="inline-btn" id="btn-add-stock" onclick="addAccount()"><i class="ti ti-plus" style="font-size:13px;vertical-align:-2px;margin-right:4px"></i>Add to stock</button>`;
+  }
   const isShahidOne=isShahidOneUserKey(skey);
   const isShahidFull=isShahidFullKey(skey);
   const isDisneyOne=isDisneyOneUserKey(skey);
@@ -5795,7 +5872,7 @@ function renderManualAddForm(skey,needsGmail,isShahidStock){
     <button class="inline-btn" id="btn-add-stock" onclick="addAccount()"><i class="ti ti-plus" style="font-size:13px;vertical-align:-2px;margin-right:4px"></i>Add to stock</button>`;
 }
 function renderAccModal(showForm=false){
-  const skey=curAccModalKey;const list=stockAccountsForKey(skey);const isShahidStock=String(skey||'').startsWith('shahid__');const isDisneyStock=isDisneyKey(skey);const needsGmail=isNetflixKey(skey)||isShahidStock||isDisneyOneUserKey(skey);let html='';
+  const skey=curAccModalKey;const list=stockAccountsForKey(skey);const isShahidStock=String(skey||'').startsWith('shahid__');const isDisneyStock=isDisneyKey(skey);const needsGmail=isNetflixKey(skey)||isShahidStock||isDisneyOneUserKey(skey)||isCanvaNewKey(skey);let html='';
   if(isNetflixOneUserKey(skey)){
     const mirrors=netflixMirrorCopyCount(skey);
     if(mirrors>0){
@@ -6113,6 +6190,27 @@ async function addAccount(){
   const expiryDate=document.getElementById('new-acc-expiry')?.value.trim()||'';
   const isDisneyOne=isDisneyOneUserKey(curAccModalKey);
   const isDisneyStock=isDisneyKey(curAccModalKey);
+  const isCanvaStock=isCanvaNewKey(curAccModalKey);
+  if(isCanvaStock){
+    const expiryDate=(document.getElementById('new-acc-expiry')?.value||'').trim();
+    const mainEmail=document.getElementById('new-acc-main-email')?.value.trim()||'';
+    const mainPass=(document.getElementById('new-acc-main-pass')?.value||'').replace(/\s+/g,'');
+    if(!email){showToast('Alias email is required');return;}
+    if(!expiryDate){showToast('Expiry date is required (dd/mm/yyyy)');return;}
+    if(!mainEmail){showToast('Main Gmail is required for sign-in codes');return;}
+    const account={email,pass:'',expiryDate,mainEmail:mainEmail||'',...(mainPass?{mainPass}:{})};
+    setAddStockBusy(true);
+    try{await apiStockAdd({skey:curAccModalKey,account});}catch(e){showToast('⚠️ '+(e.message||'Save failed'));return;}finally{setAddStockBusy(false);}
+    let gmailConfigured=false;
+    if(mainEmail&&mainPass){
+      try{gmailConfigured=await setupGmailMonitor(mainEmail,mainPass);}catch(e){showToast('⚠️ Account saved but email server error: '+e.message);}
+    }
+    renderAccModal(false);renderStockPanels();renderAdminExpiry();
+    showToast(gmailConfigured?'✓ Canva account added + Gmail monitoring started':'✓ Canva account added to stock');
+    logActivity('Canva stock added',email+' · '+curAccModalKey);
+    await autoFulfillPending(curAccModalKey);
+    return;
+  }
   if(isDisneyOne){
     if(!phone||!email){showToast('Phone and code email are required');return;}
   }else if(!email||!pass){showToast('Email and password are required');return;}
@@ -6154,7 +6252,7 @@ async function addAccount(){
   const addedDisneyOne=isDisneyOneUserKey(curAccModalKey);
   showToast(gmailConfigured
     ?(addedNetflixOne?'✓ Account added to this Netflix plan + Gmail':addedDisneyOne?'✓ Profile added to this Disney+ plan + Gmail':addedShahidOne?'✓ User added to this Shahid plan + Gmail':'✓ Account added + Gmail monitoring started')
-    :(addedNetflixOne?'✓ Account added to this Netflix plan':addedDisneyOne?'✓ Profile added to this Disney+ plan':addedShahidOne?'✓ User added to this Shahid plan':addedShahidFull?'✓ Full Shahid account added':isDisneyFullKey(curAccModalKey)?'✓ Full Disney+ account added':isAmazonKey(curAccModalKey)?'✓ Prime Video account added':'✓ Account added to stock'));
+    :(addedNetflixOne?'✓ Account added to this Netflix plan':addedDisneyOne?'✓ Profile added to this Disney+ plan':addedShahidOne?'✓ User added to this Shahid plan':addedShahidFull?'✓ Full Shahid account added':isDisneyFullKey(curAccModalKey)?'✓ Full Disney+ account added':isAmazonKey(curAccModalKey)?'✓ Prime Video account added':isCanvaNewKey(curAccModalKey)?'✓ Canva account added':'✓ Account added to stock'));
   logActivity('Stock added',curAccModalKey);
   await autoFulfillPending(curAccModalKey);
 }
@@ -6374,7 +6472,8 @@ function renderAdminPendingHtml(pending){
     <div class="aw-info" style="flex:1"><div class="aw-name">${esc(po.product)} · ${esc(po.plan)}</div>
     <div class="aw-email">👤 ${esc(po.userName)} · 📧 ${esc(po.userEmail)} · 💵 ${fmt(po.price)} · 📅 ${esc(po.date)}${age?` · ${age}`:''}</div>
     ${pendingTimelineHtml(po)}
-    ${po.userTgChatId?`<div class="aw-email" style="color:var(--blue)">💬 TG: ${esc(po.userTgChatId)}</div>`:''}</div>
+    ${po.userTgChatId?`<div class="aw-email" style="color:var(--blue)">💬 TG: ${esc(po.userTgChatId)}</div>`:''}
+    ${po.customerCanvaEmail?`<div class="aw-email" style="color:var(--blue)">📧 Canva email: <b>${esc(po.customerCanvaEmail)}</b></div>`:''}</div>
     <button class="aabtn" onclick="manualFulfillPending(${i})">✓ Fulfill</button>
     <button class="aabtn" style="background:var(--red-bg);color:var(--red);border-color:var(--red-border)" ${jsOnClick('cancelPendingOrder',po.id)}>✕ Cancel & Refund</button>
   </div>`;
@@ -6399,6 +6498,7 @@ async function renderAdminPending(){
         <div class="aw-email">👤 ${esc(po.userName)} · 📧 ${esc(po.userEmail)} · 💵 ${fmt(po.price)} · 📅 ${esc(po.date)}${age?` · ${age}`:''}</div>
         ${pendingTimelineHtml(po)}
         ${po.userTgChatId?`<div class="aw-email" style="color:var(--blue)">💬 TG: ${esc(po.userTgChatId)}</div>`:''}
+        ${po.customerCanvaEmail?`<div class="aw-email" style="color:var(--blue)">📧 Canva email: <b>${esc(po.customerCanvaEmail)}</b></div>`:''}
       </div>
       <button class="aabtn" onclick="manualFulfillPending(${i})">✓ Fulfill</button>
       <button class="aabtn" style="background:var(--red-bg);color:var(--red);border-color:var(--red-border)" ${jsOnClick('cancelPendingOrder',po.id)}>✕ Cancel & Refund</button>

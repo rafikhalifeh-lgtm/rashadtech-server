@@ -706,11 +706,19 @@ function registerEnhancements(app, deps) {
           await writeJsonBinRaw(data);
           return { removedOrphan: true, data, user };
         }
-        const acc = typeof pickAvailableAccount === 'function'
-          ? pickAvailableAccount(data, po.skey)
-          : stockAccountsForPlan(data.stock, po.skey).find(a => !a.used);
-        if (!acc) return { error: 'No stock available for this plan', status: 409 };
-        const aliasError = validateNetflixAliasPurchase(data, po.skey, acc);
+        const isCanvaOwn = /^canva__own__/.test(String(po.skey || ''));
+        let acc = null;
+        if (isCanvaOwn) {
+          const customerCanvaEmail = String(po.customerCanvaEmail || '').trim();
+          if (!customerCanvaEmail) return { error: 'Canva email missing on pending order', status: 400 };
+          acc = { email: customerCanvaEmail, pass: '', expiryDate: po.expiryDate || null };
+        } else {
+          acc = typeof pickAvailableAccount === 'function'
+            ? pickAvailableAccount(data, po.skey)
+            : stockAccountsForPlan(data.stock, po.skey).find(a => !a.used);
+          if (!acc) return { error: 'No stock available for this plan', status: 409 };
+        }
+        const aliasError = isCanvaOwn ? null : validateNetflixAliasPurchase(data, po.skey, acc);
         if (aliasError) return { error: aliasError, status: 409 };
         const order = user ? placeFulfilledOrder(user, po, acc, data.stock) : null;
         pushStatusHistory(po, 'fulfilled');
