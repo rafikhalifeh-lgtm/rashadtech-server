@@ -1155,7 +1155,7 @@ So your EmailJS template will receive the user email and verification code corre
             <button class="inline-btn" onclick="seedSmsStarterCatalog()">Quick starter (Brazil + UK)</button>
             <button class="inline-btn" onclick="refreshAllSmsCosts()">Refresh all Grizzly costs</button>
           </div>
-          <div style="font-size:12px;color:var(--text3);margin-bottom:8px">Imports only popular apps: WhatsApp, WhatsApp Business, Facebook, Telegram, Instagram, TikTok, Google, Twitter, Discord, Microsoft, Viber, Amazon — every country Grizzly has in stock. Other apps are removed from the catalog.</div>
+          <div style="font-size:12px;color:var(--text3);margin-bottom:8px">Imports popular apps for all Grizzly countries (max 500 items to keep the site fast). Other apps are removed from the catalog.</div>
           <div id="sms-orders-list"><div class="empty-state" style="padding:16px">No SMS orders yet.</div></div>
         </div>
       </div>
@@ -1274,6 +1274,7 @@ function hideServerWake(){
   const el=document.getElementById('server-wake-overlay');
   if(el)el.style.display='none';
 }
+let lastServerPingAt=0;
 async function pingServer(timeoutMs=8000){
   const controller=new AbortController();
   const timer=setTimeout(()=>controller.abort(),timeoutMs);
@@ -1282,6 +1283,7 @@ async function pingServer(timeoutMs=8000){
     clearTimeout(timer);
     if(!r.ok)return false;
     const j=await r.json().catch(()=>({}));
+    if(j.ok)lastServerPingAt=Date.now();
     return Boolean(j.ok);
   }catch(e){
     clearTimeout(timer);
@@ -1717,7 +1719,9 @@ async function validateStoredSession(role){
 async function jbRead(opts,_retry=false){
   const recover=opts===true?false:Boolean(opts&&opts.recover);
   const retry=opts===true||typeof opts==='boolean'?opts:Boolean(_retry);
-  await ensureServerAwake({silent:true}).catch(()=>{});
+  if(Date.now()-lastServerPingAt>120000){
+    await ensureServerAwake({silent:true}).catch(()=>{});
+  }
   const controller=new AbortController();
   const timeout=setTimeout(()=>controller.abort(),45000);
   try{
@@ -3485,6 +3489,7 @@ function switchTab(name,el){
   // Sync bottom nav
   const map={store:'bn-store',subscriptions:'bn-subscriptions',expiry:'bn-expiry',wallet:'bn-wallet',profile:'bn-profile',transactions:'bn-more',requests:'bn-more',customers:'bn-more',netflix:'bn-more'};
   if(map[name])setActiveBottomNav(map[name]);
+  if(name==='store')refreshSmsStoreTab(true);
   if(name==='expiry')renderExpiryTracker();
   if(name==='transactions')renderTx();
   if(name==='subscriptions'){renderSubs();const ss=document.getElementById('subs-search');if(ss)ss.value='';}
@@ -3665,7 +3670,10 @@ function openSmsStoreModal(){
     </div>`;
   openModal('buy-modal');
 }
-async function refreshSmsStoreTab(){
+let lastSmsCatalogFetch=0;
+async function refreshSmsStoreTab(force){
+  if(!force&&Date.now()-lastSmsCatalogFetch<120000)return;
+  lastSmsCatalogFetch=Date.now();
   try{
     const r=await fetch(RT_SERVER+'/sms/catalog');
     const j=await r.json();
@@ -6917,17 +6925,23 @@ async function checkLowStock(){
 }
 
 let realtimeSyncStarted=false;
+let lastRealtimeSyncAt=0;
+let lastVisibilityReloadAt=0;
 function startRealtimeSync(){
   if(realtimeSyncStarted)return;
   realtimeSyncStarted=true;
-  setInterval(checkInactivity,60000); // Check inactivity every minute
+  setInterval(checkInactivity,60000);
   setInterval(async()=>{
     if(document.hidden)return;
     if(Date.now()<syncPausedUntil)return;
     if(saveDataInFlight)return;
+    if(Date.now()-lastRealtimeSyncAt<85000)return;
+    lastRealtimeSyncAt=Date.now();
     try{
       applyDataSnapshot(await jbRead());
-      await refreshSmsStoreTab();
+      if(document.getElementById('tab-store')?.classList.contains('active')){
+        await refreshSmsStoreTab();
+      }
       bindCurrentUserFromUsers();
       if(currentUser){
         renderSubs();updateBal();renderTx();renderMyCustomers();
@@ -6935,7 +6949,7 @@ function startRealtimeSync(){
       if(!isAdmin)return;
       renderAdminPanels();
     }catch(e){}
-  },30000);
+  },90000);
 }
 
 function renderAdminPanels(){
@@ -6966,6 +6980,8 @@ async function reloadAdminData(){
 // Save on tab close / hide
 document.addEventListener('visibilitychange',()=>{
   if(document.visibilityState==='visible'){
+    if(Date.now()-lastVisibilityReloadAt<60000)return;
+    lastVisibilityReloadAt=Date.now();
     reloadAdminData();
   }
 });
