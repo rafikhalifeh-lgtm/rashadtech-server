@@ -1,4 +1,5 @@
 const express = require('express');
+const compression = require('compression');
 const cors = require('cors');
 const crypto = require('crypto');
 const fs = require('fs');
@@ -44,6 +45,7 @@ const ALLOWED_ORIGINS = new Set([
   'https://rashadtechtv.netlify.app',
   'https://rashadtech-server.onrender.com'
 ]);
+app.use(compression());
 app.use(cors({
   origin(origin, cb) {
     try {
@@ -901,8 +903,13 @@ async function readDbForWrite() {
 let readJsonBinInFlight = null;
 
 async function readJsonBinRaw(options = {}) {
-  if (dbCache && !options.forceRefresh) return cloneData(dbCache);
-  if (readJsonBinInFlight && !options.forceRefresh) return cloneData(await readJsonBinInFlight);
+  if (dbCache && !options.forceRefresh) {
+    return options.noClone ? dbCache : cloneData(dbCache);
+  }
+  if (readJsonBinInFlight && !options.forceRefresh) {
+    const data = await readJsonBinInFlight;
+    return options.noClone ? data : cloneData(data);
+  }
   const run = async () => {
     let data = null;
     try {
@@ -1081,9 +1088,8 @@ function dataForSession(data, session) {
   const publicData = stripPrivateData(data || {});
   if (session.role === 'admin') {
     const adminData = { ...publicData };
-    if (data && data[SMS_CONFIG_KEY]) {
-      adminData[SMS_CONFIG_KEY] = grizzlySms.sanitizeSmsConfigForClient(data[SMS_CONFIG_KEY], true);
-    }
+    // SMS catalog can be 250KB+ — load via /admin/sms/config on demand.
+    delete adminData[SMS_CONFIG_KEY];
     return adminData;
   }
   const user = (publicData.users || []).find(u => normalizeEmail(u.email) === session.email);
@@ -4304,6 +4310,7 @@ registerSmsRoutes(app, {
   requireSession,
   readJsonBinRaw,
   writeJsonBinRaw,
+  getDbCache: () => dbCache,
   normalizeEmail,
   sanitizeUser,
   safeDataForSession,

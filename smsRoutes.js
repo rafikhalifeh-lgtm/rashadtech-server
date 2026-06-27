@@ -12,6 +12,7 @@ const SMS_STARTER_CATALOG = [
 ];
 
 const activeSmsPurchases = new Set();
+const MAX_SMS_CATALOG_ITEMS = 500;
 
 function readSmsConfig(data) {
   const raw = (data && data[SMS_CONFIG_KEY]) || grizzlySms.defaultSmsConfig();
@@ -35,6 +36,7 @@ function registerSmsRoutes(app, deps) {
     requireSession,
     readJsonBinRaw,
     writeJsonBinRaw,
+    getDbCache,
     normalizeEmail,
     sanitizeUser,
     safeDataForSession,
@@ -43,8 +45,59 @@ function registerSmsRoutes(app, deps) {
     orderIdsMatch
   } = deps;
 
+  let publicSmsCatalogCache = null;
+
+  function invalidatePublicSmsCatalogCache() {
+    publicSmsCatalogCache = null;
+  }
+
+  function catalogCacheVersion(config) {
+    return [
+      config.storeEnabled ? 1 : 0,
+      Array.isArray(config.catalog) ? config.catalog.length : 0,
+      Number(config.catalogVersion || 0)
+    ].join(':');
+  }
+
+  function buildPublicSmsCatalogResponse(config) {
+    if (!config.storeEnabled) return { success: true, enabled: false, catalog: [] };
+    const catalog = (config.catalog || [])
+      .filter(item => item.enabled !== false && grizzlySms.isPopularSmsService(item.service))
+      .map(item => ({
+        id: item.id,
+        service: item.service,
+        serviceName: item.serviceName,
+        country: item.country,
+        countryName: item.countryName,
+        sellPrice: Number(item.sellPrice || 0)
+      }));
+    return { success: true, enabled: true, catalog };
+  }
+
+  function getCachedPublicSmsCatalog(config) {
+    const version = catalogCacheVersion(config);
+    if (publicSmsCatalogCache && publicSmsCatalogCache.version === version) {
+      return publicSmsCatalogCache.payload;
+    }
+    const payload = buildPublicSmsCatalogResponse(config);
+    publicSmsCatalogCache = { version, payload };
+    return payload;
+  }
+
+  async function readSmsDbFast() {
+    const cached = typeof getDbCache === 'function' ? getDbCache() : null;
+    if (cached) return cached;
+    return readJsonBinRaw({ fast: true, skipRecoverWrite: true, noClone: true });
+  }
+
+  function stampSmsConfig(config) {
+    config.catalogVersion = Date.now();
+    invalidatePublicSmsCatalogCache();
+    return config;
+  }
+
   async function getGrizzlyApiKeyFromDb() {
-    const data = await readJsonBinRaw().catch(() => ({}));
+    const data = await readSmsDbFast().catch(() => ({}));
     const config = readSmsConfig(data);
     return String(config.apiKey || '').trim();
   }
@@ -53,7 +106,7 @@ function registerSmsRoutes(app, deps) {
     const session = requireSession(req, res, ['admin']);
     if (!session) return;
     try {
-      const data = await readJsonBinRaw();
+      const data = await readSmsDbFast();
       const config = readSmsConfig(data);
       res.json({
         success: true,
@@ -86,7 +139,7 @@ function registerSmsRoutes(app, deps) {
         if (trimmed) next.apiKey = trimmed;
         else if (body.clearApiKey) next.apiKey = '';
       }
-      data[SMS_CONFIG_KEY] = next;
+      data[SMS_CONFIG_KEY] = stampSmsConfig(next);
       await writeJsonBinRaw(data);
       res.json({ success: true, config: grizzlySms.sanitizeSmsConfigForClient(next, true) });
     } catch (e) {
@@ -181,7 +234,7 @@ function registerSmsRoutes(app, deps) {
       };
       config.catalog = (config.catalog || []).filter(row => row.id !== item.id);
       config.catalog.unshift(item);
-      data[SMS_CONFIG_KEY] = config;
+      data[SMS_CONFIG_KEY] = stampSmsConfig(config);
       await writeJsonBinRaw(data);
       res.json({ success: true, item, config: grizzlySms.sanitizeSmsConfigForClient(config, true) });
     } catch (e) {
@@ -198,7 +251,7 @@ function registerSmsRoutes(app, deps) {
       const data = await readJsonBinRaw();
       const config = readSmsConfig(data);
       config.catalog = (config.catalog || []).filter(row => row.id !== id);
-      data[SMS_CONFIG_KEY] = config;
+      data[SMS_CONFIG_KEY] = stampSmsConfig(config);
       await writeJsonBinRaw(data);
       res.json({ success: true, config: grizzlySms.sanitizeSmsConfigForClient(config, true) });
     } catch (e) {
@@ -222,7 +275,7 @@ function registerSmsRoutes(app, deps) {
       if (!item) return res.status(404).json({ error: 'Catalog item not found' });
       item.sellPrice = Math.round(sellPrice * 100) / 100;
       item.updatedAt = Date.now();
-      data[SMS_CONFIG_KEY] = config;
+      data[SMS_CONFIG_KEY] = stampSmsConfig(config);
       await writeJsonBinRaw(data);
       res.json({ success: true, item, config: grizzlySms.sanitizeSmsConfigForClient(config, true) });
     } catch (e) {
@@ -249,7 +302,7 @@ function registerSmsRoutes(app, deps) {
         item.updatedAt = Date.now();
         updated += 1;
       }
-      data[SMS_CONFIG_KEY] = config;
+      data[SMS_CONFIG_KEY] = stampSmsConfig(config);
       await writeJsonBinRaw(data);
       res.json({ success: true, updated, config: grizzlySms.sanitizeSmsConfigForClient(config, true) });
     } catch (e) {
@@ -276,7 +329,7 @@ function registerSmsRoutes(app, deps) {
         item.updatedAt = Date.now();
         updated += 1;
       }
-      data[SMS_CONFIG_KEY] = config;
+      data[SMS_CONFIG_KEY] = stampSmsConfig(config);
       await writeJsonBinRaw(data);
       res.json({ success: true, updated, config: grizzlySms.sanitizeSmsConfigForClient(config, true) });
     } catch (e) {
@@ -323,11 +376,13 @@ function registerSmsRoutes(app, deps) {
 
       for (const service of services) {
         if (!grizzlySms.isPopularSmsService(service)) continue;
+        if (byId.size >= MAX_SMS_CATALOG_ITEMS) break;
         const priceResult = await grizzlySms.getPrices(apiKey, { service });
         if (!priceResult.success) continue;
         const rows = grizzlySms.flattenGrizzlyPrices(priceResult.prices, { serviceHint: service })
           .filter(row => String(row.service).toLowerCase() === service);
         for (const row of rows) {
+          if (byId.size >= MAX_SMS_CATALOG_ITEMS) break;
           scanned += 1;
           const id = `${row.service}__${row.country}`;
           const item = {
@@ -360,7 +415,7 @@ function registerSmsRoutes(app, deps) {
         return String(a.countryName || a.country).localeCompare(String(b.countryName || b.country));
       });
       config.enabled = true;
-      data[SMS_CONFIG_KEY] = config;
+      data[SMS_CONFIG_KEY] = stampSmsConfig(config);
       await writeJsonBinRaw(data);
       res.json({
         success: true,
@@ -408,7 +463,7 @@ function registerSmsRoutes(app, deps) {
       }
       config.enabled = true;
       config.storeEnabled = true;
-      data[SMS_CONFIG_KEY] = config;
+      data[SMS_CONFIG_KEY] = stampSmsConfig(config);
       await writeJsonBinRaw(data);
       res.json({ success: true, added: added.length, config: grizzlySms.sanitizeSmsConfigForClient(config, true) });
     } catch (e) {
@@ -429,20 +484,10 @@ function registerSmsRoutes(app, deps) {
 
   app.get('/sms/catalog', async (req, res) => {
     try {
-      const data = await readJsonBinRaw().catch(() => ({}));
+      const data = await readSmsDbFast().catch(() => ({}));
       const config = readSmsConfig(data);
-      if (!config.storeEnabled) return res.json({ success: true, enabled: false, catalog: [] });
-      const catalog = (config.catalog || [])
-        .filter(item => item.enabled !== false && grizzlySms.isPopularSmsService(item.service))
-        .map(item => ({
-          id: item.id,
-          service: item.service,
-          serviceName: item.serviceName,
-          country: item.country,
-          countryName: item.countryName,
-          sellPrice: Number(item.sellPrice || 0)
-        }));
-      res.json({ success: true, enabled: true, catalog });
+      res.set('Cache-Control', 'public, max-age=60');
+      res.json(getCachedPublicSmsCatalog(config));
     } catch (e) {
       res.status(500).json({ error: 'Could not load SMS catalog' });
     }
