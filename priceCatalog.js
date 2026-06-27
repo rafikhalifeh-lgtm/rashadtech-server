@@ -28,6 +28,10 @@ const DURATIONS_DISNEY_FULL = [
 ];
 const DURATIONS_AMAZON_1U = [{ key: '1m', price: 2 }];
 const DURATIONS_AMAZON_FULL = [{ key: '1m', price: 6 }];
+const DURATIONS_CANVA = [
+  { key: '1m', price: 2 },
+  { key: '3m', price: 5 }
+];
 
 const SIMPLE_PLAN_PRODUCTS = [
   { id: 'anghami', plans: [4, 8, 15, 2] },
@@ -49,7 +53,6 @@ const SIMPLE_PLAN_PRODUCTS = [
   { id: 'psplus', plans: [4, 11, 35] },
   { id: 'ytpremium', plans: [4, 10, 35] },
   { id: 'chatgpt', plans: [5, 13, 45] },
-  { id: 'canva', plans: [3, 8, 25] },
   { id: 'linkedin', plans: [6, 16, 55] },
   { id: 'watchit', plans: [3, 8, 25] },
   { id: 'roblox', plans: [5, 10, 20, 50, 100] },
@@ -101,6 +104,11 @@ function buildDefaultPriceCatalog() {
   });
   DURATIONS_AMAZON_FULL.forEach(d => {
     prices[stockKey('amazon', 'full', d.key)] = d.price;
+  });
+
+  DURATIONS_CANVA.forEach(d => {
+    prices[stockKey('canva', 'own', d.key)] = d.price;
+    prices[stockKey('canva', 'new', d.key)] = d.price;
   });
 
   prices[stockKey('osn', '1user', '1m')] = 2;
