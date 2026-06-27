@@ -3271,7 +3271,7 @@ app.post('/admin/stock-add', async (req, res) => {
     if (!batch.length) return res.status(400).json({ error: 'No accounts to add' });
   } else if (!keys.length || !account) {
     return res.status(400).json({ error: 'Plan key and account required' });
-  } else if (!isAnghamiStockKey(keys[0]) && !isDisneyOneUserStockKey(keys[0]) && (!account.email || !account.pass)) {
+  } else if (!isAnghamiStockKey(keys[0]) && !isDisneyOneUserStockKey(keys[0]) && !isCanvaNewStockKey(keys[0]) && (!account.email || !account.pass)) {
     return res.status(400).json({ error: 'Plan key and account email/password required' });
   }
   const lockKeys = [];
@@ -3311,7 +3311,7 @@ app.post('/admin/stock-add', async (req, res) => {
           used: false,
           accKey: sharedKey,
           email: isAnghamiStockKey(firstKey) ? '' : String(rowAccount.email || '').trim(),
-          pass: isAnghamiStockKey(firstKey) || isDisneyOneUserStockKey(firstKey) ? '' : String(rowAccount.pass || '').trim(),
+          pass: isAnghamiStockKey(firstKey) || isDisneyOneUserStockKey(firstKey) || isCanvaNewStockKey(firstKey) ? '' : String(rowAccount.pass || '').trim(),
           ...(rowAccount.phone ? { phone: String(rowAccount.phone).trim() } : {}),
           ...(rowAccount.profileName ? { profileName: String(rowAccount.profileName).trim() } : {}),
           ...(rowAccount.serviceLink ? { serviceLink: String(rowAccount.serviceLink).trim() } : {}),
