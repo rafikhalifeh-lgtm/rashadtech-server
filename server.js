@@ -1724,12 +1724,19 @@ function isCanvaNewStockKey(skey) {
   return /^canva__new__/.test(String(skey || ''));
 }
 
+function isCanvaOrder(sub) {
+  return Boolean(sub && (sub.productId === 'canva' || /canva/i.test(sub.product || '')));
+}
+
 function isCanvaNewSubscription(sub) {
-  return Boolean(sub && (sub.productId === 'canva' || /canva/i.test(sub.product || '')) && /new account/i.test(String(sub.plan || '')));
+  if (!isCanvaOrder(sub)) return false;
+  if (/use my email/i.test(String(sub.plan || ''))) return false;
+  if (/new account/i.test(String(sub.plan || ''))) return true;
+  return Boolean(String(sub.email || '').trim() && !String(sub.pass || '').trim() && !String(sub.phone || '').trim() && String(sub.accKey || '').trim());
 }
 
 function isCanvaOwnSubscription(sub) {
-  return Boolean(sub && (sub.productId === 'canva' || /canva/i.test(sub.product || '')) && /use my email/i.test(String(sub.plan || '')));
+  return isCanvaOrder(sub) && /use my email/i.test(String(sub.plan || ''));
 }
 
 function isCanvaNewOrder(order) {
@@ -3988,12 +3995,15 @@ function authorizeCodeRequest(req, body) {
         .map(normalizeEmail).filter(Boolean);
       if (requested.some((email) => subEmails.includes(email))) return true;
       if (isDisneyOneUserSubscription(sub) && String(sub.phone || body.subPhone || '').trim()) return true;
+      if (isCanvaNewSubscription(sub) && normalizeEmail(sub.email)) return true;
     } catch (e) {}
   }
   const subEmail = normalizeEmail(body.subEmail);
   const subPass = String(body.subPass || '');
+  const codeType = String(body.codeType || '').toLowerCase();
   if (subEmail && subPass && requested.includes(subEmail)) return true;
   if (subEmail && !subPass && requested.includes(subEmail) && String(body.subPhone || '').trim()) return true;
+  if (subEmail && !subPass && requested.includes(subEmail) && codeType === 'canva') return true;
   return false;
 }
 

@@ -1522,8 +1522,15 @@ function isDisneyOrder(o){return Boolean(o&&(o.productId==='disney'||/disney/i.t
 function isDisneyOneUserOrder(o){return isDisneyOrder(o)&&/1\s*user/i.test(String(o.plan||''));}
 function isAnghamiOrder(o){return Boolean(o&&(o.productId==='anghami'||/anghami/i.test(o.product||'')));}
 function isCanvaOrder(o){return Boolean(o&&(o.productId==='canva'||/canva/i.test(o.product||'')));}
-function isCanvaNewOrder(o){return isCanvaOrder(o)&&/new account/i.test(String(o.plan||''));}
-function isCanvaOwnOrder(o){return isCanvaOrder(o)&&/use my email/i.test(String(o.plan||''));}
+function isCanvaNewOrder(o){
+  if(!isCanvaOrder(o))return false;
+  if(/use my email/i.test(String(o.plan||'')))return false;
+  if(/new account/i.test(String(o.plan||'')))return true;
+  return Boolean(o.email&&!o.pass&&!o.phone&&o.accKey);
+}
+function isCanvaOwnOrder(o){
+  return isCanvaOrder(o)&&/use my email/i.test(String(o.plan||''));
+}
 const SHAHID_FORGET_URL='https://shahid.mbc.net/en/hub/forget-password';
 let _shahidFixOrderId=null;
 let _shahidFixOrder=null;
@@ -2831,7 +2838,8 @@ async function checkSubLink(){
   const anghamiSub=isAnghamiOrder(found);
   const disneyOneSub=isDisneyOneUserOrder(found);
   const canvaNewSub=isCanvaNewOrder(found);
-  const canvaOwnSub=isCanvaOwnOrder(found);
+  const canvaOwnSub=isCanvaOwnOrder(found)&&!canvaNewSub;
+  _sublinkIsCanva=false;
   const subProf=orderProfileName(found);
   document.getElementById('sublink-email').textContent=found.email||'';
   document.getElementById('sublink-pass').textContent=found.pass||'';
@@ -2978,12 +2986,14 @@ async function checkSubLink(){
       shahidActions.innerHTML='';
     }
   }
-  if((found.accKey||disneyOneSub||canvaNewSub)&&!isShahid){
+  if((found.accKey||disneyOneSub||canvaNewSub)&&!isShahid&&!canvaOwnSub){
     _sublinkAccKey=found.accKey;
     document.getElementById('sublink-code-request').style.display='block';
+    document.getElementById('sublink-code-section').style.display='none';
     if(_codeRefreshInterval)clearInterval(_codeRefreshInterval);
   } else {
     document.getElementById('sublink-code-request').style.display='none';
+    document.getElementById('sublink-code-section').style.display='none';
   }
   return true;
 }
