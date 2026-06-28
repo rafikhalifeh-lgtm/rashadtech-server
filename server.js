@@ -2738,7 +2738,9 @@ async function notifyPurchaseFulfilled(user, product, planLabel, price, order, a
     if (profileLabel) adminMsg += `\n👤 Profile: <code>${profileLabel}</code>`;
   }
   if (order.expiryDate) adminMsg += `\n📅 Expires: ${order.expiryDate}`;
-  await sendTG(TG_ADMIN, adminMsg, 'HTML').catch((e) => console.error('Purchase admin TG:', e.message));
+  if (!options.skipAdminNotify) {
+    await sendTG(TG_ADMIN, adminMsg, 'HTML').catch((e) => console.error('Purchase admin TG:', e.message));
+  }
   const linkData = {
     id: order.id,
     product: product.name,
@@ -2796,6 +2798,9 @@ async function notifyPurchaseFulfilled(user, product, planLabel, price, order, a
   if (order.expiryDate) custMsg += `\n⏰ Expires: ${order.expiryDate}`;
   if (order.profilePin) custMsg += `\n🔢 PIN: <code>${order.profilePin}</code>`;
   custMsg += `\n\n🔗 <b>Subscription link:</b>\n${subLink}\n\nEnjoy! 🌟`;
+  if (options.skipAdminNotify) {
+    custMsg = `🔁 <b>Resent your subscription</b>\n\n${custMsg}`;
+  }
   const tgChatId = String(user.tgChatId || '').trim();
   if (tgChatId) {
     try {
@@ -3034,7 +3039,7 @@ app.post('/customer/resend-subscription', async (req, res) => {
       tc: order.tc || '',
       id: order.productId || ''
     };
-    const deliveryChannel = await notifyPurchaseFulfilled(user, product, order.plan || '', order.price || 0, order, customer ? customer.id : null, { forceResend: true, data });
+    const deliveryChannel = await notifyPurchaseFulfilled(user, product, order.plan || '', order.price || 0, order, customer ? customer.id : null, { forceResend: true, skipAdminNotify: true, data });
     res.json({
       success: true,
       deliveryChannel: deliveryChannel || null,

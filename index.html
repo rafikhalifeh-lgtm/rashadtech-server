@@ -288,6 +288,11 @@ input,button,select,textarea{font-family:var(--font)}
 .admin-cust-table td{padding:12px 14px;font-size:13px;border-bottom:1px solid var(--border);vertical-align:top}
 .admin-cust-table tr:last-child td{border-bottom:none}
 .admin-cust-table tbody tr:hover td{background:var(--bg3)}
+.admin-cust-detail-section{margin-bottom:18px}
+.admin-cust-detail-section h4{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text3);margin:0 0 8px}
+.admin-cust-sub-row{border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:8px;font-size:12px;background:var(--bg3)}
+.admin-cust-sub-row:last-child{margin-bottom:0}
+.admin-cust-sub-meta{color:var(--text3);font-size:11px;margin-top:4px;line-height:1.5}
 .verified-pill{font-size:10px;padding:2px 7px;border-radius:4px;font-weight:600;display:inline-block}
 .vpill-yes{background:var(--green-bg);color:var(--green)}
 .vpill-no{background:var(--orange-bg);color:var(--orange)}
@@ -1579,6 +1584,16 @@ function collectAssignedSubs(user){
     out.push({order:o,customer:c});
   }));
   return out;
+}
+function collectExpiryItems(user){
+  const items=[];
+  (user?.orders||[]).forEach(o=>{
+    if(o.expiryDate)items.push({order:o,customer:null});
+  });
+  collectAssignedSubs(user).forEach(({order,customer})=>{
+    if(order.expiryDate)items.push({order,customer});
+  });
+  return items;
 }
 function userPurchaseSummary(u){
   const own=u.orders||[];
@@ -4483,39 +4498,46 @@ function renderNetflixRenewalAlerts(){
 }
 function renderExpiryTracker(){
   if(!currentUser)return;
-  const orders=currentUser.orders.filter(o=>o.expiryDate);
+  const items=collectExpiryItems(currentUser);
   const el=document.getElementById('expiry-list');
   const sum=document.getElementById('expiry-summary');
-  if(!orders.length){
+  if(!items.length){
     el.innerHTML='<div class="empty-state"><i class="ti ti-clock"></i>No subscriptions with expiry dates.<br><span style="font-size:12px;color:var(--text3)">Expiry dates are set by admin when adding stock.</span></div>';
     sum.innerHTML='';return;
   }
-  const sorted=[...orders].sort((a,b)=>{const da=daysLeft(a.expiryDate);const db=daysLeft(b.expiryDate);if(da===null)return 1;if(db===null)return-1;return da-db;});
-  const critical=sorted.filter(o=>{const d=daysLeft(o.expiryDate);return d!==null&&d<=3;}).length;
-  const warning=sorted.filter(o=>{const d=daysLeft(o.expiryDate);return d!==null&&d>3&&d<=7;}).length;
+  const sorted=[...items].sort((a,b)=>{const da=daysLeft(a.order.expiryDate);const db=daysLeft(b.order.expiryDate);if(da===null)return 1;if(db===null)return-1;return da-db;});
+  const critical=sorted.filter(x=>{const d=daysLeft(x.order.expiryDate);return d!==null&&d<=3;}).length;
+  const warning=sorted.filter(x=>{const d=daysLeft(x.order.expiryDate);return d!==null&&d>3&&d<=7;}).length;
   sum.innerHTML=`
     ${critical?`<div style="background:var(--red-bg);border:1px solid var(--red-border);border-radius:var(--radius-sm);padding:8px 14px;font-size:12px;color:var(--red);font-weight:600"><i class="ti ti-alert-circle" style="font-size:13px;vertical-align:-2px;margin-right:5px"></i>${critical} expiring in ≤3 days!</div>`:''}
     ${warning?`<div style="background:var(--orange-bg);border:1px solid var(--orange-border);border-radius:var(--radius-sm);padding:8px 14px;font-size:12px;color:var(--orange);font-weight:600"><i class="ti ti-clock" style="font-size:13px;vertical-align:-2px;margin-right:5px"></i>${warning} expiring this week</div>`:''}
     ${!critical&&!warning?`<div style="background:var(--green-bg);border:1px solid var(--green-border);border-radius:var(--radius-sm);padding:8px 14px;font-size:12px;color:var(--green);font-weight:600"><i class="ti ti-circle-check" style="font-size:13px;vertical-align:-2px;margin-right:5px"></i>All subscriptions are in good shape</div>`:''}
   `;
-  el.innerHTML=sorted.map(o=>{
+  el.innerHTML=sorted.map(({order:o,customer})=>{
     const d=daysLeft(o.expiryDate);const cls=expiryClass(d);
     let dLabel,dColor;
     if(d===null){dLabel='—';dColor='var(--text3)';}
     else if(d<0){dLabel='Expired';dColor='var(--red)';}
     else if(d===0){dLabel='Today!';dColor='var(--red)';}
     else{dLabel=d;dColor=d<=3?'var(--red)':d<=7?'var(--orange)':'var(--green)';}
+    const prof=orderProfileName(o);
+    const credLines=[];
+    if(isDisneyOneUserOrder(o)&&o.phone)credLines.push(`📱 ${esc(o.phone)}`);
+    else if(o.email&&!isAnghamiOrder(o))credLines.push(`📧 ${esc(o.email)}`);
+    if(customer)credLines.push(`${t('forSubCustomer','For')}: ${esc(customer.fname)} ${esc(customer.lname)} · ${esc(customer.code)} ${esc(customer.phone)}`);
+    if(prof&&!isAnghamiOrder(o))credLines.push(`Profile: ${esc(prof)}`);
+    if(o.profilePin)credLines.push(`PIN: ${esc(o.profilePin)}`);
     return `<div class="expiry-card ${cls}">
       <div class="expiry-icon" style="background:${o.color};color:${o.tc}">${o.short}</div>
       <div class="expiry-info">
-        <div class="expiry-name">${o.product}</div>
-        <div class="expiry-plan">${o.plan}</div>
-        <div class="expiry-cred">${o.email}</div>
+        <div class="expiry-name">${esc(o.product)}</div>
+        <div class="expiry-plan">${esc(o.plan)}</div>
+        ${credLines.map(line=>`<div class="expiry-cred">${line}</div>`).join('')}
       </div>
       <div class="expiry-right">
         <div class="days-left" style="color:${dColor}">${dLabel}</div>
         <div class="days-label">${typeof dLabel==='number'?'days left':''}</div>
-        <div class="exp-date">Exp: ${o.expiryDate}</div>
+        <div class="exp-date">Exp: ${esc(o.expiryDate)}</div>
       </div>
     </div>`;
   }).join('');
@@ -6619,6 +6641,68 @@ async function autoFulfillPending(skey){
     renderStockPanels();
   }
 }
+function adminSubDetailHtml(order,customer){
+  const o=order;
+  const prof=orderProfileName(o);
+  const lines=[];
+  if(customer)lines.push(`<div><b>Sub-customer:</b> ${esc(customer.fname)} ${esc(customer.lname)} · ${esc(customer.code)} ${esc(customer.phone)}${customer.tgChatId?` · TG: ${esc(customer.tgChatId)}`:''}</div>`);
+  if(isDisneyOneUserOrder(o)&&o.phone)lines.push(`<div><b>Phone:</b> <span style="font-family:var(--mono)">${esc(o.phone)}</span></div>`);
+  else if(isAnghamiOrder(o)&&o.serviceLink)lines.push(`<div><b>Link:</b> <a href="${esc(o.serviceLink)}" target="_blank" rel="noopener" style="color:var(--blue)">${esc(o.serviceLink)}</a></div>`);
+  else if(o.email)lines.push(`<div><b>Email:</b> <span style="font-family:var(--mono)">${esc(o.email)}</span></div>`);
+  if(o.pass&&!isDisneyOneUserOrder(o)&&!isOsnPasswordlessOrder(o)&&!isCanvaNewOrder(o))lines.push(`<div><b>Password:</b> <span style="font-family:var(--mono)">${esc(o.pass)}</span></div>`);
+  if(prof)lines.push(`<div><b>Profile:</b> ${esc(prof)}</div>`);
+  if(o.profilePin)lines.push(`<div><b>PIN:</b> <span style="font-family:var(--mono)">${esc(o.profilePin)}</span></div>`);
+  if(o.expiryDate)lines.push(`<div><b>Expiry:</b> ${esc(o.expiryDate)}</div>`);
+  if(o.accKey)lines.push(`<div><b>Account key:</b> <span style="font-family:var(--mono);font-size:10px">${esc(o.accKey)}</span></div>`);
+  const status=o.status==='awaiting_stock'?'Pending':(o.pending?'Pending':'Active');
+  return `<div class="admin-cust-sub-row">
+    <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">
+      <div style="font-weight:700">${esc(o.product||'Subscription')} · ${esc(o.plan||'')}</div>
+      <div style="color:var(--green);font-weight:600">${fmt(o.price||0)}</div>
+    </div>
+    <div class="admin-cust-sub-meta">Order ${esc(o.id||'—')} · ${esc(o.date||'—')} · ${status}</div>
+    <div class="admin-cust-sub-meta">${lines.join('')}</div>
+  </div>`;
+}
+function openAdminCustomerDetail(userIdx){
+  const u=users[userIdx];
+  if(!u)return;
+  const title=document.getElementById('admin-cust-detail-title');
+  const body=document.getElementById('admin-cust-detail-body');
+  if(!title||!body)return;
+  const spent=(u.transactions||[]).filter(t=>t.type==='purchase').reduce((s,t)=>s+t.amount,0);
+  const topped=(u.transactions||[]).filter(t=>t.type==='deposit'||t.type==='topup').reduce((s,t)=>s+t.amount,0);
+  const txs=[...(u.transactions||[])];
+  const subs=[...(u.orders||[]).map(o=>({order:o,customer:null})),...collectAssignedSubs(u)];
+  title.textContent=`${u.name} — ${u.email}`;
+  const summary=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:16px;font-size:12px">
+    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px"><div style="color:var(--text3);font-size:10px;text-transform:uppercase">Balance</div><div style="font-weight:700;color:var(--green)">${fmt(u.balance)}</div></div>
+    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px"><div style="color:var(--text3);font-size:10px;text-transform:uppercase">Spent</div><div style="font-weight:700">${fmt(spent)}</div></div>
+    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px"><div style="color:var(--text3);font-size:10px;text-transform:uppercase">Top-ups</div><div style="font-weight:700">${fmt(topped)}</div></div>
+    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px"><div style="color:var(--text3);font-size:10px;text-transform:uppercase">Subscriptions</div><div style="font-weight:700">${subs.length}</div></div>
+  </div>
+  <div style="font-size:12px;color:var(--text2);margin-bottom:16px;line-height:1.6">
+    <div>📞 ${u.phone?esc(u.phone):'—'} · TG: ${u.tgChatId?esc(u.tgChatId):'—'} · Joined: ${esc(u.joinedDate||'—')}</div>
+    <div>${u.verified?'✓ Verified':'⚠ Unverified'}${u.banned?' · 🚫 Banned':''}</div>
+  </div>`;
+  const txHtml=txs.length?`<div class="admin-cust-detail-section"><h4>Transactions (${txs.length})</h4>
+    <table class="tx-table" style="width:100%"><thead><tr><th>#</th><th>Type</th><th>Description</th><th>Amount</th><th>Balance</th><th>Date</th></tr></thead>
+    <tbody>${txs.map((t,i)=>{
+      const amtColor=t.type==='purchase'?'var(--red)':(t.type==='deposit'||t.type==='topup'?'var(--green)':'var(--text)');
+      const pending=t.pending?' <span style="color:var(--orange);font-size:10px">(pending)</span>':'';
+      return `<tr>
+        <td style="color:var(--text3)">${txs.length-i}</td>
+        <td style="text-transform:capitalize">${esc(t.type||'—')}</td>
+        <td>${esc(t.label||'—')}${pending}</td>
+        <td style="color:${amtColor};font-weight:600">${t.type==='purchase'?'-':(t.type==='deposit'||t.type==='topup'?'+':'')}${fmt(Math.abs(t.amount||0))}</td>
+        <td>${fmt(t.balance)}</td>
+        <td style="color:var(--text3);font-size:11px">${esc(t.date||'—')}</td>
+      </tr>`;
+    }).join('')}</tbody></table></div>`:`<div class="admin-cust-detail-section"><h4>Transactions</h4><div style="color:var(--text3);font-size:12px">No transactions yet.</div></div>`;
+  const subHtml=`<div class="admin-cust-detail-section"><h4>Subscriptions (${subs.length})</h4>${subs.length?subs.map(({order,customer})=>adminSubDetailHtml(order,customer)).join(''):'<div style="color:var(--text3);font-size:12px">No subscriptions yet.</div>'}</div>`;
+  body.innerHTML=summary+txHtml+subHtml;
+  openModal('admin-cust-detail-modal');
+}
 function renderAdminCustomers(){
   const tbody=document.getElementById('admin-cust-tbody');
   const q=(document.getElementById('admin-cust-search')?.value||'').toLowerCase();
@@ -6656,7 +6740,8 @@ function renderAdminCustomers(){
       <td><div style="font-weight:600">${ps.total} purchase${ps.total!==1?'s':''}</div>${assignedNote}<div class="sub-chips">${subChips}${more}</div></td>
       <td style="color:var(--text3);font-size:12px">${u.joinedDate||'—'}</td>
       <td style="white-space:nowrap">
-        <button onclick="toggleBanUser(${ri})" style="background:${banned?'var(--green-bg)':'var(--orange-bg)'};color:${banned?'var(--green)':'var(--orange)'};border:1px solid ${banned?'var(--green-border)':'var(--orange-border)'};border-radius:var(--radius-sm);padding:4px 8px;font-size:11px;font-weight:600;cursor:pointer;margin-bottom:4px;display:block">${banned?'✅ Unban':'🚫 Ban'}</button>
+        <button onclick="openAdminCustomerDetail(${ri})" style="background:var(--blue-bg);color:var(--blue);border:1px solid var(--blue-border);border-radius:var(--radius-sm);padding:4px 8px;font-size:11px;font-weight:600;cursor:pointer;margin-bottom:4px;display:block;width:100%">📋 Details</button>
+        <button onclick="toggleBanUser(${ri})" style="background:${banned?'var(--green-bg)':'var(--orange-bg)'};color:${banned?'var(--green)':'var(--orange)'};border:1px solid ${banned?'var(--green-border)':'var(--orange-border)'};border-radius:var(--radius-sm);padding:4px 8px;font-size:11px;font-weight:600;cursor:pointer;margin-bottom:4px;display:block;width:100%">${banned?'✅ Unban':'🚫 Ban'}</button>
         <button onclick="deleteUser(${ri})" style="background:var(--red-bg);color:var(--red);border:1px solid var(--red-border);border-radius:var(--radius-sm);padding:4px 8px;font-size:11px;font-weight:600;cursor:pointer;display:block">🗑 Delete</button>
       </td></tr>`;
   }).join('');
@@ -7570,6 +7655,14 @@ if(document.readyState==='loading'){
     </div>
     <button class="modal-buy-btn" id="sms-refresh-btn" style="background:#7c3aed" onclick="refreshSmsOrderCode(false)">🔄 Refresh code</button>
     <button class="btn-secondary" onclick="closeModal('sms-order-modal')" style="width:100%;margin-top:10px">Close</button>
+  </div>
+</div>
+
+<!-- ADMIN CUSTOMER DETAIL MODAL -->
+<div class="modal-wrap" id="admin-cust-detail-modal" aria-hidden="true" onclick="closeModal('admin-cust-detail-modal')">
+  <div class="modal" onclick="event.stopPropagation()" style="width:min(720px,100%)">
+    <div class="modal-head"><h3 id="admin-cust-detail-title">Customer details</h3><button class="mclose" onclick="closeModal('admin-cust-detail-modal')">✕</button></div>
+    <div class="modal-body" id="admin-cust-detail-body"></div>
   </div>
 </div>
 
