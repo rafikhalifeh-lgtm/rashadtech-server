@@ -19,6 +19,7 @@ const {
 const {
   deliverMarketingEmail,
   deliverOtpEmail,
+  deliverSubscriptionEmail,
   deliverTestEmail,
   fetchResendDomainStatus,
   getActiveEmailProvider,
@@ -400,6 +401,40 @@ async function sendOtpEmail(email, otp, name, data) {
       privateKey: EMAILJS_PRIVATE_KEY
     }
   });
+}
+
+async function sendSubscriptionEmail(user, product, planLabel, order, subLink, options = {}) {
+  const email = normalizeEmail(user && user.email);
+  if (!email) return false;
+  const mailData = options.data || await loadEmailSettingsData();
+  if (!isServerEmailConfigured(mailData)) {
+    console.warn('Subscription email skipped — email not configured:', email);
+    return false;
+  }
+  try {
+    await deliverSubscriptionEmail({
+      email,
+      name: user.name,
+      productName: product && product.name,
+      planLabel,
+      order,
+      subLink,
+      assignedCustomerName: options.assignedCustomerName || '',
+      kind: options.kind || 'fulfilled',
+      data: mailData,
+      emailJs: {
+        serviceId: EMAILJS_SERVICE_ID,
+        otpTemplateId: EMAILJS_TEMPLATE_ID,
+        marketingTemplateId: resolveMarketingTemplateId(mailData) || EMAILJS_MARKETING_TEMPLATE_ID,
+        publicKey: EMAILJS_PUBLIC_KEY,
+        privateKey: EMAILJS_PRIVATE_KEY
+      }
+    });
+    return true;
+  } catch (e) {
+    console.error('Subscription email error:', e.message);
+    return false;
+  }
 }
 
 async function sendUserEmail(email, subject, message, name, data) {
@@ -971,14 +1006,16 @@ async function writeJsonBinRaw(data, options = {}) {
   const fallbackData = markEmergencyDb(nextData, NETLIFY_SITE_ID && NETLIFY_BLOBS_TOKEN ? 'Netlify Blobs primary database' : 'Primary server file database', !(NETLIFY_SITE_ID && NETLIFY_BLOBS_TOKEN));
   if (lightWrite) {
     setDbCache(fallbackData, false);
-    try {
-      writeFallbackDb(dbCache);
-    } catch (e) {
-      console.error('Fallback DB write error:', e.message);
-    }
-    if (NETLIFY_SITE_ID && NETLIFY_BLOBS_TOKEN) {
-      enqueueNetlifyWrite(fallbackData);
-    }
+    runAfterResponse(() => {
+      try {
+        writeFallbackDb(dbCache);
+      } catch (e) {
+        console.error('Fallback DB write error:', e.message);
+      }
+      if (NETLIFY_SITE_ID && NETLIFY_BLOBS_TOKEN) {
+        enqueueNetlifyWrite(fallbackData);
+      }
+    });
     syncDbToJsonBin(false).catch(e => console.error('Background JSONBin sync error:', e.message));
     return { cached: true, emergencyDb: Boolean(fallbackData.emergencyDb && fallbackData.emergencyDb.active) };
   }
@@ -2030,25 +2067,18 @@ app.post('/db/read', async (req, res) => {
     if (session.role === 'user') {
       const user = (data.users || []).find(u => normalizeEmail(u.email) === session.email);
       if (user) {
-        if (recoverMyCustomersFromBackups(data, user)) recovered = true;
+        if (recoverMyCustomersFromBackups(data, user)) {
+          recovered = true;
+          const snapshot = cloneData(data);
+          runAfterResponse(() => {
+            enqueueDbWrite(() => writeDbFast(snapshot)).catch(e => console.error('DB read recovery write error:', e.message));
+          });
+        }
         if (fullRecover && await recoverMyCustomersFromAllSources(data, user)) recovered = true;
       }
     }
-    if (recovered) await writeDbFast(data);
+    if (recovered && fullRecover) await writeDbFast(data);
     res.json({ success: true, data: safeDataForSession(data, session) });
-    if (session.role === 'user' && !fullRecover) {
-      const userEmail = session.email;
-      setImmediate(() => {
-        enqueueDbWrite(async () => {
-          const fresh = await readDbForWrite();
-          const live = (fresh.users || []).find(u => normalizeEmail(u.email) === userEmail);
-          if (!live) return null;
-          const changed = await recoverMyCustomersFromAllSources(fresh, live);
-          if (!changed) return null;
-          return writeDbFast(fresh, { backupReason: 'read-recover-sub-customers', backupSource: fresh });
-        }).catch(e => console.error('DB read sub-customer recovery error:', e.message));
-      });
-    }
   } catch(e) {
     console.error('DB read error:', e.message);
     res.status(500).json({ error: e.message });
@@ -2604,7 +2634,7 @@ function syncUserContact(user, { tgChatId, name, phone } = {}) {
   return user;
 }
 
-async function notifyPurchasePending(user, product, planLabel, price, assignCustId, pendingOrder = null) {
+async function notifyPurchasePending(user, product, planLabel, price, assignCustId, pendingOrder = null, options = {}) {
   const assignedCustomer = assignCustId !== null && assignCustId !== undefined
     ? (user.myCustomers || []).find(c => c.id === assignCustId)
     : null;
@@ -2617,21 +2647,30 @@ async function notifyPurchasePending(user, product, planLabel, price, assignCust
     ? `⏳ <b>Canva Pro — activate by email</b>\n👤 ${user.name} (${user.email})\n📧 <b>Customer Canva email:</b> <code>${canvaEmail}</code>\n📦 ${product.name} · ${planLabel}\n💵 $${Number(price).toFixed(2)}${assignNote}\n\nActivate Pro on this email, then tap Fulfill in Admin → Pending Orders.`
     : `⏳ <b>Pending Order</b>\n👤 ${user.name} (${user.email})\n📦 ${product.name} · ${planLabel}\n💵 $${Number(price).toFixed(2)}${assignNote}\n⚠️ No stock — add accounts in Stock tab to fulfill.`;
   await sendTG(TG_ADMIN, adminMsg, 'HTML').catch((e) => console.error('Pending admin TG:', e.message));
-  if (!user.tgChatId) return false;
-  try {
-    const custMsg = isCanvaOwn
-      ? `✅ <b>Purchase Confirmed!</b>\n\n📦 ${product.name} · ${planLabel}\n📧 Canva email: <code>${canvaEmail}</code>\n💵 $${Number(price).toFixed(2)}${assignNote}\n💰 New balance: $${Number(user.balance || 0).toFixed(2)}\n\n⏳ We will activate Canva Pro on your email shortly.`
-      : `✅ <b>Purchase Confirmed!</b>\n\n📦 ${product.name} · ${planLabel}\n💵 $${Number(price).toFixed(2)}${assignNote}\n💰 New balance: $${Number(user.balance || 0).toFixed(2)}\n\n⏳ Your credentials will be delivered here shortly.`;
-    await sendTG(user.tgChatId, custMsg, 'HTML');
-    return true;
-  } catch (e) {
-    console.error('Pending customer TG:', e.message);
-    return false;
+  const tgChatId = String(user.tgChatId || '').trim();
+  if (tgChatId) {
+    try {
+      const custMsg = isCanvaOwn
+        ? `✅ <b>Purchase Confirmed!</b>\n\n📦 ${product.name} · ${planLabel}\n📧 Canva email: <code>${canvaEmail}</code>\n💵 $${Number(price).toFixed(2)}${assignNote}\n💰 New balance: $${Number(user.balance || 0).toFixed(2)}\n\n⏳ We will activate Canva Pro on your email shortly.`
+        : `✅ <b>Purchase Confirmed!</b>\n\n📦 ${product.name} · ${planLabel}\n💵 $${Number(price).toFixed(2)}${assignNote}\n💰 New balance: $${Number(user.balance || 0).toFixed(2)}\n\n⏳ Your credentials will be delivered here shortly.`;
+      await sendTG(tgChatId, custMsg, 'HTML');
+      return 'telegram';
+    } catch (e) {
+      console.error('Pending customer TG:', e.message);
+    }
   }
+  const emailSent = await sendSubscriptionEmail(user, product, planLabel, pendingOrder || { product: product.name, plan: planLabel }, '', {
+    kind: 'pending',
+    data: options.data,
+    assignedCustomerName: assignedCustomer ? `${assignedCustomer.fname} ${assignedCustomer.lname}`.trim() : ''
+  });
+  return emailSent ? 'email' : false;
 }
 
 async function notifyPurchaseFulfilled(user, product, planLabel, price, order, assignCustId, options = {}) {
-  if (order && order.telegramDeliveredAt && !options.forceResend) return true;
+  if (order && (order.telegramDeliveredAt || order.emailDeliveredAt) && !options.forceResend) {
+    return order.telegramDeliveredAt ? 'telegram' : 'email';
+  }
   const assignedCustomer = assignCustId !== null && assignCustId !== undefined
     ? (user.myCustomers || []).find(c => c.id === assignCustId)
     : null;
@@ -2658,10 +2697,6 @@ async function notifyPurchaseFulfilled(user, product, planLabel, price, order, a
   }
   if (order.expiryDate) adminMsg += `\n📅 Expires: ${order.expiryDate}`;
   await sendTG(TG_ADMIN, adminMsg, 'HTML').catch((e) => console.error('Purchase admin TG:', e.message));
-  if (!user.tgChatId) {
-    console.warn('Purchase fulfilled but user has no tgChatId:', user.email);
-    return false;
-  }
   const linkData = {
     id: order.id,
     product: product.name,
@@ -2714,25 +2749,38 @@ async function notifyPurchaseFulfilled(user, product, planLabel, price, order, a
   if (order.expiryDate) custMsg += `\n⏰ Expires: ${order.expiryDate}`;
   if (order.profilePin) custMsg += `\n🔢 PIN: <code>${order.profilePin}</code>`;
   custMsg += `\n\n🔗 <b>Subscription link:</b>\n${subLink}\n\nEnjoy! 🌟`;
-  try {
-    await sendTG(user.tgChatId, custMsg, 'HTML');
-    if (assignedCustomer && assignedCustomer.tgChatId && String(assignedCustomer.tgChatId) !== String(user.tgChatId)) {
-      const assignMsg = isAnghami
-        ? `✅ <b>Anghami+</b>\n\n📋 ${planLabel}\n\n🔗 ${order.serviceLink || ''}\n\n${ANGHAMI_CANCEL_NOTE_EN}\n\n🔗 ${subLink}`
-        : isDisneyOne
-          ? `✅ <b>Disney+ subscription</b>\n\n📋 ${planLabel}\n\n📱 <code>${order.phone || ''}</code>\n\n🔗 ${subLink}`
-          : isCanvaNew
-            ? `✅ <b>Canva Pro</b>\n\n📋 ${planLabel}\n\n📧 <code>${order.email || ''}</code>\n\n🔗 ${subLink}`
-            : isCanvaOwn
-              ? `✅ <b>Canva Pro activated</b>\n\n📋 ${planLabel}\n\n📧 <code>${order.email || ''}</code>\n\n🔗 ${subLink}`
-              : `✅ <b>${product.name} subscription</b>\n\n📋 ${planLabel}\n\n🔐 <b>Credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>${order.profilePin ? `\n🔢 PIN: <code>${order.profilePin}</code>` : ''}\n\n🔗 ${subLink}`;
-      await sendTG(assignedCustomer.tgChatId, assignMsg, 'HTML').catch(() => {});
+  const tgChatId = String(user.tgChatId || '').trim();
+  if (tgChatId) {
+    try {
+      await sendTG(tgChatId, custMsg, 'HTML');
+      if (assignedCustomer && assignedCustomer.tgChatId && String(assignedCustomer.tgChatId) !== tgChatId) {
+        const assignMsg = isAnghami
+          ? `✅ <b>Anghami+</b>\n\n📋 ${planLabel}\n\n🔗 ${order.serviceLink || ''}\n\n${ANGHAMI_CANCEL_NOTE_EN}\n\n🔗 ${subLink}`
+          : isDisneyOne
+            ? `✅ <b>Disney+ subscription</b>\n\n📋 ${planLabel}\n\n📱 <code>${order.phone || ''}</code>\n\n🔗 ${subLink}`
+            : isCanvaNew
+              ? `✅ <b>Canva Pro</b>\n\n📋 ${planLabel}\n\n📧 <code>${order.email || ''}</code>\n\n🔗 ${subLink}`
+              : isCanvaOwn
+                ? `✅ <b>Canva Pro activated</b>\n\n📋 ${planLabel}\n\n📧 <code>${order.email || ''}</code>\n\n🔗 ${subLink}`
+                : `✅ <b>${product.name} subscription</b>\n\n📋 ${planLabel}\n\n🔐 <b>Credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>${order.profilePin ? `\n🔢 PIN: <code>${order.profilePin}</code>` : ''}\n\n🔗 ${subLink}`;
+        await sendTG(assignedCustomer.tgChatId, assignMsg, 'HTML').catch(() => {});
+      }
+      return 'telegram';
+    } catch (e) {
+      console.error('Purchase customer TG:', e.message);
     }
-    return true;
-  } catch (e) {
-    console.error('Purchase customer TG:', e.message);
-    return false;
   }
+  const emailSent = await sendSubscriptionEmail(user, product, planLabel, order, subLink, {
+    data: options.data,
+    assignedCustomerName: custName || '',
+    kind: 'fulfilled'
+  });
+  if (emailSent) {
+    console.log('Subscription delivered by email to', user.email);
+    return 'email';
+  }
+  console.warn('Purchase fulfilled but could not deliver to customer:', user.email);
+  return false;
 }
 
 app.post('/customer/my-customers', async (req, res) => {
@@ -2919,15 +2967,17 @@ app.post('/customer/resend-subscription', async (req, res) => {
   const { orderId, tgChatId } = req.body || {};
   if (!orderId) return res.status(400).json({ error: 'Order ID required' });
   try {
-    const data = await readJsonBinRaw();
+    const data = await readJsonBinRaw({ fast: true, skipRecoverWrite: true });
     data.users = Array.isArray(data.users) ? data.users : [];
     const user = data.users.find(u => normalizeEmail(u.email) === session.email);
     if (!user) return res.status(404).json({ error: 'User not found' });
     syncUserContact(user, { tgChatId });
     const { order, customer } = findUserOrderRecord(user, orderId);
     if (!order || !order.email) return res.status(404).json({ error: 'Subscription not found' });
-    if (!user.tgChatId) return res.status(400).json({ error: 'Add your Telegram Chat ID in Profile first, then tap Save.' });
-    await writeDbFast(data);
+    if (!String(user.tgChatId || '').trim() && !normalizeEmail(user.email)) {
+      return res.status(400).json({ error: 'Add your email in Profile, or add Telegram Chat ID to receive credentials.' });
+    }
+    if (String(user.tgChatId || '').trim()) await writeDbFast(data);
     const product = {
       name: order.product,
       short: order.short || '',
@@ -2935,8 +2985,14 @@ app.post('/customer/resend-subscription', async (req, res) => {
       tc: order.tc || '',
       id: order.productId || ''
     };
-    const telegramSent = await notifyPurchaseFulfilled(user, product, order.plan || '', order.price || 0, order, customer ? customer.id : null, { forceResend: true });
-    res.json({ success: true, telegramSent, user: sanitizeUser(user), data: safeDataForSession(data, session) });
+    const deliveryChannel = await notifyPurchaseFulfilled(user, product, order.plan || '', order.price || 0, order, customer ? customer.id : null, { forceResend: true, data });
+    res.json({
+      success: true,
+      deliveryChannel: deliveryChannel || null,
+      telegramSent: deliveryChannel === 'telegram',
+      emailSent: deliveryChannel === 'email',
+      user: sanitizeUser(user)
+    });
   } catch (e) {
     console.error('Resend subscription error:', e.message);
     res.status(500).json({ error: e.message || 'Could not resend subscription' });
@@ -3060,7 +3116,7 @@ app.post('/purchase', async (req, res) => {
         order: pendingOrder,
         ...(session.role === 'admin' ? { data: slimMutationData(session, data, { pending: true }) } : {})
       });
-      runAfterResponse(() => notifyPurchasePending(user, product, planLabel, price, assignCustId, pendingOrder));
+      runAfterResponse(() => notifyPurchasePending(user, product, planLabel, price, assignCustId, pendingOrder, { data }));
       return;
     }
     const { data, user, order } = outcome;
@@ -3074,14 +3130,14 @@ app.post('/purchase', async (req, res) => {
       ...(session.role === 'admin' ? { data: slimMutationData(session, data, { pending: true }) } : {})
     });
     runAfterResponse(async () => {
-      const telegramSent = await notifyPurchaseFulfilled(user, product, planLabel, price, order, assignCustId);
-      if (!telegramSent) return;
+      const deliveryChannel = await notifyPurchaseFulfilled(user, product, planLabel, price, order, assignCustId, { data });
+      if (!deliveryChannel) return;
       await enqueueDbWrite(async () => {
         const fresh = await readDbForWrite();
         const liveUser = (fresh.users || []).find(u => normalizeEmail(u.email) === userEmail);
         if (!liveUser) return;
         const { order: liveOrder } = findUserOrderRecord(liveUser, orderId);
-        if (liveOrder) stampOrderDelivery(liveOrder, true);
+        if (liveOrder) stampOrderDelivery(liveOrder, deliveryChannel);
         await writeDbFast(fresh);
       });
     });
@@ -3197,10 +3253,18 @@ app.post('/admin/credit-topup', async (req, res) => {
           `💰 <b>Wallet Topped Up!</b>\n\n✅ <b>${reqRow.label}</b> has been added to your wallet.\n💵 New balance: $${Number(user.balance).toFixed(2)}\n\nEnjoy shopping on rashadtech.tv! 🎉`,
           'HTML'
         ).catch((e) => console.error('Topup customer TG:', e.message));
+      } else if (normalizeEmail(user.email)) {
+        await sendUserEmail(
+          user.email,
+          'Wallet topped up — RashadTech',
+          `Hello ${user.name || 'there'},\n\n${reqRow.label} has been added to your wallet.\nNew balance: $${Number(user.balance).toFixed(2)}\n\nEnjoy shopping on rashadtech.tv!`,
+          user.name,
+          data
+        ).catch((e) => console.error('Topup customer email:', e.message));
       }
       await sendTG(
         TG_ADMIN,
-        `✅ Credited ${reqRow.label} to ${reqRow.name} (${reqRow.email}) · Balance: $${Number(user.balance).toFixed(2)}${custTgId ? '' : ' · ⚠️ No TG ID'}`,
+        `✅ Credited ${reqRow.label} to ${reqRow.name} (${reqRow.email}) · Balance: $${Number(user.balance).toFixed(2)}${custTgId ? '' : ' · 📧 emailed (no TG)'}`,
         'HTML'
       ).catch((e) => console.error('Topup credit admin TG:', e.message));
     });
