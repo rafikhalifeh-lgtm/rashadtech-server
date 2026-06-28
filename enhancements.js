@@ -36,6 +36,8 @@ function registerEnhancements(app, deps) {
     verifyPassword,
     sanitizeUser,
     safeDataForSession,
+    slimMutationData,
+    readDbForWrite,
     sendTG,
     TG_ADMIN,
     encodeLinkToken,
@@ -686,7 +688,7 @@ function registerEnhancements(app, deps) {
     activeFulfillOrders.add(orderId);
     try {
       const outcome = await enqueueDbWrite(async () => {
-        const data = await readJsonBinRaw({ forceRefresh: true });
+        const data = await readDbForWrite();
         data.pending = Array.isArray(data.pending) ? data.pending : [];
         data.users = Array.isArray(data.users) ? data.users : [];
         data.stock = data.stock || {};
@@ -697,13 +699,13 @@ function registerEnhancements(app, deps) {
         const existing = user ? findUserOrderRecord(user, po.id).order : null;
         if (existing && existing.email && !existing.pending) {
           data.pending.splice(idx, 1);
-          await writeJsonBinRaw(data);
+          await writeDbFast(data);
           return { alreadyFulfilled: true, data, user, order: existing };
         }
         const hasCharge = user && Array.isArray(user.transactions) && user.transactions.some(t => t.orderId === po.id);
         if (!hasCharge) {
           data.pending.splice(idx, 1);
-          await writeJsonBinRaw(data);
+          await writeDbFast(data);
           return { removedOrphan: true, data, user };
         }
         const isCanvaOwn = /^canva__own__/.test(String(po.skey || ''));
@@ -728,36 +730,48 @@ function registerEnhancements(app, deps) {
             if (t.orderId === po.id) t.pending = false;
           });
         }
-        await writeJsonBinRaw(data);
+        await writeDbFast(data);
         return { data, user, order, po, acc };
       });
       if (outcome.error) return res.status(outcome.status || 400).json({ error: outcome.error });
       if (outcome.alreadyFulfilled) {
-        return res.json({ success: true, order: outcome.order, alreadyFulfilled: true, user: sanitizeUser(outcome.user), data: safeDataForSession(outcome.data, { role: 'admin' }) });
+        return res.json({ success: true, order: outcome.order, alreadyFulfilled: true, user: sanitizeUser(outcome.user), data: slimMutationData(session, outcome.data, { pending: true, stock: true }) });
       }
       if (outcome.removedOrphan) {
         await appendActivity('Removed orphan pending order', orderId, session.email);
-        return res.json({ success: true, removedOrphan: true, alreadyFulfilled: true, user: sanitizeUser(outcome.user), data: safeDataForSession(outcome.data, { role: 'admin' }) });
+        return res.json({ success: true, removedOrphan: true, alreadyFulfilled: true, user: sanitizeUser(outcome.user), data: slimMutationData(session, outcome.data, { pending: true }) });
       }
       const { data, user, order, po, acc } = outcome;
-      let telegramSent = false;
-      if (user && order && !order.telegramDeliveredAt) {
-        const product = { name: po.product, short: po.short, color: po.color, tc: po.tc, id: po.productId };
-        if (typeof notifyPurchaseFulfilled === 'function') {
-          telegramSent = await notifyPurchaseFulfilled(user, product, po.plan, po.price, order, po.assignCustId);
-        } else {
-          const tgId = String(user.tgChatId || po.userTgChatId || '').trim();
-          if (tgId) {
-            telegramSent = true;
-            await sendTG(tgId, `✅ <b>Your ${po.product} is ready!</b>\n\n📋 ${po.plan}\n📧 <code>${acc.email}</code>\n🔑 <code>${acc.pass}</code>${acc.profilePin ? `\n🔢 PIN: <code>${acc.profilePin}</code>` : ''}`, 'HTML').catch(() => {});
-            if (!user.tgChatId) user.tgChatId = tgId;
+      res.json({ success: true, order, user: sanitizeUser(user), data: slimMutationData(session, data, { pending: true, stock: true }) });
+      setImmediate(async () => {
+        let telegramSent = false;
+        if (user && order && !order.telegramDeliveredAt) {
+          const product = { name: po.product, short: po.short, color: po.color, tc: po.tc, id: po.productId };
+          if (typeof notifyPurchaseFulfilled === 'function') {
+            telegramSent = await notifyPurchaseFulfilled(user, product, po.plan, po.price, order, po.assignCustId);
+          } else {
+            const tgId = String(user.tgChatId || po.userTgChatId || '').trim();
+            if (tgId) {
+              telegramSent = true;
+              await sendTG(tgId, `✅ <b>Your ${po.product} is ready!</b>\n\n📋 ${po.plan}\n📧 <code>${acc.email}</code>\n🔑 <code>${acc.pass}</code>${acc.profilePin ? `\n🔢 PIN: <code>${acc.profilePin}</code>` : ''}`, 'HTML').catch(() => {});
+              if (!user.tgChatId) user.tgChatId = tgId;
+            }
           }
         }
-      }
-      if (order) stampOrderDelivery(order, telegramSent);
-      if (telegramSent) await enqueueDbWrite(() => writeJsonBinRaw(data));
-      await appendActivity('Pending order fulfilled', orderId, session.email);
-      res.json({ success: true, order, user: sanitizeUser(user), data: safeDataForSession(data, { role: 'admin' }) });
+        if (order) stampOrderDelivery(order, telegramSent);
+        if (telegramSent) {
+          await enqueueDbWrite(async () => {
+            const fresh = await readDbForWrite();
+            const liveUser = (fresh.users || []).find(u => normalizeEmail(u.email) === normalizeEmail(user.email));
+            if (liveUser) {
+              const { order: liveOrder } = findUserOrderRecord(liveUser, order.id);
+              if (liveOrder) stampOrderDelivery(liveOrder, true);
+            }
+            await writeDbFast(fresh);
+          }).catch(() => {});
+        }
+        await appendActivity('Pending order fulfilled', orderId, session.email);
+      });
     } catch (e) {
       res.status(500).json({ error: e.message });
     } finally {

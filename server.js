@@ -161,37 +161,41 @@ function enqueueDbWrite(task) {
 }
 
 async function readDbForWrite() {
-  return readJsonBinRaw({ skipRecoverWrite: true });
+  return readJsonBinRaw({ skipRecoverWrite: true, fast: true });
 }
 
 async function writeDbFast(data, options = {}) {
   return writeJsonBinRaw(data, { ...options, lightWrite: true });
 }
 
-function accountAlreadyFulfilled(data, acc) {
-  if (!acc) return false;
-  const accKey = String(acc.accKey || '');
-  const email = normalizeEmail(acc.email);
+function buildSoldAccIndex(data) {
+  const accKeys = new Set();
+  const emails = new Set();
+  const addOrder = order => {
+    if (!order) return;
+    const key = String(order.accKey || '');
+    if (key) accKeys.add(key);
+    const email = normalizeEmail(order.email);
+    if (email) emails.add(email);
+  };
   for (const user of Array.isArray(data.users) ? data.users : []) {
-    for (const order of Array.isArray(user.orders) ? user.orders : []) {
-      if (accKey && order.accKey === accKey) return true;
-      if (!accKey && normalizeEmail(order.email) === email && order.email) return true;
-    }
+    for (const order of Array.isArray(user.orders) ? user.orders : []) addOrder(order);
     for (const customer of Array.isArray(user.myCustomers) ? user.myCustomers : []) {
-      for (const order of Array.isArray(customer.subs) ? customer.subs : []) {
-        if (accKey && order.accKey === accKey) return true;
-        if (!accKey && normalizeEmail(order.email) === email && order.email) return true;
-      }
+      for (const order of Array.isArray(customer.subs) ? customer.subs : []) addOrder(order);
     }
   }
-  return Boolean(acc.used && acc.soldTo);
+  return { accKeys, emails };
 }
 
 function pickAvailableAccount(data, skey) {
+  const sold = buildSoldAccIndex(data);
   const accounts = stockAccountsForPlan(data.stock || {}, skey);
   for (const acc of accounts) {
     if (!acc || acc.used) continue;
-    if (accountAlreadyFulfilled(data, acc)) {
+    const accKey = String(acc.accKey || '');
+    const email = normalizeEmail(acc.email);
+    const alreadySold = (accKey && sold.accKeys.has(accKey)) || (!accKey && email && sold.emails.has(email));
+    if (alreadySold) {
       markLinkedStockSold(data.stock, acc, acc.soldTo || { userEmail: 'unknown', userName: 'unknown', orderId: 'recovered' }, skey);
       continue;
     }
@@ -896,10 +900,6 @@ async function syncDbToJsonBin(force = false) {
   }
 }
 
-async function readDbForWrite() {
-  return readJsonBinRaw({ skipRecoverWrite: true, fast: true });
-}
-
 let readJsonBinInFlight = null;
 
 async function readJsonBinRaw(options = {}) {
@@ -1082,6 +1082,32 @@ function safeDataForSession(data, session) {
       ? { users: [], stock: {}, stockBlocks: {}, requests: [], topupreqs: [], pending: [], gameorders: [] }
       : { users: [], stock: {}, stockBlocks: {}, requests: [], topupreqs: [], pending: [], gameorders: [] };
   }
+}
+
+/** Lightweight payload for mutation endpoints — omits full admin stock unless requested. */
+function slimMutationData(session, data, options = {}) {
+  if (session.role === 'admin') {
+    const out = {
+      topupreqs: data.topupreqs || [],
+      users: (data.users || []).map(u => sanitizeUser(u, { admin: true })),
+      stockBlocks: data.stockBlocks || {}
+    };
+    if (options.pending) out.pending = data.pending || [];
+    if (options.stock) {
+      const stripped = stripPrivateData(data);
+      out.stock = stripped.stock || {};
+    }
+    if (options.gameorders) out.gameorders = data.gameorders || [];
+    if (options.requests) out.requests = data.requests || [];
+    return out;
+  }
+  return dataForSession(data, session);
+}
+
+function runAfterResponse(task) {
+  setImmediate(() => {
+    Promise.resolve().then(task).catch(e => console.error('Background task error:', e.message));
+  });
 }
 
 function dataForSession(data, session) {
@@ -3004,14 +3030,38 @@ app.post('/purchase', async (req, res) => {
     if (outcome.error) return res.status(outcome.status || 400).json({ error: outcome.error });
     if (outcome.mode === 'pending') {
       const { data, user, pendingOrder } = outcome;
-      const telegramSent = await notifyPurchasePending(user, product, planLabel, price, assignCustId, pendingOrder);
-      return res.json({ success:true, pending:true, telegramSent, user:sanitizeUser(user), order:pendingOrder, data:safeDataForSession(data, session) });
+      res.json({
+        success: true,
+        pending: true,
+        user: sanitizeUser(user),
+        order: pendingOrder,
+        data: slimMutationData(session, data, { pending: session.role === 'admin' })
+      });
+      runAfterResponse(() => notifyPurchasePending(user, product, planLabel, price, assignCustId, pendingOrder));
+      return;
     }
     const { data, user, order } = outcome;
-    const telegramSent = await notifyPurchaseFulfilled(user, product, planLabel, price, order, assignCustId);
-    stampOrderDelivery(order, telegramSent);
-    await enqueueDbWrite(() => writeDbFast(data));
-    res.json({ success:true, pending:false, telegramSent, user:sanitizeUser(user), order, data:safeDataForSession(data, session) });
+    const userEmail = normalizeEmail(user.email);
+    const orderId = order.id;
+    res.json({
+      success: true,
+      pending: false,
+      user: sanitizeUser(user),
+      order,
+      data: slimMutationData(session, data, { pending: session.role === 'admin' })
+    });
+    runAfterResponse(async () => {
+      const telegramSent = await notifyPurchaseFulfilled(user, product, planLabel, price, order, assignCustId);
+      if (!telegramSent) return;
+      await enqueueDbWrite(async () => {
+        const fresh = await readDbForWrite();
+        const liveUser = (fresh.users || []).find(u => normalizeEmail(u.email) === userEmail);
+        if (!liveUser) return;
+        const { order: liveOrder } = findUserOrderRecord(liveUser, orderId);
+        if (liveOrder) stampOrderDelivery(liveOrder, true);
+        await writeDbFast(fresh);
+      });
+    });
   } catch(e) {
     console.error('Purchase error:', e.message);
     res.status(500).json({ error: 'Purchase failed' });
@@ -3058,15 +3108,15 @@ app.post('/customer/topup-request', async (req, res) => {
     });
     if (outcome.error) return res.status(outcome.status || 400).json({ error: outcome.error });
     if (outcome.duplicate) {
-      return res.json({ success: true, duplicate: true, request: outcome.request, data: safeDataForSession(outcome.data, session) });
+      return res.json({ success: true, duplicate: true, request: outcome.request, data: slimMutationData(session, outcome.data) });
     }
     const { request: reqRow, data, user } = outcome;
-    await sendTG(
+    res.json({ success: true, request: reqRow, data: slimMutationData(session, data) });
+    runAfterResponse(() => sendTG(
       TG_ADMIN,
       `💳 <b>Topup Request</b>\n\n👤 <b>${user.name}</b>\n📧 ${user.email}\n💵 Amount: <b>${reqRow.label}</b>\n📅 ${reqRow.date}\n\nGo to Admin → Topup Requests to credit after payment.`,
       'HTML'
-    ).catch((e) => console.error('Topup admin TG:', e.message));
-    res.json({ success: true, request: reqRow, data: safeDataForSession(data, session) });
+    ).catch((e) => console.error('Topup admin TG:', e.message)));
   } catch (e) {
     console.error('Topup request error:', e.message);
     res.status(500).json({ error: 'Could not submit top-up request' });
@@ -3108,23 +3158,25 @@ app.post('/admin/credit-topup', async (req, res) => {
     });
     if (outcome.error) return res.status(outcome.status || 400).json({ error: outcome.error });
     if (outcome.alreadyCredited) {
-      return res.json({ success: true, alreadyCredited: true, data: safeDataForSession(outcome.data, { role: 'admin' }) });
+      return res.json({ success: true, alreadyCredited: true, data: slimMutationData(session, outcome.data) });
     }
     const { user, reqRow, data } = outcome;
-    const custTgId = String(user.tgChatId || reqRow.tgChatId || '').trim();
-    if (custTgId) {
+    res.json({ success: true, user: sanitizeUser(user), data: slimMutationData(session, data) });
+    runAfterResponse(async () => {
+      const custTgId = String(user.tgChatId || reqRow.tgChatId || '').trim();
+      if (custTgId) {
+        await sendTG(
+          custTgId,
+          `💰 <b>Wallet Topped Up!</b>\n\n✅ <b>${reqRow.label}</b> has been added to your wallet.\n💵 New balance: $${Number(user.balance).toFixed(2)}\n\nEnjoy shopping on rashadtech.tv! 🎉`,
+          'HTML'
+        ).catch((e) => console.error('Topup customer TG:', e.message));
+      }
       await sendTG(
-        custTgId,
-        `💰 <b>Wallet Topped Up!</b>\n\n✅ <b>${reqRow.label}</b> has been added to your wallet.\n💵 New balance: $${Number(user.balance).toFixed(2)}\n\nEnjoy shopping on rashadtech.tv! 🎉`,
+        TG_ADMIN,
+        `✅ Credited ${reqRow.label} to ${reqRow.name} (${reqRow.email}) · Balance: $${Number(user.balance).toFixed(2)}${custTgId ? '' : ' · ⚠️ No TG ID'}`,
         'HTML'
-      ).catch((e) => console.error('Topup customer TG:', e.message));
-    }
-    await sendTG(
-      TG_ADMIN,
-      `✅ Credited ${reqRow.label} to ${reqRow.name} (${reqRow.email}) · Balance: $${Number(user.balance).toFixed(2)}${custTgId ? '' : ' · ⚠️ No TG ID'}`,
-      'HTML'
-    ).catch((e) => console.error('Topup credit admin TG:', e.message));
-    res.json({ success: true, user: sanitizeUser(user), data: safeDataForSession(data, { role: 'admin' }) });
+      ).catch((e) => console.error('Topup credit admin TG:', e.message));
+    });
   } catch (e) {
     console.error('Credit topup error:', e.message);
     res.status(500).json({ error: 'Could not credit top-up' });
@@ -4468,7 +4520,9 @@ rtEnhancements = registerEnhancements(app, {
   findUserOrderRecord,
   notifyPurchaseFulfilled,
   pickAvailableAccount,
-  enqueueDbWrite
+  enqueueDbWrite,
+  slimMutationData,
+  readDbForWrite
 });
 
 const whatsappBot = registerWhatsAppBot(app, {

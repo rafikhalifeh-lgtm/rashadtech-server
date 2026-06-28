@@ -1493,12 +1493,15 @@ function authHeaders(){
 }
 
 async function rtApi(path,opts={},timeoutMs=45000,_retry=false){
-  await ensureServerAwake({silent:true}).catch(()=>{});
+  if(Date.now()-lastServerPingAt>90000){
+    await ensureServerAwake({silent:true}).catch(()=>{});
+  }
   const controller=new AbortController();
   const timer=setTimeout(()=>controller.abort(),timeoutMs);
   try{
     const r=await fetch(RT_SERVER+path,{...opts,headers:{...authHeaders(),...(opts.headers||{})},signal:controller.signal});
     clearTimeout(timer);
+    if(r.ok)lastServerPingAt=Date.now();
     const j=await r.json().catch(()=>({}));
     if(!r.ok)throw new Error(j.error||(r.status===404?'Server update required — redeploy backend':'Request failed'));
     if(j.success===false)throw new Error(j.error||'Request failed');
@@ -1647,6 +1650,19 @@ async function deliverPurchaseTelegram(order,p,planLabel,price,forCustomer){
   return ok;
 }
 
+function mergeUserFromResponse(user){
+  if(!user||!user.email)return;
+  const email=normEmail(user.email);
+  const idx=users.findIndex(u=>normEmail(u.email)===email);
+  if(idx>=0)users[idx]=user;
+  else users.push(user);
+  if(_jbCache)_jbCache.users=users;
+  if(currentUser&&normEmail(currentUser.email)===email){
+    currentUser=user;
+    syncCurrentUserIntoUsers();
+  }
+}
+
 function applyDataSnapshot(data){
   const sessionEmail=normEmail(currentUser?.email||getStoredSessionEmail());
   const keepSmsConfig=_jbCache?.smsConfig;
@@ -1659,6 +1675,7 @@ function applyDataSnapshot(data){
   _jbCache={...(_jbCache||{}),...incoming};
   if(incoming.smsConfig===undefined&&keepSmsConfig)_jbCache.smsConfig=keepSmsConfig;
   if(incoming.pending!==undefined)_jbCache.pending=incoming.pending;
+  if(incoming.topupreqs!==undefined)_jbCache.topupreqs=incoming.topupreqs;
   if(incoming.stock!==undefined)_jbCache.stock=incoming.stock;
   if(incoming.stockBlocks!==undefined)_jbCache.stockBlocks=incoming.stockBlocks;
   users=Array.isArray(_jbCache.users)?_jbCache.users:[];
@@ -4112,16 +4129,13 @@ async function confirmPurchase(){
       });
       const j=await r.json();
       if(!r.ok||!j.success)throw new Error(j.error||'Purchase failed');
-      applyDataSnapshot(j.data||{users:[j.user]});
+      if(j.user)mergeUserFromResponse(j.user);
+      else if(j.data)applyDataSnapshot(j.data);
       currentUser=users.find(x=>normEmail(x.email)===normEmail(currentUser.email))||j.user||currentUser;
       if(_jbCache)_jbCache.users=users;
       syncPausedUntil=Date.now()+20000;
       closeModal('buy-modal');closeModal('assign-modal');updateBal();renderSubs();renderTx();renderMyCustomers();renderExpiryTracker();renderProducts('all');
       showToast('✓ Purchase successful!');
-      if(j.pending&&!j.telegramSent&&currentUser.tgChatId){
-        const assignNote=assignedCustomer?`\n👥 For: ${assignedCustomer.fname} ${assignedCustomer.lname}`:'';
-        await sendTelegramToUser(currentUser.tgChatId,`✅ <b>Purchase Confirmed!</b>\n\n📦 ${p.name} · ${planLabel}\n💵 ${fmt(price)}\n💰 New balance: ${fmt(currentUser.balance)}${assignNote}\n\n⏳ Your account credentials will be delivered to you here shortly. Thank you for your patience!`);
-      }
     }catch(e){showToast('⚠️ '+e.message);}
     finally{purchaseInFlight=false;}
     return;
@@ -6911,7 +6925,9 @@ async function creditTopupReq(requestId){
   creditTopupInFlight.add(lockKey);
   try{
     const j=await rtApi('/admin/credit-topup',{method:'POST',body:JSON.stringify({requestId})});
+    if(j.user)mergeUserFromResponse(j.user);
     if(j.data)applyDataSnapshot(j.data);
+    syncPausedUntil=Date.now()+30000;
     if(j.alreadyCredited)showToast('Already credited');
     else showToast('✓ Top-up credited');
     renderTopupRequests();renderWallets();
@@ -7045,7 +7061,7 @@ function startRealtimeSync(){
     if(document.hidden)return;
     if(Date.now()<syncPausedUntil)return;
     if(saveDataInFlight)return;
-    if(Date.now()-lastRealtimeSyncAt<85000)return;
+    if(Date.now()-lastRealtimeSyncAt<170000)return;
     lastRealtimeSyncAt=Date.now();
     try{
       applyDataSnapshot(await jbRead());
@@ -7057,9 +7073,10 @@ function startRealtimeSync(){
         renderSubs();updateBal();renderTx();renderMyCustomers();
       }
       if(!isAdmin)return;
-      renderAdminPanels();
+      const adminPage=document.getElementById('page-admin')?.classList.contains('active');
+      if(adminPage)renderAdminPanels();
     }catch(e){}
-  },90000);
+  },180000);
 }
 
 function renderAdminPanels(){
@@ -7090,7 +7107,7 @@ async function reloadAdminData(){
 // Save on tab close / hide
 document.addEventListener('visibilitychange',()=>{
   if(document.visibilityState==='visible'){
-    if(Date.now()-lastVisibilityReloadAt<60000)return;
+    if(Date.now()-lastVisibilityReloadAt<120000)return;
     lastVisibilityReloadAt=Date.now();
     reloadAdminData();
   }
