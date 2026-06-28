@@ -1663,6 +1663,25 @@ function mergeUserFromResponse(user){
   }
 }
 
+function mergeTopupReqsFromResponse(rows){
+  if(!Array.isArray(rows))return;
+  topupRequests=rows;
+  if(_jbCache)_jbCache.topupreqs=rows;
+}
+
+function mergeTopupReqFromResponse(req){
+  if(!req||req.id==null)return;
+  const idx=topupRequests.findIndex(r=>String(r.id)===String(req.id));
+  if(idx>=0)topupRequests[idx]=req;
+  else topupRequests.unshift(req);
+  if(_jbCache)_jbCache.topupreqs=topupRequests;
+}
+
+function refreshAfterPurchase(){
+  closeModal('buy-modal');closeModal('assign-modal');
+  updateBal();renderSubs();renderTx();renderMyCustomers();renderExpiryTracker();renderProducts('all');
+}
+
 function applyDataSnapshot(data){
   const sessionEmail=normEmail(currentUser?.email||getStoredSessionEmail());
   const keepSmsConfig=_jbCache?.smsConfig;
@@ -4118,6 +4137,9 @@ async function confirmPurchase(){
     purchaseInFlight=true;
     try{
       const assignedCustomer=assignCustId!=null?currentUser.myCustomers?.find(x=>x.id===assignCustId):null;
+      if(Date.now()-lastServerPingAt>90000){
+        await ensureServerAwake({silent:true}).catch(()=>{});
+      }
       const r=await fetch(RT_SERVER+'/purchase',{
         method:'POST',headers:authHeaders(),
         body:JSON.stringify({
@@ -4134,8 +4156,10 @@ async function confirmPurchase(){
       currentUser=users.find(x=>normEmail(x.email)===normEmail(currentUser.email))||j.user||currentUser;
       if(_jbCache)_jbCache.users=users;
       syncPausedUntil=Date.now()+20000;
-      closeModal('buy-modal');closeModal('assign-modal');updateBal();renderSubs();renderTx();renderMyCustomers();renderExpiryTracker();renderProducts('all');
-      showToast('✓ Purchase successful!');
+      requestAnimationFrame(()=>{
+        refreshAfterPurchase();
+        showToast('✓ Purchase successful!');
+      });
     }catch(e){showToast('⚠️ '+e.message);}
     finally{purchaseInFlight=false;}
     return;
@@ -5280,7 +5304,8 @@ async function reqTopup(){
   if(btn)btn.disabled=true;
   try{
     const j=await rtApi('/customer/topup-request',{method:'POST',body:JSON.stringify({amount:selectedTopup.v,label:selectedTopup.l})});
-    if(j.data)applyDataSnapshot(j.data);
+    if(j.request)mergeTopupReqFromResponse(j.request);
+    else if(j.data)applyDataSnapshot(j.data);
     document.getElementById('topup-amt-lbl').textContent=selectedTopup.l;
     openModal('topup-modal');
     if(j.duplicate)showToast('You already have a pending top-up for this amount');
@@ -6926,7 +6951,8 @@ async function creditTopupReq(requestId){
   try{
     const j=await rtApi('/admin/credit-topup',{method:'POST',body:JSON.stringify({requestId})});
     if(j.user)mergeUserFromResponse(j.user);
-    if(j.data)applyDataSnapshot(j.data);
+    if(j.topupreqs)mergeTopupReqsFromResponse(j.topupreqs);
+    else if(j.data)applyDataSnapshot(j.data);
     syncPausedUntil=Date.now()+30000;
     if(j.alreadyCredited)showToast('Already credited');
     else showToast('✓ Top-up credited');
