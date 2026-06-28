@@ -744,28 +744,28 @@ function registerEnhancements(app, deps) {
       const { data, user, order, po, acc } = outcome;
       res.json({ success: true, order, user: sanitizeUser(user), data: slimMutationData(session, data, { pending: true, stock: true }) });
       setImmediate(async () => {
-        let telegramSent = false;
-        if (user && order && !order.telegramDeliveredAt) {
+        let deliveryChannel = false;
+        if (user && order && !order.telegramDeliveredAt && !order.emailDeliveredAt) {
           const product = { name: po.product, short: po.short, color: po.color, tc: po.tc, id: po.productId };
           if (typeof notifyPurchaseFulfilled === 'function') {
-            telegramSent = await notifyPurchaseFulfilled(user, product, po.plan, po.price, order, po.assignCustId);
+            deliveryChannel = await notifyPurchaseFulfilled(user, product, po.plan, po.price, order, po.assignCustId, { data });
           } else {
             const tgId = String(user.tgChatId || po.userTgChatId || '').trim();
             if (tgId) {
-              telegramSent = true;
+              deliveryChannel = 'telegram';
               await sendTG(tgId, `✅ <b>Your ${po.product} is ready!</b>\n\n📋 ${po.plan}\n📧 <code>${acc.email}</code>\n🔑 <code>${acc.pass}</code>${acc.profilePin ? `\n🔢 PIN: <code>${acc.profilePin}</code>` : ''}`, 'HTML').catch(() => {});
               if (!user.tgChatId) user.tgChatId = tgId;
             }
           }
         }
-        if (order) stampOrderDelivery(order, telegramSent);
-        if (telegramSent) {
+        if (order && deliveryChannel) stampOrderDelivery(order, deliveryChannel);
+        if (deliveryChannel) {
           await enqueueDbWrite(async () => {
             const fresh = await readDbForWrite();
             const liveUser = (fresh.users || []).find(u => normalizeEmail(u.email) === normalizeEmail(user.email));
             if (liveUser) {
               const { order: liveOrder } = findUserOrderRecord(liveUser, order.id);
-              if (liveOrder) stampOrderDelivery(liveOrder, true);
+              if (liveOrder) stampOrderDelivery(liveOrder, deliveryChannel);
             }
             await writeDbFast(fresh);
           }).catch(() => {});

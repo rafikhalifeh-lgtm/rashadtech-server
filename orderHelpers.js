@@ -81,10 +81,16 @@ function markLinkedStockSold(stock, account, soldTo, skey) {
   });
 }
 
-function stampOrderDelivery(order, telegramSent) {
+function stampOrderDelivery(order, deliveredOrChannel, channel) {
+  if (!order) return order;
+  let ch = channel;
+  if (typeof deliveredOrChannel === 'string') ch = deliveredOrChannel;
+  else if (!deliveredOrChannel) return order;
+  else if (!ch) ch = 'telegram';
   const now = Date.now();
   order.deliveredAt = now;
-  if (telegramSent) order.telegramDeliveredAt = now;
+  if (ch === 'telegram') order.telegramDeliveredAt = now;
+  if (ch === 'email') order.emailDeliveredAt = now;
   return order;
 }
 

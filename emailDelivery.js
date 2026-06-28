@@ -154,6 +154,119 @@ function buildMarketingEmailContent(name, subject, message, data) {
   return { subject: title, text, html, config };
 }
 
+function buildSubscriptionEmailContent({
+  name,
+  productName,
+  planLabel,
+  order,
+  subLink,
+  assignedCustomerName,
+  kind = 'fulfilled'
+}, data) {
+  const config = resolveEmailConfig(data);
+  const displayName = String(name || 'Customer').trim() || 'Customer';
+  const product = String(productName || order?.product || 'Subscription').trim();
+  const plan = String(planLabel || order?.plan || '').trim();
+  const isPending = kind === 'pending';
+  const subject = isPending
+    ? `Purchase confirmed — ${product}`
+    : `Your ${product} subscription is ready`;
+  const lines = [];
+  lines.push(`Hello ${displayName},`);
+  lines.push('');
+  if (isPending) {
+    lines.push(`Your purchase of ${product}${plan ? ` (${plan})` : ''} is confirmed.`);
+    lines.push('We are preparing your subscription and will send your credentials shortly.');
+  } else {
+    lines.push(`Your ${product}${plan ? ` (${plan})` : ''} subscription is ready.`);
+    if (assignedCustomerName) lines.push(`Assigned to: ${assignedCustomerName}`);
+    lines.push('');
+    if (order?.serviceLink) {
+      lines.push(`Activation link: ${order.serviceLink}`);
+    } else if (order?.phone && !order?.pass) {
+      lines.push(`Phone (with country code): ${order.phone}`);
+      lines.push('Open the Disney+ app, enter this phone, then use Request Sign-in Code on your subscription link.');
+    } else if (order?.email) {
+      lines.push(`Email: ${order.email}`);
+      if (order.pass) lines.push(`Password: ${order.pass}`);
+      else lines.push('Sign in with email + one-time code on your subscription link.');
+    }
+    if (order?.profileName) lines.push(`Profile: ${order.profileName}`);
+    if (order?.profilePin) lines.push(`PIN: ${order.profilePin}`);
+    if (order?.expiryDate) lines.push(`Expires: ${order.expiryDate}`);
+    if (subLink) {
+      lines.push('');
+      lines.push(`Subscription link (codes & support): ${subLink}`);
+    }
+  }
+  lines.push('');
+  lines.push(`Sign in at ${config.siteUrl} anytime to view your subscriptions.`);
+  lines.push('');
+  lines.push(`— ${config.fromName}`);
+  const text = lines.join('\n');
+
+  const credRows = [];
+  if (!isPending) {
+    if (order?.serviceLink) {
+      credRows.push(`<tr><td style="padding:8px 0;color:#6b7280;width:110px">Activation</td><td style="padding:8px 0"><a href="${escapeHtml(order.serviceLink)}" style="color:#2563eb;word-break:break-all">${escapeHtml(order.serviceLink)}</a></td></tr>`);
+    }
+    if (order?.phone) {
+      credRows.push(`<tr><td style="padding:8px 0;color:#6b7280">Phone</td><td style="padding:8px 0;font-family:monospace;font-size:15px">${escapeHtml(order.phone)}</td></tr>`);
+    }
+    if (order?.email) {
+      credRows.push(`<tr><td style="padding:8px 0;color:#6b7280">Email</td><td style="padding:8px 0;font-family:monospace;font-size:15px">${escapeHtml(order.email)}</td></tr>`);
+    }
+    if (order?.pass) {
+      credRows.push(`<tr><td style="padding:8px 0;color:#6b7280">Password</td><td style="padding:8px 0;font-family:monospace;font-size:15px">${escapeHtml(order.pass)}</td></tr>`);
+    }
+    if (order?.profilePin) {
+      credRows.push(`<tr><td style="padding:8px 0;color:#6b7280">PIN</td><td style="padding:8px 0;font-family:monospace;font-size:15px">${escapeHtml(order.profilePin)}</td></tr>`);
+    }
+    if (order?.expiryDate) {
+      credRows.push(`<tr><td style="padding:8px 0;color:#6b7280">Expires</td><td style="padding:8px 0">${escapeHtml(order.expiryDate)}</td></tr>`);
+    }
+  }
+  const bodyHtml = `
+    <p style="margin:0 0 14px;line-height:1.6;color:#1f2937;">Hello ${escapeHtml(displayName)},</p>
+    <p style="margin:0 0 14px;line-height:1.6;color:#1f2937;">${isPending ? escapeHtml(`Your purchase of ${product}${plan ? ` (${plan})` : ''} is confirmed.`) : `Your <strong>${escapeHtml(product)}</strong>${plan ? ` · ${escapeHtml(plan)}` : ''} subscription is ready.`}</p>
+    ${isPending ? '<p style="margin:0 0 14px;line-height:1.6;color:#6b7280;">We are preparing your subscription. You will receive another email when credentials are ready, or check My Subscriptions on the site.</p>' : ''}
+    ${assignedCustomerName && !isPending ? `<p style="margin:0 0 14px;line-height:1.6;color:#1f2937;">Assigned to: <strong>${escapeHtml(assignedCustomerName)}</strong></p>` : ''}
+    ${credRows.length ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:16px 0 18px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:12px 16px">${credRows.join('')}</table>` : ''}
+    ${subLink && !isPending ? `<p style="margin:0 0 14px;line-height:1.6;color:#1f2937;"><a href="${escapeHtml(subLink)}" style="display:inline-block;background:#e50914;color:#fff;text-decoration:none;padding:12px 18px;border-radius:8px;font-weight:700">Open subscription link</a></p><p style="margin:0 0 14px;line-height:1.5;color:#6b7280;font-size:13px;word-break:break-all">${escapeHtml(subLink)}</p>` : ''}
+    <p style="margin:0;color:#6b7280;font-size:14px;line-height:1.6;">You can always sign in at <a href="${escapeHtml(config.siteUrl)}" style="color:#2563eb">${escapeHtml(config.siteUrl.replace(/^https?:\/\//, ''))}</a> to view your subscriptions.</p>`;
+  const html = wrapEmailHtml({ title: subject, bodyHtml, preheader: isPending ? 'Purchase confirmed' : 'Your subscription credentials', config });
+  return { subject, text, html, config };
+}
+
+async function deliverSubscriptionEmail({ email, name, productName, planLabel, order, subLink, assignedCustomerName, kind, data, emailJs }) {
+  const content = buildSubscriptionEmailContent({
+    name,
+    productName,
+    planLabel,
+    order,
+    subLink,
+    assignedCustomerName,
+    kind
+  }, data);
+  if (content.config.resendApiKey) {
+    await sendViaResend({
+      to: email,
+      subject: content.subject,
+      text: content.text,
+      html: content.html,
+      headers: { 'X-Entity-Ref-ID': `subscription-${Date.now()}` },
+      config: content.config
+    });
+    return { provider: 'resend' };
+  }
+  await sendViaEmailJS({
+    templateId: emailJs.marketingTemplateId || emailJs.otpTemplateId,
+    templateParams: marketingTemplateParams(email, name, content.subject, content.text, data),
+    emailJs
+  });
+  return { provider: 'emailjs' };
+}
+
 function buildTestEmailContent(name, data) {
   const config = resolveEmailConfig(data);
   const displayName = String(name || 'Admin').trim() || 'Admin';
@@ -463,9 +576,11 @@ async function fetchResendDomainStatus(data) {
 module.exports = {
   buildMarketingEmailContent,
   buildOtpEmailContent,
+  buildSubscriptionEmailContent,
   buildTestEmailContent,
   deliverMarketingEmail,
   deliverOtpEmail,
+  deliverSubscriptionEmail,
   deliverTestEmail,
   fetchResendDomainStatus,
   getActiveEmailProvider,

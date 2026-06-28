@@ -1328,13 +1328,13 @@ function profilePhoneValue(){
 }
 function userNeedsProfileCompletion(u){
   if(!u)return false;
-  return !String(u.phone||'').trim()||!String(u.tgChatId||'').trim();
+  return !String(u.phone||'').trim();
 }
 function maybePromptCompleteProfile(){
   if(!currentUser||!userNeedsProfileCompletion(currentUser))return;
   if(sessionStorage.getItem('rt_profile_nudge'))return;
   sessionStorage.setItem('rt_profile_nudge','1');
-  showToast(currentLang==='ar'?'أضف رقم هاتفك ومعرف تيليجرام في الملف الشخصي':'Add your phone & Telegram Chat ID in Profile');
+  showToast(currentLang==='ar'?'أضف رقم هاتفك في الملف الشخصي':'Add your phone number in Profile');
 }
 function getStoredSessionEmail(){
   try{
@@ -1358,16 +1358,32 @@ function saveOfflineCache(data){
   if(!data||isAdmin)return;
   try{
     const email=normEmail(currentUser?.email||getStoredSessionEmail());
-    if(email){
-      const usersList=Array.isArray(data.users)?data.users:[];
-      const u=usersList.find(x=>normEmail(x.email)===email);
-      const cached=readCachedMyCustomers(email);
-      if(u&&scoreMyCustomers(cached)>scoreMyCustomers(u.myCustomers)){
-        u.myCustomers=mergeMyCustomersClient(u.myCustomers,cached);
-      }
+    if(!email)return;
+    const usersList=Array.isArray(data.users)?data.users:[];
+    const u=usersList.find(x=>normEmail(x.email)===email);
+    const cached=readCachedMyCustomers(email);
+    let userSlice=u?{...u}:null;
+    if(userSlice&&scoreMyCustomers(cached)>scoreMyCustomers(userSlice.myCustomers)){
+      userSlice.myCustomers=mergeMyCustomersClient(userSlice.myCustomers,cached);
     }
-    localStorage.setItem(RT_OFFLINE_CACHE_KEY,JSON.stringify({ts:Date.now(),data}));
-  }catch(e){}
+    const slim={
+      users:userSlice?[userSlice]:[],
+      stock:data.stock||{},
+      stockBlocks:data.stockBlocks||{},
+      pending:(data.pending||[]).filter(p=>normEmail(p.userEmail)===email),
+      topupreqs:(data.topupreqs||[]).filter(r=>normEmail(r.email)===email),
+      requests:data.requests||[],
+      gameorders:(data.gameorders||[]).filter(g=>normEmail(g.userEmail)===email)
+    };
+    localStorage.setItem(RT_OFFLINE_CACHE_KEY,JSON.stringify({ts:Date.now(),data:slim}));
+  }catch(e){
+    try{
+      const email=normEmail(currentUser?.email||getStoredSessionEmail());
+      const u=users.find(x=>normEmail(x.email)===email);
+      if(!u)return;
+      localStorage.setItem(RT_OFFLINE_CACHE_KEY,JSON.stringify({ts:Date.now(),data:{users:[{email:u.email,balance:u.balance,orders:u.orders,myCustomers:u.myCustomers,transactions:u.transactions,name:u.name,phone:u.phone,tgChatId:u.tgChatId}]}}));
+    }catch(e2){}
+  }
 }
 // JB_KEY moved to server
 // JB_URL removed
@@ -2487,23 +2503,17 @@ function subOptionGenLink(){
 async function subOptionResendTelegram(){
   closeModal('sub-options-modal');
   if(!_currentSubId||!currentUser)return;
-  if(!currentUser.tgChatId){
-    showToast(currentLang==='ar'?'أضف Chat ID في الملف الشخصي أولاً':'Add Chat ID in Profile first, then Save');
-    switchTab('profile',null);
-    return;
-  }
   try{
     const r=await fetch(RT_SERVER+'/customer/resend-subscription',{
       method:'POST',headers:authHeaders(),
-      body:JSON.stringify({orderId:_currentSubId,tgChatId:currentUser.tgChatId})
+      body:JSON.stringify({orderId:_currentSubId,tgChatId:currentUser.tgChatId||''})
     });
     const j=await r.json();
     if(!r.ok||!j.success)throw new Error(j.error||'Resend failed');
-    if(j.data)applyDataSnapshot(j.data);
-    else if(j.user)bindCurrentUserFromUsers(j.user);
-    showToast(j.telegramSent
-      ?(currentLang==='ar'?'✓ تم الإرسال على تيليغرام':'✓ Sent to Telegram')
-      :(currentLang==='ar'?'⚠️ فشل الإرسال — تأكد من /start للبوت':'⚠️ Telegram failed — start @Rashadtech_bot'));
+    if(j.user)mergeUserFromResponse(j.user);
+    if(j.emailSent)showToast(currentLang==='ar'?'✓ تم الإرسال إلى بريدك الإلكتروني':'✓ Sent to your email');
+    else if(j.telegramSent)showToast(currentLang==='ar'?'✓ تم الإرسال على تيليغرام':'✓ Sent to Telegram');
+    else showToast(currentLang==='ar'?'⚠️ تعذر الإرسال — أضف تيليغرام أو تحقق من بريدك':'⚠️ Could not send — add Telegram or check your email');
   }catch(e){showToast('⚠️ '+e.message);}
 }
 
@@ -4275,7 +4285,7 @@ function subRow(o,forCustomer){
   const ico=PRODUCT_ICONS[o.productId];
   const iconHtml=ico?`<img src="${ico}" width="40" height="40" style="border-radius:9px;object-fit:contain;background:#fff;padding:2px" onerror="this.outerHTML='<div style=\'width:40px;height:40px;border-radius:9px;background:${o.color};color:${o.tc};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700\'>${o.short}</div>'">`:`<div style="width:40px;height:40px;border-radius:9px;background:${o.color};color:${o.tc};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700">${o.short}</div>`;
   const shahidBtns=isShahidOrder(o)?shahidActionButtons(o.id):'';
-  const deliveryNote=o.telegramDeliveredAt?`<div class="delivery-proof">✓ Delivered to Telegram · ${esc(formatTs(o.telegramDeliveredAt))}</div>`:(o.deliveredAt?`<div class="delivery-proof">✓ Delivered · ${esc(formatTs(o.deliveredAt))}</div>`:'');
+  const deliveryNote=o.telegramDeliveredAt?`<div class="delivery-proof">✓ Delivered to Telegram · ${esc(formatTs(o.telegramDeliveredAt))}</div>`:(o.emailDeliveredAt?`<div class="delivery-proof">✓ Delivered to email · ${esc(formatTs(o.emailDeliveredAt))}</div>`:(o.deliveredAt?`<div class="delivery-proof">✓ Delivered · ${esc(formatTs(o.deliveredAt))}</div>`:''));
   const credHtml=isAnghamiOrder(o)
     ?`<div class="sub-cred">${o.serviceLink?`<a class="cust-sub-cred-line" href="${esc(o.serviceLink)}" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:none;font-weight:600">🔗 Open Anghami activation link</a>`:'<span class="cust-sub-cred-line">Link pending</span>'}${o.expiryDate?`<div class="cust-sub-cred-line" style="margin-top:6px;color:var(--orange);font-weight:600">⏰ Expires: ${esc(o.expiryDate)}</div>`:''}<div style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.4">${esc(ANGHAMI_CANCEL_NOTE_EN)}</div></div>`
     :isCanvaNewOrder(o)
@@ -7087,22 +7097,22 @@ function startRealtimeSync(){
     if(document.hidden)return;
     if(Date.now()<syncPausedUntil)return;
     if(saveDataInFlight)return;
-    if(Date.now()-lastRealtimeSyncAt<170000)return;
+    if(Date.now()-lastRealtimeSyncAt<300000)return;
     lastRealtimeSyncAt=Date.now();
     try{
-      applyDataSnapshot(await jbRead());
-      if(document.getElementById('tab-store')?.classList.contains('active')){
-        await refreshSmsStoreTab();
-      }
+      const fresh=await jbRead();
+      if(fresh)applyDataSnapshot(fresh);
       bindCurrentUserFromUsers();
       if(currentUser){
-        renderSubs();updateBal();renderTx();renderMyCustomers();
+        updateBal();
+        if(document.getElementById('tab-subs')?.classList.contains('active'))renderSubs();
+        if(document.getElementById('tab-wallet')?.classList.contains('active'))renderTx();
       }
       if(!isAdmin)return;
       const adminPage=document.getElementById('page-admin')?.classList.contains('active');
       if(adminPage)renderAdminPanels();
     }catch(e){}
-  },180000);
+  },300000);
 }
 
 function renderAdminPanels(){
@@ -7130,13 +7140,12 @@ async function reloadAdminData(){
   }
 }
 
-// Save on tab close / hide
+// Save on tab close / hide — admin only (mobile customers were reloading too often and freezing)
 document.addEventListener('visibilitychange',()=>{
-  if(document.visibilityState==='visible'){
-    if(Date.now()-lastVisibilityReloadAt<120000)return;
-    lastVisibilityReloadAt=Date.now();
-    reloadAdminData();
-  }
+  if(document.visibilityState!=='visible'||!isAdmin)return;
+  if(Date.now()-lastVisibilityReloadAt<300000)return;
+  lastVisibilityReloadAt=Date.now();
+  reloadAdminData();
 });
 // beforeunload save removed — can wipe data on page close
 
@@ -7150,6 +7159,8 @@ async function init(){
   initTheme();
   initLang();
   keepServerAwake();
+  window.addEventListener('error',e=>{console.warn('UI error:',e.message);});
+  window.addEventListener('unhandledrejection',e=>{console.warn('Async error:',e.reason);e.preventDefault();});
   if(!authToken)applyOfflineCacheIfAny();
   loadPriceCatalog().catch(()=>{});
   const params=new URLSearchParams(location.search);
@@ -7161,7 +7172,7 @@ async function init(){
     return;
   }
 
-  try{await ensureServerAwake({silent:false});}catch(e){console.warn(e.message);}
+  try{await ensureServerAwake({silent:true});}catch(e){console.warn(e.message);}
 
   if(await restoreCustomerSession())return;
   if(await restoreAdminSession())return;
@@ -7295,7 +7306,7 @@ if(document.readyState==='loading'){
     <div id="sub-options-product" style="font-size:13px;color:var(--text3);margin-bottom:16px"></div>
     <div style="display:flex;flex-direction:column;gap:2px">
       <button onclick="subOptionGenLink()" class="sub-option-btn">🔗 Generate Link</button>
-      <button onclick="subOptionResendTelegram()" class="sub-option-btn">📲 Resend to Telegram</button>
+      <button onclick="subOptionResendTelegram()" class="sub-option-btn">📲 Resend to Telegram / Email</button>
       <button onclick="subOptionAddNote()" class="sub-option-btn">📝 Add Note</button>
       <button onclick="subOptionRenew()" class="sub-option-btn" data-t="requestRenewal">🔄 Request Renewal</button>
       <button onclick="subOptionReport()" class="sub-option-btn" data-t="reportIssue">⚠️ Report Issue</button>
@@ -7578,7 +7589,7 @@ const RT_CHAT_I18N={
       {q:['buy','purchase','order','store','plan','subscribe','subscription'],
        a:'Open <b>Store</b>, pick a product (Netflix, Shahid, Disney+, etc.), choose a plan, and tap Buy. Credentials appear in <b>My Subscriptions</b> and are sent to your Telegram if Chat ID is set in Profile.'},
       {q:['telegram','chat id','tgid','bot','rashadtech_bot','not received','delivery','credentials'],
-       a:'1) Start <b><a href="https://t.me/Rashadtech_bot" target="_blank">@Rashadtech_bot</a></b> and send /start<br>2) Copy your Chat ID into <b>Profile → Telegram Chat ID → Save</b><br>3) In <b>My Subscriptions → Options → Resend to Telegram</b> if you already purchased.'},
+       a:'Subscriptions are sent to <b>Telegram</b> if you added your Chat ID, otherwise to your <b>signup email</b>. You can also use <b>My Subscriptions → Options → Resend to Telegram / Email</b>.'},
       {q:['subscription','subscriptions','my subs','where are my','credentials','email','my subscriptions'],
        a:'Go to <b>My Subscriptions</b> in the menu. Tap <b>Options</b> on a card to copy link, resend to Telegram, renew, or report an issue.'},
       {q:['sub-customer','sub customer','my customers','assign','for customer'],
