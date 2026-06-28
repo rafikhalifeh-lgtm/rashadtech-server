@@ -1545,6 +1545,12 @@ function accountProfileName(acc){return String(acc?.profileName||acc?.extra||'')
 function orderProfileName(o){return String(o?.profileName||o?.extra||'').trim();}
 function isShahidOrder(o){return Boolean(o&&(o.productId==='shahid'||/shahid/i.test(o.product||'')));}
 function isDisneyOrder(o){return Boolean(o&&(o.productId==='disney'||/disney/i.test(o.product||'')));}
+function isOsnOrder(o){return Boolean(o&&(o.productId==='osn'||/osn\+?/i.test(o.product||'')));}
+function isOsnPasswordlessOrder(o){
+  if(!isOsnOrder(o))return false;
+  return !String(o.pass||'').trim();
+}
+function isOsnOneUserOrder(o){return isOsnOrder(o)&&/1\s*user/i.test(String(o.plan||''));}
 function isDisneyOneUserOrder(o){return isDisneyOrder(o)&&/1\s*user/i.test(String(o.plan||''));}
 function isAnghamiOrder(o){return Boolean(o&&(o.productId==='anghami'||/anghami/i.test(o.product||'')));}
 function isCanvaOrder(o){return Boolean(o&&(o.productId==='canva'||/canva/i.test(o.product||'')));}
@@ -1934,7 +1940,7 @@ async function apiStockDelete(payload){
 
 function setAddStockBusy(busy){
   addStockInFlight=busy;
-  ['btn-add-stock','btn-add-netflix-bulk','btn-add-shahid-bulk','btn-add-disney-bulk'].forEach(id=>{
+  ['btn-add-stock','btn-add-netflix-bulk','btn-add-shahid-bulk','btn-add-disney-bulk','btn-add-osn-bulk'].forEach(id=>{
     const el=document.getElementById(id);
     if(el)el.disabled=busy;
   });
@@ -1973,6 +1979,8 @@ const DURATIONS_SH_1U=[{key:'1m',label:'1 Month',price:1.5},{key:'3m',label:'3 M
 const DURATIONS_SH_FULL=[{key:'1m',label:'1 Month',price:5},{key:'3m',label:'3 Months',price:11.5},{key:'1y',label:'1 Year',price:33}];
 const DURATIONS_DISNEY_1U=[{key:'1m',label:'1 Month',price:2},{key:'3m',label:'3 Months',price:5},{key:'1y',label:'1 Year',price:15}];
 const DURATIONS_DISNEY_FULL=[{key:'1m',label:'1 Month',price:9.5},{key:'3m',label:'3 Months',price:27},{key:'1y',label:'1 Year',price:90}];
+const DURATIONS_OSN_1U=[{key:'1m',label:'1 Month',price:2},{key:'1y',label:'1 Year',price:20}];
+const DURATIONS_OSN_FULL=[{key:'1m',label:'1 Month',price:8},{key:'1y',label:'1 Year',price:80}];
 const DURATIONS_AMAZON_1U=[{key:'1m',label:'1 Month',price:2}];
 const DURATIONS_AMAZON_FULL=[{key:'1m',label:'1 Month',price:6}];
 const DURATIONS_CANVA=[{key:'1m',label:'1 Month',price:2},{key:'3m',label:'3 Months',price:5}];
@@ -2053,9 +2061,9 @@ const DEFAULT_PRODUCTS=[
   {id:'shahid',name:'Shahid VIP',short:'ش',color:'#1B75BC',tc:'#fff',cat:'arab',badge:'hot',desc:'Arab series & films',hasUserTypes:true,userTypes:[
     {key:'1user',name:'1 User',desc:'Single profile',durations:DURATIONS_SH_1U},
     {key:'full',name:'Full User',desc:'All profiles',durations:DURATIONS_SH_FULL}]},
-  {id:'osn',name:'OSN+',short:'OSN',color:'#111',tc:'#fff',cat:'video',badge:'',desc:'Premium TV & movies',hasUserTypes:true,userTypes:[
-    {key:'1user',name:'1 User',desc:'Single profile',durations:[{key:'1m',label:'1 Month',price:2},{key:'1y',label:'1 Year',price:20}]},
-    {key:'full',name:'Full User',desc:'All profiles',durations:[{key:'1m',label:'1 Month',price:8},{key:'1y',label:'1 Year',price:80}]}]},
+  {id:'osn',name:'OSN+',short:'OSN',color:'#111',tc:'#fff',cat:'video',badge:'',desc:'Premium TV & movies · email sign-in',hasUserTypes:true,userTypes:[
+    {key:'1user',name:'1 User',desc:'Email sign-in · 1 profile',durations:DURATIONS_OSN_1U},
+    {key:'full',name:'Full User',desc:'Email sign-in · full access',durations:DURATIONS_OSN_FULL}]},
   {id:'disney',name:'Disney+',short:'D+',color:'#113CCF',tc:'#fff',cat:'video',badge:'new',desc:'Disney · Marvel · Star Wars',hasUserTypes:true,userTypes:[
     {key:'1user',name:'1 User',desc:'Phone sign-in · 1 profile',durations:DURATIONS_DISNEY_1U},
     {key:'full',name:'Full User',desc:'Full account access',durations:DURATIONS_DISNEY_FULL}]},
@@ -2302,6 +2310,8 @@ const SHAHID_BULK_DEFAULTS_KEY='rt_shahid_bulk_defaults';
 const DISNEY_BULK_DEFAULTS_KEY='rt_disney_bulk_defaults';
 const SHAHID_MAX_ONE_USER_SLOTS=4;
 const DISNEY_MAX_ONE_USER_SLOTS=7;
+const OSN_MAX_ONE_USER_SLOTS=5;
+const OSN_BULK_DEFAULTS_KEY='rt_osn_bulk_defaults';
 let pendingOTPs={},pendingResetOTPs={},pendingSignupData=null;
 const OTP_EXPIRY_MS=10*60*1000; // 10 minutes
 
@@ -2362,6 +2372,13 @@ let _sublinkInboxEmail=null;
 let _sublinkPhone=null;
 let _sublinkIsDisney=false;
 let _sublinkIsCanva=false;
+let _sublinkIsOsn=false;
+function resolveSublinkCodeType(){
+  if(_sublinkIsDisney)return 'disney';
+  if(_sublinkIsCanva)return 'canva';
+  if(_sublinkIsOsn)return 'osn';
+  return 'netflix';
+}
 
 async function activateTV(){
   const code=document.getElementById('tv-code-input').value.trim().toUpperCase();
@@ -2402,7 +2419,7 @@ async function requestSigninCode(){
     subEmail:_sublinkEmail,
     subPass:_sublinkPass,
     subPhone:_sublinkPhone||'',
-    codeType:_sublinkIsDisney?'disney':_sublinkIsCanva?'canva':'netflix'
+    codeType:resolveSublinkCodeType()
   };
   try{
     const controller=new AbortController();
@@ -2449,7 +2466,7 @@ async function refreshSigninCode(){
       body:JSON.stringify({
         accountKey:'default',
         profileName:_sublinkProfileName||'unknown',
-        codeType:_sublinkIsDisney?'disney':_sublinkIsCanva?'canva':'netflix',
+        codeType:resolveSublinkCodeType(),
         mainEmail:_sublinkMainEmail,
         codeEmail:_sublinkCodeEmail,
         inboxEmail:_sublinkInboxEmail,
@@ -2890,9 +2907,11 @@ async function checkSubLink(){
   document.getElementById('sublink-plan').textContent=(found.plan||'')+' · '+(found.date||'');
   const anghamiSub=isAnghamiOrder(found);
   const disneyOneSub=isDisneyOneUserOrder(found);
+  const osnSub=isOsnPasswordlessOrder(found);
   const canvaNewSub=isCanvaNewOrder(found);
   const canvaOwnSub=isCanvaOwnOrder(found)&&!canvaNewSub;
   _sublinkIsCanva=false;
+  _sublinkIsOsn=false;
   const subProf=orderProfileName(found);
   document.getElementById('sublink-email').textContent=found.email||'';
   document.getElementById('sublink-pass').textContent=found.pass||'';
@@ -2915,14 +2934,15 @@ async function checkSubLink(){
   const credTitle=document.getElementById('sublink-creds-title');
   const emailRow=document.getElementById('sublink-email-row');
   const passRow=document.getElementById('sublink-pass-row');
-  if(credTitle)credTitle.textContent=anghamiSub?'YOUR ANGHAMI ACTIVATION':(disneyOneSub||canvaNewSub)?'HOW TO SIGN IN':canvaOwnSub?'YOUR CANVA ACCOUNT':'YOUR CREDENTIALS';
+  if(credTitle)credTitle.textContent=anghamiSub?'YOUR ANGHAMI ACTIVATION':(disneyOneSub||osnSub||canvaNewSub)?'HOW TO SIGN IN':canvaOwnSub?'YOUR CANVA ACCOUNT':'YOUR CREDENTIALS';
   if(emailRow)emailRow.style.display=(anghamiSub||disneyOneSub)?'none':'flex';
-  if(passRow)passRow.style.display=(anghamiSub||disneyOneSub||canvaNewSub||canvaOwnSub)?'none':'flex';
+  if(passRow)passRow.style.display=(anghamiSub||disneyOneSub||osnSub||canvaNewSub||canvaOwnSub)?'none':'flex';
   _sublinkEmail=found.email||'';
   _sublinkPass=found.pass||'';
   _sublinkPhone=found.phone||'';
   _sublinkIsDisney=disneyOneSub;
   _sublinkIsCanva=canvaNewSub;
+  _sublinkIsOsn=osnSub;
   _sublinkProfileName=found.profileName||found.product||'Customer';
   _sublinkMainEmail=found.mainEmail||found.inboxEmail||null;
   _sublinkCodeEmail=found.codeEmail||found.email||found.mainEmail||null;
@@ -2979,7 +2999,7 @@ async function checkSubLink(){
   const isShahid=isShahidOrder(found);
   const isDisney=isDisneyOrder(found);
   const tvSection=document.getElementById('sublink-tv-section');
-  if(tvSection)tvSection.style.display=(isShahid||disneyOneSub||canvaNewSub||canvaOwnSub)?'none':'block';
+  if(tvSection)tvSection.style.display=(isShahid||disneyOneSub||osnSub||canvaNewSub||canvaOwnSub)?'none':'block';
   const disneyGuide=document.getElementById('sublink-disney-guide');
   if(disneyGuide){
     if(disneyOneSub){
@@ -2988,6 +3008,15 @@ async function checkSubLink(){
         <b>How to sign in to Disney+:</b><br>
         1) Open the <b>Disney+</b> app on your phone or TV<br>
         2) Enter your <b>phone number with country code</b> (shown above)<br>
+        3) Tap <b>Request Sign-in Code</b> below, then enter the code you receive<br>
+        4) If you have any issue, contact our agents on WhatsApp or Telegram
+      </div>`;
+    }else if(osnSub){
+      disneyGuide.style.display='block';
+      disneyGuide.innerHTML=`<div style="font-size:12px;color:var(--text2);line-height:1.7;text-align:left">
+        <b>How to sign in to OSN+:</b><br>
+        1) Open the <b>OSN+</b> app or website<br>
+        2) Enter the <b>email</b> shown above<br>
         3) Tap <b>Request Sign-in Code</b> below, then enter the code you receive<br>
         4) If you have any issue, contact our agents on WhatsApp or Telegram
       </div>`;
@@ -3014,18 +3043,20 @@ async function checkSubLink(){
   const codeReqTitle=document.getElementById('sublink-code-title-request');
   const codeSecTitle=document.getElementById('sublink-code-title-section');
   const codeHelp=document.getElementById('sublink-code-help');
-  const codeLabel=disneyOneSub?'DISNEY+ SIGN-IN CODE':_sublinkIsCanva?'CANVA SIGN-IN CODE':'NETFLIX SIGN-IN CODE';
+  const codeLabel=disneyOneSub?'DISNEY+ SIGN-IN CODE':_sublinkIsCanva?'CANVA SIGN-IN CODE':_sublinkIsOsn?'OSN+ SIGN-IN CODE':'NETFLIX SIGN-IN CODE';
   if(codeReqTitle)codeReqTitle.textContent=codeLabel;
   if(codeSecTitle)codeSecTitle.textContent=codeLabel;
   if(codeHelp)codeHelp.textContent=disneyOneSub
     ?'After entering your phone in the Disney+ app, tap Request Sign-in Code, wait a few seconds, then tap Refresh.'
     :_sublinkIsCanva
       ?'After entering your email on Canva, tap Request Sign-in Code, wait a few seconds, then tap Refresh.'
+      :_sublinkIsOsn
+        ?'After entering your email on OSN+, tap Request Sign-in Code, wait a few seconds, then tap Refresh.'
       :'Need a sign-in code? Request one and we\'ll send it to you.';
   const codeBtn=document.getElementById('request-code-btn');
-  if(codeBtn)codeBtn.style.background=disneyOneSub?'#113CCF':_sublinkIsCanva?'#00C4CC':'var(--red)';
+  if(codeBtn)codeBtn.style.background=disneyOneSub?'#113CCF':_sublinkIsCanva?'#00C4CC':_sublinkIsOsn?'#111':'var(--red)';
   const refreshBtn=document.getElementById('refresh-code-btn');
-  if(refreshBtn)refreshBtn.style.background=disneyOneSub?'#113CCF':_sublinkIsCanva?'#00C4CC':'var(--red)';
+  if(refreshBtn)refreshBtn.style.background=disneyOneSub?'#113CCF':_sublinkIsCanva?'#00C4CC':_sublinkIsOsn?'#111':'var(--red)';
   const shahidActions=document.getElementById('sublink-shahid-actions');
   if(shahidActions){
     if(isShahid){
@@ -3039,7 +3070,7 @@ async function checkSubLink(){
       shahidActions.innerHTML='';
     }
   }
-  if((found.accKey||disneyOneSub||canvaNewSub)&&!isShahid&&!canvaOwnSub){
+  if((found.accKey||disneyOneSub||osnSub||canvaNewSub)&&!isShahid&&!canvaOwnSub){
     _sublinkAccKey=found.accKey;
     document.getElementById('sublink-code-request').style.display='block';
     document.getElementById('sublink-code-section').style.display='none';
@@ -4342,6 +4373,8 @@ function subRow(o,forCustomer){
     ?`<div class="sub-cred"><span class="cust-sub-cred-line">📧 ${esc(o.email)}</span><span class="cust-sub-cred-line" style="color:var(--green)">Activated on your Canva account</span></div>`
     :isDisneyOneUserOrder(o)
     ?`<div class="sub-cred"><span class="cust-sub-cred-line">📱 ${esc(o.phone||'')}</span>${orderProfileName(o)?`<span class="cust-sub-cred-line">Profile: ${esc(orderProfileName(o))}</span>`:''}</div>`
+    :isOsnPasswordlessOrder(o)
+    ?`<div class="sub-cred"><span class="cust-sub-cred-line">📧 ${esc(o.email)}</span><span class="cust-sub-cred-line" style="color:var(--text3)">Sign in with email + code on your subscription link</span>${orderProfileName(o)?`<span class="cust-sub-cred-line">Profile: ${esc(orderProfileName(o))}</span>`:''}</div>`
     :`<div class="sub-cred"><span class="cust-sub-cred-line">📧 ${esc(o.email)}</span><span class="cust-sub-cred-line">🔑 ${esc(o.pass)}</span></div>`;
   return `<div class="sub-card"><div class="sub-icon" style="background:${ico?'#fff':o.color};overflow:hidden;padding:0">${iconHtml}</div>
     <div class="sub-info"><div class="sub-name">${esc(o.product)}</div><div class="sub-plan">${esc(o.plan)} · ${esc(o.date)}</div>
@@ -5690,7 +5723,7 @@ async function toggleStockBlock(skey,blocked){
     logActivity(blocked?'Stock blocked':'Stock unblocked',skey);
   }catch(e){showToast('⚠️ '+e.message);}
 }
-function openAccModal(skey,label,focusAdd=false){curAccModalKey=skey;accAddMode=(isNetflixOneUserKey(skey)||isShahidOneUserKey(skey)||isDisneyOneUserKey(skey))?'bulk':'manual';document.getElementById('acc-modal-title').textContent=label;renderAccModal(focusAdd);openModal('accounts-modal');}
+function openAccModal(skey,label,focusAdd=false){curAccModalKey=skey;accAddMode=(isNetflixOneUserKey(skey)||isShahidOneUserKey(skey)||isDisneyOneUserKey(skey)||isOsnOneUserKey(skey))?'bulk':'manual';document.getElementById('acc-modal-title').textContent=label;renderAccModal(focusAdd);openModal('accounts-modal');}
 function setAccAddMode(mode){accAddMode=mode;renderAccModal(true);}
 function loadNetflixBulkDefaults(){
   try{return JSON.parse(localStorage.getItem(NETFLIX_BULK_DEFAULTS_KEY)||'{}')||{};}catch(e){return {};}
@@ -5710,6 +5743,9 @@ function isShahidFullKey(k){return /^shahid__full__/.test(String(k||''));}
 function isDisneyKey(k){return String(k||'').startsWith('disney__');}
 function isDisneyOneUserKey(k){return /^disney__1user__/.test(String(k||''));}
 function isDisneyFullKey(k){return /^disney__full__/.test(String(k||''));}
+function isOsnKey(k){return String(k||'').startsWith('osn__');}
+function isOsnOneUserKey(k){return /^osn__1user__/.test(String(k||''));}
+function isOsnFullKey(k){return /^osn__full__/.test(String(k||''));}
 function isAmazonKey(k){return String(k||'').startsWith('amazon__');}
 function isAmazonFullKey(k){return /^amazon__full__/.test(String(k||''));}
 function isAmazonOneUserKey(k){return /^amazon__1user__/.test(String(k||''));}
@@ -5718,6 +5754,48 @@ function isCanvaOwnKey(k){return /^canva__own__/.test(String(k||''));}
 function isCanvaNewKey(k){return /^canva__new__/.test(String(k||''));}
 function disneyOneUserPlanKeys(){
   return DURATIONS_DISNEY_1U.map(d=>sk('disney','1user',d.key));
+}
+function osnOneUserPlanKeys(){
+  return DURATIONS_OSN_1U.map(d=>sk('osn','1user',d.key));
+}
+function loadOsnBulkDefaults(){
+  try{return JSON.parse(localStorage.getItem(OSN_BULK_DEFAULTS_KEY)||'{}')||{};}catch(e){return {};}
+}
+function saveOsnBulkDefaults(data){
+  try{localStorage.setItem(OSN_BULK_DEFAULTS_KEY,JSON.stringify(data));}catch(e){}
+}
+function osnProfileId(account){
+  if(!account)return '';
+  if(account.accKey)return String(account.accKey);
+  return `${account.email}__${accountProfileName(account)}`;
+}
+function osnAliasAccounts(alias){
+  const clean=String(alias||'').trim().toLowerCase();
+  const rows=[];
+  Object.entries(accountStock||{}).forEach(([key,accs])=>{
+    if(!isOsnKey(key))return;
+    (accs||[]).forEach(a=>{if(String(a.email||'').trim().toLowerCase()===clean)rows.push({key,account:a});});
+  });
+  return rows;
+}
+function osnBulkSlotsUsed(alias,skey){
+  const planKey=skey||curAccModalKey||'';
+  const ids=new Set();
+  osnAliasAccounts(alias).filter(r=>!planKey||r.key===planKey).forEach(r=>{
+    if(isOsnOneUserKey(r.key))ids.add(osnProfileId(r.account));
+  });
+  return ids.size;
+}
+function validateOsnAliasForAdd(skey,email,profileName){
+  if(!isOsnKey(skey))return '';
+  const rows=osnAliasAccounts(email);
+  const oneCount=osnBulkSlotsUsed(email,skey);
+  const fullCount=rows.filter(r=>isOsnFullKey(r.key)).length;
+  if(isOsnFullKey(skey)&&(oneCount>0||fullCount>0))return 'This OSN+ alias is already used for 1-user slots and cannot be added again as full account.';
+  if(isOsnOneUserKey(skey)&&fullCount>0)return 'This OSN+ alias is already reserved as full and cannot be split into 1-user slots.';
+  if(isOsnOneUserKey(skey)&&oneCount>=OSN_MAX_ONE_USER_SLOTS)return `This alias already has ${OSN_MAX_ONE_USER_SLOTS} one-user profile slots on this plan.`;
+  if(isOsnOneUserKey(skey)&&profileName&&rows.some(r=>isOsnOneUserKey(r.key)&&accountProfileName(r.account).toLowerCase()===String(profileName).trim().toLowerCase()))return 'This profile name is already used for this OSN+ alias.';
+  return '';
 }
 function loadDisneyBulkDefaults(){
   try{return JSON.parse(localStorage.getItem(DISNEY_BULK_DEFAULTS_KEY)||'{}')||{};}catch(e){return {};}
@@ -5894,6 +5972,34 @@ function renderDisneyBulkForm(skey){
   </div>`).join('')}</div>
   <button class="inline-btn" id="btn-add-disney-bulk" onclick="addDisneyBulkAccounts()"><i class="ti ti-users" style="font-size:13px;vertical-align:-2px;margin-right:4px"></i>Add profiles to this Disney+ plan</button>`;
 }
+function renderOsnBulkForm(skey){
+  const defs=loadOsnBulkDefaults();
+  const email=defs.email||'';
+  const used=email?osnBulkSlotsUsed(email,skey):0;
+  const slotsLeft=Math.max(0,OSN_MAX_ONE_USER_SLOTS-used);
+  return `<div class="acc-add-mode-row">
+    <button type="button" class="acc-add-mode-btn${accAddMode==='bulk'?' active':''}" onclick="setAccAddMode('bulk')">⚡ Quick add profiles</button>
+    <button type="button" class="acc-add-mode-btn${accAddMode==='manual'?' active':''}" onclick="setAccAddMode('manual')">Manual (one at a time)</button>
+  </div>
+  <div class="nf-bulk-shared">
+    <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:10px;text-transform:uppercase;letter-spacing:0.5px">Shared OSN+ account</div>
+    <div class="field"><label>Alias email (sign-in email)</label><input type="email" id="osn-bulk-email" placeholder="alias@gmail.com" value="${esc(defs.email||'')}"></div>
+    <div class="field"><label>Expiry date — dd/mm/yyyy</label><input type="text" id="osn-bulk-expiry" placeholder="e.g. 15/08/2025" value="${esc(defs.expiryDate||'')}"></div>
+    <div class="field" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px">
+      <label style="color:var(--orange)">🔒 Main Gmail (OSN+ codes — admin only)</label>
+      <input type="email" id="osn-bulk-main-email" placeholder="Gmail that receives OSN+ codes" value="${esc(defs.mainEmail||'')}">
+      <input type="password" id="osn-bulk-main-pass" placeholder="Gmail app password" style="margin-top:6px">
+    </div>
+    ${email?`<div style="font-size:11px;color:var(--text3);margin-top:8px">${used}/${OSN_MAX_ONE_USER_SLOTS} profiles for this alias on <b>this plan only</b> · ${slotsLeft} slot(s) left</div>`:''}
+  </div>
+  <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px">Profile names only</div>
+  <div class="nf-bulk-profiles">${Array.from({length:OSN_MAX_ONE_USER_SLOTS},(_,i)=>i+1).map(n=>`<div class="nf-bulk-row">
+    <div class="nf-bulk-row-num">${n}</div>
+    <input type="text" id="osn-bulk-name-${n}" placeholder="Profile name" value="${esc((defs.profiles&&defs.profiles[n-1]?.name)||'')}">
+    <div style="font-size:11px;color:var(--text3)">no password</div>
+  </div>`).join('')}</div>
+  <button class="inline-btn" id="btn-add-osn-bulk" onclick="addOsnBulkAccounts()"><i class="ti ti-users" style="font-size:13px;vertical-align:-2px;margin-right:4px"></i>Add profiles to this OSN+ plan</button>`;
+}
 function renderManualAddForm(skey,needsGmail,isShahidStock){
   if(isAnghamiKey(skey)){
     return `<div class="add-acc-form-title">Add Anghami activation link</div>
@@ -5929,6 +6035,37 @@ function renderManualAddForm(skey,needsGmail,isShahidStock){
   const isDisneyOne=isDisneyOneUserKey(skey);
   const isDisneyFull=isDisneyFullKey(skey);
   const isDisneyStock=isDisneyKey(skey);
+  const isOsnOne=isOsnOneUserKey(skey);
+  const isOsnFull=isOsnFullKey(skey);
+  const isOsnStock=isOsnKey(skey);
+  if(isOsnFull){
+    return `<div class="add-acc-form-title">Add OSN+ — Full User</div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:12px">Alias email for sign-in. Customers use email + sign-in code (no password).</div>
+      <div class="field"><label>Alias email (required)</label><input type="email" id="new-acc-email" placeholder="alias@gmail.com"></div>
+      <div class="field"><label>Expiry date (optional) — dd/mm/yyyy</label><input type="text" id="new-acc-expiry" placeholder="e.g. 15/08/2025"></div>
+      <div class="field" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px">
+        <label style="color:var(--orange)">🔒 Main Gmail (for OSN+ sign-in codes — admin only)</label>
+        <input type="email" id="new-acc-main-email" placeholder="Gmail address that receives OSN+ codes">
+        <input type="password" id="new-acc-main-pass" placeholder="Gmail app password" style="margin-top:6px">
+      </div>
+      <button class="inline-btn" id="btn-add-stock" onclick="addAccount()"><i class="ti ti-plus" style="font-size:13px;vertical-align:-2px;margin-right:4px"></i>Add to stock</button>`;
+  }
+  if(isOsnOne){
+    let modeToggle=`<div class="acc-add-mode-row">
+      <button type="button" class="acc-add-mode-btn${accAddMode==='bulk'?' active':''}" onclick="setAccAddMode('bulk')">⚡ Quick add profiles</button>
+      <button type="button" class="acc-add-mode-btn${accAddMode==='manual'?' active':''}" onclick="setAccAddMode('manual')">Manual (one at a time)</button>
+    </div>`;
+    return `${modeToggle}<div class="add-acc-form-title">Add OSN+ 1-user profile</div>
+      <div class="field"><label>Alias email (sign-in email)</label><input type="email" id="new-acc-email" placeholder="alias@gmail.com"></div>
+      <div class="field"><label>Profile name (optional)</label><input type="text" id="new-acc-profile" placeholder="e.g. Profile 1"></div>
+      <div class="field"><label>Expiry date (optional) — dd/mm/yyyy</label><input type="text" id="new-acc-expiry" placeholder="e.g. 15/08/2025"></div>
+      <div class="field" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px">
+        <label style="color:var(--orange)">🔒 Main Gmail (for OSN+ sign-in codes — admin only)</label>
+        <input type="email" id="new-acc-main-email" placeholder="Gmail address that receives OSN+ codes">
+        <input type="password" id="new-acc-main-pass" placeholder="Gmail app password" style="margin-top:6px">
+      </div>
+      <button class="inline-btn" id="btn-add-stock" onclick="addAccount()"><i class="ti ti-plus" style="font-size:13px;vertical-align:-2px;margin-right:4px"></i>Add to stock</button>`;
+  }
   if(isDisneyOne){
     let modeToggle=`<div class="acc-add-mode-row">
       <button type="button" class="acc-add-mode-btn${accAddMode==='bulk'?' active':''}" onclick="setAccAddMode('bulk')">⚡ Quick add profiles</button>
@@ -5957,9 +6094,14 @@ function renderManualAddForm(skey,needsGmail,isShahidStock){
       <button type="button" class="acc-add-mode-btn${accAddMode==='bulk'?' active':''}" onclick="setAccAddMode('bulk')">⚡ Quick add users</button>
       <button type="button" class="acc-add-mode-btn${accAddMode==='manual'?' active':''}" onclick="setAccAddMode('manual')">Manual (one at a time)</button>
     </div>`;
+  }else if(isOsnOne){
+    modeToggle=`<div class="acc-add-mode-row">
+      <button type="button" class="acc-add-mode-btn${accAddMode==='bulk'?' active':''}" onclick="setAccAddMode('bulk')">⚡ Quick add profiles</button>
+      <button type="button" class="acc-add-mode-btn${accAddMode==='manual'?' active':''}" onclick="setAccAddMode('manual')">Manual (one at a time)</button>
+    </div>`;
   }
-  const profileFields=(isShahidFull||isDisneyFull||isAmazonKey(skey))?'':`<div class="field"><label>${isShahidOne?'User name (optional)':isDisneyStock?'Profile (optional)':'Profile (optional)'}</label><input type="text" id="new-acc-profile" placeholder="${isShahidOne?'e.g. User 1':'e.g. Ali, Profile 1'}"></div>`;
-  const pinField=(isShahidStock||isShahidFull||isDisneyStock||isAmazonKey(skey))?'':`<div class="field">
+  const profileFields=(isShahidFull||isDisneyFull||isAmazonKey(skey)||isOsnFull)?'':`<div class="field"><label>${isShahidOne?'User name (optional)':isDisneyStock||isOsnStock?'Profile (optional)':'Profile (optional)'}</label><input type="text" id="new-acc-profile" placeholder="${isShahidOne?'e.g. User 1':'e.g. Ali, Profile 1'}"></div>`;
+  const pinField=(isShahidStock||isShahidFull||isDisneyStock||isAmazonKey(skey)||isOsnStock)?'':`<div class="field">
       <label>Profile PIN (optional — for 1 User accounts)</label>
       <input type="text" id="new-acc-profile-pin" placeholder="e.g. 1234" maxlength="6">
       <div style="font-size:11px;color:var(--text3);margin-top:4px">Fixed PIN you set for this profile. Customer will see it on their subscription link.</div>
@@ -5971,15 +6113,15 @@ function renderManualAddForm(skey,needsGmail,isShahidStock){
     <div class="field"><label>Expiry date (optional) — dd/mm/yyyy</label><input type="text" id="new-acc-expiry" placeholder="e.g. 15/08/2025"></div>
     ${pinField}
   ${needsGmail?`<div class="field" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px">
-      <label style="color:var(--orange)">🔒 Main Gmail (${isShahidStock?'for Shahid reset emails':isDisneyStock?'for Disney+ sign-in codes':'for Netflix sign-in codes'} — admin only, never shown to customers)</label>
-      <input type="email" id="new-acc-main-email" placeholder="${isShahidStock?'Gmail inbox that receives Shahid reset emails':isDisneyStock?'Gmail address that receives Disney+ codes':'Gmail address that receives Netflix codes'}">
+      <label style="color:var(--orange)">🔒 Main Gmail (${isShahidStock?'for Shahid reset emails':isDisneyStock?'for Disney+ sign-in codes':isOsnStock?'for OSN+ sign-in codes':'for Netflix sign-in codes'} — admin only, never shown to customers)</label>
+      <input type="email" id="new-acc-main-email" placeholder="${isShahidStock?'Gmail inbox that receives Shahid reset emails':isDisneyStock?'Gmail address that receives Disney+ codes':isOsnStock?'Gmail address that receives OSN+ codes':'Gmail address that receives Netflix codes'}">
       <input type="password" id="new-acc-main-pass" placeholder="Gmail app password" style="margin-top:6px">
       <div style="font-size:11px;color:var(--text3);margin-top:4px">Gmail only. Use a 16-character app password with IMAP enabled. Spaces are okay; they will be removed automatically.</div>
   </div>`:''}
     <button class="inline-btn" id="btn-add-stock" onclick="addAccount()"><i class="ti ti-plus" style="font-size:13px;vertical-align:-2px;margin-right:4px"></i>Add to stock</button>`;
 }
 function renderAccModal(showForm=false){
-  const skey=curAccModalKey;const list=stockAccountsForKey(skey);const isShahidStock=String(skey||'').startsWith('shahid__');const isDisneyStock=isDisneyKey(skey);const needsGmail=isNetflixKey(skey)||isShahidStock||isDisneyOneUserKey(skey)||isCanvaNewKey(skey);let html='';
+  const skey=curAccModalKey;const list=stockAccountsForKey(skey);const isShahidStock=String(skey||'').startsWith('shahid__');const isDisneyStock=isDisneyKey(skey);const isOsnStock=isOsnKey(skey);const needsGmail=isNetflixKey(skey)||isShahidStock||isDisneyOneUserKey(skey)||isOsnKey(skey)||isCanvaNewKey(skey);let html='';
   if(isNetflixOneUserKey(skey)){
     const mirrors=netflixMirrorCopyCount(skey);
     if(mirrors>0){
@@ -5998,6 +6140,10 @@ function renderAccModal(showForm=false){
         :isDisneyOneUserKey(skey)&&a.phone
         ?`<div class="acc-email">📱 ${esc(a.phone)}</div><div class="acc-pass">📧 ${esc(a.email)}</div>
       ${prof?`<div class="acc-extra">👤 Profile: ${esc(prof)}</div>`:''}`
+        :isOsnKey(skey)
+        ?`<div class="acc-email">📧 ${esc(a.email)}</div>
+      ${prof?`<div class="acc-extra">👤 Profile: ${esc(prof)}</div>`:''}
+      <div class="acc-pass" style="color:var(--text3)">Sign-in code only</div>`
         :`<div class="acc-email">${esc(a.email)}</div><div class="acc-pass">${esc(a.pass)}</div>
       ${prof?`<div class="acc-extra">👤 Profile: ${esc(prof)}</div>`:''}`}
       ${!anghami&&a.profilePin?`<div class="acc-extra">🔢 PIN: ${esc(a.profilePin)}</div>`:''}
@@ -6014,11 +6160,12 @@ function renderAccModal(showForm=false){
   if(isNetflixOneUserKey(skey)&&accAddMode==='bulk')html+=renderNetflixBulkForm(skey);
   else if(isShahidOneUserKey(skey)&&accAddMode==='bulk')html+=renderShahidBulkForm(skey);
   else if(isDisneyOneUserKey(skey)&&accAddMode==='bulk')html+=renderDisneyBulkForm(skey);
+  else if(isOsnOneUserKey(skey)&&accAddMode==='bulk')html+=renderOsnBulkForm(skey);
   else html+=renderManualAddForm(skey,needsGmail,isShahidStock);
   html+=`</div>`;
   document.getElementById('acc-modal-body').innerHTML=html;
   if(showForm){
-    const focusId=isNetflixOneUserKey(skey)&&accAddMode==='bulk'?'nf-bulk-email':(isShahidOneUserKey(skey)&&accAddMode==='bulk'?'sh-bulk-email':(isDisneyOneUserKey(skey)&&accAddMode==='bulk'?'ds-bulk-phone':'new-acc-email'));
+    const focusId=isNetflixOneUserKey(skey)&&accAddMode==='bulk'?'nf-bulk-email':(isShahidOneUserKey(skey)&&accAddMode==='bulk'?'sh-bulk-email':(isDisneyOneUserKey(skey)&&accAddMode==='bulk'?'ds-bulk-phone':(isOsnOneUserKey(skey)&&accAddMode==='bulk'?'osn-bulk-email':'new-acc-email')));
     setTimeout(()=>document.getElementById(focusId)?.focus(),100);
   }
 }
@@ -6216,6 +6363,56 @@ async function addDisneyBulkAccounts(){
   logActivity('Disney bulk stock added',`${profiles.length} profiles · ${curAccModalKey}`);
   await autoFulfillPending(curAccModalKey);
 }
+async function addOsnBulkAccounts(){
+  if(!isOsnOneUserKey(curAccModalKey)){showToast('Quick add is only for OSN+ 1-user plans');return;}
+  if(addStockInFlight){showToast('Stock add already in progress…');return;}
+  const email=document.getElementById('osn-bulk-email')?.value.trim()||'';
+  const expiryDate=document.getElementById('osn-bulk-expiry')?.value.trim()||'';
+  const mainEmail=document.getElementById('osn-bulk-main-email')?.value.trim()||'';
+  const mainPass=(document.getElementById('osn-bulk-main-pass')?.value||'').replace(/\s+/g,'');
+  if(!email){showToast('Alias email is required');return;}
+  if(!mainEmail){showToast('Main Gmail is required for OSN+ sign-in codes');return;}
+  const profiles=[];
+  for(let n=1;n<=OSN_MAX_ONE_USER_SLOTS;n++){
+    const name=document.getElementById('osn-bulk-name-'+n)?.value.trim()||'';
+    if(name)profiles.push({name,row:n});
+  }
+  if(!profiles.length){showToast('Enter at least one profile name');return;}
+  const used=osnBulkSlotsUsed(email,curAccModalKey);
+  if(used+profiles.length>OSN_MAX_ONE_USER_SLOTS){showToast(`Only ${OSN_MAX_ONE_USER_SLOTS-used} slot(s) left for this alias (max ${OSN_MAX_ONE_USER_SLOTS} profiles)`);return;}
+  const names=new Set();
+  for(const p of profiles){
+    const aliasError=validateOsnAliasForAdd(curAccModalKey,email,p.name);
+    if(aliasError){showToast('⚠️ '+aliasError);return;}
+    const key=p.name.toLowerCase();
+    if(names.has(key)){showToast('Duplicate profile name in this batch');return;}
+    names.add(key);
+  }
+  setAddStockBusy(true);
+  try{
+    await apiStockAdd({
+      skey:curAccModalKey,
+      accounts:profiles.map(p=>({
+        skey:curAccModalKey,
+        requestId:[normEmail(email),p.name.toLowerCase(),curAccModalKey].join('::'),
+        accKey:'osnprof__'+Date.now()+'_'+Math.random().toString(36).slice(2,8)+'_'+p.row,
+        account:{email,pass:'',profileName:p.name,expiryDate,mainEmail:mainEmail||'',...(mainPass?{mainPass}:{})}
+      }))
+    });
+  }catch(e){
+    showToast('⚠️ '+(e.message||'Save failed'));
+    return;
+  }finally{setAddStockBusy(false);}
+  saveOsnBulkDefaults({email,expiryDate,mainEmail,profiles:profiles.map(p=>({name:p.name}))});
+  let gmailConfigured=false;
+  if(mainEmail&&mainPass){
+    try{gmailConfigured=await setupGmailMonitor(mainEmail,mainPass);}catch(e){showToast('⚠️ Profiles saved but Gmail error: '+e.message);}
+  }
+  renderAccModal(true);renderStockPanels();renderAdminExpiry();
+  showToast(gmailConfigured?`✓ Added ${profiles.length} OSN+ profile(s) + Gmail`:`✓ Added ${profiles.length} OSN+ profile(s)`);
+  logActivity('OSN bulk stock added',`${profiles.length} profiles · ${curAccModalKey}`);
+  await autoFulfillPending(curAccModalKey);
+}
 async function addNetflixBulkAccounts(){
   if(!isNetflixOneUserKey(curAccModalKey)){showToast('Quick add is only for Netflix 1-user plans');return;}
   if(addStockInFlight){showToast('Stock add already in progress…');return;}
@@ -6298,6 +6495,9 @@ async function addAccount(){
   const isDisneyOne=isDisneyOneUserKey(curAccModalKey);
   const isDisneyStock=isDisneyKey(curAccModalKey);
   const isCanvaStock=isCanvaNewKey(curAccModalKey);
+  const isOsnStock=isOsnKey(curAccModalKey);
+  const isOsnOne=isOsnOneUserKey(curAccModalKey);
+  const isOsnFull=isOsnFullKey(curAccModalKey);
   if(isCanvaStock){
     const expiryDate=(document.getElementById('new-acc-expiry')?.value||'').trim();
     const mainEmail=document.getElementById('new-acc-main-email')?.value.trim()||'';
@@ -6315,6 +6515,32 @@ async function addAccount(){
     renderAccModal(false);renderStockPanels();renderAdminExpiry();
     showToast(gmailConfigured?'✓ Canva account added + Gmail monitoring started':'✓ Canva account added to stock');
     logActivity('Canva stock added',email+' · '+curAccModalKey);
+    await autoFulfillPending(curAccModalKey);
+    return;
+  }
+  if(isOsnStock){
+    const mainEmail=document.getElementById('new-acc-main-email')?.value.trim()||'';
+    const mainPass=(document.getElementById('new-acc-main-pass')?.value||'').replace(/\s+/g,'');
+    const profileName=(document.getElementById('new-acc-profile')?.value||'').trim();
+    if(!email){showToast('Alias email is required');return;}
+    if(!mainEmail){showToast('Main Gmail is required for OSN+ sign-in codes');return;}
+    if(isOsnOne){
+      const aliasError=validateOsnAliasForAdd(curAccModalKey,email,profileName);
+      if(aliasError){showToast('⚠️ '+aliasError);return;}
+    }else if(isOsnFull){
+      const aliasError=validateOsnAliasForAdd(curAccModalKey,email,'');
+      if(aliasError){showToast('⚠️ '+aliasError);return;}
+    }
+    const account={email,pass:'',expiryDate,mainEmail:mainEmail||'',...(mainPass?{mainPass}:{}),...(profileName?{profileName}:{})};
+    setAddStockBusy(true);
+    try{await apiStockAdd({skey:curAccModalKey,account});}catch(e){showToast('⚠️ '+(e.message||'Save failed'));return;}finally{setAddStockBusy(false);}
+    let gmailConfigured=false;
+    if(mainEmail&&mainPass){
+      try{gmailConfigured=await setupGmailMonitor(mainEmail,mainPass);}catch(e){showToast('⚠️ Account saved but email server error: '+e.message);}
+    }
+    renderAccModal(false);renderStockPanels();renderAdminExpiry();
+    showToast(gmailConfigured?'✓ OSN+ account added + Gmail monitoring started':'✓ OSN+ account added to stock');
+    logActivity('OSN stock added',email+' · '+curAccModalKey);
     await autoFulfillPending(curAccModalKey);
     return;
   }
