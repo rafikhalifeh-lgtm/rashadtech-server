@@ -153,11 +153,18 @@ const activePurchases = new Set();
 const activeTopupCredits = new Set();
 const activeStockAdds = new Set();
 let dbWriteQueue = Promise.resolve();
+let netlifyWriteQueue = Promise.resolve();
 
 function enqueueDbWrite(task) {
   const run = dbWriteQueue.then(task);
   dbWriteQueue = run.catch(() => {});
   return run;
+}
+
+function enqueueNetlifyWrite(data) {
+  const run = netlifyWriteQueue.then(() => writeNetlifyDb(data));
+  netlifyWriteQueue = run.catch(e => console.error('Deferred Netlify write error:', e.message));
+  return netlifyWriteQueue;
 }
 
 async function readDbForWrite() {
@@ -624,7 +631,7 @@ function writeFallbackDb(data) {
     const dir = path.dirname(file);
     fs.mkdirSync(dir, { recursive: true });
     const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(data || emptyDbData(), null, 2));
+    fs.writeFileSync(tmp, JSON.stringify(data || emptyDbData()));
     fs.renameSync(tmp, file);
   };
   try {
@@ -962,9 +969,22 @@ async function writeJsonBinRaw(data, options = {}) {
     nextData[BACKUPS_KEY] = existingBackups;
   }
   const fallbackData = markEmergencyDb(nextData, NETLIFY_SITE_ID && NETLIFY_BLOBS_TOKEN ? 'Netlify Blobs primary database' : 'Primary server file database', !(NETLIFY_SITE_ID && NETLIFY_BLOBS_TOKEN));
+  if (lightWrite) {
+    setDbCache(fallbackData, false);
+    try {
+      writeFallbackDb(dbCache);
+    } catch (e) {
+      console.error('Fallback DB write error:', e.message);
+    }
+    if (NETLIFY_SITE_ID && NETLIFY_BLOBS_TOKEN) {
+      enqueueNetlifyWrite(fallbackData);
+    }
+    syncDbToJsonBin(false).catch(e => console.error('Background JSONBin sync error:', e.message));
+    return { cached: true, emergencyDb: Boolean(fallbackData.emergencyDb && fallbackData.emergencyDb.active) };
+  }
   saveLocalDb(fallbackData, true);
   if (NETLIFY_SITE_ID && NETLIFY_BLOBS_TOKEN) {
-    if (!lightWrite && backupSource) {
+    if (backupSource) {
       await createBackupSnapshot(backupSource, options.backupReason || 'before-write').catch(e => console.error('Backup snapshot error:', e.message));
     }
     await writeNetlifyDb(fallbackData);
@@ -1086,6 +1106,9 @@ function safeDataForSession(data, session) {
 
 /** Lightweight payload for mutation endpoints — omits full admin stock unless requested. */
 function slimMutationData(session, data, options = {}) {
+  if (options.topupreqsOnly) {
+    return { topupreqs: data.topupreqs || [] };
+  }
   if (session.role === 'admin') {
     const out = {
       topupreqs: data.topupreqs || [],
@@ -3035,7 +3058,7 @@ app.post('/purchase', async (req, res) => {
         pending: true,
         user: sanitizeUser(user),
         order: pendingOrder,
-        data: slimMutationData(session, data, { pending: session.role === 'admin' })
+        ...(session.role === 'admin' ? { data: slimMutationData(session, data, { pending: true }) } : {})
       });
       runAfterResponse(() => notifyPurchasePending(user, product, planLabel, price, assignCustId, pendingOrder));
       return;
@@ -3048,7 +3071,7 @@ app.post('/purchase', async (req, res) => {
       pending: false,
       user: sanitizeUser(user),
       order,
-      data: slimMutationData(session, data, { pending: session.role === 'admin' })
+      ...(session.role === 'admin' ? { data: slimMutationData(session, data, { pending: true }) } : {})
     });
     runAfterResponse(async () => {
       const telegramSent = await notifyPurchaseFulfilled(user, product, planLabel, price, order, assignCustId);
@@ -3108,10 +3131,14 @@ app.post('/customer/topup-request', async (req, res) => {
     });
     if (outcome.error) return res.status(outcome.status || 400).json({ error: outcome.error });
     if (outcome.duplicate) {
-      return res.json({ success: true, duplicate: true, request: outcome.request, data: slimMutationData(session, outcome.data) });
+      return res.json({ success: true, duplicate: true, request: outcome.request });
     }
     const { request: reqRow, data, user } = outcome;
-    res.json({ success: true, request: reqRow, data: slimMutationData(session, data) });
+    res.json({
+      success: true,
+      request: reqRow,
+      ...(session.role === 'admin' ? { data: slimMutationData(session, data, { topupreqsOnly: true }) } : {})
+    });
     runAfterResponse(() => sendTG(
       TG_ADMIN,
       `💳 <b>Topup Request</b>\n\n👤 <b>${user.name}</b>\n📧 ${user.email}\n💵 Amount: <b>${reqRow.label}</b>\n📅 ${reqRow.date}\n\nGo to Admin → Topup Requests to credit after payment.`,
@@ -3158,10 +3185,10 @@ app.post('/admin/credit-topup', async (req, res) => {
     });
     if (outcome.error) return res.status(outcome.status || 400).json({ error: outcome.error });
     if (outcome.alreadyCredited) {
-      return res.json({ success: true, alreadyCredited: true, data: slimMutationData(session, outcome.data) });
+      return res.json({ success: true, alreadyCredited: true, topupreqs: outcome.data.topupreqs || [] });
     }
     const { user, reqRow, data } = outcome;
-    res.json({ success: true, user: sanitizeUser(user), data: slimMutationData(session, data) });
+    res.json({ success: true, user: sanitizeUser(user), topupreqs: data.topupreqs || [] });
     runAfterResponse(async () => {
       const custTgId = String(user.tgChatId || reqRow.tgChatId || '').trim();
       if (custTgId) {
