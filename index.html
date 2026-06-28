@@ -247,6 +247,13 @@ input,button,select,textarea{font-family:var(--font)}
 .modal-buy-btn{width:100%;background:var(--red);color:#fff;border:none;border-radius:var(--radius-sm);padding:11px;font-size:13px;font-weight:600;cursor:pointer;margin-top:12px}
 .modal-buy-btn:hover{background:var(--red2)}
 .modal-buy-btn:disabled{background:var(--bg4);color:var(--text3);cursor:not-allowed}
+.purchase-loading-overlay{position:absolute;inset:0;background:rgba(0,0,0,.72);z-index:20;display:flex;align-items:center;justify-content:center;padding:20px;border-radius:var(--radius)}
+.purchase-loading-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:22px 24px;max-width:300px;width:100%;text-align:center}
+.purchase-spinner{width:36px;height:36px;margin:0 auto 14px;border:3px solid var(--border);border-top-color:var(--red);border-radius:50%;animation:rt-spin .8s linear infinite}
+.purchase-loading-text{font-size:14px;font-weight:600;margin-bottom:6px}
+.purchase-loading-hint{font-size:12px;color:var(--text2);line-height:1.5}
+@keyframes rt-spin{to{transform:rotate(360deg)}}
+#buy-modal .modal{position:relative}
 .success-wrap{text-align:center;padding:20px 0 8px}
 .cred-box{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;text-align:left;margin:14px 0}
 .cred-line{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px;gap:12px}
@@ -3229,8 +3236,46 @@ function fmtSmsCredits(n){
   return Number(n).toFixed(2)+' cr';
 }
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),4500);}
-function closeModal(id){document.getElementById(id).classList.remove('open');}
+function closeModal(id){
+  const el=document.getElementById(id);
+  if(!el)return;
+  if(id==='buy-modal'&&el.dataset.purchaseLocked)return;
+  el.classList.remove('open');
+}
 function openModal(id){document.getElementById(id).classList.add('open');}
+
+function setBuyModalLoading(active,message){
+  const wrap=document.getElementById('buy-modal');
+  if(!wrap)return;
+  const modal=wrap.querySelector('.modal');
+  let overlay=document.getElementById('purchase-loading-overlay');
+  const closeBtn=wrap.querySelector('.mclose');
+  const loadingMsg=message||(currentLang==='ar'?'جاري تأكيد الطلب…':'Processing your order…');
+  const hintMsg=currentLang==='ar'?'يرجى الانتظار — لا تضغط مرة أخرى':'Please wait — do not tap again';
+  if(active){
+    wrap.dataset.purchaseLocked='1';
+    wrap.querySelectorAll('.modal-buy-btn').forEach(btn=>{btn.disabled=true;});
+    const confirmBtn=document.getElementById('purchase-confirm-btn');
+    if(confirmBtn)confirmBtn.textContent=loadingMsg;
+    if(closeBtn){closeBtn.style.pointerEvents='none';closeBtn.style.opacity='0.35';}
+    if(!overlay&&modal){
+      overlay=document.createElement('div');
+      overlay.id='purchase-loading-overlay';
+      overlay.className='purchase-loading-overlay';
+      overlay.innerHTML=`<div class="purchase-loading-card"><div class="purchase-spinner"></div><div class="purchase-loading-text" id="purchase-loading-text"></div><div class="purchase-loading-hint" id="purchase-loading-hint"></div></div>`;
+      modal.appendChild(overlay);
+    }
+    const txt=document.getElementById('purchase-loading-text');
+    const hint=document.getElementById('purchase-loading-hint');
+    if(txt)txt.textContent=loadingMsg;
+    if(hint)hint.textContent=hintMsg;
+    if(overlay)overlay.style.display='flex';
+  }else{
+    delete wrap.dataset.purchaseLocked;
+    if(overlay)overlay.style.display='none';
+    if(closeBtn){closeBtn.style.pointerEvents='';closeBtn.style.opacity='';}
+  }
+}
 function otpMove(pfx,i){if(document.getElementById(pfx+i).value)document.getElementById(pfx+(i+1))?.focus();}
 function otpBack(e,pfx,i){if(e.key==='Backspace'&&!document.getElementById(pfx+i).value)document.getElementById(pfx+(i-1))?.focus();}
 function getOTP(pfx){return[0,1,2,3,4,5].map(i=>document.getElementById(pfx+i)?.value||'').join('');}
@@ -3864,6 +3909,7 @@ async function confirmSmsPurchase(catalogId){
     return;
   }
   smsPurchaseInFlight=true;
+  setBuyModalLoading(true,currentLang==='ar'?'جاري شراء الرقم…':'Purchasing number…');
   try{
     const r=await fetch(RT_SERVER+'/purchase/sms',{method:'POST',headers:authHeaders(),body:JSON.stringify({catalogId})});
     const j=await r.json();
@@ -3877,7 +3923,7 @@ async function confirmSmsPurchase(catalogId){
       await sendTelegramToUser(currentUser.tgChatId,`✅ <b>SMS number ready</b>\n\n${j.order.product} · ${j.order.plan}\n📞 <code>${j.order.phone}</code>\n\nOpen My Subscriptions → Options → View SMS code`);
     }
   }catch(e){showToast('⚠️ '+e.message);}
-  finally{smsPurchaseInFlight=false;}
+  finally{smsPurchaseInFlight=false;setBuyModalLoading(false);}
 }
 
 // BUY MODAL
@@ -3995,7 +4041,7 @@ function renderConfirm(html,p){
   <hr style="border:none;border-top:1px solid var(--border);margin:9px 0">
   <div class="confirm-row"><span class="cl" style="font-weight:600">After purchase</span><span class="cv">${fmt(Math.max(0,after))}</span></div>
   ${blocked?`<div class="insuf"><i class="ti ti-alert-circle" style="font-size:12px;vertical-align:-1px"></i> This plan is blocked by admin</div>`:(!ok?`<div class="insuf"><i class="ti ti-alert-circle" style="font-size:12px;vertical-align:-1px"></i> Insufficient balance</div>`:'')}
-  <button class="modal-buy-btn" ${ok&&!blocked?'':'disabled'} onclick="confirmPurchase()">${blocked?'Blocked':(ok?'Confirm — '+fmt(price):'Insufficient balance')}</button>`;
+  <button class="modal-buy-btn" id="purchase-confirm-btn" ${ok&&!blocked?'':'disabled'} onclick="confirmPurchase()">${blocked?'Blocked':(ok?'Confirm — '+fmt(price):'Insufficient balance')}</button>`;
   document.getElementById('modal-body').innerHTML=html;
 }
 function selUserType(i){selUT=curProd.userTypes[i];selDur=null;customDays=0;renderBuyBody();}
@@ -4083,6 +4129,7 @@ async function submitCustomOrder(){
   if(isJawaker&&customOrderAmt<12000){showToast('Minimum 12,000 tokens');return;}
   if(currentUser.balance<price){showToast('Insufficient balance');return;}
   customOrderInFlight=true;
+  setBuyModalLoading(true,currentLang==='ar'?'جاري إرسال الطلب…':'Placing your order…');
   try{
     const j=await rtApi('/purchase-game',{
       method:'POST',
@@ -4106,7 +4153,7 @@ async function submitCustomOrder(){
     customOrderId='';customOrderPassword='';customOrderAmt=0;selPlan=null;
   }catch(e){
     showToast('⚠️ '+((e&&e.message)||'Order failed — try again'));
-  }finally{customOrderInFlight=false;}
+  }finally{customOrderInFlight=false;setBuyModalLoading(false);}
 }
 
 
@@ -4145,6 +4192,7 @@ async function confirmPurchase(){
   if(freshUser?.banned){showToast('⚠️ Your account has been suspended. Contact support.');return;}
   if(!isAdmin){
     purchaseInFlight=true;
+    setBuyModalLoading(true);
     try{
       const assignedCustomer=assignCustId!=null?currentUser.myCustomers?.find(x=>x.id===assignCustId):null;
       if(Date.now()-lastServerPingAt>90000){
@@ -4171,7 +4219,7 @@ async function confirmPurchase(){
         showToast('✓ Purchase successful!');
       });
     }catch(e){showToast('⚠️ '+e.message);}
-    finally{purchaseInFlight=false;}
+    finally{purchaseInFlight=false;setBuyModalLoading(false);}
     return;
   }
   showToast('Sign in as a customer to purchase. Use Admin → Pending Orders to fulfill stock.');
