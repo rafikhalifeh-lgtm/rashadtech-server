@@ -1794,6 +1794,18 @@ function isDisneyFullStockKey(skey) {
   return /^disney__full__/.test(String(skey || ''));
 }
 
+function isOsnStockKey(skey) {
+  return String(skey || '').startsWith('osn__');
+}
+
+function isOsnOneUserStockKey(skey) {
+  return /^osn__1user__/.test(String(skey || ''));
+}
+
+function isOsnFullStockKey(skey) {
+  return /^osn__full__/.test(String(skey || ''));
+}
+
 function isAmazonStockKey(skey) {
   return String(skey || '').startsWith('amazon__');
 }
@@ -1841,6 +1853,22 @@ function isDisneyOneUserOrder(order) {
   return isDisneyOneUserSubscription(order);
 }
 
+function isOsnSubscription(sub) {
+  return Boolean(sub && (sub.productId === 'osn' || /osn\+?/i.test(String(sub.product || ''))));
+}
+
+function isOsnOneUserSubscription(sub) {
+  return isOsnSubscription(sub) && /1\s*user/i.test(String(sub.plan || ''));
+}
+
+function isOsnOneUserOrder(order) {
+  return isOsnOneUserSubscription(order);
+}
+
+function isOsnPasswordlessSubscription(sub) {
+  return isOsnSubscription(sub);
+}
+
 function disneyOneUserPlanKeys() {
   return ['disney__1user__1m', 'disney__1user__3m', 'disney__1user__1y'];
 }
@@ -1867,6 +1895,9 @@ function isValidLinkSubscription(subscription) {
   if (isDisneyOneUserSubscription(subscription)) {
     return Boolean(String(subscription.phone || '').trim() || String(subscription.email || '').trim());
   }
+  if (isOsnPasswordlessSubscription(subscription)) {
+    return Boolean(String(subscription.email || '').trim());
+  }
   if (isCanvaNewSubscription(subscription) || isCanvaOwnSubscription(subscription)) {
     return Boolean(String(subscription.email || '').trim());
   }
@@ -1887,6 +1918,13 @@ function validateStockAccountForAdd(skey, rowAccount) {
     const email = String(rowAccount && rowAccount.email || '').trim();
     if (!phone) return 'Phone number with country code is required for Disney+ 1-user stock';
     if (!email) return 'Code email is required for Disney+ 1-user stock (receives sign-in codes)';
+    return null;
+  }
+  if (isOsnOneUserStockKey(skey) || isOsnFullStockKey(skey)) {
+    const email = String(rowAccount && rowAccount.email || '').trim();
+    const mainEmail = String(rowAccount && rowAccount.mainEmail || '').trim();
+    if (!email) return 'Alias email is required for OSN+ stock';
+    if (!mainEmail) return 'Main Gmail is required for OSN+ sign-in codes';
     return null;
   }
   if (isCanvaNewStockKey(skey)) {
@@ -2677,6 +2715,7 @@ async function notifyPurchaseFulfilled(user, product, planLabel, price, order, a
   const profileLabel = orderProfileName(order);
   const isAnghami = product && product.id === 'anghami';
   const isDisneyOne = isDisneyOneUserOrder(order);
+  const isOsn = isOsnPasswordlessSubscription(order);
   const isCanvaNew = isCanvaNewOrder(order);
   const isCanvaOwn = isCanvaOwnOrder(order);
   let adminMsg = `🎉 <b>New Purchase</b>\n\n📦 <b>Product:</b> ${product.name}\n📋 <b>Plan:</b> ${planLabel}\n💵 <b>Price:</b> $${Number(price).toFixed(2)}\n👤 <b>Buyer:</b> ${user.name} (${user.email})`;
@@ -2688,6 +2727,9 @@ async function notifyPurchaseFulfilled(user, product, planLabel, price, order, a
   } else if (isDisneyOne) {
     adminMsg += `\n\n📱 <b>Phone:</b> <code>${order.phone || '—'}</code>`;
     adminMsg += `\n📧 <b>Code email:</b> <code>${order.email || '—'}</code>`;
+    if (profileLabel) adminMsg += `\n👤 Profile: <code>${profileLabel}</code>`;
+  } else if (isOsn) {
+    adminMsg += `\n\n📧 <b>OSN+ email:</b> <code>${order.email || '—'}</code>`;
     if (profileLabel) adminMsg += `\n👤 Profile: <code>${profileLabel}</code>`;
   } else if (isCanvaNew || isCanvaOwn) {
     adminMsg += `\n\n📧 <b>Canva email:</b> <code>${order.email || '—'}</code>`;
@@ -2733,6 +2775,10 @@ async function notifyPurchaseFulfilled(user, product, planLabel, price, order, a
       ? (assignedCustomer
         ? `✅ <b>Disney+ for ${custName}</b>\n\n📋 ${planLabel}\n👥 <b>For:</b> ${custName}\n\n📱 <b>Phone:</b> <code>${order.phone || ''}</code>\nOpen Disney+ app → enter phone with country code → tap Request Sign-in Code on your subscription link.`
         : `✅ <b>Your Disney+ is ready!</b>\n\n📋 ${planLabel}\n\n📱 <b>Phone:</b> <code>${order.phone || ''}</code>\nOpen Disney+ app → enter phone with country code → tap Request Sign-in Code on your subscription link.`)
+      : isOsn
+        ? (assignedCustomer
+          ? `✅ <b>OSN+ for ${custName}</b>\n\n📋 ${planLabel}\n👥 <b>For:</b> ${custName}\n\n📧 <b>Email:</b> <code>${order.email || ''}</code>\nOpen OSN+ → enter email → tap Request Sign-in Code on your subscription link.`
+          : `✅ <b>Your OSN+ is ready!</b>\n\n📋 ${planLabel}\n\n📧 <b>Email:</b> <code>${order.email || ''}</code>\nOpen OSN+ → enter email → tap Request Sign-in Code on your subscription link.`)
       : isCanvaNew
         ? (assignedCustomer
           ? `✅ <b>Canva Pro for ${custName}</b>\n\n📋 ${planLabel}\n👥 <b>For:</b> ${custName}\n\n📧 <b>Email:</b> <code>${order.email || ''}</code>\nGo to canva.com → enter email → tap Request Sign-in Code on your subscription link.`
@@ -2744,8 +2790,9 @@ async function notifyPurchaseFulfilled(user, product, planLabel, price, order, a
           : (assignedCustomer
         ? `✅ <b>${product.name} subscription for ${custName}</b>\n\n📋 ${planLabel}\n👥 <b>For:</b> ${custName}\n\n🔐 <b>Credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`
         : `✅ <b>Your ${product.name} is ready!</b>\n\n📋 ${planLabel}\n\n🔐 <b>Your credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`);
-  if (!isAnghami && !isDisneyOne && !isCanvaNew && !isCanvaOwn && profileLabel) custMsg += `\n👤 Profile: <code>${profileLabel}</code>`;
+  if (!isAnghami && !isDisneyOne && !isOsn && !isCanvaNew && !isCanvaOwn && profileLabel) custMsg += `\n👤 Profile: <code>${profileLabel}</code>`;
   if (isDisneyOne && profileLabel) custMsg += `\n👤 Profile: <code>${profileLabel}</code>`;
+  if (isOsn && profileLabel) custMsg += `\n👤 Profile: <code>${profileLabel}</code>`;
   if (order.expiryDate) custMsg += `\n⏰ Expires: ${order.expiryDate}`;
   if (order.profilePin) custMsg += `\n🔢 PIN: <code>${order.profilePin}</code>`;
   custMsg += `\n\n🔗 <b>Subscription link:</b>\n${subLink}\n\nEnjoy! 🌟`;
@@ -2758,6 +2805,8 @@ async function notifyPurchaseFulfilled(user, product, planLabel, price, order, a
           ? `✅ <b>Anghami+</b>\n\n📋 ${planLabel}\n\n🔗 ${order.serviceLink || ''}\n\n${ANGHAMI_CANCEL_NOTE_EN}\n\n🔗 ${subLink}`
           : isDisneyOne
             ? `✅ <b>Disney+ subscription</b>\n\n📋 ${planLabel}\n\n📱 <code>${order.phone || ''}</code>\n\n🔗 ${subLink}`
+            : isOsn
+              ? `✅ <b>OSN+ subscription</b>\n\n📋 ${planLabel}\n\n📧 <code>${order.email || ''}</code>\n\n🔗 ${subLink}`
             : isCanvaNew
               ? `✅ <b>Canva Pro</b>\n\n📋 ${planLabel}\n\n📧 <code>${order.email || ''}</code>\n\n🔗 ${subLink}`
               : isCanvaOwn
@@ -3421,7 +3470,7 @@ app.post('/admin/stock-add', async (req, res) => {
     if (!batch.length) return res.status(400).json({ error: 'No accounts to add' });
   } else if (!keys.length || !account) {
     return res.status(400).json({ error: 'Plan key and account required' });
-  } else if (!isAnghamiStockKey(keys[0]) && !isDisneyOneUserStockKey(keys[0]) && !isCanvaNewStockKey(keys[0]) && (!account.email || !account.pass)) {
+  } else if (!isAnghamiStockKey(keys[0]) && !isDisneyOneUserStockKey(keys[0]) && !isCanvaNewStockKey(keys[0]) && !isOsnStockKey(keys[0]) && (!account.email || !account.pass)) {
     return res.status(400).json({ error: 'Plan key and account email/password required' });
   }
   const lockKeys = [];
@@ -3450,7 +3499,9 @@ app.post('/admin/stock-add', async (req, res) => {
             ? `shprof__${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
             : /^disney__1user__/.test(firstKey)
               ? `dsprof__${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-              : `${firstKey}__${Date.now()}_${Math.random().toString(36).slice(2, 6)}`);
+              : /^osn__1user__/.test(firstKey)
+                ? `osnprof__${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+                : `${firstKey}__${Date.now()}_${Math.random().toString(36).slice(2, 6)}`);
         const fingerprint = row.requestId || requestId || stockAddFingerprint(rowAccount, rowKeys);
         if (activeStockAdds.has(fingerprint)) {
           return { error: 'This account add is already in progress', status: 409, duplicate: true };
@@ -3461,7 +3512,7 @@ app.post('/admin/stock-add', async (req, res) => {
           used: false,
           accKey: sharedKey,
           email: isAnghamiStockKey(firstKey) ? '' : String(rowAccount.email || '').trim(),
-          pass: isAnghamiStockKey(firstKey) || isDisneyOneUserStockKey(firstKey) || isCanvaNewStockKey(firstKey) ? '' : String(rowAccount.pass || '').trim(),
+          pass: isAnghamiStockKey(firstKey) || isDisneyOneUserStockKey(firstKey) || isCanvaNewStockKey(firstKey) || isOsnStockKey(firstKey) ? '' : String(rowAccount.pass || '').trim(),
           ...(rowAccount.phone ? { phone: String(rowAccount.phone).trim() } : {}),
           ...(rowAccount.profileName ? { profileName: String(rowAccount.profileName).trim() } : {}),
           ...(rowAccount.serviceLink ? { serviceLink: String(rowAccount.serviceLink).trim() } : {}),
@@ -4138,6 +4189,7 @@ function authorizeCodeRequest(req, body) {
         .map(normalizeEmail).filter(Boolean);
       if (requested.some((email) => subEmails.includes(email))) return true;
       if (isDisneyOneUserSubscription(sub) && String(sub.phone || body.subPhone || '').trim()) return true;
+      if (isOsnPasswordlessSubscription(sub) && normalizeEmail(sub.email)) return true;
       if (isCanvaNewSubscription(sub) && normalizeEmail(sub.email)) return true;
     } catch (e) {}
   }
@@ -4147,7 +4199,53 @@ function authorizeCodeRequest(req, body) {
   if (subEmail && subPass && requested.includes(subEmail)) return true;
   if (subEmail && !subPass && requested.includes(subEmail) && String(body.subPhone || '').trim()) return true;
   if (subEmail && !subPass && requested.includes(subEmail) && codeType === 'canva') return true;
+  if (subEmail && !subPass && requested.includes(subEmail) && codeType === 'osn') return true;
   return false;
+}
+
+const SIGNIN_CODE_SERVICES = new Set(['netflix', 'disney', 'canva', 'osn']);
+
+function normalizeCodeService(codeType) {
+  const service = String(codeType || 'netflix').toLowerCase();
+  return SIGNIN_CODE_SERVICES.has(service) ? service : 'netflix';
+}
+
+function scopedSignInCodeKey(key, service) {
+  const normalized = normalizeEmail(key) || String(key || '').trim().toLowerCase();
+  if (!normalized) return '';
+  return `${normalized}::${normalizeCodeService(service)}`;
+}
+
+function storeSignInCode(recipientKeys, code, service, profileName) {
+  const svc = normalizeCodeService(service);
+  const entry = { code, timestamp: Date.now(), service: svc };
+  (recipientKeys || []).forEach((key) => {
+    const scoped = scopedSignInCodeKey(key, svc);
+    if (scoped) latestCodes[scoped] = entry;
+  });
+  if (svc === 'netflix' && profileName) {
+    const scoped = scopedSignInCodeKey(String(profileName).toLowerCase(), 'netflix');
+    if (scoped) latestCodes[scoped] = entry;
+  }
+}
+
+function lookupSignInCode(lookupKeys, profileName, codeType) {
+  const svc = normalizeCodeService(codeType);
+  for (const candidate of lookupKeys || []) {
+    const scoped = scopedSignInCodeKey(candidate, svc);
+    const entry = scoped ? latestCodes[scoped] : null;
+    if (entry && Date.now() - entry.timestamp <= CODE_TTL_MS) return entry;
+  }
+  if (svc === 'netflix' && profileName) {
+    const scoped = scopedSignInCodeKey(String(profileName).toLowerCase(), 'netflix');
+    const entry = scoped ? latestCodes[scoped] : null;
+    if (entry && Date.now() - entry.timestamp <= CODE_TTL_MS) return entry;
+    const legacy = latestCodes[String(profileName).toLowerCase()];
+    if (legacy && (!legacy.service || legacy.service === 'netflix') && Date.now() - legacy.timestamp <= CODE_TTL_MS) {
+      return legacy;
+    }
+  }
+  return null;
 }
 
 // ── CODE ENDPOINTS ─────────────────────────────────────────────────────
@@ -4175,7 +4273,7 @@ app.post('/get-code', async (req, res) => {
   }
   const { codeKey, inboxKey } = resolveSignInCodeEmails(data, meta);
   const lookupKeys = uniqueNormalizedEmails([codeKey, inboxKey]);
-  const key = codeKey || (profileName ? profileName.toLowerCase() : 'default');
+  const codeType = normalizeCodeService(meta.codeType);
   if (inboxKey) {
     await loadGmailMonitors();
     if (monitoredEmails[inboxKey]) {
@@ -4184,28 +4282,22 @@ app.post('/get-code', async (req, res) => {
       await fetchMonitoredInboxes();
     }
   }
-  let entry = null;
-  for (const candidate of lookupKeys) {
-    if (latestCodes[candidate]) {
-      entry = latestCodes[candidate];
-      break;
-    }
-  }
-  entry = entry || latestCodes[key] || (!codeKey && inboxKey ? latestCodes[inboxKey] : null) || (codeKey ? null : latestCodes['default']);
+  const entry = lookupSignInCode(lookupKeys, profileName, codeType);
   
   if (!entry) {
     const name = profileName || 'Unknown';
-    if (!notifiedCustomers[key] || Date.now() - notifiedCustomers[key] > 5*60*1000) {
-      notifiedCustomers[key] = Date.now();
+    const notifyKey = scopedSignInCodeKey(codeKey || lookupKeys[0] || name, codeType) || name;
+    if (!notifiedCustomers[notifyKey] || Date.now() - notifiedCustomers[notifyKey] > 5*60*1000) {
+      notifiedCustomers[notifyKey] = Date.now();
       const monitorHint = inboxKey && !monitoredEmails[inboxKey]
         ? `\n⚠️ Gmail monitoring is not configured for inbox <code>${inboxKey}</code>. Add this Gmail in Admin stock with an app password.`
         : '';
-      await sendTG(TG_ADMIN, `🔔 <b>${name}</b> is waiting for a sign-in code!${codeKey ? `\n📧 Code email: <code>${codeKey}</code>` : ''}${inboxKey && inboxKey !== codeKey ? `\n📥 Gmail inbox: <code>${inboxKey}</code>` : ''}${monitorHint}\nManual fallback: /code ${codeKey || name} 1234`, 'HTML').catch(() => {});
+      await sendTG(TG_ADMIN, `🔔 <b>${name}</b> is waiting for a ${codeType.toUpperCase()} sign-in code!${codeKey ? `\n📧 Code email: <code>${codeKey}</code>` : ''}${inboxKey && inboxKey !== codeKey ? `\n📥 Gmail inbox: <code>${inboxKey}</code>` : ''}${monitorHint}\nManual fallback: /code ${codeKey || name} 1234`, 'HTML').catch(() => {});
     }
     return res.json({ success: false, message: 'No code found yet — check back in a moment' });
   }
   if (Date.now() - entry.timestamp > CODE_TTL_MS) return res.json({ success: false, message: 'Code expired' });
-  await sendTG(TG_ADMIN, `👀 <b>${profileName || 'Unknown'}</b> viewed code: ${entry.code}`, 'HTML').catch(() => {});
+  await sendTG(TG_ADMIN, `👀 <b>${profileName || 'Unknown'}</b> viewed ${codeType} code: ${entry.code}`, 'HTML').catch(() => {});
   res.json({ success: true, code: entry.code });
 });
 
@@ -4293,6 +4385,28 @@ function extractCanvaCode(parsedEmail) {
   if (!/canva/i.test(from) && !/canva|verification code|sign[\s-]?in|one[\s-]?time/i.test(lower)) {
     return null;
   }
+
+  const spaced = combined.match(/(?:code|verification|sign[\s-]?in|one[\s-]?time|passcode|otp)[^\d]{0,160}((?:\d[\s\-]*){4,8})/i);
+  if (spaced) {
+    const digits = spaced[1].replace(/\D/g, '');
+    if (digits.length >= 4 && digits.length <= 8) return { code: digits, customerSafe: true };
+  }
+
+  const preferred = combined.match(/(?:code|verification|sign[\s-]?in|one[\s-]?time|passcode|otp)[^\d]{0,120}(\d{4,8})/i);
+  if (preferred) return { code: preferred[1], customerSafe: true };
+
+  const fallback = combined.match(/\b(\d{6})\b/) || combined.match(/\b(\d{4})\b/);
+  return fallback ? { code: fallback[1], customerSafe: true } : null;
+}
+
+function extractOsnCode(parsedEmail) {
+  const subject = parsedEmail.subject || '';
+  const text = parsedEmail.text || '';
+  const html = parsedEmail.html || '';
+  const from = (parsedEmail.from || '').toString().toLowerCase();
+  const combined = `${subject} ${text} ${html}`;
+  const lower = combined.toLowerCase();
+  if (!/osn/i.test(from) && !/osn\+?|osn plus|osnplus/i.test(lower)) return null;
 
   const spaced = combined.match(/(?:code|verification|sign[\s-]?in|one[\s-]?time|passcode|otp)[^\d]{0,160}((?:\d[\s\-]*){4,8})/i);
   if (spaced) {
@@ -4447,36 +4561,32 @@ async function fetchMonitoredInboxes(targetEmail) {
       for (const e of emails) {
         const recipientKeys = collectEmailRecipients(e, email);
         const netflixResult = extractNetflixCode(e);
-        if (netflixResult) {
-          if (netflixResult.customerSafe) {
-            recipientKeys.forEach(key => {
-              latestCodes[key] = { code: netflixResult.code, timestamp: Date.now() };
-              delete notifiedCustomers[key];
-            });
-            console.log(`📧 Netflix sign-in code ${netflixResult.code} captured for ${email} recipients: ${recipientKeys.join(', ')}`);
-            await sendTG(TG_ADMIN, `✅ <b>Netflix Sign-in Code Captured</b>\n📥 Gmail inbox: ${email}\n📧 Recipient: ${recipientKeys.join(', ')}\n🔢 Code: <b>${netflixResult.code}</b>`, 'HTML').catch(() => {});
-          } else {
-            console.log(`🔐 Admin-only Netflix security code ${netflixResult.code} captured for ${email} recipients: ${recipientKeys.join(', ')}`);
-            await sendTG(TG_ADMIN, `🔐 <b>Netflix Security Code Captured — ADMIN ONLY</b>\n📥 Gmail inbox: ${email}\n📧 Recipient: ${recipientKeys.join(', ')}\n🔢 Code: <b>${netflixResult.code}</b>\n\nNot shown on customer subscription links.`, 'HTML').catch(() => {});
-          }
-        }
         const disneyResult = extractDisneyCode(e);
-        if (disneyResult && disneyResult.customerSafe) {
-          recipientKeys.forEach(key => {
-            latestCodes[key] = { code: disneyResult.code, timestamp: Date.now(), service: 'disney' };
-            delete notifiedCustomers[key];
-          });
+        const canvaResult = extractCanvaCode(e);
+        const osnResult = extractOsnCode(e);
+        if (netflixResult && netflixResult.customerSafe) {
+          storeSignInCode(recipientKeys, netflixResult.code, 'netflix');
+          recipientKeys.forEach(key => delete notifiedCustomers[scopedSignInCodeKey(key, 'netflix')]);
+          console.log(`📧 Netflix sign-in code ${netflixResult.code} captured for ${email} recipients: ${recipientKeys.join(', ')}`);
+          await sendTG(TG_ADMIN, `✅ <b>Netflix Sign-in Code Captured</b>\n📥 Gmail inbox: ${email}\n📧 Recipient: ${recipientKeys.join(', ')}\n🔢 Code: <b>${netflixResult.code}</b>`, 'HTML').catch(() => {});
+        } else if (netflixResult && !netflixResult.customerSafe) {
+          console.log(`🔐 Admin-only Netflix security code ${netflixResult.code} captured for ${email} recipients: ${recipientKeys.join(', ')}`);
+          await sendTG(TG_ADMIN, `🔐 <b>Netflix Security Code Captured — ADMIN ONLY</b>\n📥 Gmail inbox: ${email}\n📧 Recipient: ${recipientKeys.join(', ')}\n🔢 Code: <b>${netflixResult.code}</b>\n\nNot shown on customer subscription links.`, 'HTML').catch(() => {});
+        } else if (disneyResult && disneyResult.customerSafe) {
+          storeSignInCode(recipientKeys, disneyResult.code, 'disney');
+          recipientKeys.forEach(key => delete notifiedCustomers[scopedSignInCodeKey(key, 'disney')]);
           console.log(`📧 Disney+ sign-in code ${disneyResult.code} captured for ${email} recipients: ${recipientKeys.join(', ')}`);
           await sendTG(TG_ADMIN, `✅ <b>Disney+ Sign-in Code Captured</b>\n📥 Gmail inbox: ${email}\n📧 Recipient: ${recipientKeys.join(', ')}\n🔢 Code: <b>${disneyResult.code}</b>`, 'HTML').catch(() => {});
-        }
-        const canvaResult = extractCanvaCode(e);
-        if (canvaResult && canvaResult.customerSafe) {
-          recipientKeys.forEach(key => {
-            latestCodes[key] = { code: canvaResult.code, timestamp: Date.now(), service: 'canva' };
-            delete notifiedCustomers[key];
-          });
+        } else if (canvaResult && canvaResult.customerSafe) {
+          storeSignInCode(recipientKeys, canvaResult.code, 'canva');
+          recipientKeys.forEach(key => delete notifiedCustomers[scopedSignInCodeKey(key, 'canva')]);
           console.log(`📧 Canva sign-in code ${canvaResult.code} captured for ${email} recipients: ${recipientKeys.join(', ')}`);
           await sendTG(TG_ADMIN, `✅ <b>Canva Sign-in Code Captured</b>\n📥 Gmail inbox: ${email}\n📧 Recipient: ${recipientKeys.join(', ')}\n🔢 Code: <b>${canvaResult.code}</b>`, 'HTML').catch(() => {});
+        } else if (osnResult && osnResult.customerSafe) {
+          storeSignInCode(recipientKeys, osnResult.code, 'osn');
+          recipientKeys.forEach(key => delete notifiedCustomers[scopedSignInCodeKey(key, 'osn')]);
+          console.log(`📧 OSN+ sign-in code ${osnResult.code} captured for ${email} recipients: ${recipientKeys.join(', ')}`);
+          await sendTG(TG_ADMIN, `✅ <b>OSN+ Sign-in Code Captured</b>\n📥 Gmail inbox: ${email}\n📧 Recipient: ${recipientKeys.join(', ')}\n🔢 Code: <b>${osnResult.code}</b>`, 'HTML').catch(() => {});
         }
         const shahidResult = extractShahidResetLink(e);
         if (shahidResult && shahidResult.link) {
@@ -4537,7 +4647,7 @@ app.post('/setup-gmail', async (req, res) => {
     const lastUid = previous ? Number(previous.lastUid || 0) : currentMaxUid;
     monitoredEmails[key] = { user: key, pass: appPassword, lastUid, lastCheckedAt: Date.now() };
     await persistGmailMonitors();
-    await sendTG(TG_ADMIN, `📧 Added Gmail monitoring: <code>${key}</code>\nWill capture Netflix/Disney+ sign-in codes and Shahid reset links automatically.`, 'HTML').catch(() => {});
+    await sendTG(TG_ADMIN, `📧 Added Gmail monitoring: <code>${key}</code>\nWill capture Netflix, Disney+, Canva, OSN+ sign-in codes and Shahid reset links automatically.`, 'HTML').catch(() => {});
     res.json({ success: true, message: 'Gmail added for Netflix/Disney+ codes and Shahid reset links', gmailConfigured: true, email: key });
   } catch(e) {
     const friendlyError = describeGmailError(e);
