@@ -536,6 +536,7 @@ function registerEnhancements(app, deps) {
         }
       });
       const lowStock = collectLowStockItems(stock, LOW_STOCK_THRESHOLD);
+      const productRequestsOpen = (Array.isArray(data.requests) ? data.requests : []).filter(r => r && !r.resolved).length;
       res.json({
         success: true,
         analytics: {
@@ -543,6 +544,7 @@ function registerEnhancements(app, deps) {
           purchases,
           revenue,
           pending: pending.length,
+          productRequestsOpen,
           oldestPendingMs,
           oldestPending,
           pendingSlaBreached: oldestPendingMs > 24 * 60 * 60 * 1000,
