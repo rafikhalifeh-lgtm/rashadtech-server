@@ -1087,13 +1087,13 @@ So your EmailJS template will receive the user email and verification code corre
       <!-- TOPUP REQUESTS -->
       <div id="admin-topupreqs" class="tab-pane">
         <div class="pg-title">Topup Requests</div>
-        <div class="pg-sub">Customers requesting wallet top-up — credit after receiving payment</div>
+        <div class="pg-sub">Wallet top-up requests — credit after payment, or cancel with ✕ Cancel</div>
         <div class="card" id="topupreqs-list"><div class="empty-state" style="padding:32px"><i class="ti ti-cash"></i>No topup requests yet.</div></div>
       </div>
       <!-- GAME ORDERS -->
       <div id="admin-pending" class="tab-pane">
         <div class="pg-title">Pending Orders</div>
-        <div class="pg-sub">Orders placed when stock was unavailable — add stock to auto-fulfill or fulfill manually</div>
+        <div class="pg-sub">Subscription purchases waiting for stock — not the same as product vote requests</div>
         <div id="admin-pending-list"><div class="empty-state" style="padding:32px">No pending orders.</div></div>
       </div>
       <div id="admin-gameorders" class="tab-pane">
@@ -2341,6 +2341,18 @@ function cleanExpiredOTPs(){
 // Global requests store: [{id,service,notes,requesters:[email],resolved,date}]
 let globalRequests=[];
 let topupRequests=[];
+let _activeAdminTab='stock';
+
+function buildSavePayload(overrides={}){
+  return {
+    users,stock:accountStock,requests:globalRequests,
+    topupreqs:topupRequests,
+    pending:Array.isArray(_jbCache?.pending)?_jbCache.pending:[],
+    gameorders:Array.isArray(_jbCache?.gameorders)?_jbCache.gameorders:[],
+    ...(_jbCache?.priceCatalog?{priceCatalog:_jbCache.priceCatalog}:{}),
+    ...overrides
+  };
+}
 
 async function sendTelegramMessage(message){
   try{
@@ -3701,14 +3713,23 @@ async function refreshMyCustomersTab(){
   }
 }
 async function switchAdminTab(name,el){
+  _activeAdminTab=name;
   document.querySelectorAll('#page-admin .tab-pane').forEach(t=>t.classList.remove('active'));
   document.getElementById('admin-'+name)?.classList.add('active');
   document.querySelectorAll('#page-admin .snav').forEach(b=>b.classList.remove('active'));
   if(el)el.classList.add('active');
   const amap={stock:'abn-stock',customers:'abn-customers',wallets:'abn-wallets',topupreqs:'abn-topupreqs',requests:'abn-requests',expiry:'abn-requests',dashboard:'abn-dashboard'};
   if(amap[name])setActiveAdminNav(amap[name]);
-  if(!_jbCache||!users.length)await loadData();
-  else loadData().catch(()=>{});
+  const needsFresh=['pending','topupreqs','gameorders','dashboard'].includes(name);
+  if(!_jbCache||!users.length||needsFresh){
+    await loadData();
+  }else{
+    loadData().then(()=>renderActiveAdminTab(name)).catch(()=>{});
+  }
+  renderActiveAdminTab(name);
+}
+function renderActiveAdminTab(name){
+  name=name||_activeAdminTab;
   if(name==='wallets')renderWallets();
   if(name==='stock')renderStockPanels();
   if(name==='prices')renderAdminPrices();
@@ -6787,22 +6808,27 @@ async function deleteUser(i){
   if(idx===-1)return;
   users.splice(idx,1);
   purgeUserData(email);
-  _jbCache=null;
   await saveData();
   renderAdminCustomers();renderWallets();renderTopupRequests();renderAdminPending();renderGameOrders();renderAdminRequests();
   showToast('✓ User and related requests removed');
   logActivity('Customer deleted',email);
 }
 
-async function deleteTopupReq(i){
-  const req=topupRequests[i];
+async function deleteTopupReq(requestId){
+  const req=topupRequests.find(r=>String(r.id)===String(requestId));
   if(!req)return;
-  if(!confirm('Remove top-up request from '+req.name+' ('+req.email+')?'))return;
-  topupRequests.splice(i,1);
-  _jbCache=null;
-  await saveData();
-  renderTopupRequests();
-  showToast('✓ Top-up request removed');
+  if(!confirm('Cancel/remove top-up request from '+req.name+' ('+req.email+')?'))return;
+  try{
+    const j=await rtApi('/admin/delete-topup',{method:'POST',body:JSON.stringify({requestId})});
+    if(j.topupreqs)mergeTopupReqsFromResponse(j.topupreqs);
+    else if(j.data)applyDataSnapshot(j.data);
+    syncPausedUntil=Date.now()+30000;
+    renderTopupRequests();
+    showToast('✓ Top-up request removed');
+    logActivity('Top-up request removed',req.email+' · '+req.label);
+  }catch(e){
+    showToast('⚠️ '+(e.message||'Could not remove request'));
+  }
 }
 
 function getTopupHistory(userEmail){
@@ -6882,17 +6908,17 @@ async function withdrawWallet(i){
 function renderAdminPendingHtml(pending){
   const el=document.getElementById('admin-pending-list');if(!el)return;
   if(!pending.length){el.innerHTML='<div class="empty-state" style="padding:32px">No pending orders. 🎉</div>';return;}
-  el.innerHTML=pending.map((po,i)=>{
+  el.innerHTML=pending.map(po=>{
     const age=pendingAgeLabel(po);
     const breached=(po.createdAt?(Date.now()-po.createdAt):0)>24*60*60*1000;
     return `<div class="admin-wallet-row" style="${breached?'border:1px solid var(--red-border);background:var(--red-bg)':''}">
     <div class="admin-icon" style="background:${po.color||'#333'};color:${po.tc||'#fff'};font-size:10px;font-weight:700;width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0">${po.short||'?'}</div>
-    <div class="aw-info" style="flex:1"><div class="aw-name">${esc(po.product)} · ${esc(po.plan)}</div>
+    <div class="aw-info" style="flex:1"><div class="aw-name">${esc(po.product)} · ${esc(po.plan)} ${breached?'<span style="color:var(--red);font-weight:700">· SLA 24h+</span>':''}</div>
     <div class="aw-email">👤 ${esc(po.userName)} · 📧 ${esc(po.userEmail)} · 💵 ${fmt(po.price)} · 📅 ${esc(po.date)}${age?` · ${age}`:''}</div>
     ${pendingTimelineHtml(po)}
     ${po.userTgChatId?`<div class="aw-email" style="color:var(--blue)">💬 TG: ${esc(po.userTgChatId)}</div>`:''}
     ${po.customerCanvaEmail?`<div class="aw-email" style="color:var(--blue)">📧 Canva email: <b>${esc(po.customerCanvaEmail)}</b></div>`:''}</div>
-    <button class="aabtn" onclick="manualFulfillPending(${i})">✓ Fulfill</button>
+    <button class="aabtn" ${jsOnClick('manualFulfillPending',po.id)}>✓ Fulfill</button>
     <button class="aabtn" style="background:var(--red-bg);color:var(--red);border-color:var(--red-border)" ${jsOnClick('cancelPendingOrder',po.id)}>✕ Cancel & Refund</button>
   </div>`;
   }).join('');
@@ -6900,28 +6926,16 @@ function renderAdminPendingHtml(pending){
 async function renderAdminPending(){
   const el=document.getElementById('admin-pending-list');
   if(!el)return;
+  el.innerHTML='<div style="padding:32px;text-align:center;color:var(--text3);font-size:13px">Loading pending orders…</div>';
   let pending=[];
   try{
-    if(!_jbCache||!Array.isArray(_jbCache.pending))_jbCache=await jbRead();
+    const fresh=await jbRead();
+    applyDataSnapshot(fresh);
+    pending=Array.isArray(fresh?.pending)?fresh.pending:[];
+  }catch(e){
     pending=Array.isArray(_jbCache?.pending)?_jbCache.pending:[];
-  }catch(e){}
-  if(!pending.length){el.innerHTML='<div class="empty-state" style="padding:32px">No pending orders. 🎉</div>';return;}
-  el.innerHTML=pending.map((po,i)=>{
-    const age=pendingAgeLabel(po);
-    const breached=(po.createdAt?(Date.now()-po.createdAt):0)>24*60*60*1000;
-    return `<div class="admin-wallet-row" style="${breached?'border:1px solid var(--red-border);background:var(--red-bg)':''}">
-      <div class="admin-icon" style="background:${po.color||'#333'};color:${po.tc||'#fff'};font-size:10px;font-weight:700;width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0">${po.short||'?'}</div>
-      <div class="aw-info" style="flex:1">
-        <div class="aw-name">${esc(po.product)} · ${esc(po.plan)} ${breached?'<span style="color:var(--red);font-weight:700">· SLA 24h+</span>':''}</div>
-        <div class="aw-email">👤 ${esc(po.userName)} · 📧 ${esc(po.userEmail)} · 💵 ${fmt(po.price)} · 📅 ${esc(po.date)}${age?` · ${age}`:''}</div>
-        ${pendingTimelineHtml(po)}
-        ${po.userTgChatId?`<div class="aw-email" style="color:var(--blue)">💬 TG: ${esc(po.userTgChatId)}</div>`:''}
-        ${po.customerCanvaEmail?`<div class="aw-email" style="color:var(--blue)">📧 Canva email: <b>${esc(po.customerCanvaEmail)}</b></div>`:''}
-      </div>
-      <button class="aabtn" onclick="manualFulfillPending(${i})">✓ Fulfill</button>
-      <button class="aabtn" style="background:var(--red-bg);color:var(--red);border-color:var(--red-border)" ${jsOnClick('cancelPendingOrder',po.id)}>✕ Cancel & Refund</button>
-    </div>`;
-  }).join('');
+  }
+  renderAdminPendingHtml(pending);
 }
 async function cancelPendingOrder(orderId){
   const reason=prompt('Reason for canceling this pending order (optional):')||'';
@@ -6936,13 +6950,9 @@ async function cancelPendingOrder(orderId){
     logActivity('Pending order canceled',orderId);
   }catch(e){showToast('⚠️ '+e.message);}
 }
-async function manualFulfillPending(i){
+async function manualFulfillPending(orderId){
   try{
-    let pending=Array.isArray(_jbCache?.pending)?[..._jbCache.pending]:[];
-    if(!pending.length){_jbCache=await jbRead();pending=_jbCache?.pending||[];}
-    const po=pending[i];
-    if(!po)throw new Error('Order not found');
-    const j=await rtApi('/admin/fulfill-pending',{method:'POST',body:JSON.stringify({orderId:po.id})});
+    const j=await rtApi('/admin/fulfill-pending',{method:'POST',body:JSON.stringify({orderId})});
     if(j.data)applyDataSnapshot(j.data);
     renderAdminPending();renderStockPanels();renderSubs();renderMyCustomers();
     showToast(j.alreadyFulfilled?'Already fulfilled':'✓ Order fulfilled');
@@ -7306,10 +7316,10 @@ function renderTopupRequests(){
       ${r.status==='pending'
         ? (userExists
           ? `<button class="aw-add-btn" onclick="creditTopupReq(${r.id})" style="white-space:nowrap">✓ Credit & Notify</button>`
-          : `<button class="aw-add-btn" onclick="deleteTopupReq(${i})" style="white-space:nowrap;background:var(--red-bg);color:var(--red);border-color:var(--red-border)">🗑 Remove</button>`)
+          : `<button class="aw-add-btn" ${jsOnClick('deleteTopupReq',r.id)} style="white-space:nowrap;background:var(--red-bg);color:var(--red);border-color:var(--red-border)">🗑 Remove</button>`)
         : `<span style="font-size:11px;background:var(--green-bg);color:var(--green);border:1px solid var(--green-border);padding:3px 8px;border-radius:4px;font-weight:600">Credited</span>`
       }
-      ${r.status==='pending'?`<button onclick="deleteTopupReq(${i})" title="Remove request" style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:var(--text3)">✕</button>`:''}
+      ${r.status==='pending'?`<button ${jsOnClick('deleteTopupReq',r.id)} title="Cancel request" style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:var(--text3)">✕ Cancel</button>`:''}
     </div>`;
   }).join('');
 }
@@ -7346,13 +7356,7 @@ async function saveData(){
   let lastErr=null;
   do{
     saveDataQueued=false;
-    const payload={
-      users,stock:accountStock,requests:globalRequests,
-      topupreqs:topupRequests,
-      pending:_jbCache?.pending||[],
-      gameorders:_jbCache?.gameorders||[],
-      ...(_jbCache?.priceCatalog?{priceCatalog:_jbCache.priceCatalog}:{})
-    };
+    const payload=buildSavePayload();
     for(let attempt=1;attempt<=3;attempt++){
       try{
         _jbCache={...(_jbCache||{}),...payload};
@@ -7475,8 +7479,10 @@ function startRealtimeSync(){
 }
 
 function renderAdminPanels(){
-  renderStockPanels();renderAdminCustomers();renderWallets();renderAdminRequests();renderAdminExpiry();
-  renderNetflixRenewalAlerts();renderTopupRequests();renderGameOrders();renderAdminPending();
+  renderActiveAdminTab(_activeAdminTab);
+  if(_activeAdminTab!=='expiry'&&_activeAdminTab!=='dashboard'){
+    renderNetflixRenewalAlerts();
+  }
 }
 async function reloadAdminData(){
   if(!authToken)return;
