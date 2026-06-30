@@ -960,6 +960,7 @@ So your EmailJS template will receive the user email and verification code corre
         <div class="pg-sub">Business overview</div>
         <div id="dashboard-stats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:12px"></div>
         <div id="dashboard-pending-sla" class="card" style="padding:14px;margin-bottom:12px;display:none"></div>
+        <div id="dashboard-product-requests" class="card" style="padding:14px;margin-bottom:12px;display:none"></div>
         <div class="card" style="padding:16px;margin-bottom:12px">
           <div style="font-size:13px;font-weight:600;margin-bottom:10px">📈 Revenue (Last 6 Months)</div>
           <canvas id="revenue-chart" height="120" style="width:100%;display:block"></canvas>
@@ -1076,7 +1077,7 @@ So your EmailJS template will receive the user email and verification code corre
       <!-- ADMIN REQUESTS -->
       <div id="admin-requests" class="tab-pane">
         <div class="pg-title">Product Requests</div>
-        <div class="pg-sub">Customer requests ranked by demand — most-wanted at the top</div>
+        <div class="pg-sub">Votes for services customers want (e.g. HBO Max) — different from Pending Orders (purchases waiting for stock)</div>
         <div class="card">
           <table class="admin-req-table" style="width:100%">
             <thead><tr><th>Service</th><th>Demand</th><th>Requesters</th><th>Latest note</th><th>Status</th><th></th></tr></thead>
@@ -1711,6 +1712,12 @@ function mergeTopupReqsFromResponse(rows){
   if(!Array.isArray(rows))return;
   topupRequests=rows;
   if(_jbCache)_jbCache.topupreqs=rows;
+}
+
+function mergeProductRequestsFromResponse(rows){
+  if(!Array.isArray(rows))return;
+  globalRequests=rows;
+  if(_jbCache)_jbCache.requests=rows;
 }
 
 function mergeTopupReqFromResponse(req){
@@ -3720,7 +3727,7 @@ async function switchAdminTab(name,el){
   if(el)el.classList.add('active');
   const amap={stock:'abn-stock',customers:'abn-customers',wallets:'abn-wallets',topupreqs:'abn-topupreqs',requests:'abn-requests',expiry:'abn-requests',dashboard:'abn-dashboard'};
   if(amap[name])setActiveAdminNav(amap[name]);
-  const needsFresh=['pending','topupreqs','gameorders','dashboard'].includes(name);
+  const needsFresh=['pending','topupreqs','gameorders','dashboard','requests'].includes(name);
   if(!_jbCache||!users.length||needsFresh){
     await loadData();
   }else{
@@ -3734,7 +3741,7 @@ function renderActiveAdminTab(name){
   if(name==='stock')renderStockPanels();
   if(name==='prices')renderAdminPrices();
   if(name==='customers')renderAdminCustomers();
-  if(name==='requests')renderAdminRequests();
+  if(name==='requests')renderAdminRequestsFresh();
   if(name==='expiry'){renderAdminExpiry();renderNetflixRenewalAlerts();}
   if(name==='topupreqs')renderTopupRequests();
   if(name==='gameorders')renderGameOrders();
@@ -4841,6 +4848,24 @@ async function renderDashboard(){
   }
   renderBackups();
   renderPendingSlaCard();
+  renderOpenProductRequestsCard();
+}
+async function renderOpenProductRequestsCard(){
+  const el=document.getElementById('dashboard-product-requests');
+  if(!el||!isAdmin)return;
+  try{
+    const fresh=await jbRead();
+    const open=(fresh?.requests||[]).filter(r=>!r.resolved);
+    if(!open.length){el.style.display='none';return;}
+    el.style.display='block';
+    const top=open.slice().sort((a,b)=>(b.requesters?.length||0)-(a.requesters?.length||0)).slice(0,5);
+    el.innerHTML=`<div style="font-size:13px;font-weight:700;margin-bottom:6px;color:var(--blue)">💡 Open product requests</div>
+      <div style="font-size:12px;line-height:1.7;color:var(--text2)">
+        <b>${open.length}</b> service${open.length!==1?'s':''} waiting to be added
+        ${top.map(r=>`<div style="margin-top:4px">• ${esc(r.service)} — ${r.requesters?.length||0} vote${(r.requesters?.length||0)!==1?'s':''}</div>`).join('')}
+      </div>
+      <button onclick="switchAdminTab('requests',null)" style="margin-top:8px;padding:6px 10px;border:1px solid var(--border);background:#fff;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600">Open product requests</button>`;
+  }catch(e){el.style.display='none';}
 }
 async function renderPendingSlaCard(){
   const el=document.getElementById('dashboard-pending-sla');
@@ -5471,19 +5496,19 @@ async function submitRequest(){
   const notes=document.getElementById('req-notes').value.trim();
   const service=selectedReqService||custom;
   if(!service){showToast('Please select or type a service name');return;}
-  // Check if already requested
-  const existing=globalRequests.find(r=>r.service.toLowerCase()===service.toLowerCase()&&!r.resolved);
-  if(existing){
-    if(existing.requesters.includes(currentUser.email)){showToast('You already requested this service');return;}
-    existing.requesters.push(currentUser.email);if(notes)existing.latestNote=notes;
-    showToast('✓ Vote added to existing request!');
-  } else {
-    globalRequests.push({id:Date.now(),service,notes,latestNote:notes,requesters:[currentUser.email],resolved:false,date:fmtBeirutTime()});
-    showToast('✓ Request submitted!');
-    sendTelegram(`💡 <b>New Product Request</b>\n👤 ${currentUser.name} (${currentUser.email})\n📺 Service: <b>${service}</b>${notes?'\n📝 Notes: '+notes:''}`);
+  try{
+    const j=await rtApi('/customer/product-request',{method:'POST',body:JSON.stringify({service,notes})});
+    if(j.requests)mergeProductRequestsFromResponse(j.requests);
+    else if(j.data)applyDataSnapshot(j.data);
+    syncPausedUntil=Date.now()+30000;
+    if(j.duplicate)showToast('You already requested this service');
+    else if(j.voted)showToast('✓ Vote added to existing request!');
+    else showToast('✓ Request submitted!');
+    selectedReqService=null;document.getElementById('req-custom').value='';document.getElementById('req-notes').value='';
+    renderReqChips();renderMyRequests();if(isAdmin)renderAdminRequests();
+  }catch(e){
+    showToast('⚠️ '+(e.message||'Could not submit request'));
   }
-  selectedReqService=null;document.getElementById('req-custom').value='';document.getElementById('req-notes').value='';
-  await saveData();renderReqChips();renderMyRequests();if(isAdmin)renderAdminRequests();
 }
 function renderMyRequests(){
   if(!currentUser)return;
@@ -5502,25 +5527,55 @@ function renderMyRequests(){
 }
 function renderAdminRequests(){
   const tbody=document.getElementById('admin-req-tbody');
-  if(!globalRequests.length){tbody.innerHTML='<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text3);font-size:13px">No requests yet</td></tr>';return;}
-  const sorted=[...globalRequests].sort((a,b)=>b.requesters.length-a.requesters.length);
-  const max=Math.max(...sorted.map(r=>r.requesters.length),1);
+  if(!tbody)return;
+  const list=Array.isArray(globalRequests)?globalRequests:[];
+  if(!list.length){tbody.innerHTML='<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text3);font-size:13px">No requests yet</td></tr>';return;}
+  const sorted=[...list].sort((a,b)=>{
+    if(Boolean(a.resolved)!==Boolean(b.resolved))return a.resolved?1:-1;
+    return (b.requesters?.length||0)-(a.requesters?.length||0);
+  });
+  const max=Math.max(...sorted.map(r=>r.requesters?.length||0),1);
   tbody.innerHTML=sorted.map(r=>{
-    const pct=Math.round((r.requesters.length/max)*100);
-    return `<tr>
-      <td><div style="font-weight:600;display:flex;align-items:center;gap:7px"><span>${requestableServices.find(s=>s.name===r.service)?.icon||'📺'}</span>${r.service}</div></td>
-      <td><div style="display:flex;align-items:center;gap:7px"><div class="demand-bar-wrap"><div class="demand-bar" style="width:${pct}%"></div></div><span style="font-size:12px;font-weight:600">${r.requesters.length}</span></div></td>
-      <td style="font-size:12px;color:var(--text2)">${r.requesters.slice(0,2).join(', ')}${r.requesters.length>2?` +${r.requesters.length-2} more`:''}</td>
-      <td style="font-size:12px;color:var(--text3);max-width:180px">${r.latestNote||'—'}</td>
+    const pct=Math.round(((r.requesters?.length||0)/max)*100);
+    const svc=String(r.service||'');
+    const icon=requestableServices.find(s=>s.name.toLowerCase()===svc.toLowerCase())?.icon
+      ||(svc.toLowerCase().includes('hbo')||svc.toLowerCase().includes('max')?'🎬':'📺');
+    return `<tr style="${r.resolved?'opacity:0.55':''}">
+      <td><div style="font-weight:600;display:flex;align-items:center;gap:7px"><span>${icon}</span>${esc(svc)}</div></td>
+      <td><div style="display:flex;align-items:center;gap:7px"><div class="demand-bar-wrap"><div class="demand-bar" style="width:${pct}%"></div></div><span style="font-size:12px;font-weight:600">${r.requesters?.length||0}</span></div></td>
+      <td style="font-size:12px;color:var(--text2)">${(r.requesters||[]).slice(0,2).map(esc).join(', ')}${(r.requesters?.length||0)>2?` +${r.requesters.length-2} more`:''}</td>
+      <td style="font-size:12px;color:var(--text3);max-width:180px">${esc(r.latestNote||r.notes||'—')}</td>
       <td><span class="req-status ${r.resolved?'req-done':'req-pending'}">${r.resolved?'✓ Added':'Pending'}</span></td>
-      <td>${!r.resolved?`<button class="resolve-btn" onclick="resolveRequest(${r.id})">Mark added</button>`:''}</td>
+      <td>${!r.resolved?`<button class="resolve-btn" ${jsOnClick('resolveRequest',r.id)}>Mark added</button>`:''}</td>
     </tr>`;
   }).join('');
 }
+async function renderAdminRequestsFresh(){
+  const tbody=document.getElementById('admin-req-tbody');
+  if(!tbody)return;
+  tbody.innerHTML='<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text3);font-size:13px">Loading requests…</td></tr>';
+  try{
+    const fresh=await jbRead();
+    applyDataSnapshot(fresh);
+  }catch(e){}
+  renderAdminRequests();
+}
 async function resolveRequest(id){
-  const r=globalRequests.find(x=>x.id===id);if(!r)return;
-  r.resolved=true;await saveData();renderAdminRequests();renderMyRequests();showToast('✓ Marked as added');
-  sendTelegram(`✅ <b>Request fulfilled</b>\n📺 <b>${r.service}</b> has been added to the store!\n👥 ${r.requesters.length} customer${r.requesters.length!==1?'s':''} requested it`);
+  const r=globalRequests.find(x=>String(x.id)===String(id));
+  if(!r)return;
+  try{
+    const j=await rtApi('/admin/resolve-request',{method:'POST',body:JSON.stringify({requestId:id})});
+    if(j.requests)mergeProductRequestsFromResponse(j.requests);
+    else if(j.data)applyDataSnapshot(j.data);
+    syncPausedUntil=Date.now()+30000;
+    renderAdminRequests();renderMyRequests();
+    showToast(j.alreadyResolved?'Already marked added':'✓ Marked as added');
+    if(!j.alreadyResolved){
+      sendTelegram(`✅ <b>Request fulfilled</b>\n📺 <b>${r.service}</b> has been added to the store!\n👥 ${r.requesters?.length||0} customer${(r.requesters?.length||0)!==1?'s':''} requested it`);
+    }
+  }catch(e){
+    showToast('⚠️ '+(e.message||'Could not resolve request'));
+  }
 }
 
 // PRICES
@@ -6908,7 +6963,9 @@ async function withdrawWallet(i){
 function renderAdminPendingHtml(pending){
   const el=document.getElementById('admin-pending-list');if(!el)return;
   if(!pending.length){el.innerHTML='<div class="empty-state" style="padding:32px">No pending orders. 🎉</div>';return;}
-  el.innerHTML=pending.map(po=>{
+  const hbomaxCount=pending.filter(po=>String(po.productId||'').toLowerCase()==='hbomax'||String(po.product||'').toLowerCase().includes('hbo')).length;
+  const note=hbomaxCount?`<div style="font-size:12px;color:var(--blue);margin-bottom:10px;padding:8px 12px;background:var(--blue-bg);border:1px solid var(--blue-border);border-radius:8px">${hbomaxCount} HBO Max pending order${hbomaxCount!==1?'s':''} in this list</div>`:'';
+  el.innerHTML=note+pending.map(po=>{
     const age=pendingAgeLabel(po);
     const breached=(po.createdAt?(Date.now()-po.createdAt):0)>24*60*60*1000;
     return `<div class="admin-wallet-row" style="${breached?'border:1px solid var(--red-border);background:var(--red-bg)':''}">

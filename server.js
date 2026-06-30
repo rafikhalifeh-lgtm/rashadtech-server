@@ -1281,13 +1281,10 @@ function mergeUserWrite(existing, incoming, session) {
 
   // Users cannot overwrite global product requests from a stale browser cache.
   if (Array.isArray(incoming.requests)) {
+    const existingRequests = Array.isArray(next.requests) ? next.requests : [];
     next.requests = session.role === 'admin'
       ? incoming.requests
-      : mergeArrayByKey(
-        Array.isArray(next.requests) ? next.requests : [],
-        incoming.requests,
-        item => item && item.id
-      );
+      : mergeProductRequests(existingRequests, incoming.requests);
   }
 
   const existingTopups = Array.isArray(next.topupreqs) ? next.topupreqs : [];
@@ -1561,6 +1558,36 @@ function mergeAllTopupRequests(existingTopups, incomingTopups) {
   });
 }
 
+function mergeProductRequests(existingRequests, incomingRequests) {
+  if (!Array.isArray(incomingRequests)) return Array.isArray(existingRequests) ? existingRequests : [];
+  const byId = new Map();
+  (existingRequests || []).forEach((row) => {
+    if (!row || row.id == null) return;
+    byId.set(String(row.id), {
+      ...row,
+      requesters: Array.isArray(row.requesters) ? [...row.requesters] : []
+    });
+  });
+  incomingRequests.forEach((row) => {
+    if (!row || row.id == null) return;
+    const key = String(row.id);
+    const prev = byId.get(key);
+    if (!prev) {
+      byId.set(key, {
+        ...row,
+        requesters: Array.isArray(row.requesters) ? [...row.requesters] : []
+      });
+      return;
+    }
+    const requesters = [...new Set([
+      ...(prev.requesters || []).map(e => normalizeEmail(e)),
+      ...(row.requesters || []).map(e => normalizeEmail(e))
+    ].filter(Boolean))];
+    byId.set(key, { ...prev, ...row, requesters });
+  });
+  return Array.from(byId.values());
+}
+
 function mergeUsersPreservingWallet(existingUsers, incomingUsers) {
   const existing = Array.isArray(existingUsers) ? existingUsers : [];
   if (!Array.isArray(incomingUsers)) return existing;
@@ -1635,6 +1662,17 @@ function preserveSensitiveFields(existing, incoming) {
     next.topupreqs = Array.isArray(incoming && incoming.topupreqs)
       ? mergeAllTopupRequests(existing.topupreqs, incoming.topupreqs)
       : existing.topupreqs;
+  }
+  if (existing && Array.isArray(existing.requests)) {
+    if (!incoming || !Array.isArray(incoming.requests)) {
+      next.requests = existing.requests;
+    } else if (incoming._replaceRequests) {
+      next.requests = incoming.requests;
+    } else if (!incoming.requests.length && existing.requests.length) {
+      next.requests = existing.requests;
+    } else {
+      next.requests = mergeProductRequests(existing.requests, incoming.requests);
+    }
   }
   if (existing && Array.isArray(existing.pending)) {
     if (!incoming || !Array.isArray(incoming.pending)) {
@@ -3367,6 +3405,100 @@ app.post('/admin/delete-topup', async (req, res) => {
   } catch (e) {
     console.error('Delete top-up error:', e.message);
     res.status(500).json({ error: 'Could not remove top-up request' });
+  }
+});
+
+app.post('/customer/product-request', async (req, res) => {
+  const session = requireSession(req, res, ['user']);
+  if (!session) return;
+  const { service, notes } = req.body || {};
+  const serviceName = String(service || '').trim();
+  if (!serviceName) return res.status(400).json({ error: 'Service name required' });
+  try {
+    const outcome = await enqueueDbWrite(async () => {
+      const data = await readDbForWrite();
+      data.requests = Array.isArray(data.requests) ? data.requests : [];
+      data.users = Array.isArray(data.users) ? data.users : [];
+      const user = data.users.find(u => normalizeEmail(u.email) === session.email);
+      if (!user) return { error: 'User not found', status: 404 };
+      const email = user.email;
+      const existing = data.requests.find(r =>
+        String(r.service || '').toLowerCase() === serviceName.toLowerCase() && !r.resolved
+      );
+      if (existing) {
+        const already = (existing.requesters || []).some(e => normalizeEmail(e) === normalizeEmail(email));
+        if (already) return { duplicate: true, request: existing, data };
+        existing.requesters = [...(existing.requesters || []), email];
+        if (notes) existing.latestNote = String(notes).trim();
+        await writeDbFast(data);
+        return { data, user, request: existing, voted: true };
+      }
+      const reqRow = {
+        id: Date.now(),
+        service: serviceName,
+        notes: String(notes || '').trim(),
+        latestNote: String(notes || '').trim(),
+        requesters: [email],
+        resolved: false,
+        date: formatBeirutTime()
+      };
+      data.requests.unshift(reqRow);
+      await writeDbFast(data);
+      return { data, user, request: reqRow, created: true };
+    });
+    if (outcome.error) return res.status(outcome.status || 400).json({ error: outcome.error });
+    if (outcome.duplicate) {
+      return res.json({ success: true, duplicate: true, request: outcome.request, requests: outcome.data.requests || [] });
+    }
+    const { request: reqRow, user, data, created, voted } = outcome;
+    res.json({
+      success: true,
+      created: Boolean(created),
+      voted: Boolean(voted),
+      request: reqRow,
+      requests: data.requests || [],
+      data: safeDataForSession(data, session)
+    });
+    if (created) {
+      runAfterResponse(() => sendTG(
+        TG_ADMIN,
+        `💡 <b>New Product Request</b>\n\n👤 <b>${user.name}</b>\n📧 ${user.email}\n📺 Service: <b>${reqRow.service}</b>${reqRow.latestNote ? `\n📝 Notes: ${reqRow.latestNote}` : ''}`,
+        'HTML'
+      ).catch((e) => console.error('Product request admin TG:', e.message)));
+    }
+  } catch (e) {
+    console.error('Product request error:', e.message);
+    res.status(500).json({ error: 'Could not submit request' });
+  }
+});
+
+app.post('/admin/resolve-request', async (req, res) => {
+  const session = requireSession(req, res, ['admin']);
+  if (!session) return;
+  const { requestId } = req.body || {};
+  if (!requestId) return res.status(400).json({ error: 'Request ID required' });
+  try {
+    const outcome = await enqueueDbWrite(async () => {
+      const data = await readDbForWrite();
+      data.requests = Array.isArray(data.requests) ? data.requests : [];
+      const reqRow = data.requests.find(r => String(r.id) === String(requestId));
+      if (!reqRow) return { error: 'Request not found', status: 404 };
+      if (reqRow.resolved) return { alreadyResolved: true, data, request: reqRow };
+      reqRow.resolved = true;
+      await writeDbFast(data);
+      return { data, request: reqRow };
+    });
+    if (outcome.error) return res.status(outcome.status || 400).json({ error: outcome.error });
+    res.json({
+      success: true,
+      alreadyResolved: Boolean(outcome.alreadyResolved),
+      request: outcome.request,
+      requests: outcome.data.requests || [],
+      data: slimMutationData(session, outcome.data, { requests: true })
+    });
+  } catch (e) {
+    console.error('Resolve request error:', e.message);
+    res.status(500).json({ error: 'Could not resolve request' });
   }
 });
 
