@@ -4243,19 +4243,34 @@ app.post('/telegram', async (req, res) => {
       return res.json({ ok: true });
     }
     if (text.startsWith('/code ')) {
-      const parts = text.replace('/code ', '').trim().split(' ');
-      let key = 'default', code = '';
+      const parts = text.replace('/code ', '').trim().split(/\s+/);
+      let service = 'netflix';
+      let key = 'default';
+      let code = '';
       if (parts.length === 1 && parts[0].match(/^\d{4,8}$/)) {
         code = parts[0];
       } else if (parts.length === 2 && parts[1].match(/^\d{4,8}$/)) {
-        key = parts[0].toLowerCase(); code = parts[1];
+        key = parts[0].toLowerCase();
+        code = parts[1];
+      } else if (parts.length === 3 && SIGNIN_CODE_SERVICES.has(parts[0].toLowerCase()) && parts[2].match(/^\d{4,8}$/)) {
+        service = parts[0].toLowerCase();
+        key = normalizeEmail(parts[1]) || parts[1].toLowerCase();
+        code = parts[2];
       } else {
-        await sendTG(chatId, '⚠️ Usage:\n/code 1234\n/code Ali 1234');
+        await sendTG(chatId, '⚠️ Usage:\n/code 1234\n/code alias@gmail.com 123456\n/code osn alias@gmail.com 123456');
         return res.json({ ok: true });
       }
-      latestCodes[key] = { code, timestamp: Date.now() };
-      delete notifiedCustomers[key];
-      await sendTG(chatId, `✅ Code <b>${code}</b> saved for ${key === 'default' ? 'all' : `<b>${key}</b>`}`, 'HTML');
+      if (service === 'osn' && !isValidOsnOtp(code)) {
+        await sendTG(chatId, '⚠️ OSN+ codes must be exactly 6 digits.');
+        return res.json({ ok: true });
+      }
+      if (key === 'default') {
+        latestCodes[key] = { code, timestamp: Date.now(), service };
+      } else {
+        storeSignInCode([key], code, service);
+      }
+      delete notifiedCustomers[scopedSignInCodeKey(key, service) || key];
+      await sendTG(chatId, `✅ ${service.toUpperCase()} code <b>${code}</b> saved for ${key === 'default' ? 'all' : `<b>${key}</b>`}`, 'HTML');
     } else if (text === '/clear') {
       latestCodes = {}; notifiedCustomers = {};
       await sendTG(chatId, '✅ All codes cleared');
@@ -4395,7 +4410,12 @@ function scopedSignInCodeKey(key, service) {
 
 function storeSignInCode(recipientKeys, code, service, profileName) {
   const svc = normalizeCodeService(service);
-  const entry = { code, timestamp: Date.now(), service: svc };
+  const normalizedCode = String(code || '').trim();
+  if (svc === 'osn' && !isValidOsnOtp(normalizedCode)) {
+    console.warn(`Rejected invalid OSN+ code (must be 6 digits): ${normalizedCode}`);
+    return false;
+  }
+  const entry = { code: normalizedCode, timestamp: Date.now(), service: svc };
   (recipientKeys || []).forEach((key) => {
     const scoped = scopedSignInCodeKey(key, svc);
     if (scoped) latestCodes[scoped] = entry;
@@ -4404,14 +4424,22 @@ function storeSignInCode(recipientKeys, code, service, profileName) {
     const scoped = scopedSignInCodeKey(String(profileName).toLowerCase(), 'netflix');
     if (scoped) latestCodes[scoped] = entry;
   }
+  return true;
 }
 
 function lookupSignInCode(lookupKeys, profileName, codeType) {
   const svc = normalizeCodeService(codeType);
+  let best = null;
   for (const candidate of lookupKeys || []) {
     const scoped = scopedSignInCodeKey(candidate, svc);
     const entry = scoped ? latestCodes[scoped] : null;
-    if (entry && Date.now() - entry.timestamp <= CODE_TTL_MS) return entry;
+    if (entry && Date.now() - entry.timestamp <= CODE_TTL_MS) {
+      if (!best || entry.timestamp > best.timestamp) best = entry;
+    }
+  }
+  if (best) {
+    if (svc === 'osn' && !isValidOsnOtp(best.code)) return null;
+    return best;
   }
   if (svc === 'netflix' && profileName) {
     const scoped = scopedSignInCodeKey(String(profileName).toLowerCase(), 'netflix');
@@ -4469,7 +4497,7 @@ app.post('/get-code', async (req, res) => {
       const monitorHint = inboxKey && !monitoredEmails[inboxKey]
         ? `\n⚠️ Gmail monitoring is not configured for inbox <code>${inboxKey}</code>. Add this Gmail in Admin stock with an app password.`
         : '';
-      await sendTG(TG_ADMIN, `🔔 <b>${name}</b> is waiting for a ${codeType.toUpperCase()} sign-in code!${codeKey ? `\n📧 Code email: <code>${codeKey}</code>` : ''}${inboxKey && inboxKey !== codeKey ? `\n📥 Gmail inbox: <code>${inboxKey}</code>` : ''}${monitorHint}\nManual fallback: /code ${codeKey || name} 1234`, 'HTML').catch(() => {});
+      await sendTG(TG_ADMIN, `🔔 <b>${name}</b> is waiting for a ${codeType.toUpperCase()} sign-in code!${codeKey ? `\n📧 Code email: <code>${codeKey}</code>` : ''}${inboxKey && inboxKey !== codeKey ? `\n📥 Gmail inbox: <code>${inboxKey}</code>` : ''}${monitorHint}\nManual fallback: /code ${codeType} ${codeKey || name} 123456`, 'HTML').catch(() => {});
     }
     return res.json({ success: false, message: 'No code found yet — check back in a moment' });
   }
@@ -4512,90 +4540,110 @@ function createGmailClient(email, password) {
   return createImapClient(email, password);
 }
 
+function emailPlainBody(parsedEmail) {
+  const subject = String(parsedEmail.subject || '').trim();
+  const text = String(parsedEmail.text || '').trim();
+  if (text.length > 24) return `${subject}\n${text}`;
+  const html = String(parsedEmail.html || '');
+  const stripped = html
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;|&#160;/gi, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return `${subject}\n${stripped || text}`;
+}
+
+function isValidOsnOtp(code) {
+  if (!/^\d{6}$/.test(String(code || ''))) return false;
+  if (/^(19|20)\d{4}$/.test(code)) return false;
+  if (/^(\d)\1{5}$/.test(code)) return false;
+  return true;
+}
+
+function extractSixDigitOtp(body, options = {}) {
+  const text = String(body || '');
+  if (!text) return null;
+  const spacedPatterns = [
+    /(?:verification|one[- ]?time|sign[- ]?in|login|otp|passcode|security)\s*(?:code|password)?\s*[:#\-]?\s*((?:\d[\s\-]*){6})\b/i,
+    /(?:code|password)\s*[:#\-]?\s*((?:\d[\s\-]*){6})\b/i,
+    /\b((?:\d[\s\-]*){6})\b\s*(?:is your|is the|verification|one[- ]?time|sign[- ]?in)/i
+  ];
+  for (const re of spacedPatterns) {
+    const m = text.match(re);
+    if (!m || !m[1]) continue;
+    const digits = m[1].replace(/\D/g, '');
+    if (digits.length === 6 && (!options.validate || options.validate(digits))) {
+      return digits;
+    }
+  }
+  const labeled = text.match(/(?:verification|one[- ]?time|sign[- ]?in|login|otp|passcode|security)\s*(?:code|password)?\s*[:#\-]?\s*(\d{6})\b/i);
+  if (labeled && labeled[1] && (!options.validate || options.validate(labeled[1]))) return labeled[1];
+  const trailing = text.match(/\b(\d{6})\b\s*(?:is your|is the|verification|one[- ]?time|sign[- ]?in)/i);
+  if (trailing && trailing[1] && (!options.validate || options.validate(trailing[1]))) return trailing[1];
+  const all = [...text.matchAll(/\b(\d{6})\b/g)]
+    .map((m) => m[1])
+    .filter((digits) => !options.validate || options.validate(digits));
+  return all.length ? all[all.length - 1] : null;
+}
+
 function extractNetflixCode(parsedEmail) {
-  const subject = parsedEmail.subject || '';
-  const text = parsedEmail.text || '';
-  const html = parsedEmail.html || '';
   const from = (parsedEmail.from || '').toString().toLowerCase();
-  const combined = `${subject} ${text} ${html}`;
-  const lower = combined.toLowerCase();
+  const body = emailPlainBody(parsedEmail);
+  const lower = body.toLowerCase();
+  if (/osn|osnplus|osntv/i.test(from)) return null;
   if (!from.includes('netflix') && !lower.includes('netflix')) return null;
 
-  const preferred = combined.match(/(?:code|verification|sign[\s-]?in|temporary)[^\d]{0,120}(\d{4,8})/i);
-  if (preferred) return { code: preferred[1], customerSafe: preferred[1].length === 4 };
+  const preferred = body.match(/(?:code|verification|sign[\s-]?in|temporary)[^\d]{0,120}(\d{4})\b/i);
+  if (preferred) return { code: preferred[1], customerSafe: true };
 
-  const fallback = combined.match(/\b(\d{4,8})\b/);
-  return fallback ? { code: fallback[1], customerSafe: fallback[1].length === 4 } : null;
+  const fallback = body.match(/\b(\d{4})\b/g);
+  if (fallback && fallback.length) {
+    const code = fallback[fallback.length - 1].replace(/\D/g, '');
+    if (code.length === 4) return { code, customerSafe: true };
+  }
+  return null;
 }
 
 function extractDisneyCode(parsedEmail) {
-  const subject = parsedEmail.subject || '';
-  const text = parsedEmail.text || '';
-  const html = parsedEmail.html || '';
   const from = (parsedEmail.from || '').toString().toLowerCase();
-  const combined = `${subject} ${text} ${html}`;
-  const lower = combined.toLowerCase();
+  const body = emailPlainBody(parsedEmail);
+  const lower = body.toLowerCase();
   if (!/disney|disneyplus|disneyaccount/i.test(from) && !/disney|disney\+|one[\s-]?time passcode|passcode/i.test(lower)) {
     return null;
   }
 
-  const spaced = combined.match(/(?:code|verification|sign[\s-]?in|one[\s-]?time|passcode|otp)[^\d]{0,160}((?:\d[\s\-]*){4,8})/i);
-  if (spaced) {
-    const digits = spaced[1].replace(/\D/g, '');
-    if (digits.length >= 4 && digits.length <= 8) return { code: digits, customerSafe: true };
-  }
-
-  const preferred = combined.match(/(?:code|verification|sign[\s-]?in|one[\s-]?time|passcode|otp)[^\d]{0,120}(\d{4,8})/i);
-  if (preferred) return { code: preferred[1], customerSafe: true };
-
-  const fallback = combined.match(/\b(\d{6})\b/) || combined.match(/\b(\d{4})\b/);
-  return fallback ? { code: fallback[1], customerSafe: true } : null;
+  const code = extractSixDigitOtp(body);
+  return code ? { code, customerSafe: true } : null;
 }
 
 function extractCanvaCode(parsedEmail) {
-  const subject = parsedEmail.subject || '';
-  const text = parsedEmail.text || '';
-  const html = parsedEmail.html || '';
   const from = (parsedEmail.from || '').toString().toLowerCase();
-  const combined = `${subject} ${text} ${html}`;
-  const lower = combined.toLowerCase();
+  const body = emailPlainBody(parsedEmail);
+  const lower = body.toLowerCase();
   if (!/canva/i.test(from) && !/canva|verification code|sign[\s-]?in|one[\s-]?time/i.test(lower)) {
     return null;
   }
 
-  const spaced = combined.match(/(?:code|verification|sign[\s-]?in|one[\s-]?time|passcode|otp)[^\d]{0,160}((?:\d[\s\-]*){4,8})/i);
-  if (spaced) {
-    const digits = spaced[1].replace(/\D/g, '');
-    if (digits.length >= 4 && digits.length <= 8) return { code: digits, customerSafe: true };
-  }
-
-  const preferred = combined.match(/(?:code|verification|sign[\s-]?in|one[\s-]?time|passcode|otp)[^\d]{0,120}(\d{4,8})/i);
-  if (preferred) return { code: preferred[1], customerSafe: true };
-
-  const fallback = combined.match(/\b(\d{6})\b/) || combined.match(/\b(\d{4})\b/);
-  return fallback ? { code: fallback[1], customerSafe: true } : null;
+  const code = extractSixDigitOtp(body);
+  if (code) return { code, customerSafe: true };
+  const four = body.match(/(?:code|verification)[^\d]{0,80}(\d{4})\b/i);
+  return four ? { code: four[1], customerSafe: true } : null;
 }
 
 function extractOsnCode(parsedEmail) {
-  const subject = parsedEmail.subject || '';
-  const text = parsedEmail.text || '';
-  const html = parsedEmail.html || '';
   const from = (parsedEmail.from || '').toString().toLowerCase();
-  const combined = `${subject} ${text} ${html}`;
-  const lower = combined.toLowerCase();
-  if (!/osn/i.test(from) && !/osn\+?|osn plus|osnplus/i.test(lower)) return null;
+  const body = emailPlainBody(parsedEmail);
+  const lower = body.toLowerCase();
+  const fromOsn = /osn|osnplus|osntv|osn\.com/i.test(from);
+  const bodyOsn = /osn\+?|osn plus|osnplus|osn streaming/i.test(lower);
+  if (!fromOsn && !bodyOsn) return null;
 
-  const spaced = combined.match(/(?:code|verification|sign[\s-]?in|one[\s-]?time|passcode|otp)[^\d]{0,160}((?:\d[\s\-]*){4,8})/i);
-  if (spaced) {
-    const digits = spaced[1].replace(/\D/g, '');
-    if (digits.length >= 4 && digits.length <= 8) return { code: digits, customerSafe: true };
-  }
-
-  const preferred = combined.match(/(?:code|verification|sign[\s-]?in|one[\s-]?time|passcode|otp)[^\d]{0,120}(\d{4,8})/i);
-  if (preferred) return { code: preferred[1], customerSafe: true };
-
-  const fallback = combined.match(/\b(\d{6})\b/) || combined.match(/\b(\d{4})\b/);
-  return fallback ? { code: fallback[1], customerSafe: true } : null;
+  const code = extractSixDigitOtp(body, { validate: isValidOsnOtp });
+  return code ? { code, customerSafe: true } : null;
 }
 
 function extractShahidResetLink(parsedEmail) {
@@ -4737,11 +4785,17 @@ async function fetchMonitoredInboxes(targetEmail) {
 
       for (const e of emails) {
         const recipientKeys = collectEmailRecipients(e, email);
+        const osnResult = extractOsnCode(e);
         const netflixResult = extractNetflixCode(e);
         const disneyResult = extractDisneyCode(e);
         const canvaResult = extractCanvaCode(e);
-        const osnResult = extractOsnCode(e);
-        if (netflixResult && netflixResult.customerSafe) {
+        if (osnResult && osnResult.customerSafe) {
+          if (storeSignInCode(recipientKeys, osnResult.code, 'osn')) {
+            recipientKeys.forEach(key => delete notifiedCustomers[scopedSignInCodeKey(key, 'osn')]);
+            console.log(`📧 OSN+ sign-in code ${osnResult.code} captured for ${email} recipients: ${recipientKeys.join(', ')}`);
+            await sendTG(TG_ADMIN, `✅ <b>OSN+ Sign-in Code Captured</b>\n📥 Gmail inbox: ${email}\n📧 Recipient: ${recipientKeys.join(', ')}\n🔢 Code: <b>${osnResult.code}</b>`, 'HTML').catch(() => {});
+          }
+        } else if (netflixResult && netflixResult.customerSafe) {
           storeSignInCode(recipientKeys, netflixResult.code, 'netflix');
           recipientKeys.forEach(key => delete notifiedCustomers[scopedSignInCodeKey(key, 'netflix')]);
           console.log(`📧 Netflix sign-in code ${netflixResult.code} captured for ${email} recipients: ${recipientKeys.join(', ')}`);
@@ -4759,11 +4813,6 @@ async function fetchMonitoredInboxes(targetEmail) {
           recipientKeys.forEach(key => delete notifiedCustomers[scopedSignInCodeKey(key, 'canva')]);
           console.log(`📧 Canva sign-in code ${canvaResult.code} captured for ${email} recipients: ${recipientKeys.join(', ')}`);
           await sendTG(TG_ADMIN, `✅ <b>Canva Sign-in Code Captured</b>\n📥 Gmail inbox: ${email}\n📧 Recipient: ${recipientKeys.join(', ')}\n🔢 Code: <b>${canvaResult.code}</b>`, 'HTML').catch(() => {});
-        } else if (osnResult && osnResult.customerSafe) {
-          storeSignInCode(recipientKeys, osnResult.code, 'osn');
-          recipientKeys.forEach(key => delete notifiedCustomers[scopedSignInCodeKey(key, 'osn')]);
-          console.log(`📧 OSN+ sign-in code ${osnResult.code} captured for ${email} recipients: ${recipientKeys.join(', ')}`);
-          await sendTG(TG_ADMIN, `✅ <b>OSN+ Sign-in Code Captured</b>\n📥 Gmail inbox: ${email}\n📧 Recipient: ${recipientKeys.join(', ')}\n🔢 Code: <b>${osnResult.code}</b>`, 'HTML').catch(() => {});
         }
         const shahidResult = extractShahidResetLink(e);
         if (shahidResult && shahidResult.link) {
