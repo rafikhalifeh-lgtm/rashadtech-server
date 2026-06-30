@@ -1636,11 +1636,23 @@ function preserveSensitiveFields(existing, incoming) {
       ? mergeAllTopupRequests(existing.topupreqs, incoming.topupreqs)
       : existing.topupreqs;
   }
-  if (existing && Array.isArray(existing.pending) && (!incoming || !Array.isArray(incoming.pending))) {
-    next.pending = existing.pending;
+  if (existing && Array.isArray(existing.pending)) {
+    if (!incoming || !Array.isArray(incoming.pending)) {
+      next.pending = existing.pending;
+    } else if (incoming._replacePending) {
+      next.pending = incoming.pending;
+    } else if (!incoming.pending.length && existing.pending.length) {
+      next.pending = existing.pending;
+    }
   }
-  if (existing && Array.isArray(existing.gameorders) && (!incoming || !Array.isArray(incoming.gameorders))) {
-    next.gameorders = existing.gameorders;
+  if (existing && Array.isArray(existing.gameorders)) {
+    if (!incoming || !Array.isArray(incoming.gameorders)) {
+      next.gameorders = existing.gameorders;
+    } else if (incoming._replaceGameorders) {
+      next.gameorders = incoming.gameorders;
+    } else if (!incoming.gameorders.length && existing.gameorders.length) {
+      next.gameorders = existing.gameorders;
+    }
   }
   if (existing && existing[SMS_CONFIG_KEY]) {
     const incomingSms = next[SMS_CONFIG_KEY] || {};
@@ -3327,6 +3339,34 @@ app.post('/admin/credit-topup', async (req, res) => {
     res.status(500).json({ error: 'Could not credit top-up' });
   } finally {
     activeTopupCredits.delete(lockKey);
+  }
+});
+
+app.post('/admin/delete-topup', async (req, res) => {
+  const session = requireSession(req, res, ['admin']);
+  if (!session) return;
+  const { requestId } = req.body || {};
+  if (!requestId) return res.status(400).json({ error: 'Request ID required' });
+  try {
+    const outcome = await enqueueDbWrite(async () => {
+      const data = await readDbForWrite();
+      data.topupreqs = Array.isArray(data.topupreqs) ? data.topupreqs : [];
+      const idx = data.topupreqs.findIndex(r => String(r.id) === String(requestId));
+      if (idx < 0) return { error: 'Top-up request not found', status: 404 };
+      const reqRow = data.topupreqs[idx];
+      data.topupreqs.splice(idx, 1);
+      await writeDbFast(data);
+      return { data, reqRow };
+    });
+    if (outcome.error) return res.status(outcome.status || 400).json({ error: outcome.error });
+    res.json({
+      success: true,
+      topupreqs: outcome.data.topupreqs || [],
+      data: slimMutationData(session, outcome.data, { topupreqsOnly: true })
+    });
+  } catch (e) {
+    console.error('Delete top-up error:', e.message);
+    res.status(500).json({ error: 'Could not remove top-up request' });
   }
 });
 
