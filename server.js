@@ -4257,11 +4257,11 @@ app.post('/telegram', async (req, res) => {
         key = normalizeEmail(parts[1]) || parts[1].toLowerCase();
         code = parts[2];
       } else {
-        await sendTG(chatId, '⚠️ Usage:\n/code 1234\n/code alias@gmail.com 123456\n/code osn alias@gmail.com 123456');
+        await sendTG(chatId, '⚠️ Usage:\n/code 1234\n/code alias@gmail.com 1234\n/code osn alias@gmail.com 1234');
         return res.json({ ok: true });
       }
       if (service === 'osn' && !isValidOsnOtp(code)) {
-        await sendTG(chatId, '⚠️ OSN+ codes must be exactly 6 digits.');
+        await sendTG(chatId, '⚠️ OSN+ codes must be exactly 4 digits.');
         return res.json({ ok: true });
       }
       if (key === 'default') {
@@ -4412,7 +4412,7 @@ function storeSignInCode(recipientKeys, code, service, profileName) {
   const svc = normalizeCodeService(service);
   const normalizedCode = String(code || '').trim();
   if (svc === 'osn' && !isValidOsnOtp(normalizedCode)) {
-    console.warn(`Rejected invalid OSN+ code (must be 6 digits): ${normalizedCode}`);
+    console.warn(`Rejected invalid OSN+ code (must be 4 digits): ${normalizedCode}`);
     return false;
   }
   const entry = { code: normalizedCode, timestamp: Date.now(), service: svc };
@@ -4482,9 +4482,9 @@ app.post('/get-code', async (req, res) => {
   if (inboxKey) {
     await loadGmailMonitors();
     if (monitoredEmails[inboxKey]) {
-      await fetchMonitoredInboxes(inboxKey);
+      await fetchMonitoredInboxes(inboxKey, { rescanMinutes: 90 });
     } else if (!lookupKeys.some((candidate) => monitoredEmails[candidate])) {
-      await fetchMonitoredInboxes();
+      await fetchMonitoredInboxes(null, { rescanMinutes: 90 });
     }
   }
   const entry = lookupSignInCode(lookupKeys, profileName, codeType);
@@ -4497,7 +4497,7 @@ app.post('/get-code', async (req, res) => {
       const monitorHint = inboxKey && !monitoredEmails[inboxKey]
         ? `\n⚠️ Gmail monitoring is not configured for inbox <code>${inboxKey}</code>. Add this Gmail in Admin stock with an app password.`
         : '';
-      await sendTG(TG_ADMIN, `🔔 <b>${name}</b> is waiting for a ${codeType.toUpperCase()} sign-in code!${codeKey ? `\n📧 Code email: <code>${codeKey}</code>` : ''}${inboxKey && inboxKey !== codeKey ? `\n📥 Gmail inbox: <code>${inboxKey}</code>` : ''}${monitorHint}\nManual fallback: /code ${codeType} ${codeKey || name} 123456`, 'HTML').catch(() => {});
+      await sendTG(TG_ADMIN, `🔔 <b>${name}</b> is waiting for a ${codeType.toUpperCase()} sign-in code!${codeKey ? `\n📧 Code email: <code>${codeKey}</code>` : ''}${inboxKey && inboxKey !== codeKey ? `\n📥 Gmail inbox: <code>${inboxKey}</code>` : ''}${monitorHint}\nManual fallback: /code ${codeType} ${codeKey || name} 1234`, 'HTML').catch(() => {});
     }
     return res.json({ success: false, message: 'No code found yet — check back in a moment' });
   }
@@ -4558,10 +4558,44 @@ function emailPlainBody(parsedEmail) {
 }
 
 function isValidOsnOtp(code) {
-  if (!/^\d{6}$/.test(String(code || ''))) return false;
-  if (/^(19|20)\d{4}$/.test(code)) return false;
-  if (/^(\d)\1{5}$/.test(code)) return false;
-  return true;
+  return /^\d{4}$/.test(String(code || ''));
+}
+
+function isLikelyOsnPhoneFragment(code, context) {
+  const ctx = String(context || '').toLowerCase();
+  if (!ctx) return false;
+  if (/call|tel:|phone|whatsapp|mobile|customer service|support line|hotline/i.test(ctx)) return true;
+  if (/\+\d|00\d{2,}/.test(ctx)) return true;
+  if (new RegExp(`\\d\\s*${code}|${code}\\s*\\d`).test(ctx)) return true;
+  return false;
+}
+
+function extractOsnOtp(body) {
+  const text = String(body || '');
+  if (!text) return null;
+  const labeledPatterns = [
+    /(?:verification|one[- ]?time|sign[- ]?in|login|otp|passcode|security|pin)\s*(?:code|password|pin)?\s*[:#\-]?\s*((?:\d[\s\-]*){4})\b/gi,
+    /(?:code|password|pin)\s*[:#\-]?\s*((?:\d[\s\-]*){4})\b/gi,
+    /\b((?:\d[\s\-]*){4})\b\s*(?:is your|is the|verification|one[- ]?time|sign[- ]?in)/gi,
+    /(?:verification|one[- ]?time|sign[- ]?in|login|otp|passcode|security)\s*(?:code|password)?\s*[:#\-]?\s*(\d{4})\b/gi,
+    /\b(\d{4})\b\s*(?:is your|is the|verification|one[- ]?time|sign[- ]?in)/gi
+  ];
+  for (const re of labeledPatterns) {
+    for (const m of text.matchAll(re)) {
+      const digits = String(m[1] || '').replace(/\D/g, '');
+      const context = text.slice(Math.max(0, (m.index || 0) - 48), (m.index || 0) + 48);
+      if (digits.length === 4 && isValidOsnOtp(digits) && !isLikelyOsnPhoneFragment(digits, context)) {
+        return digits;
+      }
+    }
+  }
+  const candidates = [...text.matchAll(/\b(\d{4})\b/g)]
+    .map((m) => ({
+      code: m[1],
+      context: text.slice(Math.max(0, (m.index || 0) - 48), (m.index || 0) + 48)
+    }))
+    .filter((x) => isValidOsnOtp(x.code) && !isLikelyOsnPhoneFragment(x.code, x.context));
+  return candidates.length ? candidates[candidates.length - 1].code : null;
 }
 
 function extractSixDigitOtp(body, options = {}) {
@@ -4638,11 +4672,11 @@ function extractOsnCode(parsedEmail) {
   const from = (parsedEmail.from || '').toString().toLowerCase();
   const body = emailPlainBody(parsedEmail);
   const lower = body.toLowerCase();
-  const fromOsn = /osn|osnplus|osntv|osn\.com/i.test(from);
-  const bodyOsn = /osn\+?|osn plus|osnplus|osn streaming/i.test(lower);
+  const fromOsn = /osn|osnplus|osntv|osn\.com|osnplus\.com/i.test(from);
+  const bodyOsn = /osn\+?|osn plus|osnplus|osn streaming|osn\+ streaming/i.test(lower);
   if (!fromOsn && !bodyOsn) return null;
 
-  const code = extractSixDigitOtp(body, { validate: isValidOsnOtp });
+  const code = extractOsnOtp(body);
   return code ? { code, customerSafe: true } : null;
 }
 
@@ -4747,12 +4781,13 @@ function collectEmailRecipients(parsedEmail, fallbackEmail) {
   return recipients.length ? recipients : uniqueNormalizedEmails([fallbackEmail]);
 }
 
-async function fetchMonitoredInboxes(targetEmail) {
+async function fetchMonitoredInboxes(targetEmail, options = {}) {
   await loadGmailMonitors();
   const targetKey = targetEmail ? normalizeEmail(targetEmail) : null;
   const entries = targetKey
     ? (monitoredEmails[targetKey] ? [[targetKey, monitoredEmails[targetKey]]] : [])
     : Object.entries(monitoredEmails);
+  const rescanMs = Number(options.rescanMinutes || 0) > 0 ? Number(options.rescanMinutes) * 60 * 1000 : 0;
   let changed = false;
 
   for (const [email, creds] of entries) {
@@ -4766,8 +4801,8 @@ async function fetchMonitoredInboxes(targetEmail) {
       const emails = [];
       let maxUid = Number(creds.lastUid || 0);
       try {
-        const since = new Date(Date.now() - EMAIL_LOOKBACK_MS);
-        const seenUid = Number(creds.lastUid || 0);
+        const since = new Date(Date.now() - (rescanMs || EMAIL_LOOKBACK_MS));
+        const seenUid = rescanMs ? 0 : Number(creds.lastUid || 0);
         const messages = (await client.search({ since }, { uid: true }) || [])
           .filter(uid => Number(uid) > seenUid)
           .sort((a, b) => Number(a) - Number(b));
