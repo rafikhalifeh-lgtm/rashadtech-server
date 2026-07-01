@@ -38,6 +38,12 @@ const {
   initGameOrder
 } = require('./orderHelpers');
 const { SMS_CONFIG_KEY, grizzlySms, registerSmsRoutes } = require('./smsRoutes');
+const {
+  isValidOsnOtp,
+  isLikelyOsnPhoneFragment,
+  extractOsnOtp,
+  extractOsnCode: extractOsnCodeFromEmail
+} = require('./osnCodeExtract');
 
 const app = express();
 const ALLOWED_ORIGINS = new Set([
@@ -96,6 +102,7 @@ const NETLIFY_DB_KEY = normalizeEnvSecret(process.env.NETLIFY_DB_KEY) || 'databa
 const NETLIFY_BACKUP_MANIFEST_KEY = normalizeEnvSecret(process.env.NETLIFY_BACKUP_MANIFEST_KEY) || `${NETLIFY_DB_KEY}-backup-manifest`;
 const NETLIFY_BACKUP_PREFIX = normalizeEnvSecret(process.env.NETLIFY_BACKUP_PREFIX) || `${NETLIFY_DB_KEY}-backup-`;
 const RECOVERY_SNAPSHOT_LIMIT = Number(process.env.RECOVERY_SNAPSHOT_LIMIT || 15);
+const MAX_BACKUPS = RECOVERY_SNAPSHOT_LIMIT;
 const EMAILJS_SERVICE_ID = normalizeEnvSecret(process.env.EMAILJS_SERVICE_ID) || 'service_g05xq5o';
 const EMAILJS_TEMPLATE_ID = normalizeEnvSecret(process.env.EMAILJS_TEMPLATE_ID) || 'template_e0h7eia';
 const EMAILJS_MARKETING_TEMPLATE_ID = normalizeEnvSecret(process.env.EMAILJS_MARKETING_TEMPLATE_ID) || 'template_ldrrf9e';
@@ -1588,11 +1595,43 @@ function mergeProductRequests(existingRequests, incomingRequests) {
   return Array.from(byId.values());
 }
 
+function mergePendingOrders(existingPending, incomingPending) {
+  if (!Array.isArray(incomingPending)) return Array.isArray(existingPending) ? existingPending : [];
+  const byId = new Map();
+  (existingPending || []).forEach((row) => {
+    if (!row || row.id == null) return;
+    byId.set(String(row.id), row);
+  });
+  incomingPending.forEach((row) => {
+    if (!row || row.id == null) return;
+    const key = String(row.id);
+    const prev = byId.get(key);
+    byId.set(key, prev ? { ...prev, ...row } : row);
+  });
+  return Array.from(byId.values());
+}
+
+function mergeGameOrders(existingOrders, incomingOrders) {
+  if (!Array.isArray(incomingOrders)) return Array.isArray(existingOrders) ? existingOrders : [];
+  const byId = new Map();
+  (existingOrders || []).forEach((row) => {
+    if (!row || row.id == null) return;
+    byId.set(String(row.id), row);
+  });
+  incomingOrders.forEach((row) => {
+    if (!row || row.id == null) return;
+    const key = String(row.id);
+    const prev = byId.get(key);
+    byId.set(key, prev ? { ...prev, ...row } : row);
+  });
+  return Array.from(byId.values());
+}
+
 function mergeUsersPreservingWallet(existingUsers, incomingUsers) {
   const existing = Array.isArray(existingUsers) ? existingUsers : [];
   if (!Array.isArray(incomingUsers)) return existing;
   const byEmail = new Map(existing.map(u => [normalizeEmail(u.email), { ...u }]));
-  return incomingUsers.map((inc) => {
+  const merged = incomingUsers.map((inc) => {
     if (!inc || !inc.email) return inc;
     const email = normalizeEmail(inc.email);
     const prev = byEmail.get(email);
@@ -1611,6 +1650,15 @@ function mergeUsersPreservingWallet(existingUsers, incomingUsers) {
       myCustomers: mergeMyCustomers(prev.myCustomers, inc.myCustomers),
     };
   }).filter(Boolean);
+  const incomingEmails = new Set(
+    incomingUsers.filter(u => u && u.email).map(u => normalizeEmail(u.email))
+  );
+  existing.forEach((prev) => {
+    const email = normalizeEmail(prev.email);
+    if (!email || incomingEmails.has(email)) return;
+    merged.push({ ...prev });
+  });
+  return merged;
 }
 
 function preserveSensitiveFields(existing, incoming) {
@@ -1681,6 +1729,8 @@ function preserveSensitiveFields(existing, incoming) {
       next.pending = incoming.pending;
     } else if (!incoming.pending.length && existing.pending.length) {
       next.pending = existing.pending;
+    } else {
+      next.pending = mergePendingOrders(existing.pending, incoming.pending);
     }
   }
   if (existing && Array.isArray(existing.gameorders)) {
@@ -1690,6 +1740,8 @@ function preserveSensitiveFields(existing, incoming) {
       next.gameorders = incoming.gameorders;
     } else if (!incoming.gameorders.length && existing.gameorders.length) {
       next.gameorders = existing.gameorders;
+    } else {
+      next.gameorders = mergeGameOrders(existing.gameorders, incoming.gameorders);
     }
   }
   if (existing && existing[SMS_CONFIG_KEY]) {
@@ -4343,9 +4395,11 @@ async function loadGmailMonitors(force = false) {
 }
 
 async function persistGmailMonitors() {
-  const data = await readJsonBinRaw();
-  data[GMAIL_MONITORS_KEY] = monitoredEmails;
-  await writeDbFast(data, { backupReason: 'gmail-monitor-update' });
+  await enqueueDbWrite(async () => {
+    const data = await readDbForWrite();
+    data[GMAIL_MONITORS_KEY] = monitoredEmails;
+    await writeDbFast(data, { backupReason: 'gmail-monitor-update' });
+  });
 }
 
 async function getInboxMaxUid(email, password) {
@@ -4367,12 +4421,57 @@ async function getInboxMaxUid(email, password) {
   }
 }
 
-function authorizeCodeRequest(req, body) {
+function findOrderForCodeAuth(data, body) {
+  const subEmail = normalizeEmail(body.subEmail);
+  if (!subEmail && !body.linkToken) return null;
+  if (body.linkToken) {
+    try {
+      const payload = decodeLinkToken(body.linkToken);
+      const owner = normalizeEmail(payload.owner);
+      const sub = payload.subscription || {};
+      const user = (data.users || []).find(u => normalizeEmail(u.email) === owner);
+      if (user && sub.id) {
+        const found = findUserOrderRecord(user, sub.id);
+        if (found.order) return { order: found.order, user };
+      }
+    } catch (e) {}
+  }
+  if (!subEmail) return null;
+  for (const user of data.users || []) {
+    for (const order of user.orders || []) {
+      if (normalizeEmail(order.email) === subEmail) return { order, user };
+    }
+    for (const customer of user.myCustomers || []) {
+      for (const order of customer.subs || []) {
+        if (normalizeEmail(order.email) === subEmail) return { order, user };
+      }
+    }
+  }
+  return null;
+}
+
+function subscriptionPassMatches(order, subPass) {
+  if (!order || !subPass) return false;
+  const expected = String(order.pass || '').trim();
+  if (!expected) return false;
+  return expected === String(subPass).trim();
+}
+
+function authorizeCodeRequest(req, body, data = {}) {
   const session = getSession(req);
-  if (session) return true;
   const codeKey = normalizeEmail(body.codeEmail || body.mainEmail);
   const inboxKey = normalizeEmail(body.inboxEmail || body.mainEmail || body.codeEmail);
   const requested = [codeKey, inboxKey].filter(Boolean);
+  const subEmail = normalizeEmail(body.subEmail);
+  const subPass = String(body.subPass || '').trim();
+  const codeType = String(body.codeType || '').toLowerCase();
+
+  if (session) {
+    if (session.role === 'admin') return true;
+    const sessionEmail = normalizeEmail(session.email);
+    if (sessionEmail && (sessionEmail === subEmail || requested.includes(sessionEmail))) return true;
+  }
+
   if (body.linkToken) {
     try {
       const payload = decodeLinkToken(body.linkToken);
@@ -4385,10 +4484,13 @@ function authorizeCodeRequest(req, body) {
       if (isCanvaNewSubscription(sub) && normalizeEmail(sub.email)) return true;
     } catch (e) {}
   }
-  const subEmail = normalizeEmail(body.subEmail);
-  const subPass = String(body.subPass || '');
-  const codeType = String(body.codeType || '').toLowerCase();
-  if (subEmail && subPass && requested.includes(subEmail)) return true;
+  if (subEmail && subPass) {
+    const found = findOrderForCodeAuth(data, body);
+    if (found && subscriptionPassMatches(found.order, subPass)) {
+      const orderEmail = normalizeEmail(found.order.email);
+      if (!requested.length || requested.includes(orderEmail) || requested.includes(subEmail)) return true;
+    }
+  }
   if (subEmail && !subPass && requested.includes(subEmail) && String(body.subPhone || '').trim()) return true;
   if (subEmail && !subPass && requested.includes(subEmail) && codeType === 'canva') return true;
   if (subEmail && !subPass && requested.includes(subEmail) && codeType === 'osn') return true;
@@ -4455,11 +4557,12 @@ function lookupSignInCode(lookupKeys, profileName, codeType) {
 
 // ── CODE ENDPOINTS ─────────────────────────────────────────────────────
 app.post('/get-code', async (req, res) => {
-  if (!authorizeCodeRequest(req, req.body || {})) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
+  try {
+    const data = await readJsonBinRaw().catch(() => ({}));
+    if (!authorizeCodeRequest(req, req.body || {}, data)) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
   const { profileName } = req.body;
-  const data = await readJsonBinRaw().catch(() => ({}));
   let meta = { ...req.body };
   if (meta.linkToken) {
     try {
@@ -4504,6 +4607,10 @@ app.post('/get-code', async (req, res) => {
   if (Date.now() - entry.timestamp > CODE_TTL_MS) return res.json({ success: false, message: 'Code expired' });
   await sendTG(TG_ADMIN, `👀 <b>${profileName || 'Unknown'}</b> viewed ${codeType} code: ${entry.code}`, 'HTML').catch(() => {});
   res.json({ success: true, code: entry.code });
+  } catch (e) {
+    console.error('Get-code error:', e.message);
+    res.status(500).json({ error: 'Could not fetch sign-in code' });
+  }
 });
 
 app.post('/set-code', (req, res) => {
@@ -4555,47 +4662,6 @@ function emailPlainBody(parsedEmail) {
     .replace(/\s+/g, ' ')
     .trim();
   return `${subject}\n${stripped || text}`;
-}
-
-function isValidOsnOtp(code) {
-  return /^\d{4}$/.test(String(code || ''));
-}
-
-function isLikelyOsnPhoneFragment(code, context) {
-  const ctx = String(context || '').toLowerCase();
-  if (!ctx) return false;
-  if (/call|tel:|phone|whatsapp|mobile|customer service|support line|hotline/i.test(ctx)) return true;
-  if (/\+\d|00\d{2,}/.test(ctx)) return true;
-  if (new RegExp(`\\d\\s*${code}|${code}\\s*\\d`).test(ctx)) return true;
-  return false;
-}
-
-function extractOsnOtp(body) {
-  const text = String(body || '');
-  if (!text) return null;
-  const labeledPatterns = [
-    /(?:verification|one[- ]?time|sign[- ]?in|login|otp|passcode|security|pin)\s*(?:code|password|pin)?\s*[:#\-]?\s*((?:\d[\s\-]*){4})\b/gi,
-    /(?:code|password|pin)\s*[:#\-]?\s*((?:\d[\s\-]*){4})\b/gi,
-    /\b((?:\d[\s\-]*){4})\b\s*(?:is your|is the|verification|one[- ]?time|sign[- ]?in)/gi,
-    /(?:verification|one[- ]?time|sign[- ]?in|login|otp|passcode|security)\s*(?:code|password)?\s*[:#\-]?\s*(\d{4})\b/gi,
-    /\b(\d{4})\b\s*(?:is your|is the|verification|one[- ]?time|sign[- ]?in)/gi
-  ];
-  for (const re of labeledPatterns) {
-    for (const m of text.matchAll(re)) {
-      const digits = String(m[1] || '').replace(/\D/g, '');
-      const context = text.slice(Math.max(0, (m.index || 0) - 48), (m.index || 0) + 48);
-      if (digits.length === 4 && isValidOsnOtp(digits) && !isLikelyOsnPhoneFragment(digits, context)) {
-        return digits;
-      }
-    }
-  }
-  const candidates = [...text.matchAll(/\b(\d{4})\b/g)]
-    .map((m) => ({
-      code: m[1],
-      context: text.slice(Math.max(0, (m.index || 0) - 48), (m.index || 0) + 48)
-    }))
-    .filter((x) => isValidOsnOtp(x.code) && !isLikelyOsnPhoneFragment(x.code, x.context));
-  return candidates.length ? candidates[candidates.length - 1].code : null;
 }
 
 function extractSixDigitOtp(body, options = {}) {
@@ -4666,18 +4732,6 @@ function extractCanvaCode(parsedEmail) {
   if (code) return { code, customerSafe: true };
   const four = body.match(/(?:code|verification)[^\d]{0,80}(\d{4})\b/i);
   return four ? { code: four[1], customerSafe: true } : null;
-}
-
-function extractOsnCode(parsedEmail) {
-  const from = (parsedEmail.from || '').toString().toLowerCase();
-  const body = emailPlainBody(parsedEmail);
-  const lower = body.toLowerCase();
-  const fromOsn = /osn|osnplus|osntv|osn\.com|osnplus\.com/i.test(from);
-  const bodyOsn = /osn\+?|osn plus|osnplus|osn streaming|osn\+ streaming/i.test(lower);
-  if (!fromOsn && !bodyOsn) return null;
-
-  const code = extractOsnOtp(body);
-  return code ? { code, customerSafe: true } : null;
 }
 
 function extractShahidResetLink(parsedEmail) {
@@ -4820,7 +4874,7 @@ async function fetchMonitoredInboxes(targetEmail, options = {}) {
 
       for (const e of emails) {
         const recipientKeys = collectEmailRecipients(e, email);
-        const osnResult = extractOsnCode(e);
+        const osnResult = extractOsnCodeFromEmail(e, emailPlainBody);
         const netflixResult = extractNetflixCode(e);
         const disneyResult = extractDisneyCode(e);
         const canvaResult = extractCanvaCode(e);
