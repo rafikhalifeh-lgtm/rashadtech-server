@@ -4,7 +4,8 @@
   "description": "RashadTech TV streaming store backend",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node tests/osn-extract.test.js"
   },
   "dependencies": {
     "@netlify/blobs": "^10.7.9",

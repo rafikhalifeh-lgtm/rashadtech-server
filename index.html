@@ -1728,6 +1728,38 @@ function mergeTopupReqFromResponse(req){
   if(_jbCache)_jbCache.topupreqs=topupRequests;
 }
 
+function mergePendingFromResponse(order){
+  if(!order||order.id==null)return;
+  if(!_jbCache)_jbCache={};
+  const pending=Array.isArray(_jbCache.pending)?[..._jbCache.pending]:[];
+  const idx=pending.findIndex(p=>String(p.id)===String(order.id));
+  if(idx>=0)pending[idx]=order;
+  else pending.unshift(order);
+  _jbCache.pending=pending;
+}
+
+function mergeUserOrders(serverOrders,localOrders){
+  const server=Array.isArray(serverOrders)?serverOrders:[];
+  const local=Array.isArray(localOrders)?localOrders:[];
+  if(!local.length)return server;
+  if(!server.length)return local;
+  const byId=new Map();
+  server.forEach(o=>{if(o&&o.id!=null)byId.set(String(o.id),o);});
+  local.forEach(o=>{
+    if(!o||o.id==null)return;
+    const key=String(o.id);
+    const prev=byId.get(key);
+    if(!prev)byId.set(key,o);
+    else if(prev.pending&&!o.pending)byId.set(key,o);
+    else if(!prev.email&&o.email)byId.set(key,o);
+  });
+  const merged=server.map(o=>byId.get(String(o.id))||o);
+  local.forEach(o=>{
+    if(o&&o.id!=null&&!server.some(s=>String(s.id)===String(o.id)))merged.push(o);
+  });
+  return merged;
+}
+
 function refreshAfterPurchase(){
   closeModal('buy-modal');closeModal('assign-modal');
   updateBal();renderSubs();renderTx();renderMyCustomers();renderExpiryTracker();renderProducts('all');
@@ -1757,7 +1789,7 @@ function applyDataSnapshot(data){
     const fu=users.find(x=>normEmail(x.email)===sessionEmail);
     if(fu&&keepUser){
       fu.myCustomers=mergeMyCustomersClient(fu.myCustomers,keepUser.myCustomers);
-      if((keepUser.orders||[]).length>(fu.orders||[]).length)fu.orders=keepUser.orders;
+      fu.orders=mergeUserOrders(fu.orders,keepUser.orders);
     }
   }
   if(authToken)saveOfflineCache(_jbCache);
@@ -3725,7 +3757,7 @@ async function switchAdminTab(name,el){
   document.getElementById('admin-'+name)?.classList.add('active');
   document.querySelectorAll('#page-admin .snav').forEach(b=>b.classList.remove('active'));
   if(el)el.classList.add('active');
-  const amap={stock:'abn-stock',customers:'abn-customers',wallets:'abn-wallets',topupreqs:'abn-topupreqs',requests:'abn-requests',expiry:'abn-requests',dashboard:'abn-dashboard'};
+  const amap={stock:'abn-stock',customers:'abn-customers',wallets:'abn-wallets',topupreqs:'abn-topupreqs',requests:'abn-requests',expiry:'abn-more',dashboard:'abn-dashboard',pending:'abn-more',gameorders:'abn-more',prices:'abn-more',sms:'abn-more'};
   if(amap[name])setActiveAdminNav(amap[name]);
   const needsFresh=['pending','topupreqs','gameorders','dashboard','requests'].includes(name);
   if(!_jbCache||!users.length||needsFresh){
@@ -4285,6 +4317,7 @@ async function confirmPurchase(){
       if(!r.ok||!j.success)throw new Error(j.error||'Purchase failed');
       if(j.user)mergeUserFromResponse(j.user);
       else if(j.data)applyDataSnapshot(j.data);
+      if(j.pending&&j.order)mergePendingFromResponse(j.order);
       currentUser=users.find(x=>normEmail(x.email)===normEmail(currentUser.email))||j.user||currentUser;
       if(_jbCache)_jbCache.users=users;
       syncPausedUntil=Date.now()+20000;
@@ -5435,9 +5468,10 @@ function pickAssignProduct(id){closeModal('assign-modal');openBuy(id,assignCustI
 // TX
 function renderTx(){
   if(!currentUser)return;const tbody=document.getElementById('tx-tbody');
-  if(!currentUser.transactions.length){tbody.innerHTML='<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text3);font-size:13px">No transactions yet</td></tr>';return;}
-  tbody.innerHTML=currentUser.transactions.map((t,i)=>`<tr>
-    <td style="color:var(--text3)">${currentUser.transactions.length-i}</td>
+  const txs=Array.isArray(currentUser.transactions)?currentUser.transactions:[];
+  if(!txs.length){tbody.innerHTML='<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text3);font-size:13px">No transactions yet</td></tr>';return;}
+  tbody.innerHTML=txs.map((t,i)=>`<tr>
+    <td style="color:var(--text3)">${txs.length-i}</td>
     <td>${t.label}${t.pending?'&nbsp;<span style="font-size:10px;background:var(--orange-bg);color:var(--orange);border:1px solid var(--orange-border);padding:1px 6px;border-radius:4px;font-weight:600">⏳ Pending</span>':''}</td>
     <td><span class="tbadge ${t.type==='topup'?'ttopup':t.type==='withdrawal'?'twithdrawal':'tpurchase'}">${t.type==='topup'?'Deposit':t.type==='withdrawal'?'Withdrawal':'Purchase'}</span></td>
     <td style="color:var(--text2)">${t.date}</td>
@@ -6797,7 +6831,7 @@ function renderAdminCustomers(){
   tbody.innerHTML=filtered.map(u=>{
     const ri=users.indexOf(u);
     const ps=userPurchaseSummary(u);
-    const spent=u.transactions.filter(t=>t.type==='purchase').reduce((s,t)=>s+t.amount,0);
+    const spent=(Array.isArray(u.transactions)?u.transactions:[]).filter(t=>t.type==='purchase').reduce((s,t)=>s+t.amount,0);
     const subChips=ps.chipOrders.slice(0,3).map(o=>{
       const assigned=ps.assigned.find(a=>a.order.id===o.id);
       const label=assigned?`${o.product} → ${assigned.customer.fname}`:o.product;
@@ -6889,7 +6923,7 @@ async function deleteTopupReq(requestId){
 function getTopupHistory(userEmail){
   const u=users.find(x=>x.email===userEmail);
   if(!u)return;
-  const deposits=u.transactions.filter(t=>t.type==='deposit'||t.type==='topup');
+  const deposits=(Array.isArray(u.transactions)?u.transactions:[]).filter(t=>t.type==='deposit'||t.type==='topup');
   if(!deposits.length){showToast('No topup history for this customer');return;}
   const history=deposits.map(t=>t.date+' — '+fmt(t.amount)+' — Bal: '+fmt(t.balance)).join(', ');
   alert('Topup History for '+u.name+':\n\n'+history);
@@ -7337,15 +7371,15 @@ function renderGameOrdersHtml(el,go){
         ${gameStatusTrack(o.status)}
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
-        ${o.status==='pending'?`<button class="aabtn" onclick="setGameOrderStatus(${i},'processing')">Processing</button>`:''}
-        ${o.status!=='done'?`<button class="aabtn" onclick="setGameOrderStatus(${i},'done')">✓ Done</button>`:`<span style="font-size:11px;background:var(--green-bg);color:var(--green);border:1px solid var(--green-border);padding:3px 9px;border-radius:4px;font-weight:600">✓ Done</span>`}
+        ${o.status==='pending'?`<button class="aabtn" ${jsOnClick('setGameOrderStatus',o.id,'processing')}>Processing</button>`:''}
+        ${o.status!=='done'?`<button class="aabtn" ${jsOnClick('setGameOrderStatus',o.id,'done')}>✓ Done</button>`:`<span style="font-size:11px;background:var(--green-bg);color:var(--green);border:1px solid var(--green-border);padding:3px 9px;border-radius:4px;font-weight:600">✓ Done</span>`}
       </div>
     </div>`).join('');
 }
-async function setGameOrderStatus(i,status){
+async function setGameOrderStatus(orderId,status){
   await refreshFromFirebase();
   const go=Array.isArray(_jbCache?.gameorders)?_jbCache.gameorders:[];
-  const o=go[i];
+  const o=go.find(x=>String(x.id)===String(orderId));
   if(!o)return;
   try{
     const r=await fetch(RT_SERVER+'/admin/game-order-status',{method:'POST',headers:authHeaders(),body:JSON.stringify({orderId:o.id,status})});
@@ -7357,7 +7391,7 @@ async function setGameOrderStatus(i,status){
     showToast(status==='done'?'✓ Game order completed':'✓ Status updated');
   }catch(e){showToast('⚠️ '+e.message);}
 }
-async function fulfillGameOrder(i){return setGameOrderStatus(i,'done');}
+async function fulfillGameOrder(orderId){return setGameOrderStatus(orderId,'done');}
 function renderTopupRequests(){
   const el=document.getElementById('topupreqs-list');
   if(!el)return;
@@ -7372,11 +7406,11 @@ function renderTopupRequests(){
       <div class="aw-bal" style="color:var(--blue);font-weight:700">${r.label}</div>
       ${r.status==='pending'
         ? (userExists
-          ? `<button class="aw-add-btn" onclick="creditTopupReq(${r.id})" style="white-space:nowrap">✓ Credit & Notify</button>`
+          ? `<button class="aw-add-btn" onclick="creditTopupReq(${r.id})" style="white-space:nowrap">✓ Credit & Notify</button>
+             <button ${jsOnClick('deleteTopupReq',r.id)} title="Cancel request" style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:var(--text3)">✕ Cancel</button>`
           : `<button class="aw-add-btn" ${jsOnClick('deleteTopupReq',r.id)} style="white-space:nowrap;background:var(--red-bg);color:var(--red);border-color:var(--red-border)">🗑 Remove</button>`)
         : `<span style="font-size:11px;background:var(--green-bg);color:var(--green);border:1px solid var(--green-border);padding:3px 8px;border-radius:4px;font-weight:600">Credited</span>`
       }
-      ${r.status==='pending'?`<button ${jsOnClick('deleteTopupReq',r.id)} title="Cancel request" style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:var(--text3)">✕ Cancel</button>`:''}
     </div>`;
   }).join('');
 }
