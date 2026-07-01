@@ -421,12 +421,31 @@ function registerEnhancements(app, deps) {
         user.orders = Array.isArray(user.orders) ? user.orders : [];
         user.orders.unshift(order);
       }
-      let telegramSent = false;
-      if (notifyTelegram !== false && user.tgChatId) {
-        telegramSent = true;
-        await sendTG(user.tgChatId, `✅ <b>Subscription assigned</b>\n\n📦 ${order.product} · ${order.plan}\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>${order.expiryDate ? `\n📅 Expires: ${order.expiryDate}` : ''}`, 'HTML').catch(() => {});
+      let deliveryChannel = false;
+      if (notifyTelegram !== false && user) {
+        const product = {
+          name: order.product,
+          short: order.short,
+          color: order.color,
+          tc: order.tc,
+          id: order.productId
+        };
+        if (typeof notifyPurchaseFulfilled === 'function') {
+          deliveryChannel = await notifyPurchaseFulfilled(
+            user,
+            product,
+            order.plan,
+            order.price || 0,
+            order,
+            assignedCustomer ? assignedCustomer.id : null,
+            { skipAdminNotify: true, data }
+          );
+        } else if (user.tgChatId) {
+          deliveryChannel = 'telegram';
+          await sendTG(user.tgChatId, `✅ <b>Subscription assigned</b>\n\n📦 ${order.product} · ${order.plan}\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>${order.expiryDate ? `\n📅 Expires: ${order.expiryDate}` : ''}`, 'HTML').catch(() => {});
+        }
       }
-      stampOrderDelivery(order, telegramSent);
+      stampOrderDelivery(order, deliveryChannel || false);
       await writeJsonBinRaw(data);
       await appendActivity('Stock assigned', `${user.email} · ${order.product}`, session.email);
       res.json({ success: true, order, user: sanitizeUser(user), data: safeDataForSession(data, session) });
