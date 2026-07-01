@@ -145,6 +145,7 @@ let latestCodes = {};
 let latestShahidResetLinks = {};
 let notifiedCustomers = {};
 let notifiedShahidReset = {};
+const notifiedCaptureAlerts = {};
 let monitoredEmails = {}; // { gmailEmail: { user, pass, lastUid, lastCheckedAt } }
 let gmailMonitorsLoaded = false;
 let sessions = new Map();
@@ -4324,7 +4325,7 @@ app.post('/telegram', async (req, res) => {
       delete notifiedCustomers[scopedSignInCodeKey(key, service) || key];
       await sendTG(chatId, `✅ ${service.toUpperCase()} code <b>${code}</b> saved for ${key === 'default' ? 'all' : `<b>${key}</b>`}`, 'HTML');
     } else if (text === '/clear') {
-      latestCodes = {}; notifiedCustomers = {};
+      latestCodes = {}; notifiedCustomers = {}; Object.keys(notifiedCaptureAlerts).forEach((k) => delete notifiedCaptureAlerts[k]);
       await sendTG(chatId, '✅ All codes cleared');
     } else if (text.startsWith('/clear ')) {
       const key = text.replace('/clear ', '').trim().toLowerCase();
@@ -4530,7 +4531,47 @@ function hasActiveCodeWait(recipientKeys, service) {
   });
 }
 
-function storeSignInCode(recipientKeys, code, service, profileName, receivedAt) {
+function emailMatchesTargets(recipientKeys, targets) {
+  if (!Array.isArray(targets) || !targets.length) return true;
+  const wanted = new Set(targets.map((key) => normalizeEmail(key)).filter(Boolean));
+  return (recipientKeys || []).some((key) => wanted.has(normalizeEmail(key)));
+}
+
+function filterRecipientKeys(recipientKeys, targets) {
+  if (!Array.isArray(targets) || !targets.length) return recipientKeys || [];
+  const wanted = new Set(targets.map((key) => normalizeEmail(key)).filter(Boolean));
+  return (recipientKeys || []).filter((key) => wanted.has(normalizeEmail(key)));
+}
+
+function shouldAlertCodeCapture(scopedKey, code) {
+  const alertKey = `${scopedKey}:${code}`;
+  const last = notifiedCaptureAlerts[alertKey];
+  if (last && Date.now() - last < CODE_TTL_MS) return false;
+  notifiedCaptureAlerts[alertKey] = Date.now();
+  return true;
+}
+
+function maybeNotifyCapturedCode({ service, inboxEmail, recipientKeys, code, customerWaiting }) {
+  if (!customerWaiting) return;
+  const svc = normalizeCodeService(service);
+  const matchedKey = (recipientKeys || []).find((key) => {
+    const scoped = scopedSignInCodeKey(key, svc);
+    if (!scoped) return false;
+    const waitedAt = notifiedCustomers[scoped];
+    return waitedAt && Date.now() - waitedAt <= CODE_TTL_MS;
+  });
+  if (!matchedKey) return;
+  const scoped = scopedSignInCodeKey(matchedKey, svc);
+  if (!scoped || !shouldAlertCodeCapture(scoped, code)) return;
+  const label = svc === 'osn' ? 'OSN+' : svc.charAt(0).toUpperCase() + svc.slice(1);
+  sendTG(
+    TG_ADMIN,
+    `✅ <b>${label} code ready for waiting customer</b>\n📥 Inbox: <code>${inboxEmail}</code>\n📧 Alias: <code>${matchedKey}</code>\n🔢 Code: <b>${code}</b>`,
+    'HTML'
+  ).catch(() => {});
+}
+
+function storeSignInCode(recipientKeys, code, service, profileName, receivedAt, allowedRecipients) {
   const svc = normalizeCodeService(service);
   const normalizedCode = String(code || '').trim();
   if (svc === 'osn' && !isValidOsnOtp(normalizedCode)) {
@@ -4539,16 +4580,19 @@ function storeSignInCode(recipientKeys, code, service, profileName, receivedAt) 
   }
   const ts = Number(receivedAt || Date.now());
   if (!isSignInCodeFresh(ts)) return false;
+  const keys = filterRecipientKeys(recipientKeys, allowedRecipients);
+  if (!keys.length) return false;
   const entry = { code: normalizedCode, timestamp: ts, service: svc };
   let stored = false;
   const writeEntry = (scoped) => {
     if (!scoped) return;
     const prev = latestCodes[scoped];
     if (prev && prev.timestamp >= ts) return;
+    if (prev && prev.code === normalizedCode && prev.timestamp === ts) return;
     latestCodes[scoped] = entry;
     stored = true;
   };
-  (recipientKeys || []).forEach((key) => writeEntry(scopedSignInCodeKey(key, svc)));
+  keys.forEach((key) => writeEntry(scopedSignInCodeKey(key, svc)));
   if (svc === 'netflix' && profileName) {
     writeEntry(scopedSignInCodeKey(String(profileName).toLowerCase(), 'netflix'));
   }
@@ -4619,13 +4663,13 @@ app.post('/get-code', async (req, res) => {
     }
     if (inboxKey) {
       await loadGmailMonitors();
-      const fetchOpts = isRequest
-        ? { rescanMinutes: Math.ceil(CODE_TTL_MS / 60000), notifyOnCapture: true }
-        : {};
+      const fetchOpts = {
+        onlyRecipients: lookupKeys,
+        onlyService: codeType,
+        waitStartedAt: isRequest ? notifiedCustomers[notifyKey] : 0
+      };
       if (monitoredEmails[inboxKey]) {
         await fetchMonitoredInboxes(inboxKey, fetchOpts);
-      } else if (isRequest && !lookupKeys.some((candidate) => monitoredEmails[candidate])) {
-        await fetchMonitoredInboxes(null, fetchOpts);
       } else if (!isRequest && lookupKeys.some((candidate) => monitoredEmails[candidate])) {
         const monitoredKey = lookupKeys.find((candidate) => monitoredEmails[candidate]);
         if (monitoredKey) await fetchMonitoredInboxes(monitoredKey, fetchOpts);
@@ -4917,64 +4961,62 @@ async function fetchMonitoredInboxes(targetEmail, options = {}) {
       for (const e of emails) {
         const receivedAt = emailReceivedAt(e);
         if (!isSignInCodeFresh(receivedAt)) continue;
+        if (options.waitStartedAt && receivedAt < Number(options.waitStartedAt) - 120000) continue;
         const recipientKeys = collectEmailRecipients(e, email);
-        const osnResult = extractOsnCodeFromEmail(e, emailPlainBody);
-        const netflixResult = extractNetflixCode(e);
-        const disneyResult = extractDisneyCode(e);
-        const canvaResult = extractCanvaCode(e);
-        const notifyCapture = Boolean(options.notifyOnCapture);
+        if (!emailMatchesTargets(recipientKeys, options.onlyRecipients)) continue;
+        const allowedRecipients = options.onlyRecipients || recipientKeys;
+        const onlyService = options.onlyService ? normalizeCodeService(options.onlyService) : null;
+        const runOsn = !onlyService || onlyService === 'osn';
+        const runNetflix = !onlyService || onlyService === 'netflix';
+        const runDisney = !onlyService || onlyService === 'disney';
+        const runCanva = !onlyService || onlyService === 'canva';
+        const osnResult = runOsn ? extractOsnCodeFromEmail(e, emailPlainBody) : null;
+        const netflixResult = runNetflix ? extractNetflixCode(e) : null;
+        const disneyResult = runDisney ? extractDisneyCode(e) : null;
+        const canvaResult = runCanva ? extractCanvaCode(e) : null;
         if (osnResult && osnResult.customerSafe) {
           const customerWaiting = hasActiveCodeWait(recipientKeys, 'osn');
-          if (storeSignInCode(recipientKeys, osnResult.code, 'osn', null, receivedAt)) {
+          if (storeSignInCode(recipientKeys, osnResult.code, 'osn', null, receivedAt, allowedRecipients)) {
             console.log(`📧 OSN+ sign-in code ${osnResult.code} captured for ${email} recipients: ${recipientKeys.join(', ')}`);
-            if (notifyCapture || customerWaiting) {
-              await sendTG(TG_ADMIN, `✅ <b>OSN+ Sign-in Code Ready</b>\n📥 Gmail inbox: ${email}\n📧 Recipient: ${recipientKeys.join(', ')}\n🔢 Code: <b>${osnResult.code}</b>\n\nCustomer can tap Refresh on their subscription link.`, 'HTML').catch(() => {});
-            }
-            recipientKeys.forEach(key => delete notifiedCustomers[scopedSignInCodeKey(key, 'osn')]);
+            maybeNotifyCapturedCode({ service: 'osn', inboxEmail: email, recipientKeys: allowedRecipients, code: osnResult.code, customerWaiting });
+            allowedRecipients.forEach((key) => delete notifiedCustomers[scopedSignInCodeKey(key, 'osn')]);
           }
         } else if (netflixResult && netflixResult.customerSafe) {
           const customerWaiting = hasActiveCodeWait(recipientKeys, 'netflix');
-          if (storeSignInCode(recipientKeys, netflixResult.code, 'netflix', null, receivedAt)) {
+          if (storeSignInCode(recipientKeys, netflixResult.code, 'netflix', null, receivedAt, allowedRecipients)) {
             console.log(`📧 Netflix sign-in code ${netflixResult.code} captured for ${email} recipients: ${recipientKeys.join(', ')}`);
-            if (notifyCapture || customerWaiting) {
-              await sendTG(TG_ADMIN, `✅ <b>Netflix Sign-in Code Ready</b>\n📥 Gmail inbox: ${email}\n📧 Recipient: ${recipientKeys.join(', ')}\n🔢 Code: <b>${netflixResult.code}</b>`, 'HTML').catch(() => {});
-            }
-            recipientKeys.forEach(key => delete notifiedCustomers[scopedSignInCodeKey(key, 'netflix')]);
+            maybeNotifyCapturedCode({ service: 'netflix', inboxEmail: email, recipientKeys: allowedRecipients, code: netflixResult.code, customerWaiting });
+            allowedRecipients.forEach((key) => delete notifiedCustomers[scopedSignInCodeKey(key, 'netflix')]);
           }
         } else if (netflixResult && !netflixResult.customerSafe) {
           console.log(`🔐 Admin-only Netflix security code ${netflixResult.code} captured for ${email} recipients: ${recipientKeys.join(', ')}`);
-          if (notifyCapture && hasActiveCodeWait(recipientKeys, 'netflix')) {
-            await sendTG(TG_ADMIN, `🔐 <b>Netflix Security Code — ADMIN ONLY</b>\n📥 Gmail inbox: ${email}\n📧 Recipient: ${recipientKeys.join(', ')}\n🔢 Code: <b>${netflixResult.code}</b>`, 'HTML').catch(() => {});
-          }
         } else if (disneyResult && disneyResult.customerSafe) {
           const customerWaiting = hasActiveCodeWait(recipientKeys, 'disney');
-          if (storeSignInCode(recipientKeys, disneyResult.code, 'disney', null, receivedAt)) {
+          if (storeSignInCode(recipientKeys, disneyResult.code, 'disney', null, receivedAt, allowedRecipients)) {
             console.log(`📧 Disney+ sign-in code ${disneyResult.code} captured for ${email} recipients: ${recipientKeys.join(', ')}`);
-            if (notifyCapture || customerWaiting) {
-              await sendTG(TG_ADMIN, `✅ <b>Disney+ Sign-in Code Ready</b>\n📥 Gmail inbox: ${email}\n📧 Recipient: ${recipientKeys.join(', ')}\n🔢 Code: <b>${disneyResult.code}</b>`, 'HTML').catch(() => {});
-            }
-            recipientKeys.forEach(key => delete notifiedCustomers[scopedSignInCodeKey(key, 'disney')]);
+            maybeNotifyCapturedCode({ service: 'disney', inboxEmail: email, recipientKeys: allowedRecipients, code: disneyResult.code, customerWaiting });
+            allowedRecipients.forEach((key) => delete notifiedCustomers[scopedSignInCodeKey(key, 'disney')]);
           }
         } else if (canvaResult && canvaResult.customerSafe) {
           const customerWaiting = hasActiveCodeWait(recipientKeys, 'canva');
-          if (storeSignInCode(recipientKeys, canvaResult.code, 'canva', null, receivedAt)) {
+          if (storeSignInCode(recipientKeys, canvaResult.code, 'canva', null, receivedAt, allowedRecipients)) {
             console.log(`📧 Canva sign-in code ${canvaResult.code} captured for ${email} recipients: ${recipientKeys.join(', ')}`);
-            if (notifyCapture || customerWaiting) {
-              await sendTG(TG_ADMIN, `✅ <b>Canva Sign-in Code Ready</b>\n📥 Gmail inbox: ${email}\n📧 Recipient: ${recipientKeys.join(', ')}\n🔢 Code: <b>${canvaResult.code}</b>`, 'HTML').catch(() => {});
-            }
-            recipientKeys.forEach(key => delete notifiedCustomers[scopedSignInCodeKey(key, 'canva')]);
+            maybeNotifyCapturedCode({ service: 'canva', inboxEmail: email, recipientKeys: allowedRecipients, code: canvaResult.code, customerWaiting });
+            allowedRecipients.forEach((key) => delete notifiedCustomers[scopedSignInCodeKey(key, 'canva')]);
           }
         }
-        const shahidResult = extractShahidResetLink(e);
-        if (shahidResult && shahidResult.link) {
-          const shahidWaiting = recipientKeys.some((key) => notifiedShahidReset[key] && Date.now() - notifiedShahidReset[key] <= SHAHID_RESET_TTL_MS);
-          recipientKeys.forEach(key => {
-            latestShahidResetLinks[key] = { link: shahidResult.link, timestamp: receivedAt };
-            delete notifiedShahidReset[key];
-          });
-          console.log(`📧 Shahid reset link captured for ${email} recipients: ${recipientKeys.join(', ')}`);
-          if (notifyCapture || shahidWaiting) {
-            await sendTG(TG_ADMIN, `✅ <b>Shahid Reset Link Ready</b>\n📥 Inbox: ${email}\n📧 Recipient: ${recipientKeys.join(', ')}`, 'HTML').catch(() => {});
+        if (!onlyService || onlyService === 'shahid') {
+          const shahidResult = extractShahidResetLink(e);
+          if (shahidResult && shahidResult.link && emailMatchesTargets(recipientKeys, options.onlyRecipients)) {
+            const shahidWaiting = filterRecipientKeys(recipientKeys, allowedRecipients).some((key) => notifiedShahidReset[key] && Date.now() - notifiedShahidReset[key] <= SHAHID_RESET_TTL_MS);
+            filterRecipientKeys(recipientKeys, allowedRecipients).forEach((key) => {
+              latestShahidResetLinks[key] = { link: shahidResult.link, timestamp: receivedAt };
+              delete notifiedShahidReset[key];
+            });
+            console.log(`📧 Shahid reset link captured for ${email} recipients: ${recipientKeys.join(', ')}`);
+            if (shahidWaiting) {
+              sendTG(TG_ADMIN, `✅ <b>Shahid reset link ready for waiting customer</b>\n📥 Inbox: <code>${email}</code>`, 'HTML').catch(() => {});
+            }
           }
         }
       }
