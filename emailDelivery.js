@@ -259,9 +259,16 @@ async function deliverSubscriptionEmail({ email, name, productName, planLabel, o
     });
     return { provider: 'resend' };
   }
+  const baseParams = marketingTemplateParams(email, name, content.subject, content.text, data);
   await sendViaEmailJS({
     templateId: emailJs.marketingTemplateId || emailJs.otpTemplateId,
-    templateParams: marketingTemplateParams(email, name, content.subject, content.text, data),
+    templateParams: {
+      ...baseParams,
+      subscription_link: subLink || '',
+      sub_link: subLink || '',
+      link: subLink || '',
+      subscription_url: subLink || ''
+    },
     emailJs
   });
   return { provider: 'emailjs' };

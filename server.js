@@ -2775,6 +2775,41 @@ function syncUserContact(user, { tgChatId, name, phone } = {}) {
   return user;
 }
 
+async function resendSubscriptionsAfterTelegramAdded(user, data, options = {}) {
+  if (!user || !normalizeTgChatId(user.tgChatId)) return 0;
+  const rows = [];
+  (user.orders || []).forEach((order) => {
+    if (order && order.email && !order.telegramDeliveredAt) rows.push({ order, assignCustId: null });
+  });
+  (user.myCustomers || []).forEach((customer) => {
+    (customer.subs || []).forEach((order) => {
+      if (order && order.email && !order.telegramDeliveredAt) rows.push({ order, assignCustId: customer.id });
+    });
+  });
+  let sent = 0;
+  for (const row of rows.slice(0, options.limit || 8)) {
+    const { order, assignCustId } = row;
+    const product = {
+      name: order.product,
+      short: order.short || '',
+      color: order.color || '',
+      tc: order.tc || '',
+      id: order.productId || ''
+    };
+    const channel = await notifyPurchaseFulfilled(
+      user,
+      product,
+      order.plan || '',
+      order.price || 0,
+      order,
+      assignCustId,
+      { forceResend: true, skipAdminNotify: true, data }
+    );
+    if (channel) sent += 1;
+  }
+  return sent;
+}
+
 async function notifyPurchasePending(user, product, planLabel, price, assignCustId, pendingOrder = null, options = {}) {
   const assignedCustomer = assignCustId !== null && assignCustId !== undefined
     ? (user.myCustomers || []).find(c => c.id === assignCustId)
@@ -2905,9 +2940,11 @@ async function notifyPurchaseFulfilled(user, product, planLabel, price, order, a
     custMsg = `🔁 <b>Resent your subscription</b>\n\n${custMsg}`;
   }
   const tgChatId = String(user.tgChatId || '').trim();
+  const channels = [];
   if (tgChatId) {
     try {
       await sendTG(tgChatId, custMsg, 'HTML');
+      channels.push('telegram');
       if (assignedCustomer && assignedCustomer.tgChatId && String(assignedCustomer.tgChatId) !== tgChatId) {
         const assignMsg = isAnghami
           ? `✅ <b>Anghami+</b>\n\n📋 ${planLabel}\n\n🔗 ${order.serviceLink || ''}\n\n${ANGHAMI_CANCEL_NOTE_EN}\n\n🔗 ${subLink}`
@@ -2922,7 +2959,6 @@ async function notifyPurchaseFulfilled(user, product, planLabel, price, order, a
                 : `✅ <b>${product.name} subscription</b>\n\n📋 ${planLabel}\n\n🔐 <b>Credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>${order.profilePin ? `\n🔢 PIN: <code>${order.profilePin}</code>` : ''}\n\n🔗 ${subLink}`;
         await sendTG(assignedCustomer.tgChatId, assignMsg, 'HTML').catch(() => {});
       }
-      return 'telegram';
     } catch (e) {
       console.error('Purchase customer TG:', e.message);
     }
@@ -2932,9 +2968,10 @@ async function notifyPurchaseFulfilled(user, product, planLabel, price, order, a
     assignedCustomerName: custName || '',
     kind: 'fulfilled'
   });
-  if (emailSent) {
-    console.log('Subscription delivered by email to', user.email);
-    return 'email';
+  if (emailSent) channels.push('email');
+  if (channels.length) {
+    console.log(`Subscription delivered via ${channels.join('+')} to`, user.email, tgChatId || '');
+    return channels.join('+');
   }
   console.warn('Purchase fulfilled but could not deliver to customer:', user.email);
   return false;
@@ -3012,9 +3049,23 @@ app.post('/customer/profile', async (req, res) => {
     data.users = Array.isArray(data.users) ? data.users : [];
     const user = data.users.find(u => normalizeEmail(u.email) === session.email);
     if (!user) return res.status(404).json({ error: 'User not found' });
+    const prevTg = normalizeTgChatId(user.tgChatId);
     syncUserContact(user, { name, tgChatId, phone });
+    const newTg = normalizeTgChatId(user.tgChatId);
+    const tgJustAdded = Boolean(newTg && newTg !== prevTg);
     await writeDbFast(data);
-    res.json({ success: true, user: sanitizeUser(user), data: safeDataForSession(data, session) });
+    if (tgJustAdded) {
+      runAfterResponse(async () => {
+        try {
+          const fresh = await readJsonBinRaw({ fast: true, skipRecoverWrite: true });
+          const liveUser = (fresh.users || []).find(u => normalizeEmail(u.email) === session.email);
+          if (liveUser) await resendSubscriptionsAfterTelegramAdded(liveUser, fresh);
+        } catch (e) {
+          console.error('Resend after Telegram ID added:', e.message);
+        }
+      });
+    }
+    res.json({ success: true, user: sanitizeUser(user), data: safeDataForSession(data, session), telegramResendQueued: tgJustAdded });
   } catch (e) {
     console.error('Profile save error:', e.message);
     res.status(500).json({ error: 'Could not save profile' });
@@ -3146,8 +3197,8 @@ app.post('/customer/resend-subscription', async (req, res) => {
     res.json({
       success: true,
       deliveryChannel: deliveryChannel || null,
-      telegramSent: deliveryChannel === 'telegram',
-      emailSent: deliveryChannel === 'email',
+      telegramSent: String(deliveryChannel || '').includes('telegram'),
+      emailSent: String(deliveryChannel || '').includes('email'),
       user: sanitizeUser(user)
     });
   } catch (e) {

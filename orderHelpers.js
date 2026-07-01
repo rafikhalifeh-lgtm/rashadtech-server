@@ -89,8 +89,12 @@ function stampOrderDelivery(order, deliveredOrChannel, channel) {
   else if (!ch) ch = 'telegram';
   const now = Date.now();
   order.deliveredAt = now;
-  if (ch === 'telegram') order.telegramDeliveredAt = now;
-  if (ch === 'email') order.emailDeliveredAt = now;
+  const normalized = String(ch || '').toLowerCase();
+  if (normalized.includes('telegram')) order.telegramDeliveredAt = now;
+  if (normalized.includes('email')) order.emailDeliveredAt = now;
+  if (!normalized.includes('telegram') && !normalized.includes('email') && ch === 'telegram') {
+    order.telegramDeliveredAt = now;
+  }
   return order;
 }
 
