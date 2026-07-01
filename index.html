@@ -2459,6 +2459,43 @@ async function activateTV(){
   },500);
 }
 let _codeRefreshInterval=null;
+const SIGNIN_CODE_TTL_MS=15*60*1000;
+
+function signinCodePayload(intent){
+  return {
+    accountKey:'default',
+    profileName:_sublinkProfileName||'Customer',
+    codeType:resolveSublinkCodeType(),
+    mainEmail:_sublinkMainEmail,
+    codeEmail:_sublinkCodeEmail,
+    inboxEmail:_sublinkInboxEmail,
+    linkToken:_sublinkLinkToken,
+    subEmail:_sublinkEmail,
+    subPass:_sublinkPass,
+    subPhone:_sublinkPhone||'',
+    intent
+  };
+}
+
+function showSigninCode(code,receivedAt){
+  document.getElementById('sublink-code-request').style.display='none';
+  document.getElementById('sublink-code-section').style.display='block';
+  document.getElementById('sublink-code').textContent=code;
+  const status=document.getElementById('sublink-code-status');
+  const age=receivedAt?Math.max(0,Math.floor((Date.now()-receivedAt)/1000)):0;
+  status.textContent=age>0?`✓ Code received · ${Math.max(0,Math.ceil((SIGNIN_CODE_TTL_MS-(Date.now()-receivedAt))/60000))} min left`:'✓ Code received';
+  status.style.color='var(--green)';
+}
+
+function clearSigninCodeDisplay(message){
+  const codeEl=document.getElementById('sublink-code');
+  if(codeEl)codeEl.textContent='----';
+  const status=document.getElementById('sublink-code-status');
+  if(status){
+    status.textContent=message||'Request a new code on the app, then tap Refresh';
+    status.style.color='var(--text3)';
+  }
+}
 
 async function requestSigninCode(){
   const btn=document.getElementById('request-code-btn');
@@ -2475,18 +2512,7 @@ async function requestSigninCode(){
   btn.disabled=true;
   btn.textContent='⏳ Requesting...';
   status.textContent='';
-  const codePayload={
-    profileName:_sublinkProfileName||'Customer',
-    accountKey:'default',
-    mainEmail:_sublinkMainEmail,
-    codeEmail:_sublinkCodeEmail,
-    inboxEmail:_sublinkInboxEmail,
-    linkToken:_sublinkLinkToken,
-    subEmail:_sublinkEmail,
-    subPass:_sublinkPass,
-    subPhone:_sublinkPhone||'',
-    codeType:resolveSublinkCodeType()
-  };
+  const codePayload=signinCodePayload('request');
   try{
     const controller=new AbortController();
     const timeout=setTimeout(()=>controller.abort(),30000);
@@ -2498,17 +2524,11 @@ async function requestSigninCode(){
     clearTimeout(timeout);
     const j=await r.json();
     if(j.success&&j.code){
-      // Code available — show it directly
-      document.getElementById('sublink-code-request').style.display='none';
-      document.getElementById('sublink-code-section').style.display='block';
-      document.getElementById('sublink-code').textContent=j.code;
-      document.getElementById('sublink-code-status').textContent='✓ Code received';
-      document.getElementById('sublink-code-status').style.color='var(--green)';
+      showSigninCode(j.code,j.receivedAt);
     } else {
-      // No code yet — show refresh panel and notify admin
       document.getElementById('sublink-code-request').style.display='none';
       document.getElementById('sublink-code-section').style.display='block';
-      document.getElementById('sublink-code-status').textContent='⏳ Request sent — tap Refresh in a moment';
+      clearSigninCodeDisplay('⏳ Waiting for email — request a new code on the app, then tap Refresh');
       btn.disabled=false;
       btn.textContent='📲 Request Sign-in Code';
     }
@@ -2522,37 +2542,31 @@ async function requestSigninCode(){
 async function refreshSigninCode(){
   const btn=document.getElementById('refresh-code-btn');
   const status=document.getElementById('sublink-code-status');
+  const cooldownKey='rt_code_poll_'+(_sublinkCodeEmail||_sublinkEmail||'default');
+  const lastPoll=Number(localStorage.getItem(cooldownKey)||0);
+  const waitMs=8000-(Date.now()-lastPoll);
+  if(waitMs>0){
+    status.textContent='Please wait '+Math.ceil(waitMs/1000)+'s before refreshing again';
+    status.style.color='var(--orange)';
+    return;
+  }
+  localStorage.setItem(cooldownKey,String(Date.now()));
   btn.disabled=true;btn.textContent='⏳ Loading...';
-  status.textContent='Connecting to server...';
+  status.textContent='Checking for latest code...';
   try{
     const controller=new AbortController();
     const timeout=setTimeout(()=>controller.abort(),60000);
     const r=await fetch(`${RT_SERVER}/get-code`,{
       method:'POST',headers:authHeaders(),
-      body:JSON.stringify({
-        accountKey:'default',
-        profileName:_sublinkProfileName||'unknown',
-        codeType:resolveSublinkCodeType(),
-        mainEmail:_sublinkMainEmail,
-        codeEmail:_sublinkCodeEmail,
-        inboxEmail:_sublinkInboxEmail,
-        linkToken:_sublinkLinkToken,
-        subEmail:_sublinkEmail,
-        subPass:_sublinkPass,
-        subPhone:_sublinkPhone||''
-      }),
+      body:JSON.stringify(signinCodePayload('poll')),
       signal:controller.signal
     });
     clearTimeout(timeout);
     const j=await r.json();
-    if(j.success&&j.code){
-      document.getElementById('sublink-code').textContent=j.code;
-      status.textContent='✓ Code updated — valid for a few minutes';
-      status.style.color='var(--green)';
+    if(j.success&&j.code&&(!j.receivedAt||Date.now()-j.receivedAt<=SIGNIN_CODE_TTL_MS)){
+      showSigninCode(j.code,j.receivedAt);
     } else {
-      document.getElementById('sublink-code').textContent='----';
-      status.textContent=j.message||'No code found yet — request a new code on OSN+ then tap Refresh';
-      status.style.color='var(--text3)';
+      clearSigninCodeDisplay(j.message||'No fresh code yet — request a new code on the app, then tap Refresh');
     }
   }catch(e){
     status.textContent='Error: '+e.message;
