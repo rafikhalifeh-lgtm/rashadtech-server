@@ -1,7 +1,12 @@
 const crypto = require('crypto');
 const {
   PRICE_CATALOG_KEY,
+  RETAIL_PRICE_CATALOG_KEY,
   getMergedCatalog,
+  getResellerCatalog,
+  mergeRetailPriceCatalog,
+  getCatalogForUser,
+  userIsReseller,
   mergePriceCatalog,
   buildCatalogPayload
 } = require('./priceCatalog');
@@ -304,9 +309,44 @@ function registerEnhancements(app, deps) {
   app.get('/catalog/prices', async (req, res) => {
     try {
       const data = await readJsonBinRaw();
-      res.json({ success: true, catalog: getMergedCatalog(data) });
+      const tier = String(req.query.tier || '').toLowerCase();
+      if (tier === 'reseller') {
+        return res.json({ success: true, catalog: getResellerCatalog(data), tier: 'reseller' });
+      }
+      if (tier === 'retail') {
+        return res.json({ success: true, catalog: mergeRetailPriceCatalog(data), tier: 'retail' });
+      }
+      const header = req.get('authorization') || '';
+      const match = header.match(/^Bearer\s+(.+)$/i);
+      const token = match ? match[1] : '';
+      const session = token ? sessions.get(token) : null;
+      if (session && session.role === 'user') {
+        const user = (data.users || []).find(u => normalizeEmail(u.email) === session.email);
+        const catalog = getCatalogForUser(data, user);
+        return res.json({ success: true, catalog, tier: catalog.tier || (userIsReseller(user) ? 'reseller' : 'retail'), isReseller: userIsReseller(user) });
+      }
+      res.json({ success: true, catalog: mergeRetailPriceCatalog(data), tier: 'retail', isReseller: false });
     } catch (e) {
       res.status(500).json({ error: 'Could not load prices' });
+    }
+  });
+
+  app.get('/catalog/storefront', async (req, res) => {
+    try {
+      const data = await readJsonBinRaw({ fast: true });
+      const stockCounts = {};
+      for (const [key, accounts] of Object.entries(data.stock || {})) {
+        stockCounts[key] = (accounts || []).filter(acc => acc && !acc.used).length;
+      }
+      res.json({
+        success: true,
+        catalog: mergeRetailPriceCatalog(data),
+        tier: 'retail',
+        stockCounts,
+        stockBlocks: data.stockBlocks || {}
+      });
+    } catch (e) {
+      res.status(500).json({ error: 'Could not load storefront' });
     }
   });
 
@@ -315,9 +355,64 @@ function registerEnhancements(app, deps) {
     if (!session) return;
     try {
       const data = await readJsonBinRaw();
-      res.json({ success: true, catalog: getMergedCatalog(data) });
+      res.json({
+        success: true,
+        catalog: getResellerCatalog(data),
+        retailCatalog: mergeRetailPriceCatalog(data),
+        tier: 'reseller'
+      });
     } catch (e) {
       res.status(500).json({ error: 'Could not load prices' });
+    }
+  });
+
+  app.post('/admin/retail-prices', async (req, res) => {
+    const session = requireSession(req, res, ['admin']);
+    if (!session) return;
+    try {
+      const payload = buildCatalogPayload(req.body || {});
+      const data = await readJsonBinRaw();
+      data[RETAIL_PRICE_CATALOG_KEY] = {
+        ...payload,
+        updatedAt: Date.now(),
+        updatedBy: session.email
+      };
+      await writeJsonBinRaw(data);
+      await appendActivity('Retail prices updated', `${Object.keys(payload.prices).length} override(s)`, session.email);
+      res.json({ success: true, catalog: mergeRetailPriceCatalog(data) });
+    } catch (e) {
+      res.status(500).json({ error: 'Could not save retail prices' });
+    }
+  });
+
+  app.post('/admin/toggle-reseller', async (req, res) => {
+    const session = requireSession(req, res, ['admin']);
+    if (!session) return;
+    const { email, isReseller } = req.body || {};
+    const cleanEmail = normalizeEmail(email);
+    if (!cleanEmail || typeof isReseller !== 'boolean') {
+      return res.status(400).json({ error: 'email and isReseller are required' });
+    }
+    try {
+      const data = await readJsonBinRaw();
+      const user = (data.users || []).find(u => normalizeEmail(u.email) === cleanEmail);
+      if (!user) return res.status(404).json({ error: 'Customer not found' });
+      user.isReseller = isReseller;
+      await writeJsonBinRaw(data);
+      await appendActivity(
+        isReseller ? 'Reseller approved' : 'Reseller removed',
+        cleanEmail,
+        session.email
+      );
+      if (user.tgChatId) {
+        const msg = isReseller
+          ? '🏪 <b>Reseller account activated!</b>\n\nYou now see wholesale prices on rashadtech.tv. Sign out and sign in again if prices do not update.'
+          : '🛍 <b>Account updated</b>\n\nYour account now uses retail customer prices on rashadtech.tv.';
+        await sendTG(user.tgChatId, msg, 'HTML').catch(() => {});
+      }
+      res.json({ success: true, user: sanitizeUser(user, { admin: true }), data: safeDataForSession(data, { role: 'admin' }) });
+    } catch (e) {
+      res.status(500).json({ error: 'Could not update reseller status' });
     }
   });
 

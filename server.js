@@ -10,9 +10,13 @@ const { registerEnhancements } = require('./enhancements');
 const { registerWhatsAppBot } = require('./whatsappBot');
 const {
   getMergedCatalog,
+  getCatalogForUser,
+  userIsReseller,
   resolvePurchasePrice,
+  computeJawakerPrice,
   pricesMatch,
   PRICE_CATALOG_KEY,
+  RETAIL_PRICE_CATALOG_KEY,
   countCustomPriceDeltas,
   reconstructCatalogFromChangeLog
 } = require('./priceCatalog');
@@ -1281,7 +1285,8 @@ function mergeUserWrite(existing, incoming, session) {
         myCustomers: mergeMyCustomers(prev.myCustomers, incomingUser.myCustomers),
         balance: Number(prev.balance || 0),
         orders: Array.isArray(prev.orders) ? prev.orders : [],
-        transactions: Array.isArray(prev.transactions) ? prev.transactions : []
+        transactions: Array.isArray(prev.transactions) ? prev.transactions : [],
+        isReseller: prev.isReseller
       };
     }
   }
@@ -1643,6 +1648,7 @@ function mergeUsersPreservingWallet(existingUsers, incomingUsers) {
       tgChatId: String(inc.tgChatId || prev.tgChatId || '').trim(),
       verified: inc.verified !== undefined ? Boolean(inc.verified) : prev.verified,
       banned: inc.banned !== undefined ? Boolean(inc.banned) : prev.banned,
+      isReseller: inc.isReseller !== undefined ? Boolean(inc.isReseller) : prev.isReseller,
       joinedDate: inc.joinedDate || prev.joinedDate,
       pass: inc.pass || prev.pass || '',
       balance: Number(prev.balance || 0),
@@ -1673,6 +1679,7 @@ function preserveSensitiveFields(existing, incoming) {
     LINK_TOKENS_KEY,
     BACKUPS_KEY,
     PRICE_CATALOG_KEY,
+    RETAIL_PRICE_CATALOG_KEY,
     SMS_CONFIG_KEY,
     'priceChangeLog',
     'siteSettings',
@@ -2558,6 +2565,7 @@ app.post('/auth/signup', async (req, res) => {
       orders: [],
       myCustomers: [],
       verified: true,
+      isReseller: false,
       joinedDate: formatBeirutTime()
     };
     data.users.push(user);
@@ -3223,7 +3231,7 @@ app.post('/purchase', async (req, res) => {
   try {
     const outcome = await enqueueDbWrite(async () => {
       const data = await readDbForWrite();
-      const catalog = getMergedCatalog(data);
+      const catalog = getCatalogForUser(data, user);
       const expectedPrice = resolvePurchasePrice(catalog, { skey, customDays: Number(customDays || 0) });
       if (expectedPrice == null || !pricesMatch(expectedPrice, price)) {
         return { error: 'Price has changed. Refresh the store and try again.', status: 400 };
@@ -3660,7 +3668,7 @@ app.post('/purchase-game', async (req, res) => {
     return res.status(409).json({ error: 'Order already processing. Please wait a moment.' });
   }
   activePurchases.add(lockKey);
-  const { product, planLabel, price, playerId, playerPassword, customOrderType, tgChatId } = req.body || {};
+  const { product, planLabel, price, playerId, playerPassword, customOrderType, tgChatId, skey, tokens } = req.body || {};
   const orderPrice = Number(price);
   if (!product || !planLabel || !playerId || !orderPrice || orderPrice <= 0) {
     activePurchases.delete(lockKey);
@@ -3673,6 +3681,16 @@ app.post('/purchase-game', async (req, res) => {
       data.gameorders = Array.isArray(data.gameorders) ? data.gameorders : [];
       const user = data.users.find(u => normalizeEmail(u.email) === session.email);
       if (!user) return { error: 'User not found', status: 404 };
+      const catalog = getCatalogForUser(data, user);
+      let expectedPrice = null;
+      if (customOrderType === 'jawaker') {
+        expectedPrice = computeJawakerPrice(catalog, Number(tokens || 0));
+      } else if (skey) {
+        expectedPrice = resolvePurchasePrice(catalog, { skey });
+      }
+      if (expectedPrice == null || !pricesMatch(expectedPrice, orderPrice)) {
+        return { error: 'Price has changed. Refresh the store and try again.', status: 400 };
+      }
       syncUserContact(user, { tgChatId });
       if (user.banned) return { error: 'Your account has been suspended.', status: 403 };
       if (Number(user.balance || 0) < orderPrice) return { error: 'Insufficient balance', status: 400 };

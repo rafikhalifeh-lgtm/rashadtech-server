@@ -1,4 +1,6 @@
 const PRICE_CATALOG_KEY = 'priceCatalog';
+const RETAIL_PRICE_CATALOG_KEY = 'retailPriceCatalog';
+const RETAIL_MARKUP = 1.4;
 
 const DURATIONS_NF_1U = [
   { key: '1m', price: 1.5 },
@@ -188,6 +190,73 @@ function getMergedCatalog(data) {
   return mergePriceCatalog(data && data[PRICE_CATALOG_KEY]);
 }
 
+function getResellerCatalog(data) {
+  return getMergedCatalog(data);
+}
+
+function roundRetailAmount(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num <= 0) return num;
+  const marked = num * RETAIL_MARKUP;
+  if (marked < 0.01) return Math.round(marked * 1e6) / 1e6;
+  return Math.round(marked * 100) / 100;
+}
+
+function buildRetailDefaultsFromReseller(resellerCatalog) {
+  const base = resellerCatalog || DEFAULT_PRICE_CATALOG;
+  const prices = {};
+  Object.entries(base.prices || {}).forEach(([key, value]) => {
+    prices[key] = roundRetailAmount(value);
+  });
+  const customDayRates = {};
+  Object.entries(base.customDayRates || {}).forEach(([key, value]) => {
+    customDayRates[key] = roundRetailAmount(value);
+  });
+  const jawaker = base.jawaker || DEFAULT_PRICE_CATALOG.jawaker;
+  return {
+    prices,
+    customDayRates,
+    jawaker: {
+      ...jawaker,
+      basePerToken: roundRetailAmount(jawaker.basePerToken)
+    }
+  };
+}
+
+function mergeRetailPriceCatalog(data) {
+  const reseller = getResellerCatalog(data);
+  const defaults = buildRetailDefaultsFromReseller(reseller);
+  const stored = data && data[RETAIL_PRICE_CATALOG_KEY] ? data[RETAIL_PRICE_CATALOG_KEY] : {};
+  const storedPrices = stored.prices || {};
+  const storedRates = stored.customDayRates || {};
+  return {
+    prices: { ...defaults.prices, ...sanitizeNumberMap(storedPrices) },
+    customDayRates: { ...defaults.customDayRates, ...sanitizeNumberMap(storedRates) },
+    jawaker: {
+      ...defaults.jawaker,
+      ...(stored.jawaker ? sanitizeJawakerConfig(stored.jawaker) : {})
+    },
+    updatedAt: stored.updatedAt || null,
+    updatedBy: stored.updatedBy || null,
+    tier: 'retail'
+  };
+}
+
+function getCatalogForUser(data, user) {
+  if (userIsReseller(user)) {
+    const catalog = getResellerCatalog(data);
+    return { ...catalog, tier: 'reseller' };
+  }
+  return mergeRetailPriceCatalog(data);
+}
+
+function userIsReseller(user) {
+  if (!user) return false;
+  if (user.isReseller === true) return true;
+  if (user.isReseller === false) return false;
+  return true;
+}
+
 function computeJawakerPrice(catalog, tokens) {
   const amount = Number(tokens);
   if (!Number.isFinite(amount) || amount <= 0) return null;
@@ -308,10 +377,18 @@ function reconstructCatalogFromChangeLog(data) {
 
 module.exports = {
   PRICE_CATALOG_KEY,
+  RETAIL_PRICE_CATALOG_KEY,
+  RETAIL_MARKUP,
   DEFAULT_PRICE_CATALOG,
   buildDefaultPriceCatalog,
   mergePriceCatalog,
   getMergedCatalog,
+  getResellerCatalog,
+  mergeRetailPriceCatalog,
+  getCatalogForUser,
+  userIsReseller,
+  roundRetailAmount,
+  buildRetailDefaultsFromReseller,
   resolvePurchasePrice,
   computeJawakerPrice,
   pricesMatch,
