@@ -384,7 +384,8 @@ function registerEnhancements(app, deps) {
         catalog: mergeRetailPriceCatalog(data),
         tier: 'retail',
         stockCounts,
-        stockBlocks: data.stockBlocks || {}
+        stockBlocks: data.retailStockBlocks || {},
+        retailStockBlocks: data.retailStockBlocks || {}
       });
     } catch (e) {
       res.status(500).json({ error: 'Could not load storefront' });

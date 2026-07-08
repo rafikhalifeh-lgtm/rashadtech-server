@@ -1070,10 +1070,14 @@ So your EmailJS template will receive the user email and verification code corre
         </div>
       </div>
       <div id="admin-stock" class="tab-pane active">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;flex-wrap:wrap;gap:8px">
           <div class="pg-title">Stock Management</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap" id="admin-stock-tier-toggle">
+            <button type="button" class="btn-primary" id="admin-stock-tier-reseller" onclick="setAdminStockTier('reseller')">🏪 Reseller blocks</button>
+            <button type="button" class="btn-primary" id="admin-stock-tier-retail" style="opacity:.55;background:var(--bg3);color:var(--text2)" onclick="setAdminStockTier('retail')">🛍 Retail blocks</button>
+          </div>
         </div>
-        <div class="pg-sub">Add credentials per plan. Expiry date triggers automatic alerts.</div>
+        <div class="pg-sub" id="admin-stock-tier-note">Block plans for <b>reseller (wholesale)</b> accounts. Retail customers and the public store use separate blocks — switch to Retail blocks to manage those.</div>
         <div id="stock-panels"></div>
       </div>
       <div id="admin-prices" class="tab-pane">
@@ -1446,6 +1450,7 @@ function saveOfflineCache(data){
       users:userSlice?[userSlice]:[],
       stock:data.stock||{},
       stockBlocks:data.stockBlocks||{},
+      retailStockBlocks:data.retailStockBlocks||{},
       pending:(data.pending||[]).filter(p=>normEmail(p.userEmail)===email),
       topupreqs:(data.topupreqs||[]).filter(r=>normEmail(r.email)===email),
       requests:data.requests||[],
@@ -1843,6 +1848,7 @@ function applyDataSnapshot(data){
   if(incoming.topupreqs!==undefined)_jbCache.topupreqs=incoming.topupreqs;
   if(incoming.stock!==undefined)_jbCache.stock=incoming.stock;
   if(incoming.stockBlocks!==undefined)_jbCache.stockBlocks=incoming.stockBlocks;
+  if(incoming.retailStockBlocks!==undefined)_jbCache.retailStockBlocks=incoming.retailStockBlocks;
   users=Array.isArray(_jbCache.users)?_jbCache.users:[];
   accountStock=_jbCache.stock||{};
   globalRequests=_jbCache.requests||[];
@@ -2259,8 +2265,9 @@ let _rtPriceCatalog=null;
 let _rtResellerPriceCatalog=null;
 let _rtRetailPriceCatalog=null;
 let _adminPriceTier='reseller';
+let _adminStockTier='reseller';
 let _appliedPriceTier=null;
-const STOREFRONT_CACHE_KEY='rt_storefront_v1';
+const STOREFRONT_CACHE_KEY='rt_storefront_v2';
 const STOREFRONT_CACHE_MS=60*60*1000;
 
 function expectedPriceTier(){
@@ -2314,7 +2321,7 @@ function updateResellerUi(){
   const chip=document.getElementById('reseller-price-chip');
   if(chip)chip.style.display=reseller&&!isGuestMode?'inline-flex':'none';
   const retailChip=document.getElementById('retail-account-chip');
-  if(retailChip)retailChip.style.display='none';
+  if(retailChip)retailChip.style.display=(!reseller&&!isGuestMode&&currentUser?.isReseller===false)?'inline-flex':'none';
   const sub=document.getElementById('store-subtitle');
   if(sub){
     if(isGuestMode)sub.textContent=currentLang==='ar'?'تصفح الأسعار · سجّل للشراء فوراً':'Browse prices · Sign up to buy instantly';
@@ -2341,7 +2348,8 @@ function applyStorefrontSnapshot(payload,opts={}){
   }
   if(payload.stockBlocks){
     if(!_jbCache)_jbCache={};
-    _jbCache.stockBlocks=payload.stockBlocks;
+    _jbCache.retailStockBlocks=payload.retailStockBlocks||payload.stockBlocks;
+    _jbCache.stockBlocks=payload.stockBlocksReseller||_jbCache.stockBlocks||{};
   }
   if(!opts.fromCache)cacheRetailStorefront(payload);
 }
@@ -2470,7 +2478,17 @@ const sk=(p,u,d)=>u?`${p}__${u}__${d}`:`${p}__${d}`;
 function planStockIdx(pl,i){return pl&&pl.stockIdx!=null?pl.stockIdx:i;}
 function planStockKey(productId,pl,i){return sk(productId,null,planStockIdx(pl,i));}
 const getAccounts=k=>accountStock[k]||[];
-const isStockBlocked=k=>Boolean(_jbCache?.stockBlocks?.[k]);
+function stockBlocksForCurrentUser(){
+  if(isGuestMode||!currentUser||!userSeesResellerPrices()){
+    return _jbCache?.retailStockBlocks||_jbCache?.stockBlocks||{};
+  }
+  return _jbCache?.stockBlocks||{};
+}
+function adminStockBlocksMap(){
+  return _adminStockTier==='retail'?(_jbCache?.retailStockBlocks||{}):(_jbCache?.stockBlocks||{});
+}
+const isStockBlocked=k=>Boolean(stockBlocksForCurrentUser()[k]);
+const isAdminStockBlocked=k=>Boolean(adminStockBlocksMap()[k]);
 function customDayBlockKey(productId,userTypeKey){return sk(productId,userTypeKey,'custom');}
 function isCustomDaysBlocked(p,ut){return Boolean(p&&ut&&ut.hasCustom&&isStockBlocked(customDayBlockKey(p.id,ut.key)));}
 function shahidPlanDuration(skey){
@@ -4143,7 +4161,7 @@ async function switchAdminTab(name,el){
 function renderActiveAdminTab(name){
   name=name||_activeAdminTab;
   if(name==='wallets')renderWallets();
-  if(name==='stock')renderStockPanels();
+  if(name==='stock')setAdminStockTier(_adminStockTier);
   if(name==='prices'){
     loadAdminPriceCatalogs().then(()=>renderAdminPrices()).catch(()=>renderAdminPrices());
     return;
@@ -6262,10 +6280,34 @@ async function saveAdminPrices(){
 }
 
 // STOCK
+function setAdminStockTier(tier){
+  _adminStockTier=tier==='retail'?'retail':'reseller';
+  const resellerBtn=document.getElementById('admin-stock-tier-reseller');
+  const retailBtn=document.getElementById('admin-stock-tier-retail');
+  const note=document.getElementById('admin-stock-tier-note');
+  if(resellerBtn){
+    resellerBtn.style.opacity=_adminStockTier==='reseller'?'1':'.55';
+    resellerBtn.style.background=_adminStockTier==='reseller'?'':'var(--bg3)';
+    resellerBtn.style.color=_adminStockTier==='reseller'?'':'var(--text2)';
+  }
+  if(retailBtn){
+    retailBtn.style.opacity=_adminStockTier==='retail'?'1':'.55';
+    retailBtn.style.background=_adminStockTier==='retail'?'':'var(--bg3)';
+    retailBtn.style.color=_adminStockTier==='retail'?'':'var(--text2)';
+  }
+  if(note){
+    note.innerHTML=_adminStockTier==='retail'
+      ?'Block plans on the <b>public store</b> and <b>retail customer</b> accounts. Reseller wholesale accounts are not affected.'
+      :'Block plans for <b>reseller (wholesale)</b> accounts. Retail customers and the public store use separate blocks — switch to Retail blocks to manage those.';
+  }
+  renderStockPanels();
+}
 function renderStockPanels(){
   document.getElementById('stock-panels').innerHTML=products.map(p=>`<div class="admin-section-title">${p.name}</div><div class="admin-panel">${renderStockRows(p)}</div>`).join('');
 }
 function renderStockRows(p){
+  const tier=_adminStockTier;
+  const tierLabel=tier==='retail'?'Retail':'Reseller';
   if(p.hasUserTypes){return p.userTypes.map(ut=>{
     if(ut.noStock){
       return `<div class="admin-row"><div class="admin-icon" style="background:${p.color};overflow:hidden">${prodIcon(p,34,8)}</div>
@@ -6274,10 +6316,10 @@ function renderStockRows(p){
     }
     let rows=ut.durations.map(d=>{
     const skey=sk(p.id,ut.key,d.key);const av=availableCount(skey);const tot=totalCount(skey);const [sl,sc]=stockLabel(av);
-    const blocked=isStockBlocked(skey);
+    const blocked=isAdminStockBlocked(skey);
     return `<div class="admin-row"><div class="admin-icon" style="background:${p.color};overflow:hidden">${prodIcon(p,34,8)}</div>
       <div class="admin-info"><div class="admin-name">${ut.name} · ${d.label}</div>
-      <div class="admin-sub">${fmt(d.price)} &nbsp;·&nbsp; <span class="spill ${sc}" style="padding:1px 6px">${sl}</span> &nbsp;·&nbsp; ${tot} total ${blocked?'&nbsp;·&nbsp;<span style="color:var(--red);font-weight:700">BLOCKED</span>':''}</div></div>
+      <div class="admin-sub">${fmt(d.price)} &nbsp;·&nbsp; <span class="spill ${sc}" style="padding:1px 6px">${sl}</span> &nbsp;·&nbsp; ${tot} total ${blocked?`&nbsp;·&nbsp;<span style="color:var(--red);font-weight:700">${tierLabel} BLOCKED</span>`:''}</div></div>
       <div class="admin-actions">
         <button class="view-btn" style="${blocked?'color:var(--green)':'color:var(--red)'}" onclick="toggleStockBlock('${skey}',${blocked?'false':'true'})">${blocked?'Unblock':'Block'}</button>
         <button class="view-btn" onclick="openAccModal('${skey}','${p.name} — ${ut.name} · ${d.label}')">View</button>
@@ -6288,10 +6330,10 @@ function renderStockRows(p){
       const customKey=customDayBlockKey(p.id,ut.key);
       const stockKey=sk(p.id,ut.key,'1m');
       const av=availableCount(stockKey);const tot=totalCount(stockKey);const [sl,sc]=stockLabel(av);
-      const blocked=isStockBlocked(customKey);
+      const blocked=isAdminStockBlocked(customKey);
       rows+=`<div class="admin-row"><div class="admin-icon" style="background:${p.color};overflow:hidden">${prodIcon(p,34,8)}</div>
       <div class="admin-info"><div class="admin-name">${ut.name} · Custom days</div>
-      <div class="admin-sub">$${ut.customDayRate}/day · uses 1 Month stock · <span class="spill ${sc}" style="padding:1px 6px">${sl}</span> &nbsp;·&nbsp; ${tot} total ${blocked?'&nbsp;·&nbsp;<span style="color:var(--red);font-weight:700">BLOCKED</span>':''}</div></div>
+      <div class="admin-sub">$${ut.customDayRate}/day · uses 1 Month stock · <span class="spill ${sc}" style="padding:1px 6px">${sl}</span> &nbsp;·&nbsp; ${tot} total ${blocked?`&nbsp;·&nbsp;<span style="color:var(--red);font-weight:700">${tierLabel} BLOCKED</span>`:''}</div></div>
       <div class="admin-actions">
         <button class="view-btn" style="${blocked?'color:var(--green)':'color:var(--red)'}" onclick="toggleStockBlock('${customKey}',${blocked?'false':'true'})">${blocked?'Unblock':'Block'}</button>
         <button class="view-btn" onclick="openAccModal('${stockKey}','${p.name} — ${ut.name} · 1 Month')">View</button>
@@ -6302,10 +6344,10 @@ function renderStockRows(p){
   }).join('');}
   return(p.plans||[]).map((pl,i)=>{
     const skey=planStockKey(p.id,pl,i);const av=availableCount(skey);const tot=totalCount(skey);const [sl,sc]=stockLabel(av);
-    const blocked=isStockBlocked(skey);
+    const blocked=isAdminStockBlocked(skey);
     return `<div class="admin-row"><div class="admin-icon" style="background:${p.color};overflow:hidden">${prodIcon(p,34,8)}</div>
       <div class="admin-info"><div class="admin-name">${pl.name}</div>
-      <div class="admin-sub">${fmt(pl.price)} &nbsp;·&nbsp; <span class="spill ${sc}" style="padding:1px 6px">${sl}</span> &nbsp;·&nbsp; ${tot} total ${blocked?'&nbsp;·&nbsp;<span style="color:var(--red);font-weight:700">BLOCKED</span>':''}</div></div>
+      <div class="admin-sub">${fmt(pl.price)} &nbsp;·&nbsp; <span class="spill ${sc}" style="padding:1px 6px">${sl}</span> &nbsp;·&nbsp; ${tot} total ${blocked?`&nbsp;·&nbsp;<span style="color:var(--red);font-weight:700">${tierLabel} BLOCKED</span>`:''}</div></div>
       <div class="admin-actions">
         <button class="view-btn" style="${blocked?'color:var(--green)':'color:var(--red)'}" onclick="toggleStockBlock('${skey}',${blocked?'false':'true'})">${blocked?'Unblock':'Block'}</button>
         <button class="view-btn" onclick="openAccModal('${skey}','${p.name} — ${pl.name}')">View</button>
@@ -6315,14 +6357,19 @@ function renderStockRows(p){
 }
 async function toggleStockBlock(skey,blocked){
   try{
-    const r=await fetch(RT_SERVER+'/admin/stock-block',{method:'POST',headers:authHeaders(),body:JSON.stringify({skey,blocked})});
+    const tier=_adminStockTier==='retail'?'retail':'reseller';
+    const r=await fetch(RT_SERVER+'/admin/stock-block',{method:'POST',headers:authHeaders(),body:JSON.stringify({skey,blocked,tier})});
     const j=await r.json();
     if(!r.ok||!j.success)throw new Error(j.error||'Could not update block');
     if(j.data)applyDataSnapshot(j.data);
-    else if(j.stockBlocks)_jbCache={...(_jbCache||{}),stockBlocks:j.stockBlocks};
+    else{
+      _jbCache={...(_jbCache||{})};
+      if(j.stockBlocks)_jbCache.stockBlocks=j.stockBlocks;
+      if(j.retailStockBlocks)_jbCache.retailStockBlocks=j.retailStockBlocks;
+    }
     renderStockPanels();renderProducts('all');
-    showToast(blocked?'Plan blocked':'Plan unblocked');
-    logActivity(blocked?'Stock blocked':'Stock unblocked',skey);
+    showToast(blocked?`${tier==='retail'?'Retail':'Reseller'} plan blocked`:`${tier==='retail'?'Retail':'Reseller'} plan unblocked`);
+    logActivity(blocked?'Stock blocked':'Stock unblocked',`${tier}: ${skey}`);
   }catch(e){showToast('⚠️ '+e.message);}
 }
 function openAccModal(skey,label,focusAdd=false){curAccModalKey=skey;accAddMode=(isNetflixOneUserKey(skey)||isShahidOneUserKey(skey)||isDisneyOneUserKey(skey)||isOsnOneUserKey(skey))?'bulk':'manual';document.getElementById('acc-modal-title').textContent=label;renderAccModal(focusAdd);openModal('accounts-modal');}

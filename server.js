@@ -701,6 +701,7 @@ function emptyDbData() {
     users: [],
     stock: {},
     stockBlocks: {},
+    [RETAIL_STOCK_BLOCKS_KEY]: {},
     requests: [],
     topupreqs: [],
     pending: [],
@@ -1220,8 +1221,8 @@ function safeDataForSession(data, session) {
   } catch(e) {
     console.error('Session data serialization error:', e.message);
     return session.role === 'admin'
-      ? { users: [], stock: {}, stockBlocks: {}, requests: [], topupreqs: [], pending: [], gameorders: [] }
-      : { users: [], stock: {}, stockBlocks: {}, requests: [], topupreqs: [], pending: [], gameorders: [] };
+      ? { users: [], stock: {}, stockBlocks: {}, [RETAIL_STOCK_BLOCKS_KEY]: {}, requests: [], topupreqs: [], pending: [], gameorders: [] }
+      : { users: [], stock: {}, stockBlocks: {}, [RETAIL_STOCK_BLOCKS_KEY]: {}, requests: [], topupreqs: [], pending: [], gameorders: [] };
   }
 }
 
@@ -1234,7 +1235,8 @@ function slimMutationData(session, data, options = {}) {
     const out = {
       topupreqs: data.topupreqs || [],
       users: (data.users || []).map(u => sanitizeUser(u, { admin: true })),
-      stockBlocks: data.stockBlocks || {}
+      stockBlocks: data.stockBlocks || {},
+      [RETAIL_STOCK_BLOCKS_KEY]: data[RETAIL_STOCK_BLOCKS_KEY] || {}
     };
     if (options.pending) out.pending = data.pending || [];
     if (options.stock) {
@@ -1267,6 +1269,7 @@ function dataForSession(data, session) {
     users: user ? [sanitizeUser(user)] : [],
     stock: sanitizeStock(publicData.stock || {}),
     stockBlocks: sanitizeStockBlocks(publicData.stockBlocks || {}),
+    [RETAIL_STOCK_BLOCKS_KEY]: sanitizeStockBlocks(publicData[RETAIL_STOCK_BLOCKS_KEY] || {}),
     requests: publicData.requests || [],
     topupreqs: (publicData.topupreqs || []).filter(r => normalizeEmail(r.email) === session.email),
     pending: (publicData.pending || []).filter(o => normalizeEmail(o.userEmail) === session.email),
@@ -1388,6 +1391,7 @@ function mergeUserWrite(existing, incoming, session) {
   if (existing && existing[SMS_CONFIG_KEY]) next[SMS_CONFIG_KEY] = existing[SMS_CONFIG_KEY];
   if (existing && Array.isArray(existing.smsorders)) next.smsorders = existing.smsorders;
   if (existing && existing.stockBlocks) next.stockBlocks = existing.stockBlocks;
+  if (existing && existing[RETAIL_STOCK_BLOCKS_KEY]) next[RETAIL_STOCK_BLOCKS_KEY] = existing[RETAIL_STOCK_BLOCKS_KEY];
   return next;
 }
 
@@ -1781,6 +1785,9 @@ function preserveSensitiveFields(existing, incoming) {
     // Stock blocks are changed only via /admin/stock-block — never from browser saveData.
     next.stockBlocks = existing.stockBlocks;
   }
+  if (existing && existing[RETAIL_STOCK_BLOCKS_KEY]) {
+    next[RETAIL_STOCK_BLOCKS_KEY] = existing[RETAIL_STOCK_BLOCKS_KEY];
+  }
   if (existing && existing.stock && incoming && incoming.stock) {
     next.stock = mergeStockPreservingSold(existing.stock, incoming.stock);
   } else if (existing && existing.stock && (!incoming || !incoming.stock)) {
@@ -2137,6 +2144,18 @@ function purchaseBlockKey(skey, customDays) {
     if (customKey) return customKey;
   }
   return skey;
+}
+
+const RETAIL_STOCK_BLOCKS_KEY = 'retailStockBlocks';
+
+function stockBlocksFieldForUser(user) {
+  return user && userIsReseller(user) ? 'stockBlocks' : RETAIL_STOCK_BLOCKS_KEY;
+}
+
+function isPlanStockBlocked(data, user, skey, customDays) {
+  const field = stockBlocksFieldForUser(user);
+  const blocks = data[field] || {};
+  return Boolean(blocks[purchaseBlockKey(skey, customDays)]);
 }
 
 function netflixAliasUsage(data, aliasEmail, planKey) {
@@ -2572,7 +2591,7 @@ app.post('/auth/admin-login', async (req, res) => {
     res.json({ success: true, token, data: safeDataForSession(data, { role: 'admin' }) });
   } catch(e) {
     console.error('Admin login error:', e.message);
-    res.json({ success: true, token, data: { users: [], stock: {}, stockBlocks: {}, requests: [], topupreqs: [], pending: [], gameorders: [] }, warning: 'Logged in, but data could not be loaded. Try refreshing.' });
+    res.json({ success: true, token, data: { users: [], stock: {}, stockBlocks: {}, [RETAIL_STOCK_BLOCKS_KEY]: {}, requests: [], topupreqs: [], pending: [], gameorders: [] }, warning: 'Logged in, but data could not be loaded. Try refreshing.' });
   }
 });
 
@@ -3342,6 +3361,7 @@ app.post('/purchase', async (req, res) => {
       data.stock = data.stock || {};
       data.pending = Array.isArray(data.pending) ? data.pending : [];
       data.stockBlocks = data.stockBlocks || {};
+      data[RETAIL_STOCK_BLOCKS_KEY] = data[RETAIL_STOCK_BLOCKS_KEY] || {};
       const user = data.users.find(u => normalizeEmail(u.email) === session.email);
       if (!user) return { error: 'User not found', status: 404 };
       if (!userIsReseller(user) && assignCustId !== null && assignCustId !== undefined) {
@@ -3354,7 +3374,7 @@ app.post('/purchase', async (req, res) => {
       }
       syncUserContact(user, { tgChatId });
       if (user.banned) return { error: 'Your account has been suspended. Contact support.', status: 403 };
-      if (data.stockBlocks[purchaseBlockKey(skey, customDays)]) {
+      if (isPlanStockBlocked(data, user, skey, customDays)) {
         return { error: 'This plan is temporarily unavailable.', status: 403 };
       }
       if (isCanvaOwnStockKey(skey)) {
@@ -4048,18 +4068,27 @@ app.post('/admin/stock-delete', async (req, res) => {
 app.post('/admin/stock-block', async (req, res) => {
   const session = requireSession(req, res, ['admin']);
   if (!session) return;
-  const { skey, blocked } = req.body;
+  const { skey, blocked, tier } = req.body;
   if (!skey) return res.status(400).json({ error: 'Stock key is required' });
+  const retailTier = String(tier || 'reseller').toLowerCase() === 'retail';
+  const field = retailTier ? RETAIL_STOCK_BLOCKS_KEY : 'stockBlocks';
   try {
     const outcome = await enqueueDbWrite(async () => {
       const data = await readDbForWrite();
       data.stockBlocks = data.stockBlocks || {};
-      if (blocked) data.stockBlocks[skey] = { blocked: true, ts: Date.now() };
-      else delete data.stockBlocks[skey];
+      data[RETAIL_STOCK_BLOCKS_KEY] = data[RETAIL_STOCK_BLOCKS_KEY] || {};
+      if (blocked) data[field][skey] = { blocked: true, ts: Date.now() };
+      else delete data[field][skey];
       await writeJsonBinRaw(data, { backupReason: 'stock-block', lightWrite: true });
       return data;
     });
-    res.json({ success: true, stockBlocks: outcome.stockBlocks, data: safeDataForSession(outcome, { role: 'admin' }) });
+    res.json({
+      success: true,
+      tier: retailTier ? 'retail' : 'reseller',
+      stockBlocks: outcome.stockBlocks,
+      retailStockBlocks: outcome[RETAIL_STOCK_BLOCKS_KEY],
+      data: safeDataForSession(outcome, { role: 'admin' })
+    });
   } catch(e) {
     console.error('Stock block error:', e.message);
     res.status(500).json({ error: 'Could not update stock block' });
