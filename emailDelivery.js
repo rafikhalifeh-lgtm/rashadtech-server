@@ -409,7 +409,7 @@ function marketingTemplateParams(email, name, subject, message, data) {
   };
 }
 
-async function sendViaResend({ to, subject, text, html, headers, config }) {
+async function sendViaResend({ to, subject, text, html, headers, config, replyTo }) {
   const cfg = config || resolveEmailConfig();
   if (!cfg.resendApiKey) throw new Error('Resend API key is not configured');
   const payload = {
@@ -418,7 +418,7 @@ async function sendViaResend({ to, subject, text, html, headers, config }) {
     subject: String(subject || '').trim(),
     text: String(text || '').trim(),
     html: String(html || '').trim(),
-    reply_to: cfg.replyTo
+    reply_to: replyTo || cfg.replyTo
   };
   if (headers && Object.keys(headers).length) payload.headers = headers;
   const r = await fetch('https://api.resend.com/emails', {
@@ -501,6 +501,59 @@ async function deliverMarketingEmail({ email, name, subject, message, templateId
     emailJs
   });
   return { provider: 'emailjs' };
+}
+
+function resolveSupportInbox(data, tier) {
+  const settings = (data && data.siteSettings) || {};
+  const retail = normalizeEnvSecret(settings.retailSupportEmail) || DEFAULT_REPLY_TO;
+  const reseller = normalizeEnvSecret(settings.resellerSupportEmail) || retail;
+  return tier === 'reseller' ? reseller : retail;
+}
+
+async function deliverSupportEscalationEmail({
+  to,
+  subject,
+  message,
+  customerEmail,
+  customerName,
+  tier,
+  data
+}) {
+  const config = resolveEmailConfig(data);
+  const inbox = to || resolveSupportInbox(data, tier);
+  const who = customerName || customerEmail || 'Customer';
+  const tierLabel = tier === 'reseller' ? 'Reseller' : 'Retail';
+  const text = [
+    `${tierLabel} support request`,
+    '',
+    `From: ${who}`,
+    customerEmail ? `Email: ${customerEmail}` : '',
+    '',
+    String(message || '').trim()
+  ].filter(Boolean).join('\n');
+  const html = wrapEmailHtml({
+    title: `${tierLabel} support request`,
+    preheader: `${who} needs help`,
+    bodyHtml: `
+      <p style="margin:0 0 10px;font-size:13px;color:#6b7280;">Account type: <strong>${escapeHtml(tierLabel)}</strong></p>
+      <p style="margin:0 0 10px;"><strong>${escapeHtml(who)}</strong>${customerEmail ? `<br><a href="mailto:${escapeHtml(customerEmail)}">${escapeHtml(customerEmail)}</a>` : ''}</p>
+      <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:14px;margin-top:12px;white-space:pre-wrap;font-size:14px;line-height:1.6;color:#111827;">${escapeHtml(String(message || '').trim())}</div>
+    `,
+    config
+  });
+  if (config.resendApiKey) {
+    await sendViaResend({
+      to: inbox,
+      subject: subject || `[${tierLabel}] Support — ${who}`,
+      text,
+      html,
+      headers: { 'X-Entity-Ref-ID': `support-${Date.now()}` },
+      config,
+      replyTo: customerEmail || config.replyTo
+    });
+    return { provider: 'resend', inbox };
+  }
+  return { provider: 'none', inbox, text };
 }
 
 async function deliverTestEmail({ email, name, emailJs, data }) {
@@ -588,7 +641,9 @@ module.exports = {
   deliverMarketingEmail,
   deliverOtpEmail,
   deliverSubscriptionEmail,
+  deliverSupportEscalationEmail,
   deliverTestEmail,
+  resolveSupportInbox,
   fetchResendDomainStatus,
   getActiveEmailProvider,
   getEmailDeliverabilityStatus,

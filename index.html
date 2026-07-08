@@ -728,6 +728,7 @@ So your EmailJS template will receive the user email and verification code corre
       <div id="topbar-user-actions" style="display:flex;align-items:center;gap:8px">
       <span class="unverified-chip" id="unverified-chip" onclick="showVerifyModal()" style="display:none"><i class="ti ti-mail-exclamation" style="font-size:12px;vertical-align:-1px;margin-right:3px"></i>Verify email</span>
       <span id="reseller-price-chip" style="display:none;font-size:10px;background:var(--green-bg);color:var(--green);border:1px solid var(--green-border);padding:3px 9px;border-radius:4px;font-weight:600">Reseller prices</span>
+      <span id="retail-account-chip" style="display:none;font-size:10px;background:var(--blue-bg);color:var(--blue);border:1px solid var(--blue-border);padding:3px 9px;border-radius:4px;font-weight:600">Retail account</span>
       <div class="wallet-chip" onclick="switchTab('wallet',null)">
         <i class="ti ti-wallet" style="font-size:15px;color:var(--text3)"></i>
         <div><div class="wbal" id="topbar-bal">$0.00</div><div class="wlabel">Wallet</div></div>
@@ -2209,6 +2210,8 @@ function updateResellerUi(){
   });
   const chip=document.getElementById('reseller-price-chip');
   if(chip)chip.style.display=reseller&&!isGuestMode?'inline-flex':'none';
+  const retailChip=document.getElementById('retail-account-chip');
+  if(retailChip)retailChip.style.display=!reseller&&!isGuestMode&&currentUser?'inline-flex':'none';
   const sub=document.getElementById('store-subtitle');
   if(sub){
     if(isGuestMode)sub.textContent='Retail prices · Create a free account to buy';
@@ -3620,7 +3623,7 @@ async function verifyOTP(){
     applyDataSnapshot(j.data||{users:[j.user]});
     bindCurrentUserFromUsers(j.user||users[0]);pendingSignupData=null;delete pendingOTPs[e];
     showToast('✓ Email verified! Welcome!');
-    sendTelegram(`✅ <b>New Customer Registered!</b>\n👤 ${currentUser.name}\n📧 ${currentUser.email}\n📱 ${signupPhone}${currentUser.tgChatId?'\n💬 TG: '+currentUser.tgChatId:''}\n📅 ${currentUser.joinedDate}`);
+    sendTelegram(`✅ <b>New retail customer registered</b>\n👤 ${currentUser.name}\n📧 ${currentUser.email}\n📱 ${signupPhone}${currentUser.tgChatId?'\n💬 TG: '+currentUser.tgChatId:''}\n📅 ${currentUser.joinedDate}`);
     enterApp();
   }catch(ex){
     document.getElementById('verify-err').textContent=ex.message;document.getElementById('verify-err').style.display='block';
@@ -3748,7 +3751,7 @@ function enterApp(opts={}){
   maybePromptCompleteProfile();
 }
 async function recoverMyCustomersOnLogin(opts={}){
-  if(!currentUser?.email||!authToken)return;
+  if(!currentUser?.email||!authToken||!userSeesResellerPrices())return;
   if(!opts.immediate)await new Promise(r=>setTimeout(r,1500));
   const cached=readCachedMyCustomers(currentUser.email);
   let local=mergeMyCustomersClient(cached,currentUser.myCustomers);
@@ -3822,8 +3825,12 @@ function toggleAppMore(){
 }
 function switchTab(name,el){
   if(isGuestMode&&name!=='store'){
-    showToast('Sign in or create an account to access this section');
+    showToast('Sign in or create a free retail account to access this section');
     goToAuth('signup');
+    return;
+  }
+  if(name==='customers'&&!userSeesResellerPrices()){
+    showToast('Customers management is for approved reseller accounts only');
     return;
   }
   // Profile is a separate full page, not a tab inside page-app
@@ -8259,7 +8266,9 @@ const RT_CHAT_I18N={
     name:'rashadtech Support',
     status:'Online — instant replies',
     placeholder:'Type a message...',
-    greeting:'Hi! I can help with purchases, subscriptions, Telegram delivery, wallet, Netflix codes, TV, Shahid fix password, and sub-customers. 👋',
+    greeting:'Hi! I can help with buying subscriptions, your wallet, Netflix codes, TV setup, and account questions. 👋',
+    retailName:'rashadtech Store',
+    resellerName:'rashadtech Reseller Support',
     sensitive:'I can only help with customer store questions (buying, subscriptions, wallet, Telegram). For account administration or internal systems, please contact support on WhatsApp or Telegram.',
     fallback:'I\'m not sure about that. Try a quick topic below, or contact us:<br>• <b>WhatsApp: <a href="https://wa.me/96179306701" target="_blank">+96179306701</a></b><br>• <b>Telegram: <a href="https://t.me/Rashadtech" target="_blank">@Rashadtech</a></b><br>• <b>Bot: <a href="https://t.me/Rashadtech_bot" target="_blank">@Rashadtech_bot</a></b>',
     quick:[
@@ -8269,8 +8278,8 @@ const RT_CHAT_I18N={
       {label:'Sign-in code',q:'I need a Netflix sign-in code'},
       {label:'Watch on TV',q:'How to watch on TV?'},
       {label:'Top up wallet',q:'How do I top up my wallet?'},
-      {label:'Sub-customers',q:'How do sub-customers work?'},
-      {label:'Shahid fix password',q:'Someone changed my Shahid password'},
+      {label:'Shahid fix password',q:'Someone changed my Shahid password',resellerOnly:false},
+      {label:'Sub-customers',q:'How do sub-customers work?',resellerOnly:true},
       {label:'Contact support',q:'How do I contact support?'}
     ],
     faq:[
@@ -8281,6 +8290,7 @@ const RT_CHAT_I18N={
       {q:['subscription','subscriptions','my subs','where are my','credentials','email','my subscriptions'],
        a:'Go to <b>My Subscriptions</b> in the menu. Tap <b>Options</b> on a card to copy link, resend to Telegram, renew, or report an issue.'},
       {q:['sub-customer','sub customer','my customers','assign','for customer'],
+       resellerOnly:true,
        a:'Use <b>My Customers</b> to add people you buy for. Tap <b>Add subscription</b> on a customer to assign a purchase. Those subs also appear in <b>My Subscriptions</b> with a <b>For:</b> badge.'},
       {q:['top up','wallet','balance','credit','pay','topup','deposit'],
        a:'Tap <b>Wallet → Top up</b>, choose an amount, pay <b>only via Whish Money</b> to <b>+961 79 306 701</b>, then send the Whish receipt on <b><a href="https://wa.me/96179306701" target="_blank">WhatsApp</a></b>. Balance is added after confirmation.'},
@@ -8322,7 +8332,9 @@ const RT_CHAT_I18N={
     name:'دعم rashadtech',
     status:'متصل — رد فوري',
     placeholder:'اكتب رسالة...',
-    greeting:'مرحباً! أستطيع مساعدتك في الشراء، الاشتراكات، تيليغرام، المحفظة، نتفليكس، شاهد، إصلاح كلمة المرور، والعملاء الفرعيين. 👋',
+    greeting:'مرحباً! أستطيع مساعدتك في الشراء، الاشتراكات، المحفظة، أكواد نتفليكس، التلفزيون، وإصلاح شاهد. 👋',
+    retailName:'متجر rashadtech',
+    resellerName:'دعم موزّعي rashadtech',
     sensitive:'أستطيع مساعدتك في أسئلة المتجر فقط (الشراء، الاشتراكات، المحفظة، تيليغرام). للإدارة الداخلية تواصل مع الدعم على واتساب أو تيليغرام.',
     fallback:'لم أفهم سؤالك. جرّب موضوعاً سريعاً أدناه، أو تواصل معنا:<br>• <b>واتساب: <a href="https://wa.me/96179306701" target="_blank">+96179306701</a></b><br>• <b>تيليغرام: <a href="https://t.me/Rashadtech" target="_blank">@Rashadtech</a></b><br>• <b>البوت: <a href="https://t.me/Rashadtech_bot" target="_blank">@Rashadtech_bot</a></b>',
     quick:[
@@ -8332,7 +8344,7 @@ const RT_CHAT_I18N={
       {label:'كود الدخول',q:'أحتاج كود دخول نتفليكس'},
       {label:'التلفزيون',q:'كيف أشاهد على التلفزيون؟'},
       {label:'شحن المحفظة',q:'كيف أشحن المحفظة؟'},
-      {label:'عملاء فرعيون',q:'كيف يعمل العملاء الفرعيين؟'},
+      {label:'عملاء فرعيون',q:'كيف يعمل العملاء الفرعيين؟',resellerOnly:true},
       {label:'إصلاح شاهد',q:'تم تغيير كلمة مرور شاهد'},
       {label:'الدعم',q:'كيف أتواصل مع الدعم؟'}
     ],
@@ -8344,6 +8356,7 @@ const RT_CHAT_I18N={
       {q:['اشتراكاتي','اشتراك','أين','بيانات','email','أين اشتراكاتي'],
        a:'اذهب إلى <b>اشتراكاتي</b> من القائمة. اضغط <b>خيارات</b> لنسخ الرابط أو إعادة الإرسال لتيليغرام أو طلب تجديد.'},
       {q:['عميل فرعي','عملاء','sub-customer','تعيين'],
+       resellerOnly:true,
        a:'استخدم <b>عملائي</b> لإضافة من تشتري لهم. اضغط <b>إضافة اشتراك</b> على العميل. تظهر أيضاً في <b>اشتراكاتي</b> مع علامة <b>لـ:</b>.'},
       {q:['شحن','محفظة','رصيد','top up','wallet'],
        a:'<b>المحفظة → شحن</b>، اختر المبلغ، ادفع <b>عبر Whish Money فقط</b> على <b>+961 79 306 701</b>، ثم أرسل إيصال Whish على <b><a href="https://wa.me/96179306701" target="_blank">واتساب</a></b>.'},
@@ -8380,6 +8393,28 @@ let rtChatInited=false;
 
 function rtChatLang(){return(typeof currentLang!=='undefined'&&currentLang==='ar')?'ar':'en';}
 function rtChatPack(){return RT_CHAT_I18N[rtChatLang()]||RT_CHAT_I18N.en;}
+function rtGetAudience(){
+  if(isGuestMode||!currentUser)return 'retail';
+  return userSeesResellerPrices()?'reseller':'retail';
+}
+function rtFilteredPack(){
+  const base=rtChatPack();
+  const aud=rtGetAudience();
+  const name=aud==='reseller'?(base.resellerName||base.name):(base.retailName||'rashadtech Store');
+  const greeting=aud==='reseller'
+    ?(rtChatLang()==='ar'?'مرحباً! دعم موزّعي الجملة — المخزون، العملاء الفرعيون، والأسعار الخاصة. 👋':'Hi! Reseller wholesale support — sub-customers, stock, and your special prices. 👋')
+    :base.greeting;
+  if(aud==='reseller'){
+    return {...base,name,greeting};
+  }
+  return {
+    ...base,
+    name,
+    greeting,
+    quick:(base.quick||[]).filter(x=>!x.resellerOnly),
+    faq:(base.faq||[]).filter(x=>!x.resellerOnly)
+  };
+}
 
 function rtIsSensitiveQuery(q){
   const lower=String(q||'').toLowerCase();
@@ -8388,7 +8423,7 @@ function rtIsSensitiveQuery(q){
 }
 
 function rtSyncChatUI(){
-  const p=rtChatPack();
+  const p=rtFilteredPack();
   const nameEl=document.getElementById('rt-chat-hdr-name');
   const statusEl=document.getElementById('rt-chat-hdr-status');
   const inp=document.getElementById('rt-chat-inp');
@@ -8406,7 +8441,7 @@ function rtSyncChatUI(){
 function rtRenderQuickReplies(){
   const el=document.getElementById('rt-qrs');
   if(!el)return;
-  const p=rtChatPack();
+  const p=rtFilteredPack();
   el.innerHTML=p.quick.map(q=>`<button type="button" class="rt-qr" ${jsOnClick('rtAsk',q.q)}>${esc(q.label)}</button>`).join('');
   el.style.display='flex';
 }
@@ -8416,7 +8451,7 @@ function rtInitChat(){
   rtChatInited=true;
   rtSyncChatUI();
   const msgs=document.getElementById('rt-msgs');
-  if(msgs&&!msgs.children.length)rtAddMsg(rtChatPack().greeting,'bot');
+  if(msgs&&!msgs.children.length)rtAddMsg(rtFilteredPack().greeting,'bot');
 }
 
 function rtToggleChat(){
@@ -8488,24 +8523,46 @@ function rtIsHumanEscalation(q){
 }
 
 async function rtNotifyHumanEscalation(message){
-  if(!currentUser||!authToken){
-    showToast(currentLang==='ar'?'سجّل الدخول أولاً للتواصل مع الدعم':'Please sign in before requesting live support');
-    return;
+  const audience=rtGetAudience();
+  let email='', name='';
+  if(currentUser){
+    email=currentUser.email||'';
+    name=currentUser.name||email;
+  }else{
+    const match=String(message||'').match(/[\w.+-]+@[\w.-]+\.\w+/);
+    if(match)email=match[0].trim().toLowerCase();
+    name=isGuestMode?'Store visitor':'Guest';
+  }
+  if(!email&&!authToken){
+    const need=rtChatLang()==='ar'
+      ?'للتواصل مع الدعم، سجّل الدخول أو اكتب بريدك الإلكتروني في الرسالة.'
+      :'To reach support, sign in or type your email in the message so we can reply.';
+    rtAddMsg(need,'bot');
+    return false;
   }
   try{
-    await fetch(RT_SERVER+'/chat/escalate',{
+    const headers={'Content-Type':'application/json',...(authToken?authHeaders():{})};
+    const r=await fetch(RT_SERVER+'/chat/escalate',{
       method:'POST',
-      headers:authHeaders(),
+      headers,
       body:JSON.stringify({
         message,
         lang:rtChatLang(),
         page:location.pathname+location.search,
-        customerEmail:currentUser.email,
-        customerName:currentUser.name,
+        customerEmail:email,
+        customerName:name,
+        audience,
         website:''
       })
     });
-  }catch(e){console.warn('escalate',e);}
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(j.error||'Could not notify support');
+    return true;
+  }catch(e){
+    console.warn('escalate',e);
+    rtAddMsg((e&&e.message)||'Could not reach support. Email support@rashadtech.tv','bot');
+    return false;
+  }
 }
 
 function rtRespond(q){
@@ -8513,18 +8570,20 @@ function rtRespond(q){
   const msgs=document.getElementById('rt-msgs');
   typing.classList.add('show');
   msgs.scrollTop=msgs.scrollHeight;
-  const p=rtChatPack();
+  const p=rtFilteredPack();
   setTimeout(()=>{
     typing.classList.remove('show');
     const lower=String(q||'').toLowerCase();
     if(rtIsSensitiveQuery(q)){
       rtAddMsg(p.sensitive,'bot');
     }else if(rtIsHumanEscalation(q)){
-      rtNotifyHumanEscalation(q);
-      const notified=rtChatLang()==='ar'
-        ?'تم إبلاغ فريق الدعم. سيتواصل معك موظف قريباً.<br><br>• <b>واتساب: <a href="https://wa.me/96179306701" target="_blank">+96179306701</a></b><br>• <b>تيليغرام: <a href="https://t.me/Rashadtech" target="_blank">@Rashadtech</a></b>'
-        :'Our support team has been notified and will contact you shortly.<br><br>• <b>WhatsApp: <a href="https://wa.me/96179306701" target="_blank">+96179306701</a></b><br>• <b>Telegram: <a href="https://t.me/Rashadtech" target="_blank">@Rashadtech</a></b>';
-      rtAddMsg(notified,'bot');
+      rtNotifyHumanEscalation(q).then(ok=>{
+        if(!ok)return;
+        const notified=rtChatLang()==='ar'
+          ?'تم إرسال طلبك إلى فريق الدعم بالبريد الإلكتروني. سنتواصل معك قريباً.<br><br>• <b>واتساب: <a href="https://wa.me/96179306701" target="_blank">+96179306701</a></b>'
+          :'Your request was emailed to our support team. We will reply soon.<br><br>• <b>WhatsApp: <a href="https://wa.me/96179306701" target="_blank">+96179306701</a></b>';
+        rtAddMsg(notified,'bot');
+      });
     }else{
       const match=rtMatchFaq(lower,p.faq);
       rtAddMsg(match?match.a:p.fallback,'bot');

@@ -21,6 +21,10 @@ const {
   pendingAgeMs,
   formatBeirutTime
 } = require('./orderHelpers');
+const {
+  deliverSupportEscalationEmail,
+  resolveSupportInbox
+} = require('./emailDelivery');
 
 const PRICE_CHANGE_LOG_KEY = 'priceChangeLog';
 const LOW_STOCK_THRESHOLD = 2;
@@ -33,6 +37,7 @@ const REVOKED_LINKS_KEY = 'revokedLinks';
 function registerEnhancements(app, deps) {
   const {
     requireSession,
+    getSession,
     readJsonBinRaw,
     writeJsonBinRaw,
     writeDbFast,
@@ -263,20 +268,43 @@ function registerEnhancements(app, deps) {
   });
 
   app.post('/report-issue', async (req, res) => {
+    const session = getSession(req);
     const { issueType, details, subscription, customerEmail, customerName } = req.body || {};
     if (!issueType) return res.status(400).json({ error: 'Issue type required' });
-    const lines = [
-      '⚠️ <b>Customer Issue Report</b>',
-      `Type: <b>${issueType}</b>`,
-      customerName ? `Customer: ${customerName}` : '',
-      customerEmail ? `Email: ${customerEmail}` : '',
-      subscription && subscription.product ? `Product: ${subscription.product} · ${subscription.plan || ''}` : '',
-      subscription && subscription.email ? `Sub email: <code>${subscription.email}</code>` : '',
-      details ? `Details: ${details}` : ''
-    ].filter(Boolean);
-    await sendTG(TG_ADMIN, lines.join('\n'), 'HTML').catch(() => {});
-    await appendActivity('Issue reported', `${issueType}${customerEmail ? ' — ' + customerEmail : ''}`, customerEmail || 'guest');
-    res.json({ success: true });
+    try {
+      const data = await readJsonBinRaw({ fast: true });
+      const user = session && session.role === 'user'
+        ? (data.users || []).find(u => normalizeEmail(u.email) === session.email)
+        : null;
+      const tier = user ? (userIsReseller(user) ? 'reseller' : 'retail') : 'retail';
+      const tierEmoji = tier === 'reseller' ? '🏪' : '🛍';
+      const email = customerEmail || (user && user.email) || '';
+      const name = customerName || (user && user.name) || email || 'Customer';
+      const lines = [
+        `${tierEmoji} <b>${tier === 'reseller' ? 'Reseller' : 'Retail'} issue report</b>`,
+        `Type: <b>${issueType}</b>`,
+        name ? `Customer: ${name}` : '',
+        email ? `Email: ${email}` : '',
+        subscription && subscription.product ? `Product: ${subscription.product} · ${subscription.plan || ''}` : '',
+        subscription && subscription.email ? `Sub email: <code>${subscription.email}</code>` : '',
+        details ? `Details: ${details}` : ''
+      ].filter(Boolean);
+      const inbox = resolveSupportInbox(data, tier);
+      await deliverSupportEscalationEmail({
+        to: inbox,
+        subject: `[${tier === 'reseller' ? 'Reseller' : 'Retail'}] Issue — ${issueType}`,
+        message: lines.join('\n'),
+        customerEmail: email,
+        customerName: name,
+        tier,
+        data
+      }).catch(e => console.error('Report issue email error:', e.message));
+      await sendTG(TG_ADMIN, lines.join('\n') + `\n📥 Inbox: <code>${inbox}</code>`, 'HTML').catch(() => {});
+      await appendActivity('Issue reported', `${tier} — ${issueType}${email ? ' — ' + email : ''}`, email || 'guest');
+      res.json({ success: true, tier });
+    } catch (e) {
+      res.status(500).json({ error: e.message || 'Could not report issue' });
+    }
   });
 
   app.get('/site-settings', async (req, res) => {
@@ -311,6 +339,19 @@ function registerEnhancements(app, deps) {
       const data = await readJsonBinRaw();
       const tier = String(req.query.tier || '').toLowerCase();
       if (tier === 'reseller') {
+        const header = req.get('authorization') || '';
+        const match = header.match(/^Bearer\s+(.+)$/i);
+        const token = match ? match[1] : '';
+        const session = token ? sessions.get(token) : null;
+        if (!session || (session.role !== 'admin' && session.role !== 'user')) {
+          return res.status(401).json({ error: 'Unauthorized' });
+        }
+        if (session.role === 'user') {
+          const user = (data.users || []).find(u => normalizeEmail(u.email) === session.email);
+          if (!user || !userIsReseller(user)) {
+            return res.status(403).json({ error: 'Reseller catalog requires a reseller account' });
+          }
+        }
         return res.json({ success: true, catalog: getResellerCatalog(data), tier: 'reseller' });
       }
       if (tier === 'retail') {
