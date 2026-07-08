@@ -2259,6 +2259,39 @@ let _rtPriceCatalog=null;
 let _rtResellerPriceCatalog=null;
 let _rtRetailPriceCatalog=null;
 let _adminPriceTier='reseller';
+let _appliedPriceTier=null;
+const STOREFRONT_CACHE_KEY='rt_storefront_v1';
+const STOREFRONT_CACHE_MS=60*60*1000;
+
+function expectedPriceTier(){
+  if(isGuestMode||!currentUser)return 'retail';
+  return userSeesResellerPrices()?'reseller':'retail';
+}
+function canShowStorePrices(){
+  return _appliedPriceTier===expectedPriceTier();
+}
+function cacheRetailStorefront(payload){
+  if(!payload||!payload.catalog)return;
+  try{
+    sessionStorage.setItem(STOREFRONT_CACHE_KEY,JSON.stringify({ts:Date.now(),payload}));
+  }catch(e){}
+}
+function loadCachedRetailStorefront(){
+  try{
+    const raw=sessionStorage.getItem(STOREFRONT_CACHE_KEY);
+    if(!raw)return false;
+    const cached=JSON.parse(raw);
+    if(!cached?.payload?.catalog||Date.now()-Number(cached.ts||0)>STOREFRONT_CACHE_MS)return false;
+    applyStorefrontSnapshot(cached.payload,{fromCache:true});
+    return true;
+  }catch(e){return false;}
+}
+function storePricesLoadingHtml(){
+  return `<div class="store-prices-loading" style="grid-column:1/-1;text-align:center;padding:48px 16px;color:var(--text3)">
+    <div style="font-size:24px;margin-bottom:8px">🛍</div>
+    <div style="font-size:13px">${currentLang==='ar'?'جاري تحميل الأسعار…':'Loading prices…'}</div>
+  </div>`;
+}
 
 function userSeesResellerPrices(){
   if(isGuestMode||!currentUser)return false;
@@ -2295,9 +2328,9 @@ function goToAuth(view){
   document.getElementById('page-auth').classList.add('active');
   showView(view||'login');
 }
-function applyStorefrontSnapshot(payload){
+function applyStorefrontSnapshot(payload,opts={}){
   if(!payload)return;
-  if(payload.catalog)applyPriceCatalog(payload.catalog);
+  if(payload.catalog)applyPriceCatalog(payload.catalog,'retail');
   if(payload.stockCounts){
     const counts=payload.stockCounts||{};
     accountStock={};
@@ -2310,6 +2343,7 @@ function applyStorefrontSnapshot(payload){
     if(!_jbCache)_jbCache={};
     _jbCache.stockBlocks=payload.stockBlocks;
   }
+  if(!opts.fromCache)cacheRetailStorefront(payload);
 }
 async function loadStorefront(){
   try{
@@ -2365,7 +2399,7 @@ async function loadAdminPriceCatalogs(){
     if(!r.ok||!j.success)throw new Error(j.error||'Could not load prices');
     _rtResellerPriceCatalog=j.catalog||null;
     _rtRetailPriceCatalog=j.retailCatalog||null;
-    applyPriceCatalog(_rtResellerPriceCatalog);
+    applyPriceCatalog(_rtResellerPriceCatalog,'reseller');
     if(!_jbCache)_jbCache={};
     if(_rtResellerPriceCatalog)_jbCache.priceCatalog=_rtResellerPriceCatalog;
     if(_rtRetailPriceCatalog)_jbCache.retailPriceCatalog=_rtRetailPriceCatalog;
@@ -2374,11 +2408,15 @@ async function loadAdminPriceCatalogs(){
     await loadPriceCatalog();
   }
 }
-function applyPriceCatalog(catalog){
+function applyPriceCatalog(catalog,tier){
   cloneDefaultProducts();
-  if(!catalog)return;
+  if(!catalog){
+    if(tier)_appliedPriceTier=tier;
+    return;
+  }
   _rtPriceCatalog=catalog;
   applyCatalogToProductList(products,catalog);
+  _appliedPriceTier=tier||expectedPriceTier();
 }
 async function loadPriceCatalog(){
   try{
@@ -2387,7 +2425,10 @@ async function loadPriceCatalog(){
     const j=await r.json();
     if(j.success){
       if(isGuestMode)applyStorefrontSnapshot(j);
-      else if(j.catalog)applyPriceCatalog(j.catalog);
+      else if(j.catalog){
+        const tier=j.tier||(j.isReseller===false?'retail':j.isReseller===true?'reseller':expectedPriceTier());
+        applyPriceCatalog(j.catalog,tier);
+      }
       if(!isGuestMode&&currentUser){
         if(j.isReseller===true)currentUser.isReseller=true;
         else if(j.isReseller===false)currentUser.isReseller=false;
@@ -2399,6 +2440,7 @@ async function loadPriceCatalog(){
 function enterPublicStore(){
   isGuestMode=true;
   currentUser=null;
+  _appliedPriceTier=null;
   setTopbarMode('guest');
   document.getElementById('page-auth').classList.remove('active');
   document.getElementById('page-app').classList.add('active');
@@ -2406,6 +2448,9 @@ function enterPublicStore(){
   document.getElementById('tab-store')?.classList.add('active');
   document.querySelectorAll('#page-app .snav').forEach(b=>b.classList.remove('active'));
   document.querySelector('#page-app .snav')?.classList.add('active');
+  renderProducts('all');
+  loadCachedRetailStorefront();
+  if(canShowStorePrices())renderProducts('all');
   loadStorefront().then(()=>{renderProducts('all');updateResellerUi();});
 }
 
@@ -3923,6 +3968,7 @@ function enterApp(opts={}){
     return;
   }
   isGuestMode=false;
+  _appliedPriceTier=null;
   setTopbarMode('user');
   document.getElementById('page-auth').classList.remove('active');
   document.getElementById('page-app').classList.add('active');
@@ -3930,6 +3976,7 @@ function enterApp(opts={}){
   document.getElementById('unverified-chip').style.display=currentUser.verified?'none':'inline-flex';
   const session={email:currentUser.email,ts:Date.now()};
   try{localStorage.setItem('rt_session',JSON.stringify(session));}catch(e){}
+  renderProducts('all');
   loadPriceCatalog().then(async()=>{updateResellerUi();await refreshSmsStoreTab();renderProducts('all');});
   updateBal();renderAmounts();renderSubs();renderTx();renderMyCustomers();renderReqChips();renderMyRequests();renderExpiryTracker();renderMyGameOrders();
   if(!opts.skipRecover)recoverMyCustomersOnLogin({immediate:Boolean(opts.recoverImmediate)}).catch(()=>{});
@@ -4270,6 +4317,12 @@ function hasUnblockedPlan(p){
   return (p.plans||[]).some((pl,i)=>!isStockBlocked(planStockKey(p.id,pl,i)));
 }
 function renderProducts(cat){
+  const grid=document.getElementById('products-grid');
+  if(!grid)return;
+  if(!canShowStorePrices()){
+    grid.innerHTML=storePricesLoadingHtml();
+    return;
+  }
   const list=cat==='all'?products:products.filter(p=>p.cat===cat);
   const smsHub=smsHubCardHtml();
   let html='';
@@ -4290,7 +4343,7 @@ function renderProducts(cat){
     }
   });
   if(cat==='all'&&smsHub&&!smsInserted)html+=smsHub;
-  document.getElementById('products-grid').innerHTML=html;
+  grid.innerHTML=html;
 }
 function smsDisclaimerHtml(){
   return `<div style="background:var(--orange-bg);border:1px solid var(--orange-border);border-radius:var(--radius-sm);padding:12px;margin-bottom:14px">
@@ -4366,6 +4419,11 @@ function openBuy(id,forCustId){
   if(isGuestMode||!currentUser){
     showToast('Create a free account or sign in to purchase');
     goToAuth('signup');
+    return;
+  }
+  if(!canShowStorePrices()){
+    showToast(currentLang==='ar'?'جاري تحميل الأسعار — انتظر لحظة':'Prices are loading — please wait a moment');
+    loadPriceCatalog().then(()=>{if(canShowStorePrices())openBuy(id,forCustId);});
     return;
   }
   curProd=products.find(x=>x.id===id);selUT=null;selDur=null;selPlan=null;customDays=0;anghamiProfile='';canvaEmail='';customOrderId='';customOrderPassword='';customOrderAmt=0;
@@ -5023,7 +5081,7 @@ function setLang(lang,silent){
     lb.textContent=lang==='en'?'EN':'AR';
   });
   if(typeof renderSubs==='function'&&currentUser)renderSubs();
-  if(typeof renderProducts==='function')renderProducts(document.querySelector('.ftab.active')?.dataset?.cat||'all');
+  if(typeof renderProducts==='function'&&canShowStorePrices())renderProducts(document.querySelector('.ftab.active')?.dataset?.cat||'all');
   if(!silent)showToast(lang==='ar'?'تم تغيير اللغة':'Language changed');
 }
 
@@ -5411,7 +5469,7 @@ async function restoreBackupSettings(id){
     if(!r.ok||!j.success)throw new Error(j.error||'Could not restore prices');
     if(j.data)applyDataSnapshot(j.data);
     if(j.catalog){
-      applyPriceCatalog(j.catalog);
+      applyPriceCatalog(j.catalog,'reseller');
       _rtResellerPriceCatalog=j.catalog;
     }
     if(j.retailCatalog)_rtRetailPriceCatalog=j.retailCatalog;
@@ -6111,7 +6169,7 @@ async function recoverAdminPrices(){
     if(!r.ok||!j.success)throw new Error(j.error||'Recovery failed');
     if(j.data)applyDataSnapshot(j.data);
     if(j.catalog){
-      applyPriceCatalog(j.catalog);
+      applyPriceCatalog(j.catalog,'reseller');
       _rtResellerPriceCatalog=j.catalog;
     }
     if(j.retailCatalog)_rtRetailPriceCatalog=j.retailCatalog;
@@ -6137,7 +6195,7 @@ async function restoreAdminPricesFromSource(sourceIndex){
     if(!r.ok||!j.success)throw new Error(j.error||'Restore failed');
     if(j.data)applyDataSnapshot(j.data);
     if(j.catalog){
-      applyPriceCatalog(j.catalog);
+      applyPriceCatalog(j.catalog,'reseller');
       _rtResellerPriceCatalog=j.catalog;
     }
     if(j.retailCatalog)_rtRetailPriceCatalog=j.retailCatalog;
@@ -6187,8 +6245,9 @@ async function saveAdminPrices(){
     if(tier==='retail'){
       _rtRetailPriceCatalog=j.catalog||null;
       if(_jbCache)_jbCache.retailPriceCatalog=_rtRetailPriceCatalog;
+      applyPriceCatalog(j.catalog,'retail');
     }else{
-      applyPriceCatalog(j.catalog);
+      applyPriceCatalog(j.catalog,'reseller');
       _rtResellerPriceCatalog=j.catalog||null;
       if(!_jbCache)_jbCache={};
       _jbCache.priceCatalog={prices,customDayRates,jawaker,updatedAt:Date.now(),updatedBy:currentUser?.email||'admin'};
