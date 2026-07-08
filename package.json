@@ -5,7 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node tests/osn-extract.test.js && node tests/signin-code-store.test.js"
+    "test": "node tests/osn-extract.test.js && node tests/signin-code-store.test.js && node tests/price-catalog.test.js"
   },
   "dependencies": {
     "@netlify/blobs": "^10.7.9",

@@ -733,16 +733,23 @@ So your EmailJS template will receive the user email and verification code corre
 <div id="page-app" class="page">
   <div class="topbar">
     <div class="logo">rashadtech<span>.tv</span></div>
-    <div class="topbar-right">
+      <div class="topbar-right" id="topbar-right">
       <button onclick="toggleTheme()" id="theme-toggle" style="background:none;border:none;cursor:pointer;font-size:16px;padding:4px;color:var(--text2);line-height:1">🌙</button>
       <button onclick="toggleLang()" id="lang-toggle" class="lang-toggle-btn" style="background:none;border:none;cursor:pointer;font-size:12px;font-weight:700;padding:4px 6px;color:var(--text2);line-height:1;border:1px solid var(--border);border-radius:4px">EN</button>
+      <div id="topbar-guest-actions" style="display:none;align-items:center;gap:8px">
+        <button class="btn-secondary" style="padding:7px 12px;font-size:12px" onclick="goToAuth('login')">Sign in</button>
+        <button class="btn-primary" style="padding:7px 12px;font-size:12px" onclick="goToAuth('signup')">Sign up</button>
+      </div>
+      <div id="topbar-user-actions" style="display:flex;align-items:center;gap:8px">
       <span class="unverified-chip" id="unverified-chip" onclick="showVerifyModal()" style="display:none"><i class="ti ti-mail-exclamation" style="font-size:12px;vertical-align:-1px;margin-right:3px"></i>Verify email</span>
+      <span id="reseller-price-chip" style="display:none;font-size:10px;background:var(--green-bg);color:var(--green);border:1px solid var(--green-border);padding:3px 9px;border-radius:4px;font-weight:600">Reseller prices</span>
       <div class="wallet-chip" onclick="switchTab('wallet',null)">
         <i class="ti ti-wallet" style="font-size:15px;color:var(--text3)"></i>
         <div><div class="wbal" id="topbar-bal">$0.00</div><div class="wlabel">Wallet</div></div>
       </div>
       <div class="avatar" id="topbar-av">U</div>
       <button class="logout-btn" onclick="doLogout()"><i class="ti ti-logout" style="font-size:13px;vertical-align:-1px"></i> Logout</button>
+      </div>
     </div>
   </div>
 
@@ -773,7 +780,7 @@ So your EmailJS template will receive the user email and verification code corre
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
       <button onclick="switchTab('transactions',null);setActiveBottomNav('bn-more');toggleAppMore()" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 8px;cursor:pointer;color:var(--text);font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">🧾</span>Transactions</button>
       <button onclick="switchTab('requests',null);setActiveBottomNav('bn-more');toggleAppMore()" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 8px;cursor:pointer;color:var(--text);font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">💡</span>Requests</button>
-      <button onclick="switchTab('customers',null);setActiveBottomNav('bn-more');toggleAppMore()" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 8px;cursor:pointer;color:var(--text);font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">👥</span>Customers</button>
+      <button onclick="switchTab('customers',null);setActiveBottomNav('bn-more');toggleAppMore()" data-reseller-only="1" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 8px;cursor:pointer;color:var(--text);font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">👥</span>Customers</button>
       <button onclick="toggleAppMore();openRateUs()" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 8px;cursor:pointer;color:var(--text);font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">⭐</span>Rate Us</button>
       <button onclick="switchTab('profile',null);setActiveBottomNav('bn-more');toggleAppMore()" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 8px;cursor:pointer;color:var(--text);font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">👤</span><span data-t="profile">Profile</span></button>
       <button onclick="doLogout();toggleAppMore()" style="background:var(--red-bg);border:1px solid var(--red-border);border-radius:var(--radius-sm);padding:12px 8px;cursor:pointer;color:var(--red);font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">🚪</span>Logout</button>
@@ -786,7 +793,7 @@ So your EmailJS template will receive the user email and verification code corre
       <button class="snav" onclick="switchTab('subscriptions',this)"><i class="ti ti-device-tv"></i><span data-t="subscriptions">Subscriptions</span></button>
       <button class="snav" onclick="switchTab('netflix',this)"><i class="ti ti-brand-netflix"></i><span data-t="netflix">Netflix</span></button>
       <button class="snav" onclick="switchTab('expiry',this)"><i class="ti ti-clock-exclamation"></i><span data-t="expiry">Expiry Tracker</span></button>
-      <button class="snav" onclick="switchTab('customers',this)"><i class="ti ti-users"></i><span data-t="customers">Customers</span></button>
+      <button class="snav" data-reseller-only="1" onclick="switchTab('customers',this)"><i class="ti ti-users"></i><span data-t="customers">Customers</span></button>
       <button class="snav" onclick="switchTab('transactions',this)"><i class="ti ti-receipt"></i><span data-t="transactions">Transactions</span></button>
       <button class="snav" onclick="switchTab('requests',this)"><i class="ti ti-bulb"></i><span data-t="requests">Requests</span></button>
       <div class="snav-section" data-t="account">Account</div>
@@ -795,7 +802,7 @@ So your EmailJS template will receive the user email and verification code corre
     <div class="main-content">
       <div id="tab-store" class="tab-pane active">
         <div class="pg-title" data-t="store">Store</div>
-        <div class="pg-sub" data-t="storeSub">Instant delivery · Wallet-powered purchases</div>
+        <div class="pg-sub" id="store-subtitle" data-t="storeSub">Instant delivery · Wallet-powered purchases</div>
         <div class="filter-row">
           <div class="ftab active" onclick="filterProd('all',this)" data-cat="all">All</div>
           <div class="ftab" onclick="filterProd('video',this)" data-cat="video">Video</div>
@@ -1065,8 +1072,8 @@ So your EmailJS template will receive the user email and verification code corre
           </select>
         </div>
         <div class="card"><table class="admin-cust-table" style="width:100%">
-          <thead><tr><th>Name</th><th>Email</th><th>Password</th><th>Phone</th><th>Verified</th><th>Balance</th><th>Purchases</th><th>Joined</th><th></th></tr></thead>
-          <tbody id="admin-cust-tbody"><tr><td colspan="9" style="text-align:center;padding:32px;color:var(--text3);font-size:13px">No users yet</td></tr></tbody>
+          <thead><tr><th>Name</th><th>Email</th><th>Password</th><th>Phone</th><th>Verified</th><th>Account</th><th>Balance</th><th>Purchases</th><th>Joined</th><th></th></tr></thead>
+          <tbody id="admin-cust-tbody"><tr><td colspan="10" style="text-align:center;padding:32px;color:var(--text3);font-size:13px">No users yet</td></tr></tbody>
         </table></div>
       </div>
       <div id="admin-wallets" class="tab-pane">
@@ -2194,6 +2201,66 @@ const DEFAULT_PRODUCTS=[
 let products=JSON.parse(JSON.stringify(DEFAULT_PRODUCTS));
 let _rtPriceCatalog=null;
 
+function userSeesResellerPrices(){
+  if(isGuestMode||!currentUser)return false;
+  if(currentUser.isReseller===true)return true;
+  if(currentUser.isReseller===false)return false;
+  return true;
+}
+function setTopbarMode(mode){
+  const guest=mode==='guest';
+  const guestEl=document.getElementById('topbar-guest-actions');
+  const userEl=document.getElementById('topbar-user-actions');
+  if(guestEl)guestEl.style.display=guest?'flex':'none';
+  if(userEl)userEl.style.display=guest?'none':'flex';
+}
+function updateResellerUi(){
+  const reseller=userSeesResellerPrices();
+  document.querySelectorAll('[data-reseller-only]').forEach(el=>{
+    el.style.display=reseller?'':'none';
+  });
+  const chip=document.getElementById('reseller-price-chip');
+  if(chip)chip.style.display=reseller&&!isGuestMode?'inline-flex':'none';
+  const sub=document.getElementById('store-subtitle');
+  if(sub){
+    if(isGuestMode)sub.textContent='Retail prices · Create a free account to buy';
+    else if(reseller)sub.textContent='Reseller wholesale prices · Wallet-powered purchases';
+    else sub.textContent='Retail customer prices · Wallet-powered purchases';
+  }
+}
+function goToAuth(view){
+  isGuestMode=false;
+  document.getElementById('page-app').classList.remove('active');
+  document.getElementById('page-auth').classList.add('active');
+  showView(view||'login');
+}
+function applyStorefrontSnapshot(payload){
+  if(!payload)return;
+  if(payload.catalog)applyPriceCatalog(payload.catalog);
+  if(payload.stockCounts){
+    const counts=payload.stockCounts||{};
+    accountStock={};
+    Object.entries(counts).forEach(([key,cnt])=>{
+      const n=Number(cnt)||0;
+      accountStock[key]=Array.from({length:n},()=>({used:false,_guest:true}));
+    });
+  }
+  if(payload.stockBlocks){
+    if(!_jbCache)_jbCache={};
+    _jbCache.stockBlocks=payload.stockBlocks;
+  }
+}
+async function loadStorefront(){
+  try{
+    const r=await fetch(RT_SERVER+'/catalog/storefront');
+    const j=await r.json();
+    if(j.success){
+      applyStorefrontSnapshot(j);
+      return true;
+    }
+  }catch(e){console.warn('storefront load',e);}
+  return false;
+}
 function cloneDefaultProducts(){products=JSON.parse(JSON.stringify(DEFAULT_PRODUCTS));}
 function applyPriceCatalog(catalog){
   cloneDefaultProducts();
@@ -2221,10 +2288,31 @@ function applyPriceCatalog(catalog){
 }
 async function loadPriceCatalog(){
   try{
-    const r=await fetch(RT_SERVER+'/catalog/prices');
+    const url=isGuestMode?RT_SERVER+'/catalog/storefront':RT_SERVER+'/catalog/prices';
+    const r=await fetch(url,{headers:isGuestMode?{}:authHeaders()});
     const j=await r.json();
-    if(j.success&&j.catalog)applyPriceCatalog(j.catalog);
+    if(j.success){
+      if(isGuestMode)applyStorefrontSnapshot(j);
+      else if(j.catalog)applyPriceCatalog(j.catalog);
+      if(!isGuestMode&&currentUser){
+        if(j.isReseller===true)currentUser.isReseller=true;
+        else if(j.isReseller===false)currentUser.isReseller=false;
+      }
+      updateResellerUi();
+    }
   }catch(e){console.warn('price catalog load',e);}
+}
+function enterPublicStore(){
+  isGuestMode=true;
+  currentUser=null;
+  setTopbarMode('guest');
+  document.getElementById('page-auth').classList.remove('active');
+  document.getElementById('page-app').classList.add('active');
+  document.querySelectorAll('#page-app .tab-pane').forEach(t=>t.classList.remove('active'));
+  document.getElementById('tab-store')?.classList.add('active');
+  document.querySelectorAll('#page-app .snav').forEach(b=>b.classList.remove('active'));
+  document.querySelector('#page-app .snav')?.classList.add('active');
+  loadStorefront().then(()=>{renderProducts('all');updateResellerUi();});
 }
 
 // Requestable services not yet in store
@@ -2345,7 +2433,7 @@ function stockLabel(n){if(n===0)return['Out of stock','sout'];if(n<=3)return[`${
 
 const ANGHAMI_CANCEL_NOTE_EN='NOTE: If you already have an Anghami Plus subscription, cancel it then try to click on the link again.';
 const ANGHAMI_CANCEL_NOTE_AR='ملاحظة: إذا كان لديك اشتراك Anghami Plus بالفعل، قم بإلغائه ثم اضغط على الرابط مرة أخرى.';
-let users=[],currentUser=null,isAdmin=false;
+let users=[],currentUser=null,isAdmin=false,isGuestMode=false;
 // HTML sanitizer to prevent XSS
 function jsOnClick(fn,...args){
   return `onclick='${fn}(${args.map(a=>JSON.stringify(a)).join(',')})'`;
@@ -3628,13 +3716,15 @@ function enterApp(opts={}){
     doLogout();
     return;
   }
+  isGuestMode=false;
+  setTopbarMode('user');
   document.getElementById('page-auth').classList.remove('active');
   document.getElementById('page-app').classList.add('active');
   document.getElementById('topbar-av').textContent=(currentUser?.name||currentUser?.email||'?').charAt(0).toUpperCase();
   document.getElementById('unverified-chip').style.display=currentUser.verified?'none':'inline-flex';
   const session={email:currentUser.email,ts:Date.now()};
   try{localStorage.setItem('rt_session',JSON.stringify(session));}catch(e){}
-  loadPriceCatalog().then(async()=>{await refreshSmsStoreTab();renderProducts('all');});
+  loadPriceCatalog().then(async()=>{updateResellerUi();await refreshSmsStoreTab();renderProducts('all');});
   updateBal();renderAmounts();renderSubs();renderTx();renderMyCustomers();renderReqChips();renderMyRequests();renderExpiryTracker();renderMyGameOrders();
   if(!opts.skipRecover)recoverMyCustomersOnLogin({immediate:Boolean(opts.recoverImmediate)}).catch(()=>{});
   maybePromptCompleteProfile();
@@ -3669,8 +3759,8 @@ function doLogout(){
     if(wasAdmin)localStorage.removeItem(RT_OFFLINE_CACHE_KEY);
   }catch(e){}
   ['page-app','page-admin'].forEach(id=>document.getElementById(id).classList.remove('active'));
-  document.getElementById('page-auth').classList.add('active');showView('login');
   if(typeof rtSyncChatUI==='function')rtSyncChatUI();
+  enterPublicStore();
 }
 async function logoutAllDevices(){
   if(!confirm('Log out all sessions for this account?'))return;
@@ -3713,6 +3803,11 @@ function toggleAppMore(){
   d.style.display=d.style.display==='none'?'block':'none';
 }
 function switchTab(name,el){
+  if(isGuestMode&&name!=='store'){
+    showToast('Sign in or create an account to access this section');
+    goToAuth('signup');
+    return;
+  }
   // Profile is a separate full page, not a tab inside page-app
   if(name==='profile'){
     document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
@@ -4055,6 +4150,11 @@ async function confirmSmsPurchase(catalogId){
 
 // BUY MODAL
 function openBuy(id,forCustId){
+  if(isGuestMode||!currentUser){
+    showToast('Create a free account or sign in to purchase');
+    goToAuth('signup');
+    return;
+  }
   curProd=products.find(x=>x.id===id);selUT=null;selDur=null;selPlan=null;customDays=0;anghamiProfile='';canvaEmail='';customOrderId='';customOrderPassword='';customOrderAmt=0;
   assignCustId=forCustId!==undefined?forCustId:null;
   document.getElementById('modal-title').textContent='Buy '+curProd.name;
@@ -4267,7 +4367,9 @@ async function submitCustomOrder(){
         playerId:customOrderId,
         playerPassword:p.customOrderNeedsPassword?customOrderPassword:undefined,
         customOrderType:p.customOrderType,
-        tgChatId:currentUser.tgChatId||''
+        tgChatId:currentUser.tgChatId||'',
+        skey:isJawaker?null:(selPlan?planStockKey(p.id,selPlan,selPlan.idx):null),
+        tokens:isJawaker?customOrderAmt:undefined
       })
     });
     if(j.data)applyDataSnapshot(j.data);
@@ -5695,7 +5797,7 @@ function renderAdminPrices(){
     <button class="btn-primary" type="button" onclick="recoverAdminPrices()">Recover lost prices</button>
     <div id="admin-price-recovery-status" style="margin-top:10px"></div>
   </div>
-  <div style="background:var(--blue-bg);border:1px solid var(--blue-border);border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px;color:var(--text2)">Completed purchases and wallet transactions are <b>not changed</b> when you save new prices here.</div>
+  <div style="background:var(--blue-bg);border:1px solid var(--blue-border);border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px;color:var(--text2)">These are <b>reseller (wholesale)</b> prices. Retail customer prices are shown on the public store (default +40% unless you set retail overrides in code). Completed purchases and wallet transactions are <b>not changed</b> when you save.</div>
     <input id="admin-prices-search" placeholder="🔍 Search products (e.g. Jawaker, Netflix)..." oninput="filterAdminPrices()" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg2);color:var(--text);margin-bottom:14px">`;
   PRICE_CATEGORIES.forEach(cat=>{
     const items=products.filter(p=>p.cat===cat.key);
@@ -6795,6 +6897,12 @@ function adminSubDetailHtml(order,customer){
     <div class="admin-cust-sub-meta">${lines.join('')}</div>
   </div>`;
 }
+function accountIsReseller(u){
+  if(!u)return false;
+  if(u.isReseller===true)return true;
+  if(u.isReseller===false)return false;
+  return true;
+}
 function openAdminCustomerDetail(userIdx){
   const u=users[userIdx];
   if(!u)return;
@@ -6814,7 +6922,7 @@ function openAdminCustomerDetail(userIdx){
   </div>
   <div style="font-size:12px;color:var(--text2);margin-bottom:16px;line-height:1.6">
     <div>📞 ${u.phone?esc(u.phone):'—'} · TG: ${u.tgChatId?esc(u.tgChatId):'—'} · Joined: ${esc(u.joinedDate||'—')}</div>
-    <div>${u.verified?'✓ Verified':'⚠ Unverified'}${u.banned?' · 🚫 Banned':''}</div>
+    <div>${u.verified?'✓ Verified':'⚠ Unverified'}${u.banned?' · 🚫 Banned':''} · ${accountIsReseller(u)?'🏪 Reseller (wholesale)':'🛍 Retail customer'}</div>
   </div>`;
   const txHtml=txs.length?`<div class="admin-cust-detail-section"><h4>Transactions (${txs.length})</h4>
     <table class="tx-table" style="width:100%"><thead><tr><th>#</th><th>Type</th><th>Description</th><th>Amount</th><th>Balance</th><th>Date</th></tr></thead>
@@ -6848,11 +6956,12 @@ function renderAdminCustomers(){
     if(statusF==='no-tg'&&u.tgChatId)return false;
     return true;
   });
-  if(!filtered.length){tbody.innerHTML='<tr><td colspan="9" style="text-align:center;padding:32px;color:var(--text3);font-size:13px">No users found</td></tr>';return;}
+  if(!filtered.length){tbody.innerHTML='<tr><td colspan="10" style="text-align:center;padding:32px;color:var(--text3);font-size:13px">No users found</td></tr>';return;}
   tbody.innerHTML=filtered.map(u=>{
     const ri=users.indexOf(u);
     const ps=userPurchaseSummary(u);
     const spent=(Array.isArray(u.transactions)?u.transactions:[]).filter(t=>t.type==='purchase').reduce((s,t)=>s+t.amount,0);
+    const reseller=accountIsReseller(u);
     const subChips=ps.chipOrders.slice(0,3).map(o=>{
       const assigned=ps.assigned.find(a=>a.order.id===o.id);
       const label=assigned?`${o.product} → ${assigned.customer.fname}`:o.product;
@@ -6867,11 +6976,13 @@ function renderAdminCustomers(){
       <td style="font-family:var(--mono);font-size:12px">${u.signupPass?'<span title="Hidden for security">••••</span>':'<span style="color:var(--text3)">—</span>'}</td>
       <td style="font-family:var(--mono);font-size:12px">${u.phone?esc(u.phone):'<span style="color:var(--text3)">—</span>'}</td>
       <td><span class="verified-pill ${u.verified?'vpill-yes':'vpill-no'}">${u.verified?'✓ Verified':'⚠ Unverified'}</span></td>
+      <td><span style="font-size:11px;font-weight:600;color:${reseller?'var(--green)':'var(--blue)'}">${reseller?'Reseller':'Retail'}</span></td>
       <td><span style="color:var(--green);font-weight:600">${fmt(u.balance)}</span><div style="font-size:11px;color:var(--text3)">spent: ${fmt(spent)}</div></td>
       <td><div style="font-weight:600">${ps.total} purchase${ps.total!==1?'s':''}</div>${assignedNote}<div class="sub-chips">${subChips}${more}</div></td>
       <td style="color:var(--text3);font-size:12px">${u.joinedDate||'—'}</td>
       <td style="white-space:nowrap">
         <button onclick="openAdminCustomerDetail(${ri})" style="background:var(--blue-bg);color:var(--blue);border:1px solid var(--blue-border);border-radius:var(--radius-sm);padding:4px 8px;font-size:11px;font-weight:600;cursor:pointer;margin-bottom:4px;display:block;width:100%">📋 Details</button>
+        <button onclick="toggleResellerUser(${ri})" style="background:${reseller?'var(--orange-bg)':'var(--green-bg)'};color:${reseller?'var(--orange)':'var(--green)'};border:1px solid ${reseller?'var(--orange-border)':'var(--green-border)'};border-radius:var(--radius-sm);padding:4px 8px;font-size:11px;font-weight:600;cursor:pointer;margin-bottom:4px;display:block;width:100%">${reseller?'🛍 Make retail':'🏪 Approve reseller'}</button>
         <button onclick="toggleBanUser(${ri})" style="background:${banned?'var(--green-bg)':'var(--orange-bg)'};color:${banned?'var(--green)':'var(--orange)'};border:1px solid ${banned?'var(--green-border)':'var(--orange-border)'};border-radius:var(--radius-sm);padding:4px 8px;font-size:11px;font-weight:600;cursor:pointer;margin-bottom:4px;display:block;width:100%">${banned?'✅ Unban':'🚫 Ban'}</button>
         <button onclick="deleteUser(${ri})" style="background:var(--red-bg);color:var(--red);border:1px solid var(--red-border);border-radius:var(--radius-sm);padding:4px 8px;font-size:11px;font-weight:600;cursor:pointer;display:block">🗑 Delete</button>
       </td></tr>`;
@@ -6893,6 +7004,23 @@ async function toggleBanUser(i){
       `✅ Your account has been reactivated. Welcome back!`;
     await sendTelegramToUser(users[i].tgChatId,msg);
   }
+}
+async function toggleResellerUser(i){
+  const u=users[i];
+  if(!u)return;
+  const next=!accountIsReseller(u);
+  const label=next?'approve this account as a reseller (wholesale prices)':'switch this account to retail customer prices';
+  if(!confirm(`${next?'Approve reseller':'Remove reseller status'} for ${u.name} (${u.email})?\n\nThis will ${label}.`))return;
+  try{
+    const r=await fetch(RT_SERVER+'/admin/toggle-reseller',{method:'POST',headers:authHeaders(),body:JSON.stringify({email:u.email,isReseller:next})});
+    const j=await r.json();
+    if(!r.ok||!j.success)throw new Error(j.error||'Update failed');
+    if(j.data)applyDataSnapshot(j.data);
+    else u.isReseller=next;
+    renderAdminCustomers();
+    showToast(next?'✅ Reseller approved':'✅ Switched to retail');
+    logActivity(next?'Reseller approved':'Reseller removed',u.email);
+  }catch(e){showToast('⚠️ '+e.message);}
 }
 
 function purgeUserData(email){
@@ -7639,7 +7767,6 @@ async function init(){
   window.addEventListener('error',e=>{console.warn('UI error:',e.message);});
   window.addEventListener('unhandledrejection',e=>{console.warn('Async error:',e.reason);e.preventDefault();});
   if(!authToken)applyOfflineCacheIfAny();
-  loadPriceCatalog().catch(()=>{});
   const params=new URLSearchParams(location.search);
   if(params.get('sub')||params.get('s')||params.get('t')){
     document.querySelectorAll('.page').forEach(p=>{p.classList.remove('active');p.style.display='none';});
@@ -7661,6 +7788,7 @@ async function init(){
 
   await loadData();
   renderAmounts();renderReqChips();
+  enterPublicStore();
   startRealtimeSync();
   setTimeout(checkExpiryReminders,10000);
   setTimeout(checkLowStock,15000);
