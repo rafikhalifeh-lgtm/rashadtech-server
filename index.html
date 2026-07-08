@@ -102,6 +102,10 @@ input,button,select,textarea{font-family:var(--font)}
 .legal-modal-body ul{margin:0 0 12px;padding-left:18px}
 .confirm-terms{font-size:11px;color:var(--text3);margin-top:10px;line-height:1.5;text-align:center}
 .confirm-terms a{color:var(--blue);cursor:pointer;text-decoration:underline}
+.rate-star-row{display:flex;justify-content:center;gap:8px;margin:16px 0}
+.rate-star-btn{background:none;border:none;font-size:28px;cursor:pointer;opacity:0.35;transition:opacity .15s,transform .15s;padding:4px;line-height:1}
+.rate-star-btn.active,.rate-star-btn:hover{opacity:1;transform:scale(1.08)}
+.buy-again-btn{background:var(--green-bg);color:var(--green);border:1px solid var(--green-border);border-radius:6px;padding:6px 10px;font-size:11px;font-weight:600;cursor:pointer;margin-top:6px;display:inline-block;width:100%}
 .auth-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:32px;width:100%;max-width:390px}
 .auth-logo{font-size:21px;font-weight:600;text-align:center;margin-bottom:4px;letter-spacing:-0.3px}
 .auth-logo span{color:var(--red)}
@@ -1025,6 +1029,14 @@ So your EmailJS template will receive the user email and verification code corre
               <label style="font-size:11px;color:var(--text3)">Reply-to address</label>
               <input type="email" id="admin-email-reply-to" placeholder="support@rashadtech.tv" style="width:100%;margin-top:4px">
             </div>
+            <div class="field" style="margin-bottom:8px">
+              <label style="font-size:11px;color:var(--text3)">Retail support inbox</label>
+              <input type="email" id="admin-retail-support-email" placeholder="support@rashadtech.tv (retail chat & issues)" style="width:100%;margin-top:4px">
+            </div>
+            <div class="field" style="margin-bottom:8px">
+              <label style="font-size:11px;color:var(--text3)">Reseller support inbox</label>
+              <input type="email" id="admin-reseller-support-email" placeholder="support@rashadtech.tv (reseller chat & issues)" style="width:100%;margin-top:4px">
+            </div>
             <button onclick="rtSaveEmailDeliverySettings()" style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px;font-size:11px;font-weight:600;cursor:pointer;margin-bottom:8px">Save inbox delivery settings</button>
             <button onclick="rtCheckResendDomain()" style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px;font-size:11px;font-weight:600;cursor:pointer;margin-bottom:8px">Check domain verification</button>
             <div style="display:flex;gap:8px;margin-bottom:10px">
@@ -1072,6 +1084,7 @@ So your EmailJS template will receive the user email and verification code corre
       <div id="admin-customers" class="tab-pane">
         <div class="pg-title">All Customers</div>
         <div class="pg-sub">Every registered user with signup email, password, phone, balance, and purchases</div>
+        <div id="admin-legacy-tier-banner" style="display:none;margin-bottom:12px;padding:12px 14px;border-radius:var(--radius-sm);background:var(--orange-bg);border:1px solid var(--orange-border);font-size:12px;line-height:1.6"></div>
         <input class="admin-search" id="admin-cust-search" placeholder="🔍 Search by name or email..." oninput="renderAdminCustomers()" style="margin-bottom:8px">
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
           <select id="admin-cust-filter-product" onchange="renderAdminCustomers()" style="padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg2);color:var(--text);font-size:12px">
@@ -1084,6 +1097,9 @@ So your EmailJS template will receive the user email and verification code corre
           </select>
           <select id="admin-cust-filter-status" onchange="renderAdminCustomers()" style="padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg2);color:var(--text);font-size:12px">
             <option value="">All Status</option>
+            <option value="legacy">Legacy tier (unset)</option>
+            <option value="retail">Retail</option>
+            <option value="reseller">Reseller</option>
             <option value="active">Has Purchases</option>
             <option value="banned">Banned</option>
             <option value="no-tg">No Telegram</option>
@@ -1214,6 +1230,23 @@ So your EmailJS template will receive the user email and verification code corre
 </div>
 
 <!-- MODALS -->
+<div class="modal-wrap" id="rate-us-modal" onclick="if(event.target===this)closeModal('rate-us-modal')"><div class="modal" style="width:min(400px,94vw)">
+  <div class="modal-head"><h3>Rate your experience</h3><button class="mclose" onclick="closeModal('rate-us-modal')">✕</button></div>
+  <div class="modal-body" style="padding:20px 24px;text-align:center">
+    <div style="font-size:13px;color:var(--text2);margin-bottom:4px">How was your experience with rashadtech.tv?</div>
+    <div class="rate-star-row" id="rate-star-row">
+      <button type="button" class="rate-star-btn" onclick="setRateStars(1)">⭐</button>
+      <button type="button" class="rate-star-btn" onclick="setRateStars(2)">⭐</button>
+      <button type="button" class="rate-star-btn" onclick="setRateStars(3)">⭐</button>
+      <button type="button" class="rate-star-btn" onclick="setRateStars(4)">⭐</button>
+      <button type="button" class="rate-star-btn" onclick="setRateStars(5)">⭐</button>
+    </div>
+    <div id="rate-star-label" style="font-size:12px;color:var(--text3);min-height:18px;margin-bottom:12px"></div>
+    <textarea id="rate-us-comment" rows="3" placeholder="Optional comment…" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text);font-size:13px;resize:vertical;box-sizing:border-box"></textarea>
+    <button class="btn-primary" style="margin-top:14px" onclick="submitRateUs()">Submit rating</button>
+  </div>
+</div></div>
+
 <div class="modal-wrap" id="legal-modal" onclick="if(event.target===this)closeModal('legal-modal')"><div class="modal" style="width:min(560px,94vw)">
   <div class="modal-head"><h3 id="legal-modal-title">Legal</h3><button class="mclose" onclick="closeModal('legal-modal')">✕</button></div>
   <div class="legal-modal-body" id="legal-modal-body"></div>
@@ -2745,6 +2778,8 @@ function openSubOptions(orderId){
   if(productEl)productEl.textContent=o.product+' · '+o.plan;
   const btn=document.getElementById('sub-option-autorenew-btn');
   if(btn)btn.textContent=o.autoRenew?'🔁 Disable Auto-Renewal':'🔁 Enable Auto-Renewal';
+  const buyAgainBtn=document.getElementById('sub-option-buy-again-btn');
+  if(buyAgainBtn)buyAgainBtn.style.display=canBuyAgain(o)?'block':'none';
   openModal('sub-options-modal');
 }
 
@@ -2801,6 +2836,83 @@ async function subOptionRenew(){
 Customer is requesting renewal.`);
     showToast(currentLang==='ar'?'✓ تم إرسال طلب التجديد':'✓ Renewal request sent');
   }
+}
+
+function subOptionBuyAgain(){
+  closeModal('sub-options-modal');
+  const found=findUserOrder(_currentSubId);
+  if(!found?.order)return;
+  buyAgainFromOrder(found.order, found.customer?.id ?? null);
+}
+
+function canBuyAgain(o){
+  if(!o||o.pending||o.productId==='sms')return false;
+  return Boolean(o.productId||(o.product&&products.some(p=>p.name===o.product)));
+}
+function shouldHighlightBuyAgain(o){
+  if(!canBuyAgain(o))return false;
+  if(!o.expiryDate)return false;
+  const d=daysLeft(o.expiryDate);
+  return d===null||d<=14;
+}
+function preselectFromAccKey(p,accKey){
+  if(!p||!accKey)return false;
+  const key=String(accKey);
+  if(!key.startsWith(p.id+'__'))return false;
+  const rest=key.slice(p.id.length+2);
+  if(p.hasUserTypes){
+    const ut=p.userTypes.find(u=>rest.startsWith(u.key+'__')||rest===u.key);
+    if(!ut)return false;
+    const utIdx=p.userTypes.indexOf(ut);
+    selUT=ut;selDur=null;customDays=0;
+    const durKey=rest.startsWith(ut.key+'__')?rest.slice(ut.key.length+2):'';
+    if(durKey&&ut.durations){
+      const di=ut.durations.findIndex(d=>d.key===durKey);
+      if(di>=0)selDur=ut.durations[di];
+    }
+    return true;
+  }
+  const plIdx=(p.plans||[]).findIndex((pl,i)=>planStockKey(p.id,pl,i)===key);
+  if(plIdx>=0){selPlan={idx:plIdx,...p.plans[plIdx]};return true;}
+  return false;
+}
+function preselectPlanFromLabel(p,planLabel){
+  if(!p||!planLabel)return false;
+  const label=String(planLabel).trim();
+  if(p.hasUserTypes){
+    const parts=label.split('·').map(s=>s.trim()).filter(Boolean);
+    if(parts.length>=2){
+      const ut=p.userTypes.find(u=>u.name===parts[0]||parts[0].includes(u.name));
+      if(ut){
+        selUT=ut;selDur=null;customDays=0;
+        const dur=ut.durations.find(d=>parts[1]===d.label||parts[1].includes(d.label));
+        if(dur)selDur=dur;
+        return true;
+      }
+    }
+    const ut2=p.userTypes.find(u=>label.includes(u.name));
+    if(ut2){selUT=ut2;selDur=null;customDays=0;return true;}
+  }else{
+    const idx=(p.plans||[]).findIndex(pl=>label===pl.name||label.startsWith(pl.name));
+    if(idx>=0){selPlan={idx:idx,...p.plans[idx]};return true;}
+  }
+  return false;
+}
+function buyAgainFromOrder(o,forCustomerId){
+  if(isGuestMode||!currentUser){goToAuth('login');return;}
+  if(!canBuyAgain(o)){showToast('Open the store to purchase');switchTab('store',null);return;}
+  const pid=o.productId||(products.find(p=>p.name===o.product)||{}).id;
+  if(!pid){showToast('Product not found in store');switchTab('store',null);return;}
+  openBuy(pid,forCustomerId!=null?forCustomerId:undefined);
+  if(o.accKey&&preselectFromAccKey(curProd,o.accKey)){}
+  else preselectPlanFromLabel(curProd,o.plan);
+  renderBuyBody();
+  showToast(currentLang==='ar'?'اختر الخطة وأكّد الشراء':'Review your plan and confirm purchase');
+}
+function buyAgainFromOrderById(orderId,customerId){
+  const found=findUserOrder(orderId);
+  if(!found?.order)return;
+  buyAgainFromOrder(found.order,customerId==null?null:customerId);
 }
 
 async function subOptionReport(){
@@ -4681,6 +4793,7 @@ function subRow(o,forCustomer){
     <div class="sub-info"><div class="sub-name">${esc(o.product)}</div><div class="sub-plan">${esc(o.plan)} · ${esc(o.date)}</div>
     ${credHtml}${deliveryNote}${ex}${shahidBtns}</div>
     <div class="sub-right"><div class="sub-price">${fmt(o.price)}</div><span class="active-badge">${t('active','Active')}</span>
+    ${shouldHighlightBuyAgain(o)?`<button class="buy-again-btn" onclick="event.stopPropagation();buyAgainFromOrderById('${String(o.id).replace(/'/g,"\\'")}',${forCustomer?forCustomer.id:'null'})">🛒 ${t('buyAgain','Buy again')}</button>`:''}
     <button ${jsOnClick('openSubOptions',o.id)} style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px;color:var(--text2);cursor:pointer;margin-top:4px;display:block;width:100%">••• ${t('options','Options')}</button>
     </div></div>`;
 }
@@ -4824,6 +4937,7 @@ function renderExpiryTracker(){
         <div class="days-left" style="color:${dColor}">${dLabel}</div>
         <div class="days-label">${typeof dLabel==='number'?'days left':''}</div>
         <div class="exp-date">Exp: ${esc(o.expiryDate)}</div>
+        ${shouldHighlightBuyAgain(o)?`<button class="buy-again-btn" style="margin-top:8px;width:auto;min-width:96px" onclick="buyAgainFromOrderById('${String(o.id).replace(/'/g,"\\'")}',${customer?customer.id:'null'})">🛒 ${t('buyAgain','Buy again')}</button>`:''}
       </div>
     </div>`;
   }).join('');
@@ -4846,7 +4960,7 @@ const LANG={
     myProfile:'My Profile',fullName:'Full Name',phoneNumber:'Phone number',telegramChatId:'Telegram Chat ID',telegramHint:'Get your ID from @userinfobot on Telegram',
     saveChanges:'💾 Save Changes',contactUs:'📞 Contact Us',accountSecurity:'🔐 Account security',memberSince:'Member since',
     changePassword:'🔑 Change password',currentPassword:'Current password',newPassword:'New password',confirmPassword:'Confirm new password',
-    updatePassword:'Update password',logoutAll:'🔐 Logout all devices',requestRenewal:'🔄 Request Renewal',reportIssue:'⚠️ Report Issue',copyInfo:'Copy info',fixPassword:'Fix password',copied:'✓ Copied!',
+    updatePassword:'Update password',logoutAll:'🔐 Logout all devices',requestRenewal:'🔄 Request Renewal',buyAgain:'Buy again',reportIssue:'⚠️ Report Issue',copyInfo:'Copy info',fixPassword:'Fix password',copied:'✓ Copied!',
     topupHelp:'Wallet top-up is Whish Money only. Pay via Whish to +961 79 306 701, then send the receipt on WhatsApp.',
     netflix:'Netflix',options:'Options',active:'Active',goToStore:'Go to store',noSubscriptions:'No subscriptions yet',noNetflixSubs:'No Netflix subscriptions yet.',forSubCustomer:'For',
     analytics:'Analytics',exportOrders:'Export orders',bulkImport:'Bulk import',
@@ -4869,7 +4983,7 @@ const LANG={
     myProfile:'ملفي الشخصي',fullName:'الاسم الكامل',phoneNumber:'رقم الهاتف',telegramChatId:'معرّف تيليجرام',telegramHint:'احصل على معرّفك من @userinfobot على تيليجرام',
     saveChanges:'💾 حفظ التغييرات',contactUs:'📞 تواصل معنا',accountSecurity:'🔐 أمان الحساب',memberSince:'عضو منذ',
     changePassword:'🔑 تغيير كلمة المرور',currentPassword:'كلمة المرور الحالية',newPassword:'كلمة المرور الجديدة',confirmPassword:'تأكيد كلمة المرور',
-    updatePassword:'تحديث كلمة المرور',logoutAll:'🔐 تسجيل الخروج من جميع الأجهزة',requestRenewal:'🔄 طلب تجديد',reportIssue:'⚠️ الإبلاغ عن مشكلة',copyInfo:'نسخ المعلومات',fixPassword:'إصلاح كلمة المرور',copied:'✓ تم النسخ!',
+    updatePassword:'تحديث كلمة المرور',logoutAll:'🔐 تسجيل الخروج من جميع الأجهزة',requestRenewal:'🔄 طلب تجديد',buyAgain:'اشتري مجدداً',reportIssue:'⚠️ الإبلاغ عن مشكلة',copyInfo:'نسخ المعلومات',fixPassword:'إصلاح كلمة المرور',copied:'✓ تم النسخ!',
     topupHelp:'شحن المحفظة عبر Whish Money فقط. ادفع على +961 79 306 701 ثم أرسل الإيصال على واتساب.',
     netflix:'نتفليكس',options:'خيارات',active:'نشط',goToStore:'اذهب للمتجر',noSubscriptions:'لا توجد اشتراكات بعد',noNetflixSubs:'لا توجد اشتراكات نتفليكس بعد.',forSubCustomer:'لـ',
     analytics:'الإحصائيات',exportOrders:'تصدير الطلبات',bulkImport:'استيراد جماعي',
@@ -4918,13 +5032,31 @@ function initLang(){
 }
 
 async function openRateUs(){
-  const stars=['⭐','⭐⭐','⭐⭐⭐','⭐⭐⭐⭐','⭐⭐⭐⭐⭐'];
-  const rating=prompt('Rate us 1-5 (1=Poor, 5=Excellent):');
-  if(!rating)return;
-  const r=parseInt(rating);
-  if(r<1||r>5||isNaN(r)){showToast('Please enter a number between 1 and 5');return;}
-  const comment=prompt('Any comments? (optional):');
-  await sendTelegram('⭐ New Rating! '+stars[r-1]+' '+r+'/5 | '+(currentUser?.name||'')+' ('+(currentUser?.email||'')+')' + (comment?' | '+comment:''));
+  _rateUsStars=0;
+  const comment=document.getElementById('rate-us-comment');
+  if(comment)comment.value='';
+  setRateStars(0);
+  openModal('rate-us-modal');
+}
+let _rateUsStars=0;
+function setRateStars(n){
+  _rateUsStars=Number(n)||0;
+  const row=document.getElementById('rate-star-row');
+  const label=document.getElementById('rate-star-label');
+  const labels=['','Poor','Fair','Good','Very good','Excellent'];
+  if(row){
+    row.querySelectorAll('.rate-star-btn').forEach((btn,i)=>{
+      btn.classList.toggle('active',_rateUsStars>0&&i<_rateUsStars);
+    });
+  }
+  if(label)label.textContent=_rateUsStars?labels[_rateUsStars]:'Tap a star to rate';
+}
+async function submitRateUs(){
+  if(_rateUsStars<1||_rateUsStars>5){showToast('Please select a rating');return;}
+  const comment=String(document.getElementById('rate-us-comment')?.value||'').trim();
+  const stars='⭐'.repeat(_rateUsStars);
+  await sendTelegram('⭐ New Rating! '+stars+' '+_rateUsStars+'/5 | '+(currentUser?.name||'Guest')+' ('+(currentUser?.email||'guest')+')'+(comment?' | '+comment:''));
+  closeModal('rate-us-modal');
   showToast('✅ Thank you for your feedback!');
 }
 
@@ -7059,6 +7191,39 @@ function accountIsReseller(u){
   if(u.isReseller===false)return false;
   return true;
 }
+function isLegacyTierUser(u){return u&&u.isReseller===undefined;}
+function legacyTierUsers(){return users.filter(isLegacyTierUser);}
+function accountTierLabel(u){
+  if(u.isReseller===true)return{text:'Reseller',color:'var(--green)'};
+  if(u.isReseller===false)return{text:'Retail',color:'var(--blue)'};
+  return{text:'Legacy · wholesale',color:'var(--orange)'};
+}
+function renderLegacyTierBanner(){
+  const el=document.getElementById('admin-legacy-tier-banner');
+  if(!el)return;
+  const legacy=legacyTierUsers();
+  if(!legacy.length){el.style.display='none';return;}
+  el.style.display='block';
+  el.innerHTML=`<div style="font-weight:700;color:var(--orange);margin-bottom:6px">⚠️ ${legacy.length} account${legacy.length!==1?'s':''} without explicit tier</div>
+    <div style="color:var(--text2);margin-bottom:10px">These users were created before retail/reseller split and currently default to <strong>wholesale prices</strong>. Set them explicitly so retail customers are not charged reseller rates.</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button onclick="bulkSetAccountTier(false,true)" style="padding:7px 12px;border:1px solid var(--blue-border);background:var(--blue-bg);color:var(--blue);border-radius:var(--radius-sm);font-size:11px;font-weight:600;cursor:pointer">Mark all legacy → Retail</button>
+      <button onclick="bulkSetAccountTier(true,true)" style="padding:7px 12px;border:1px solid var(--green-border);background:var(--green-bg);color:var(--green);border-radius:var(--radius-sm);font-size:11px;font-weight:600;cursor:pointer">Mark all legacy → Reseller</button>
+    </div>`;
+}
+async function bulkSetAccountTier(isReseller,onlyLegacy){
+  const count=onlyLegacy?legacyTierUsers().length:users.length;
+  const label=isReseller?'reseller (wholesale)':'retail customer';
+  if(!count){showToast('No accounts to update');return;}
+  if(!confirm(`Set ${onlyLegacy?count+' legacy':count} account(s) to ${label} pricing?`))return;
+  try{
+    const j=await rtApi('/admin/bulk-tier',{method:'POST',body:JSON.stringify({isReseller,onlyLegacy:!!onlyLegacy})});
+    if(j.data)applyDataSnapshot(j.data);
+    renderAdminCustomers();
+    showToast(`✅ Updated ${j.updated||0} account(s)`);
+    logActivity(isReseller?'Bulk reseller tier':'Bulk retail tier',`${j.updated||0} accounts`);
+  }catch(e){showToast('⚠️ '+(e.message||'Bulk update failed'));}
+}
 function openAdminCustomerDetail(userIdx){
   const u=users[userIdx];
   if(!u)return;
@@ -7078,7 +7243,7 @@ function openAdminCustomerDetail(userIdx){
   </div>
   <div style="font-size:12px;color:var(--text2);margin-bottom:16px;line-height:1.6">
     <div>📞 ${u.phone?esc(u.phone):'—'} · TG: ${u.tgChatId?esc(u.tgChatId):'—'} · Joined: ${esc(u.joinedDate||'—')}</div>
-    <div>${u.verified?'✓ Verified':'⚠ Unverified'}${u.banned?' · 🚫 Banned':''} · ${accountIsReseller(u)?'🏪 Reseller (wholesale)':'🛍 Retail customer'}</div>
+    <div>${u.verified?'✓ Verified':'⚠ Unverified'}${u.banned?' · 🚫 Banned':''} · ${accountTierLabel(u).text==='Legacy · wholesale'?'⚠ Legacy (defaults wholesale)':accountIsReseller(u)?'🏪 Reseller (wholesale)':'🛍 Retail customer'}</div>
   </div>`;
   const txHtml=txs.length?`<div class="admin-cust-detail-section"><h4>Transactions (${txs.length})</h4>
     <table class="tx-table" style="width:100%"><thead><tr><th>#</th><th>Type</th><th>Description</th><th>Amount</th><th>Balance</th><th>Date</th></tr></thead>
@@ -7099,6 +7264,7 @@ function openAdminCustomerDetail(userIdx){
   openModal('admin-cust-detail-modal');
 }
 function renderAdminCustomers(){
+  renderLegacyTierBanner();
   const tbody=document.getElementById('admin-cust-tbody');
   const q=(document.getElementById('admin-cust-search')?.value||'').toLowerCase();
   const productF=(document.getElementById('admin-cust-filter-product')?.value||'').toLowerCase();
@@ -7107,6 +7273,9 @@ function renderAdminCustomers(){
     const ps=userPurchaseSummary(u);
     if(q&&!u.name.toLowerCase().includes(q)&&!u.email.toLowerCase().includes(q)&&!String(u.phone||'').includes(q))return false;
     if(productF&&!ps.chipOrders.some(o=>String(o.product||'').toLowerCase().includes(productF)))return false;
+    if(statusF==='legacy'&&!isLegacyTierUser(u))return false;
+    if(statusF==='retail'&&u.isReseller!==false)return false;
+    if(statusF==='reseller'&&u.isReseller!==true)return false;
     if(statusF==='active'&&ps.total===0)return false;
     if(statusF==='banned'&&!u.banned)return false;
     if(statusF==='no-tg'&&u.tgChatId)return false;
@@ -7117,6 +7286,7 @@ function renderAdminCustomers(){
     const ri=users.indexOf(u);
     const ps=userPurchaseSummary(u);
     const spent=(Array.isArray(u.transactions)?u.transactions:[]).filter(t=>t.type==='purchase').reduce((s,t)=>s+t.amount,0);
+    const tier=accountTierLabel(u);
     const reseller=accountIsReseller(u);
     const subChips=ps.chipOrders.slice(0,3).map(o=>{
       const assigned=ps.assigned.find(a=>a.order.id===o.id);
@@ -7132,7 +7302,7 @@ function renderAdminCustomers(){
       <td style="font-family:var(--mono);font-size:12px">${u.signupPass?'<span title="Hidden for security">••••</span>':'<span style="color:var(--text3)">—</span>'}</td>
       <td style="font-family:var(--mono);font-size:12px">${u.phone?esc(u.phone):'<span style="color:var(--text3)">—</span>'}</td>
       <td><span class="verified-pill ${u.verified?'vpill-yes':'vpill-no'}">${u.verified?'✓ Verified':'⚠ Unverified'}</span></td>
-      <td><span style="font-size:11px;font-weight:600;color:${reseller?'var(--green)':'var(--blue)'}">${reseller?'Reseller':'Retail'}</span></td>
+      <td><span style="font-size:11px;font-weight:600;color:${tier.color}">${tier.text}</span></td>
       <td><span style="color:var(--green);font-weight:600">${fmt(u.balance)}</span><div style="font-size:11px;color:var(--text3)">spent: ${fmt(spent)}</div></td>
       <td><div style="font-weight:600">${ps.total} purchase${ps.total!==1?'s':''}</div>${assignedNote}<div class="sub-chips">${subChips}${more}</div></td>
       <td style="color:var(--text3);font-size:12px">${u.joinedDate||'—'}</td>
@@ -8080,6 +8250,7 @@ if(document.readyState==='loading'){
       <button onclick="subOptionResendTelegram()" class="sub-option-btn">📲 Resend to Telegram / Email</button>
       <button onclick="subOptionAddNote()" class="sub-option-btn">📝 Add Note</button>
       <button onclick="subOptionRenew()" class="sub-option-btn" data-t="requestRenewal">🔄 Request Renewal</button>
+      <button onclick="subOptionBuyAgain()" class="sub-option-btn" id="sub-option-buy-again-btn" style="display:none">🛒 Buy again</button>
       <button onclick="subOptionReport()" class="sub-option-btn" data-t="reportIssue">⚠️ Report Issue</button>
       <div style="border-top:1px solid var(--border);margin:6px 0"></div>
       <button onclick="subOptionChangeProfile()" class="sub-option-btn">👤 Change Profile Name</button>

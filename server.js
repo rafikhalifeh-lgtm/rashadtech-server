@@ -27,6 +27,7 @@ const {
   deliverSubscriptionEmail,
   deliverSupportEscalationEmail,
   deliverTestEmail,
+  deliverTopupConfirmationEmail,
   resolveSupportInbox,
   fetchResendDomainStatus,
   getActiveEmailProvider,
@@ -484,6 +485,38 @@ async function sendPurchaseReceiptEmail(user, product, planLabel, price, order, 
     return true;
   } catch (e) {
     console.error('Receipt email error:', e.message);
+    return false;
+  }
+}
+
+async function sendTopupConfirmationEmail(user, amount, label, options = {}) {
+  const email = normalizeEmail(user && user.email);
+  if (!email) return false;
+  const mailData = options.data || await loadEmailSettingsData();
+  if (!isServerEmailConfigured(mailData)) {
+    console.warn('Topup email skipped — email not configured:', email);
+    return false;
+  }
+  try {
+    await deliverTopupConfirmationEmail({
+      email,
+      name: user.name,
+      amount: Number(amount),
+      balanceAfter: Number(user.balance || 0),
+      label: label || `$${Number(amount).toFixed(2)}`,
+      date: options.date || formatBeirutTime(),
+      data: mailData,
+      emailJs: {
+        serviceId: EMAILJS_SERVICE_ID,
+        otpTemplateId: EMAILJS_TEMPLATE_ID,
+        marketingTemplateId: resolveMarketingTemplateId(mailData) || EMAILJS_MARKETING_TEMPLATE_ID,
+        publicKey: EMAILJS_PUBLIC_KEY,
+        privateKey: EMAILJS_PRIVATE_KEY
+      }
+    });
+    return true;
+  } catch (e) {
+    console.error('Topup confirmation email error:', e.message);
     return false;
   }
 }
@@ -3546,18 +3579,11 @@ app.post('/admin/credit-topup', async (req, res) => {
           `💰 <b>Wallet Topped Up!</b>\n\n✅ <b>${reqRow.label}</b> has been added to your wallet.\n💵 New balance: $${Number(user.balance).toFixed(2)}\n\nEnjoy shopping on rashadtech.tv! 🎉`,
           'HTML'
         ).catch((e) => console.error('Topup customer TG:', e.message));
-      } else if (normalizeEmail(user.email)) {
-        await sendUserEmail(
-          user.email,
-          'Wallet topped up — RashadTech',
-          `Hello ${user.name || 'there'},\n\n${reqRow.label} has been added to your wallet.\nNew balance: $${Number(user.balance).toFixed(2)}\n\nEnjoy shopping on rashadtech.tv!`,
-          user.name,
-          data
-        ).catch((e) => console.error('Topup customer email:', e.message));
       }
+      await sendTopupConfirmationEmail(user, reqRow.amount, reqRow.label, { data, date: formatBeirutTime() });
       await sendTG(
         TG_ADMIN,
-        `✅ Credited ${reqRow.label} to ${reqRow.name} (${reqRow.email}) · Balance: $${Number(user.balance).toFixed(2)}${custTgId ? '' : ' · 📧 emailed (no TG)'}`,
+        `✅ Credited ${reqRow.label} to ${reqRow.name} (${reqRow.email}) · Balance: $${Number(user.balance).toFixed(2)}${custTgId ? '' : ' · 📧 emailed'}`,
         'HTML'
       ).catch((e) => console.error('Topup credit admin TG:', e.message));
     });
@@ -3724,11 +3750,15 @@ app.post('/admin/wallet-adjust', async (req, res) => {
     });
     if (outcome.error) return res.status(outcome.status || 400).json({ error: outcome.error });
     const { user, data } = outcome;
+    const dateStr = formatBeirutTime();
     if (notify !== false && user.tgChatId) {
       const msg = mode === 'withdraw'
         ? `💰 <b>Wallet Updated</b>\n\n➖ $${amt.toFixed(2)} withdrawn.\n💵 New balance: $${Number(user.balance).toFixed(2)}`
         : `💰 <b>Wallet Topped Up!</b>\n\n✅ $${amt.toFixed(2)} added to your wallet.\n💵 New balance: $${Number(user.balance).toFixed(2)}\n\nEnjoy shopping! 🎉`;
       await sendTG(user.tgChatId, msg, 'HTML').catch(() => {});
+    }
+    if (mode === 'deposit') {
+      runAfterResponse(() => sendTopupConfirmationEmail(user, amt, `$${amt.toFixed(2)}`, { data, date: dateStr }));
     }
     res.json({ success: true, user: sanitizeUser(user), data: safeDataForSession(data, { role: 'admin' }) });
   } catch (e) {
@@ -4163,11 +4193,14 @@ app.get('/admin/marketing-email-status', async (req, res) => {
     const configured = provider === 'resend'
       ? true
       : Boolean(templateId && templateId !== EMAILJS_TEMPLATE_ID);
+    const settings = (data && data.siteSettings) || {};
     res.json({
       success: true,
       configured,
       marketingTemplateId: configured ? templateId : '',
       otpTemplateId: EMAILJS_TEMPLATE_ID,
+      retailSupportEmail: settings.retailSupportEmail || '',
+      resellerSupportEmail: settings.resellerSupportEmail || '',
       ...getEmailDeliverabilityStatus({ setupHint: MARKETING_EMAIL_SETUP_HINT }, data)
     });
   } catch (e) {
@@ -4178,7 +4211,7 @@ app.get('/admin/marketing-email-status', async (req, res) => {
 app.post('/admin/email-settings', async (req, res) => {
   const session = requireSession(req, res, ['admin']);
   if (!session) return;
-  const { resendApiKey, emailFromAddress, emailReplyTo, emailFromName, clearResendKey } = req.body || {};
+  const { resendApiKey, emailFromAddress, emailReplyTo, emailFromName, retailSupportEmail, resellerSupportEmail, clearResendKey } = req.body || {};
   try {
     const data = await readJsonBinRaw();
     data.siteSettings = { ...(data.siteSettings || {}) };
@@ -4190,6 +4223,8 @@ app.post('/admin/email-settings', async (req, res) => {
     if (emailFromAddress !== undefined) data.siteSettings.emailFromAddress = String(emailFromAddress || '').trim();
     if (emailReplyTo !== undefined) data.siteSettings.emailReplyTo = String(emailReplyTo || '').trim();
     if (emailFromName !== undefined) data.siteSettings.emailFromName = String(emailFromName || '').trim();
+    if (retailSupportEmail !== undefined) data.siteSettings.retailSupportEmail = String(retailSupportEmail || '').trim();
+    if (resellerSupportEmail !== undefined) data.siteSettings.resellerSupportEmail = String(resellerSupportEmail || '').trim();
     await writeJsonBinRaw(data);
     res.json({
       success: true,
@@ -4197,6 +4232,8 @@ app.post('/admin/email-settings', async (req, res) => {
         emailFromAddress: data.siteSettings.emailFromAddress || DEFAULT_FROM_ADDRESS,
         emailReplyTo: data.siteSettings.emailReplyTo || DEFAULT_REPLY_TO,
         emailFromName: data.siteSettings.emailFromName || 'RashadTech',
+        retailSupportEmail: data.siteSettings.retailSupportEmail || '',
+        resellerSupportEmail: data.siteSettings.resellerSupportEmail || '',
         hasResendKey: Boolean(data.siteSettings.resendApiKey || process.env.RESEND_API_KEY)
       },
       ...getEmailDeliverabilityStatus({ setupHint: MARKETING_EMAIL_SETUP_HINT }, data)

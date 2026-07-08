@@ -471,6 +471,44 @@ function registerEnhancements(app, deps) {
     }
   });
 
+  app.post('/admin/bulk-tier', async (req, res) => {
+    const session = requireSession(req, res, ['admin']);
+    if (!session) return;
+    const { isReseller, onlyLegacy, emails } = req.body || {};
+    if (typeof isReseller !== 'boolean') {
+      return res.status(400).json({ error: 'isReseller (true/false) is required' });
+    }
+    try {
+      const data = await readJsonBinRaw();
+      const emailSet = Array.isArray(emails) && emails.length
+        ? new Set(emails.map(e => normalizeEmail(e)).filter(Boolean))
+        : null;
+      let updated = 0;
+      for (const user of data.users || []) {
+        const clean = normalizeEmail(user.email);
+        if (!clean) continue;
+        if (emailSet && !emailSet.has(clean)) continue;
+        if (onlyLegacy && user.isReseller !== undefined) continue;
+        if (user.isReseller === isReseller) continue;
+        user.isReseller = isReseller;
+        updated += 1;
+      }
+      await writeJsonBinRaw(data);
+      await appendActivity(
+        isReseller ? 'Bulk reseller tier' : 'Bulk retail tier',
+        `${updated} account${updated !== 1 ? 's' : ''}${onlyLegacy ? ' (legacy only)' : ''}`,
+        session.email
+      );
+      res.json({
+        success: true,
+        updated,
+        data: safeDataForSession(data, { role: 'admin' })
+      });
+    } catch (e) {
+      res.status(500).json({ error: e.message || 'Could not update account tiers' });
+    }
+  });
+
   app.post('/admin/prices', async (req, res) => {
     const session = requireSession(req, res, ['admin']);
     if (!session) return;
