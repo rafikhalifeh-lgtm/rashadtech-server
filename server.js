@@ -23,6 +23,7 @@ const {
 const {
   deliverMarketingEmail,
   deliverOtpEmail,
+  deliverPurchaseReceiptEmail,
   deliverSubscriptionEmail,
   deliverSupportEscalationEmail,
   deliverTestEmail,
@@ -447,6 +448,42 @@ async function sendSubscriptionEmail(user, product, planLabel, order, subLink, o
     return true;
   } catch (e) {
     console.error('Subscription email error:', e.message);
+    return false;
+  }
+}
+
+async function sendPurchaseReceiptEmail(user, product, planLabel, price, order, options = {}) {
+  const email = normalizeEmail(user && user.email);
+  if (!email) return false;
+  const mailData = options.data || await loadEmailSettingsData();
+  if (!isServerEmailConfigured(mailData)) {
+    console.warn('Receipt email skipped — email not configured:', email);
+    return false;
+  }
+  try {
+    await deliverPurchaseReceiptEmail({
+      email,
+      name: user.name,
+      productName: product && product.name,
+      planLabel,
+      orderId: order && (order.id || order.orderId),
+      amount: Number(price),
+      balanceAfter: Number(user.balance || 0),
+      status: options.status || (order && order.pending ? 'pending' : 'confirmed'),
+      date: (order && order.date) || options.date || formatBeirutTime(),
+      assignedCustomerName: options.assignedCustomerName || '',
+      data: mailData,
+      emailJs: {
+        serviceId: EMAILJS_SERVICE_ID,
+        otpTemplateId: EMAILJS_TEMPLATE_ID,
+        marketingTemplateId: resolveMarketingTemplateId(mailData) || EMAILJS_MARKETING_TEMPLATE_ID,
+        publicKey: EMAILJS_PUBLIC_KEY,
+        privateKey: EMAILJS_PRIVATE_KEY
+      }
+    });
+    return true;
+  } catch (e) {
+    console.error('Receipt email error:', e.message);
     return false;
   }
 }
@@ -2871,9 +2908,9 @@ async function notifyPurchasePending(user, product, planLabel, price, assignCust
       console.error('Pending customer TG:', e.message);
     }
   }
-  const emailSent = await sendSubscriptionEmail(user, product, planLabel, pendingOrder || { product: product.name, plan: planLabel }, '', {
-    kind: 'pending',
+  const emailSent = await sendPurchaseReceiptEmail(user, product, planLabel, price, pendingOrder || { product: product.name, plan: planLabel, pending: true }, {
     data: options.data,
+    status: 'pending',
     assignedCustomerName: assignedCustomer ? `${assignedCustomer.fname} ${assignedCustomer.lname}`.trim() : ''
   });
   return emailSent ? 'email' : false;
@@ -2974,6 +3011,13 @@ async function notifyPurchaseFulfilled(user, product, planLabel, price, order, a
   custMsg += `\n\n🔗 <b>Subscription link:</b>\n${subLink}\n\nEnjoy! 🌟`;
   if (options.skipAdminNotify) {
     custMsg = `🔁 <b>Resent your subscription</b>\n\n${custMsg}`;
+  }
+  if (!options.forceResend) {
+    await sendPurchaseReceiptEmail(user, product, planLabel, price, order, {
+      data: options.data,
+      status: 'confirmed',
+      assignedCustomerName: custName || ''
+    });
   }
   const tgChatId = String(user.tgChatId || '').trim();
   const channels = [];
@@ -3776,6 +3820,11 @@ app.post('/purchase-game', async (req, res) => {
       `🎮 <b>New Game Order ${order.id}</b>\n\n📦 ${order.product}\n📋 ${planLabel}\n👤 ${idLabel}: <code>${order.playerId}</code>${passLine}\n💵 $${orderPrice.toFixed(2)}\n👤 ${user.name} (${user.email})\n📅 ${dateStr}\n\nGo to Admin → Game Orders to fulfill.`,
       'HTML'
     ).catch(() => {});
+    runAfterResponse(() => sendPurchaseReceiptEmail(user, { name: order.product }, planLabel, orderPrice, order, {
+      data,
+      status: 'pending',
+      date: dateStr
+    }));
     res.json({
       success: true,
       order,

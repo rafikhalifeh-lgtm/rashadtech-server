@@ -238,6 +238,102 @@ function buildSubscriptionEmailContent({
   return { subject, text, html, config };
 }
 
+function buildPurchaseReceiptEmailContent({
+  name,
+  productName,
+  planLabel,
+  orderId,
+  amount,
+  balanceAfter,
+  status = 'confirmed',
+  date,
+  assignedCustomerName
+}, data) {
+  const config = resolveEmailConfig(data);
+  const displayName = String(name || 'Customer').trim() || 'Customer';
+  const product = String(productName || 'Order').trim();
+  const plan = String(planLabel || '').trim();
+  const orderRef = String(orderId || '').trim() || '—';
+  const amt = Number(amount);
+  const bal = Number(balanceAfter);
+  const isPending = status === 'pending';
+  const statusLabel = isPending ? 'Processing' : 'Confirmed';
+  const subject = `Order confirmation ${orderRef} — ${product}`;
+  const lines = [
+    `Hello ${displayName},`,
+    '',
+    'Thank you for your purchase. Here is your order summary:',
+    '',
+    `Order: ${orderRef}`,
+    date ? `Date: ${date}` : '',
+    `Product: ${product}${plan ? ` · ${plan}` : ''}`,
+    `Amount paid: $${amt.toFixed(2)}`,
+    `Wallet balance after: $${bal.toFixed(2)}`,
+    `Status: ${statusLabel}`,
+    assignedCustomerName ? `For: ${assignedCustomerName}` : '',
+    '',
+    isPending
+      ? 'We are preparing your order. You will receive delivery details by email and in My Subscriptions when ready.'
+      : 'Your subscription details have been sent in a separate email. You can also view everything in My Subscriptions on the site.',
+    '',
+    `View your account: ${config.siteUrl}`
+  ].filter(Boolean);
+  const text = lines.join('\n');
+  const rows = [
+    ['Order', orderRef],
+    date ? ['Date', date] : null,
+    ['Product', `${product}${plan ? ` · ${plan}` : ''}`],
+    ['Amount paid', `$${amt.toFixed(2)}`],
+    ['Wallet balance', `$${bal.toFixed(2)}`],
+    ['Status', statusLabel]
+  ].filter(Boolean);
+  if (assignedCustomerName) rows.push(['For', assignedCustomerName]);
+  const bodyHtml = `
+    <p style="margin:0 0 14px;line-height:1.6;color:#1f2937;">Hello ${escapeHtml(displayName)},</p>
+    <p style="margin:0 0 14px;line-height:1.6;color:#1f2937;">Thank you for your purchase. Here is your order summary:</p>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:16px 0 18px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:12px 16px">
+      ${rows.map(([label, value]) => `<tr><td style="padding:8px 0;color:#6b7280;width:38%">${escapeHtml(label)}</td><td style="padding:8px 0;font-weight:600;color:#111827">${escapeHtml(value)}</td></tr>`).join('')}
+    </table>
+    <p style="margin:0 0 14px;line-height:1.6;color:#1f2937;">${isPending
+      ? 'We are preparing your order. You will receive delivery details by email and in <strong>My Subscriptions</strong> when ready.'
+      : 'Your subscription details have been sent in a separate email. You can also view everything in <strong>My Subscriptions</strong> on the site.'}</p>
+    <p style="margin:0;color:#6b7280;font-size:14px;line-height:1.6;"><a href="${escapeHtml(config.siteUrl)}" style="color:#2563eb">${escapeHtml(config.siteUrl.replace(/^https?:\/\//, ''))}</a> · My Subscriptions</p>`;
+  const html = wrapEmailHtml({ title: subject, bodyHtml, preheader: `Order ${orderRef} — $${amt.toFixed(2)}`, config });
+  return { subject, text, html, config };
+}
+
+async function deliverPurchaseReceiptEmail({ email, name, productName, planLabel, orderId, amount, balanceAfter, status, date, assignedCustomerName, data, emailJs }) {
+  const content = buildPurchaseReceiptEmailContent({
+    name,
+    productName,
+    planLabel,
+    orderId,
+    amount,
+    balanceAfter,
+    status,
+    date,
+    assignedCustomerName
+  }, data);
+  if (content.config.resendApiKey) {
+    await sendViaResend({
+      to: email,
+      subject: content.subject,
+      text: content.text,
+      html: content.html,
+      headers: { 'X-Entity-Ref-ID': `receipt-${Date.now()}` },
+      config: content.config
+    });
+    return { provider: 'resend' };
+  }
+  const baseParams = marketingTemplateParams(email, name, content.subject, content.text, data);
+  await sendViaEmailJS({
+    templateId: emailJs.marketingTemplateId || emailJs.otpTemplateId,
+    templateParams: baseParams,
+    emailJs
+  });
+  return { provider: 'emailjs' };
+}
+
 async function deliverSubscriptionEmail({ email, name, productName, planLabel, order, subLink, assignedCustomerName, kind, data, emailJs }) {
   const content = buildSubscriptionEmailContent({
     name,
@@ -636,10 +732,12 @@ async function fetchResendDomainStatus(data) {
 module.exports = {
   buildMarketingEmailContent,
   buildOtpEmailContent,
+  buildPurchaseReceiptEmailContent,
   buildSubscriptionEmailContent,
   buildTestEmailContent,
   deliverMarketingEmail,
   deliverOtpEmail,
+  deliverPurchaseReceiptEmail,
   deliverSubscriptionEmail,
   deliverSupportEscalationEmail,
   deliverTestEmail,

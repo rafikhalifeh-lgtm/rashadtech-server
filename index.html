@@ -86,6 +86,22 @@ input,button,select,textarea{font-family:var(--font)}
 .auth-seo p{margin-bottom:8px}
 .auth-seo ul{list-style:none;padding:0;margin:8px 0 0;display:flex;flex-wrap:wrap;justify-content:center;gap:6px 12px}
 .auth-seo li{font-size:11px;color:var(--text3)}
+.auth-legal-links{display:flex;flex-wrap:wrap;justify-content:center;gap:8px 16px;margin-top:12px;font-size:12px}
+.auth-legal-links a{color:var(--text3);text-decoration:none}
+.auth-legal-links a:hover{color:var(--text2);text-decoration:underline}
+.admin-link{display:none;margin-top:14px;font-size:12px;text-align:center}
+.admin-link a{color:var(--text3);cursor:pointer;text-decoration:underline}
+.store-site-footer{margin-top:32px;padding:24px 0 12px;border-top:1px solid var(--border);font-size:12px;color:var(--text3);line-height:1.7}
+.store-site-footer .sf-links{display:flex;flex-wrap:wrap;gap:8px 16px;margin-bottom:10px}
+.store-site-footer a{color:var(--text3);text-decoration:none}
+.store-site-footer a:hover{color:var(--text2);text-decoration:underline}
+.legal-modal-body{max-height:min(70vh,560px);overflow:auto;padding:20px 24px;font-size:13px;line-height:1.65;color:var(--text2)}
+.legal-modal-body h4{margin:18px 0 8px;font-size:14px;color:var(--text)}
+.legal-modal-body h4:first-child{margin-top:0}
+.legal-modal-body p{margin:0 0 12px}
+.legal-modal-body ul{margin:0 0 12px;padding-left:18px}
+.confirm-terms{font-size:11px;color:var(--text3);margin-top:10px;line-height:1.5;text-align:center}
+.confirm-terms a{color:var(--blue);cursor:pointer;text-decoration:underline}
 .auth-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:32px;width:100%;max-width:390px}
 .auth-logo{font-size:21px;font-weight:600;text-align:center;margin-bottom:4px;letter-spacing:-0.3px}
 .auth-logo span{color:var(--red)}
@@ -107,8 +123,6 @@ input,button,select,textarea{font-family:var(--font)}
 .auth-switch a{color:var(--red);cursor:pointer}
 .err-msg{font-size:12px;color:var(--red);margin-bottom:10px;display:none;background:var(--red-bg);border:1px solid var(--red-border);border-radius:var(--radius-sm);padding:8px 12px}
 .ok-msg{font-size:12px;color:var(--green);margin-bottom:10px;display:none;background:var(--green-bg);border:1px solid var(--green-border);border-radius:var(--radius-sm);padding:8px 12px}
-.admin-link{text-align:center;margin-top:12px}
-.admin-link a{font-size:11px;color:var(--text3);cursor:pointer}
 .otp-row{display:flex;gap:8px;justify-content:center;margin-bottom:16px}
 .otp-input{width:46px;height:50px;text-align:center;font-size:20px;font-weight:600;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text);outline:none;transition:border-color 0.15s}
 .otp-input:focus{border-color:var(--blue)}
@@ -632,10 +646,10 @@ So your EmailJS template will receive the user email and verification code corre
       <button type="submit" class="btn-primary">Sign in</button>
       </form>
       <div class="auth-switch">No account? <a onclick="showView('signup')">Sign up</a></div>
-      <div class="admin-link"><a onclick="showView('admin')">Admin access</a></div>
+      <div class="admin-link" id="admin-access-link"><a onclick="showView('admin')">Staff login</a></div>
     </div>
     <div id="view-signup" style="display:none">
-      <div class="auth-title">Create account</div><div class="auth-desc">Retail customer signup — email, password, and phone only</div>
+      <div class="auth-title">Create account</div><div class="auth-desc">Sign up with email, password, and phone to start shopping</div>
       <div class="err-msg" id="signup-err"></div>
       <div class="field"><label>Email</label><input type="email" id="su-email" placeholder="you@email.com" autocomplete="username email">
         <div style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.5">📧 After signup, check your <strong>spam/junk folder</strong> if the verification email is not in your inbox.</div>
@@ -652,6 +666,7 @@ So your EmailJS template will receive the user email and verification code corre
         <input type="tel" id="su-phone" placeholder="79 000 000" autocomplete="tel">
       </div></div>
       <div style="font-size:11px;color:var(--text3);margin-bottom:14px;line-height:1.5">Telegram Chat ID is optional — add it later in Profile to receive purchases on Telegram.</div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:14px;line-height:1.5">By creating an account, you agree to our <a href="#" onclick="openLegalPage('terms');return false" style="color:var(--blue)">Terms</a> and <a href="#" onclick="openLegalPage('privacy');return false" style="color:var(--blue)">Privacy Policy</a>.</div>
       <button class="btn-primary" onclick="doSignup()">Create account</button>
       <div class="auth-switch">Have an account? <a onclick="showView('login')">Sign in</a></div>
     </div>
@@ -706,10 +721,16 @@ So your EmailJS template will receive the user email and verification code corre
   </div>
   <footer class="auth-seo">
     <h1>rashadtech.tv — Streaming Subscriptions Store</h1>
-    <p>Buy Netflix, Shahid VIP, Disney+, OSN+, Amazon Prime, Spotify, Anghami, Apple TV+, HBO Max and more. Create an account, top up your wallet, and get credentials delivered instantly on Telegram.</p>
+    <p>Buy Netflix, Shahid VIP, Disney+, OSN+, Amazon Prime, Spotify, Anghami, Apple TV+, HBO Max and more. Create an account, top up your wallet, and get credentials delivered instantly by email.</p>
     <ul aria-label="Available services">
       <li>Netflix</li><li>Shahid VIP</li><li>Disney+</li><li>OSN+</li><li>Spotify</li><li>Anghami</li><li>Amazon Prime</li><li>Apple TV+</li><li>HBO Max</li>
     </ul>
+    <div class="auth-legal-links">
+      <a href="#" onclick="openLegalPage('terms');return false">Terms of Service</a>
+      <a href="#" onclick="openLegalPage('privacy');return false">Privacy Policy</a>
+      <a href="#" onclick="openLegalPage('refunds');return false">Refunds</a>
+      <a href="https://wa.me/96179306701" target="_blank" rel="noopener">Support</a>
+    </div>
   </footer>
   </div>
 </div>
@@ -727,8 +748,8 @@ So your EmailJS template will receive the user email and verification code corre
       </div>
       <div id="topbar-user-actions" style="display:flex;align-items:center;gap:8px">
       <span class="unverified-chip" id="unverified-chip" onclick="showVerifyModal()" style="display:none"><i class="ti ti-mail-exclamation" style="font-size:12px;vertical-align:-1px;margin-right:3px"></i>Verify email</span>
-      <span id="reseller-price-chip" style="display:none;font-size:10px;background:var(--green-bg);color:var(--green);border:1px solid var(--green-border);padding:3px 9px;border-radius:4px;font-weight:600">Reseller prices</span>
-      <span id="retail-account-chip" style="display:none;font-size:10px;background:var(--blue-bg);color:var(--blue);border:1px solid var(--blue-border);padding:3px 9px;border-radius:4px;font-weight:600">Retail account</span>
+      <span id="reseller-price-chip" style="display:none;font-size:10px;background:var(--green-bg);color:var(--green);border:1px solid var(--green-border);padding:3px 9px;border-radius:4px;font-weight:600">Wholesale prices</span>
+      <span id="retail-account-chip" style="display:none"></span>
       <div class="wallet-chip" onclick="switchTab('wallet',null)">
         <i class="ti ti-wallet" style="font-size:15px;color:var(--text3)"></i>
         <div><div class="wbal" id="topbar-bal">$0.00</div><div class="wlabel">Wallet</div></div>
@@ -784,11 +805,12 @@ So your EmailJS template will receive the user email and verification code corre
       <button class="snav" onclick="switchTab('requests',this)"><i class="ti ti-bulb"></i><span data-t="requests">Requests</span></button>
       <div class="snav-section" data-t="account">Account</div>
       <button class="snav" onclick="switchTab('wallet',this)"><i class="ti ti-wallet"></i><span data-t="wallet">Wallet</span></button>
+      <button class="snav" onclick="switchTab('profile',this)"><i class="ti ti-user"></i><span data-t="profile">Profile</span></button>
     </div>
     <div class="main-content">
       <div id="tab-store" class="tab-pane active">
         <div class="pg-title" data-t="store">Store</div>
-        <div class="pg-sub" id="store-subtitle" data-t="storeSub">Instant delivery · Wallet-powered purchases</div>
+        <div class="pg-sub" id="store-subtitle" data-t="storeSub">Instant delivery · Pay from your wallet</div>
         <div class="filter-row">
           <div class="ftab active" onclick="filterProd('all',this)" data-cat="all">All</div>
           <div class="ftab" onclick="filterProd('video',this)" data-cat="video">Video</div>
@@ -799,6 +821,16 @@ So your EmailJS template will receive the user email and verification code corre
           <div class="ftab" onclick="filterProd('giftcards',this)" data-cat="giftcards">Gift Cards</div>
         </div>
         <div class="products-grid" id="products-grid"></div>
+        <footer class="store-site-footer" id="store-site-footer">
+          <div class="sf-links">
+            <a href="#" onclick="openLegalPage('terms');return false">Terms</a>
+            <a href="#" onclick="openLegalPage('privacy');return false">Privacy</a>
+            <a href="#" onclick="openLegalPage('refunds');return false">Refunds</a>
+            <a href="https://wa.me/96179306701" target="_blank" rel="noopener">WhatsApp Support</a>
+            <a href="https://t.me/Rashadtech" target="_blank" rel="noopener">Telegram</a>
+          </div>
+          <div>© rashadtech.tv · Digital subscriptions delivered to your account</div>
+        </footer>
       </div>
       <div id="tab-subscriptions" class="tab-pane">
         <div class="pg-title" data-t="subscriptions">My subscriptions</div>
@@ -1182,6 +1214,11 @@ So your EmailJS template will receive the user email and verification code corre
 </div>
 
 <!-- MODALS -->
+<div class="modal-wrap" id="legal-modal" onclick="if(event.target===this)closeModal('legal-modal')"><div class="modal" style="width:min(560px,94vw)">
+  <div class="modal-head"><h3 id="legal-modal-title">Legal</h3><button class="mclose" onclick="closeModal('legal-modal')">✕</button></div>
+  <div class="legal-modal-body" id="legal-modal-body"></div>
+</div></div>
+
 <div class="modal-wrap" id="buy-modal"><div class="modal">
   <div class="modal-head"><h3 id="modal-title">Buy subscription</h3><button class="mclose" onclick="closeModal('buy-modal')">✕</button></div>
   <div class="modal-body" id="modal-body"></div>
@@ -2211,12 +2248,12 @@ function updateResellerUi(){
   const chip=document.getElementById('reseller-price-chip');
   if(chip)chip.style.display=reseller&&!isGuestMode?'inline-flex':'none';
   const retailChip=document.getElementById('retail-account-chip');
-  if(retailChip)retailChip.style.display=!reseller&&!isGuestMode&&currentUser?'inline-flex':'none';
+  if(retailChip)retailChip.style.display='none';
   const sub=document.getElementById('store-subtitle');
   if(sub){
-    if(isGuestMode)sub.textContent='Retail prices · Create a free account to buy';
-    else if(reseller)sub.textContent='Reseller wholesale prices · Wallet-powered purchases';
-    else sub.textContent='Retail customer prices · Wallet-powered purchases';
+    if(isGuestMode)sub.textContent=currentLang==='ar'?'تصفح الأسعار · سجّل للشراء فوراً':'Browse prices · Sign up to buy instantly';
+    else if(reseller)sub.textContent=currentLang==='ar'?'أسعار الجملة · شراء عبر المحفظة':'Wholesale prices · Pay from your wallet';
+    else sub.textContent=t('storeSub','Instant delivery · Pay from your wallet');
   }
 }
 function goToAuth(view){
@@ -3512,6 +3549,42 @@ function getOTP(pfx){return[0,1,2,3,4,5].map(i=>document.getElementById(pfx+i)?.
 function clearOTP(pfx){[0,1,2,3,4,5].forEach(i=>{const el=document.getElementById(pfx+i);if(el)el.value='';});}
 
 function showView(v){['login','signup','verify','forgot','reset','admin'].forEach(x=>{const el=document.getElementById('view-'+x);if(el)el.style.display=x===v?'block':'none';});if(v==='admin')refreshAdmin2faSetupUi();}
+function syncAdminLinkVisibility(){
+  const el=document.getElementById('admin-access-link');
+  if(!el)return;
+  const params=new URLSearchParams(location.search);
+  const show=params.get('admin')==='1'||location.hash==='#admin'||localStorage.getItem('rt_staff')==='1';
+  el.style.display=show?'block':'none';
+}
+const LEGAL_PAGES={
+  terms:{
+    en:{title:'Terms of Service',body:`<h4>1. Service</h4><p>rashadtech.tv sells digital streaming and gaming subscriptions. Products are delivered to your account on the site and by email after purchase.</p><h4>2. Accounts</h4><p>You must provide accurate email and phone details. You are responsible for keeping your password secure.</p><h4>3. Wallet &amp; payments</h4><p>Purchases are paid from your site wallet. Top-ups are processed manually via Whish Money after receipt verification. Prices shown at checkout are final for that purchase.</p><h4>4. Delivery</h4><p>Most subscriptions are delivered instantly. Some orders may be pending until stock is available — you will be notified when ready.</p><h4>5. Acceptable use</h4><p>Do not share credentials publicly, resell without approval, or misuse services in ways that violate the streaming provider's terms.</p><h4>6. Changes</h4><p>We may update prices, products, or these terms. Continued use of the site means you accept the current terms.</p><h4>7. Contact</h4><p>Questions: support@rashadtech.tv or WhatsApp +961 79 306 701.</p>`},
+    ar:{title:'شروط الخدمة',body:`<h4>1. الخدمة</h4><p>rashadtech.tv تبيع اشتراكات بث وألعاب رقمية. يتم التسليم إلى حسابك على الموقع وبالبريد الإلكتروني بعد الشراء.</p><h4>2. الحسابات</h4><p>يجب إدخال بريد وهاتف صحيحين. أنت مسؤول عن حماية كلمة المرور.</p><h4>3. المحفظة والدفع</h4><p>الشراء من رصيد المحفظة. الشحن يتم عبر Whish Money بعد التحقق من الإيصال. السعر عند الدفع هو السعر النهائي.</p><h4>4. التسليم</h4><p>معظم الاشتراكات فورية. بعض الطلبات قد تنتظر توفر المخزون — سنبلغك عند الجاهزية.</p><h4>5. الاستخدام المقبول</h4><p>لا تشارك بيانات الدخول علناً ولا تعيد البيع دون موافقة.</p><h4>6. التعديلات</h4><p>قد نحدّث الأسعار أو المنتجات أو الشروط. استمرارك في استخدام الموقع يعني موافقتك.</p><h4>7. التواصل</h4><p>support@rashadtech.tv أو واتساب +961 79 306 701.</p>`}
+  },
+  privacy:{
+    en:{title:'Privacy Policy',body:`<h4>What we collect</h4><p>Email, phone number, password (stored securely), optional Telegram Chat ID, purchase history, and support messages.</p><h4>How we use it</h4><ul><li>Deliver subscriptions and order confirmations</li><li>Verify your identity and prevent fraud</li><li>Respond to support requests</li><li>Send important account notifications</li></ul><h4>What we don't do</h4><p>We do not sell your personal data to third parties.</p><h4>Retention</h4><p>Order and account data is kept as long as your account is active and as needed for support and legal obligations.</p><h4>Your choices</h4><p>You can update phone and Telegram in Profile. Contact support to request account deletion.</p><h4>Contact</h4><p>Privacy questions: support@rashadtech.tv</p>`},
+    ar:{title:'سياسة الخصوصية',body:`<h4>ما نجمعه</h4><p>البريد الإلكتروني، الهاتف، كلمة المرور (مخزّنة بأمان)، معرّف تيليجرام اختياري، سجل المشتريات، ورسائل الدعم.</p><h4>كيف نستخدمها</h4><ul><li>تسليم الاشتراكات وتأكيد الطلبات</li><li>التحقق من الهوية ومنع الاحتيال</li><li>الرد على طلبات الدعم</li></ul><h4>ما لا نفعله</h4><p>لا نبيع بياناتك الشخصية لأطراف ثالثة.</p><h4>خياراتك</h4><p>حدّث الهاتف وتيليجرام من الملف الشخصي. تواصل مع الدعم لحذف الحساب.</p><h4>التواصل</h4><p>support@rashadtech.tv</p>`}
+  },
+  refunds:{
+    en:{title:'Refund Policy',body:`<h4>Digital goods</h4><p>Subscriptions are digital products. Once credentials or activation details are delivered, refunds are generally not available because the product cannot be returned.</p><h4>Pending orders</h4><p>If your order is still processing and has not been fulfilled, contact support — we can cancel and refund the amount to your wallet.</p><h4>Wrong or broken product</h4><p>If credentials don't work or the wrong plan was delivered, contact us within 24 hours. We will fix or replace the subscription when possible.</p><h4>Wallet top-ups</h4><p>Top-up amounts credited to your wallet are non-refundable to bank accounts, but unused balance remains in your account for future purchases.</p><h4>How to request help</h4><p>WhatsApp +961 79 306 701, Telegram @Rashadtech, or email support@rashadtech.tv with your order number.</p>`},
+    ar:{title:'سياسة الاسترداد',body:`<h4>منتجات رقمية</h4><p>الاشتراكات منتجات رقمية. بعد تسليم بيانات الدخول، الاسترداد غير متاح عادةً.</p><h4>طلبات قيد المعالجة</h4><p>إذا لم يُنفّذ الطلب بعد، تواصل مع الدعم — يمكن الإلغاء وإعادة المبلغ للمحفظة.</p><h4>منتج خاطئ أو لا يعمل</h4><p>إذا لم تعمل البيانات، تواصل خلال 24 ساعة وسنصلح أو نستبدل عند الإمكان.</p><h4>شحن المحفظة</h4><p>المبالغ المضافة للمحفظة لا تُسترد للبنك، لكن الرصيد غير المستخدم يبقى في حسابك.</p><h4>طلب المساعدة</h4><p>واتساب +961 79 306 701 أو support@rashadtech.tv مع رقم الطلب.</p>`}
+  }
+};
+function openLegalPage(slug){
+  const page=LEGAL_PAGES[slug];
+  if(!page)return;
+  const lang=currentLang==='ar'?'ar':'en';
+  const doc=page[lang]||page.en;
+  const titleEl=document.getElementById('legal-modal-title');
+  const bodyEl=document.getElementById('legal-modal-body');
+  if(titleEl)titleEl.textContent=doc.title;
+  if(bodyEl)bodyEl.innerHTML=doc.body;
+  openModal('legal-modal');
+}
+function initLegalFromHash(){
+  const hash=(location.hash||'').replace(/^#/,'');
+  if(hash==='terms'||hash==='privacy'||hash==='refunds')openLegalPage(hash);
+}
 let loginInFlight=false;
 let adminLoginInFlight=false;
 async function refreshAdmin2faSetupUi(){
@@ -4296,7 +4369,8 @@ function renderConfirm(html,p){
   <hr style="border:none;border-top:1px solid var(--border);margin:9px 0">
   <div class="confirm-row"><span class="cl" style="font-weight:600">After purchase</span><span class="cv">${fmt(Math.max(0,after))}</span></div>
   ${blocked?`<div class="insuf"><i class="ti ti-alert-circle" style="font-size:12px;vertical-align:-1px"></i> This plan is blocked by admin</div>`:(!ok?`<div class="insuf"><i class="ti ti-alert-circle" style="font-size:12px;vertical-align:-1px"></i> Insufficient balance</div>`:'')}
-  <button class="modal-buy-btn" id="purchase-confirm-btn" ${ok&&!blocked?'':'disabled'} onclick="confirmPurchase()">${blocked?'Blocked':(ok?'Confirm — '+fmt(price):'Insufficient balance')}</button>`;
+  <div class="confirm-terms">By confirming, you agree to our <a href="#" onclick="openLegalPage('terms');return false">Terms</a> and <a href="#" onclick="openLegalPage('refunds');return false">Refund Policy</a>.</div>
+  <button class="modal-buy-btn" id="purchase-confirm-btn" ${ok&&!blocked?'':'disabled'} onclick="confirmPurchase()">${blocked?'Blocked':(ok?'Confirm purchase — '+fmt(price):'Insufficient balance')}</button>`;
   document.getElementById('modal-body').innerHTML=html;
 }
 function selUserType(i){selUT=curProd.userTypes[i];selDur=null;customDays=0;renderBuyBody();}
@@ -4776,7 +4850,7 @@ const LANG={
     topupHelp:'Wallet top-up is Whish Money only. Pay via Whish to +961 79 306 701, then send the receipt on WhatsApp.',
     netflix:'Netflix',options:'Options',active:'Active',goToStore:'Go to store',noSubscriptions:'No subscriptions yet',noNetflixSubs:'No Netflix subscriptions yet.',forSubCustomer:'For',
     analytics:'Analytics',exportOrders:'Export orders',bulkImport:'Bulk import',
-    storeSub:'Instant delivery · Wallet-powered purchases',subsSub:'All purchased accounts and credentials',
+    storeSub:'Instant delivery · Pay from your wallet',subsSub:'All purchased accounts and credentials',
     netflixSub:'Your Netflix subscriptions',expirySub:'Monitor how long your subscriptions have left',
     walletSub:'Top up your balance to make purchases',daysLeft:'days left',expired:'Expired',subOptions:'Subscription Options'
   },
@@ -4799,7 +4873,7 @@ const LANG={
     topupHelp:'شحن المحفظة عبر Whish Money فقط. ادفع على +961 79 306 701 ثم أرسل الإيصال على واتساب.',
     netflix:'نتفليكس',options:'خيارات',active:'نشط',goToStore:'اذهب للمتجر',noSubscriptions:'لا توجد اشتراكات بعد',noNetflixSubs:'لا توجد اشتراكات نتفليكس بعد.',forSubCustomer:'لـ',
     analytics:'الإحصائيات',exportOrders:'تصدير الطلبات',bulkImport:'استيراد جماعي',
-    storeSub:'توصيل فوري · شراء عبر المحفظة',subsSub:'جميع الحسابات والبيانات المشتراة',
+    storeSub:'توصيل فوري · ادفع من محفظتك',subsSub:'جميع الحسابات والبيانات المشتراة',
     netflixSub:'اشتراكات نتفليكس الخاصة بك',expirySub:'راقب المدة المتبقية لاشتراكاتك',
     walletSub:'اشحن رصيدك لإجراء المشتريات',daysLeft:'يوم متبقي',expired:'منتهي',subOptions:'خيارات الاشتراك'
   }
@@ -7870,6 +7944,8 @@ async function init(){
 
   await loadData();
   renderAmounts();renderReqChips();
+  syncAdminLinkVisibility();
+  initLegalFromHash();
   enterPublicStore();
   startRealtimeSync();
   setTimeout(checkExpiryReminders,10000);
