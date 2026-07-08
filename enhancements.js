@@ -2,13 +2,15 @@ const crypto = require('crypto');
 const {
   PRICE_CATALOG_KEY,
   RETAIL_PRICE_CATALOG_KEY,
+  RETAIL_DEFAULTS_VERSION,
   getMergedCatalog,
   getResellerCatalog,
   mergeRetailPriceCatalog,
   getCatalogForUser,
   userIsReseller,
   mergePriceCatalog,
-  buildCatalogPayload
+  buildCatalogPayload,
+  clearStaleRetailPriceCatalog
 } = require('./priceCatalog');
 const {
   markLinkedStockSold,
@@ -94,6 +96,15 @@ function registerEnhancements(app, deps) {
     } catch (e) {
       console.error('Activity log error:', e.message);
     }
+  }
+
+  async function readDataWithRetailMigration(options = {}) {
+    const data = await readJsonBinRaw(options);
+    if (clearStaleRetailPriceCatalog(data)) {
+      await writeJsonBinRaw(data, { backupReason: 'retail-catalog-migration' });
+      await appendActivity('Retail prices migrated', `Cleared stale overrides (v${RETAIL_DEFAULTS_VERSION})`);
+    }
+    return data;
   }
 
   async function persistSessions() {
@@ -336,7 +347,7 @@ function registerEnhancements(app, deps) {
 
   app.get('/catalog/prices', async (req, res) => {
     try {
-      const data = await readJsonBinRaw();
+      const data = await readDataWithRetailMigration({ fast: true, skipRecoverWrite: true });
       const tier = String(req.query.tier || '').toLowerCase();
       if (tier === 'reseller') {
         const header = req.get('authorization') || '';
@@ -374,7 +385,7 @@ function registerEnhancements(app, deps) {
 
   app.get('/catalog/storefront', async (req, res) => {
     try {
-      const data = await readJsonBinRaw({ fast: true });
+      const data = await readDataWithRetailMigration({ fast: true });
       const stockCounts = {};
       for (const [key, accounts] of Object.entries(data.stock || {})) {
         stockCounts[key] = (accounts || []).filter(acc => acc && !acc.used).length;
@@ -382,6 +393,7 @@ function registerEnhancements(app, deps) {
       res.json({
         success: true,
         catalog: mergeRetailPriceCatalog(data),
+        catalogVersion: RETAIL_DEFAULTS_VERSION,
         tier: 'retail',
         stockCounts,
         stockBlocks: data.retailStockBlocks || {},
@@ -396,7 +408,7 @@ function registerEnhancements(app, deps) {
     const session = requireSession(req, res, ['admin']);
     if (!session) return;
     try {
-      const data = await readJsonBinRaw();
+      const data = await readDataWithRetailMigration();
       res.json({
         success: true,
         catalog: getResellerCatalog(data),
@@ -416,6 +428,7 @@ function registerEnhancements(app, deps) {
       const data = await readJsonBinRaw();
       data[RETAIL_PRICE_CATALOG_KEY] = {
         ...payload,
+        defaultsVersion: RETAIL_DEFAULTS_VERSION,
         updatedAt: Date.now(),
         updatedBy: session.email
       };
@@ -434,7 +447,7 @@ function registerEnhancements(app, deps) {
       const data = await readJsonBinRaw();
       delete data[RETAIL_PRICE_CATALOG_KEY];
       await writeJsonBinRaw(data);
-      await appendActivity('Retail prices reset', 'Defaults from reseller +40%', session.email);
+      await appendActivity('Retail prices reset', `Official Lebanon defaults (v${RETAIL_DEFAULTS_VERSION}, Netflix +40%)`, session.email);
       res.json({ success: true, catalog: mergeRetailPriceCatalog(data) });
     } catch (e) {
       res.status(500).json({ error: 'Could not reset retail prices' });
@@ -882,6 +895,109 @@ function registerEnhancements(app, deps) {
       res.setHeader('Content-Type', 'text/csv');
       res.setHeader('Content-Disposition', 'attachment; filename="rashadtech-orders.csv"');
       res.send(csv);
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get('/admin/pending', async (req, res) => {
+    const session = requireSession(req, res, ['admin']);
+    if (!session) return;
+    try {
+      const data = await readJsonBinRaw({ fast: true, skipRecoverWrite: true });
+      res.json({ success: true, pending: Array.isArray(data.pending) ? data.pending : [] });
+    } catch (e) {
+      res.status(500).json({ error: 'Could not load pending orders' });
+    }
+  });
+
+  app.post('/admin/fulfill-pending-batch', async (req, res) => {
+    const session = requireSession(req, res, ['admin']);
+    if (!session) return;
+    const { skey, orderIds } = req.body || {};
+    const idList = Array.isArray(orderIds) ? orderIds.filter(Boolean) : [];
+    if (!skey && !idList.length) {
+      return res.status(400).json({ error: 'skey or orderIds required' });
+    }
+    try {
+      const outcome = await enqueueDbWrite(async () => {
+        const data = await readDbForWrite();
+        data.pending = Array.isArray(data.pending) ? data.pending : [];
+        data.users = Array.isArray(data.users) ? data.users : [];
+        data.stock = data.stock || {};
+        const queue = data.pending.filter(po => {
+          if (idList.length) return idList.includes(po.id);
+          return String(po.skey || '') === String(skey || '');
+        });
+        const fulfilled = [];
+        for (const po of queue) {
+          const idx = data.pending.findIndex(o => o.id === po.id);
+          if (idx < 0) continue;
+          const user = data.users.find(u => normalizeEmail(u.email) === normalizeEmail(po.userEmail));
+          const existing = user ? findUserOrderRecord(user, po.id).order : null;
+          if (existing && existing.email && !existing.pending) {
+            data.pending.splice(idx, 1);
+            continue;
+          }
+          const hasCharge = user && Array.isArray(user.transactions) && user.transactions.some(t => t.orderId === po.id);
+          if (!hasCharge) {
+            data.pending.splice(idx, 1);
+            continue;
+          }
+          const isCanvaOwn = /^canva__own__/.test(String(po.skey || ''));
+          let acc = null;
+          if (isCanvaOwn) {
+            const customerCanvaEmail = String(po.customerCanvaEmail || '').trim();
+            if (!customerCanvaEmail) break;
+            acc = { email: customerCanvaEmail, pass: '', expiryDate: po.expiryDate || null };
+          } else {
+            acc = typeof pickAvailableAccount === 'function'
+              ? pickAvailableAccount(data, po.skey)
+              : stockAccountsForPlan(data.stock, po.skey).find(a => !a.used);
+            if (!acc) break;
+          }
+          const aliasError = isCanvaOwn ? null : validateNetflixAliasPurchase(data, po.skey, acc);
+          if (aliasError) break;
+          const order = user ? placeFulfilledOrder(user, po, acc, data.stock) : null;
+          pushStatusHistory(po, 'fulfilled');
+          data.pending.splice(idx, 1);
+          if (user && Array.isArray(user.transactions)) {
+            user.transactions.forEach(t => {
+              if (t.orderId === po.id) t.pending = false;
+            });
+          }
+          fulfilled.push({ user, order, po, acc });
+        }
+        if (!queue.length) {
+          return { error: 'No matching pending orders', status: 404 };
+        }
+        await writeDbFast(data);
+        return { data, fulfilled };
+      });
+      if (outcome.error) return res.status(outcome.status || 400).json({ error: outcome.error });
+      const { data, fulfilled } = outcome;
+      res.json({
+        success: true,
+        fulfilledCount: fulfilled.length,
+        data: slimMutationData(session, data, { pending: true, stock: true })
+      });
+      if (fulfilled.length) {
+        setImmediate(async () => {
+          for (const item of fulfilled) {
+            const { user, order, po, acc } = item;
+            if (!user || !order) continue;
+            let deliveryChannel = false;
+            if (!order.telegramDeliveredAt && !order.emailDeliveredAt) {
+              const product = { name: po.product, short: po.short, color: po.color, tc: po.tc, id: po.productId };
+              if (typeof notifyPurchaseFulfilled === 'function') {
+                deliveryChannel = await notifyPurchaseFulfilled(user, product, po.plan, po.price, order, po.assignCustId, { data });
+              }
+            }
+            if (order && deliveryChannel) stampOrderDelivery(order, deliveryChannel);
+          }
+          await appendActivity('Batch pending fulfilled', `${fulfilled.length} order(s)`, session.email);
+        });
+      }
     } catch (e) {
       res.status(500).json({ error: e.message });
     }

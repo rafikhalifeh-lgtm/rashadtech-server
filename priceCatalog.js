@@ -1,6 +1,8 @@
 const PRICE_CATALOG_KEY = 'priceCatalog';
 const RETAIL_PRICE_CATALOG_KEY = 'retailPriceCatalog';
 const RETAIL_MARKUP = 1.4;
+/** Bump when built-in Lebanon retail defaults change; stale DB overrides are cleared. */
+const RETAIL_DEFAULTS_VERSION = 2;
 
 const DURATIONS_NF_1U = [
   { key: '1m', price: 1.5 },
@@ -202,11 +204,163 @@ function roundRetailAmount(value) {
   return Math.round(marked * 100) / 100;
 }
 
+function roundUsd(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num <= 0) return num;
+  return Math.round(num * 100) / 100;
+}
+
+function scaleFullFromOneUser(productId, durationKey, officialOneUser, resellerPrices) {
+  const oneKey = stockKey(productId, '1user', durationKey);
+  const fullKey = stockKey(productId, 'full', durationKey);
+  const resellerOne = Number(resellerPrices[oneKey]);
+  const resellerFull = Number(resellerPrices[fullKey]);
+  if (!Number.isFinite(resellerOne) || resellerOne <= 0 || !Number.isFinite(resellerFull) || resellerFull <= 0) {
+    return roundUsd(officialOneUser);
+  }
+  return roundUsd(officialOneUser * (resellerFull / resellerOne));
+}
+
+function addSimplePlanPrices(prices, productId, monthlyUsd, durations) {
+  durations.forEach((months, index) => {
+    prices[stockKey(productId, null, index)] = roundUsd(monthlyUsd * months);
+  });
+}
+
+/** Official Lebanon / MENA retail USD prices (Netflix excluded — uses reseller markup). */
+function buildLebanonOfficialRetailPriceMap(resellerCatalog) {
+  const resellerPrices = (resellerCatalog || DEFAULT_PRICE_CATALOG).prices || {};
+  const prices = {};
+
+  // Shahid VIP — official $13.99/mo (shahid.mbc.net)
+  const shahid1m = 13.99;
+  prices[stockKey('shahid', '1user', '1m')] = shahid1m;
+  prices[stockKey('shahid', '1user', '3m')] = 39.99;
+  prices[stockKey('shahid', '1user', '1y')] = 119.99;
+  ['1m', '3m', '1y'].forEach(d => {
+    prices[stockKey('shahid', 'full', d)] = scaleFullFromOneUser('shahid', d, prices[stockKey('shahid', '1user', d)], resellerPrices);
+  });
+
+  // OSN+ Standard — $9.99/mo, $89.99/yr (MENA official)
+  const osn1m = 9.99;
+  const osn1y = 89.99;
+  prices[stockKey('osn', '1user', '1m')] = osn1m;
+  prices[stockKey('osn', '1user', '1y')] = osn1y;
+  prices[stockKey('osn', 'full', '1m')] = scaleFullFromOneUser('osn', '1m', osn1m, resellerPrices);
+  prices[stockKey('osn', 'full', '1y')] = scaleFullFromOneUser('osn', '1y', osn1y, resellerPrices);
+
+  // Disney+ Lebanon — $4.49/mo, $43.99/yr (Disney press)
+  const disney1m = 4.49;
+  const disney1y = 43.99;
+  prices[stockKey('disney', '1user', '1m')] = disney1m;
+  prices[stockKey('disney', '1user', '3m')] = roundUsd(disney1m * 3);
+  prices[stockKey('disney', '1user', '1y')] = disney1y;
+  ['1m', '3m', '1y'].forEach(d => {
+    prices[stockKey('disney', 'full', d)] = scaleFullFromOneUser('disney', d, prices[stockKey('disney', '1user', d)], resellerPrices);
+  });
+
+  // Amazon Prime Video — ~$5.99/mo MENA standalone
+  const amazon1m = 5.99;
+  prices[stockKey('amazon', '1user', '1m')] = amazon1m;
+  prices[stockKey('amazon', 'full', '1m')] = scaleFullFromOneUser('amazon', '1m', amazon1m, resellerPrices);
+
+  // Canva Pro — $15/mo, $120/yr global official
+  const canva1m = 15;
+  const canva3m = 45;
+  ['own', 'new'].forEach(type => {
+    prices[stockKey('canva', type, '1m')] = canva1m;
+    prices[stockKey('canva', type, '3m')] = canva3m;
+  });
+
+  // Anghami+ Lebanon — support.anghami.com
+  prices[stockKey('anghami', null, 3)] = 4.99;
+  prices[stockKey('anghami', null, 0)] = 14.99;
+  prices[stockKey('anghami', null, 1)] = 24.99;
+  prices[stockKey('anghami', null, 2)] = 49.9;
+
+  // Spotify Lebanon — $5.49/mo
+  addSimplePlanPrices(prices, 'spotify', 5.49, [1, 3, 6]);
+
+  // Apple TV+ Lebanon — $6.99/mo
+  addSimplePlanPrices(prices, 'appletv', 6.99, [1, 3, 12]);
+
+  // YouTube Premium Lebanon — $6/mo individual
+  addSimplePlanPrices(prices, 'ytpremium', 6, [1, 3, 12]);
+
+  // YouTube Music Lebanon — $5/mo
+  addSimplePlanPrices(prices, 'ytmusic', 5, [1, 3, 12]);
+
+  // Global official USD for services without Lebanon-specific tiers
+  addSimplePlanPrices(prices, 'hbomax', 16.99, [1, 3, 12]);
+  addSimplePlanPrices(prices, 'paramount', 7.99, [1, 3, 12]);
+  addSimplePlanPrices(prices, 'crunchyroll', 7.99, [1, 3, 12]);
+  addSimplePlanPrices(prices, 'bein', 14.99, [1, 3, 12]);
+  addSimplePlanPrices(prices, 'starzplay', 7.99, [1, 3, 12]);
+  addSimplePlanPrices(prices, 'jawwytv', 7.99, [1, 3, 12]);
+  addSimplePlanPrices(prices, 'weyyak', 4.99, [1, 3, 12]);
+  addSimplePlanPrices(prices, 'rotana', 4.99, [1, 3, 12]);
+  addSimplePlanPrices(prices, 'deezer', 10.99, [1, 3, 12]);
+  addSimplePlanPrices(prices, 'tidal', 10.99, [1, 3, 12]);
+  addSimplePlanPrices(prices, 'watchit', 3.99, [1, 3, 12]);
+  addSimplePlanPrices(prices, 'chatgpt', 20, [1, 3, 12]);
+  addSimplePlanPrices(prices, 'linkedin', 29.99, [1, 3, 12]);
+  addSimplePlanPrices(prices, 'xbox', 19.99, [1, 3, 6]);
+  addSimplePlanPrices(prices, 'psplus', 9.99, [1, 3, 12]);
+
+  // In-game currency — App Store / Play official USD pack prices
+  prices[stockKey('pubg', null, 0)] = 0.99;
+  prices[stockKey('pubg', null, 1)] = 4.99;
+  prices[stockKey('pubg', null, 2)] = 9.99;
+  prices[stockKey('pubg', null, 3)] = 24.99;
+  prices[stockKey('pubg', null, 4)] = 49.99;
+  prices[stockKey('roblox', null, 0)] = 4.99;
+  prices[stockKey('roblox', null, 1)] = 9.99;
+  prices[stockKey('roblox', null, 2)] = 19.99;
+  prices[stockKey('roblox', null, 3)] = 49.99;
+  prices[stockKey('roblox', null, 4)] = 99.99;
+  prices[stockKey('freefire', null, 0)] = 0.99;
+  prices[stockKey('freefire', null, 1)] = 2.99;
+  prices[stockKey('freefire', null, 2)] = 4.99;
+  prices[stockKey('freefire', null, 3)] = 9.99;
+  prices[stockKey('freefire', null, 4)] = 19.99;
+  prices[stockKey('freefire', null, 5)] = 49.99;
+
+  // Gift cards — face-value retail (USD regions) or local denomination equivalent
+  const giftFaceUsd = {
+    us: { 10: 10, 25: 25, 50: 50, 100: 100 },
+    uae: { 50: 13.61, 100: 27.23, 200: 54.46, 500: 136.15 },
+    ksa: { 50: 13.33, 100: 26.67, 200: 53.33, 500: 133.33 },
+    eg: { 200: 4.08, 500: 10.2, 1000: 20.41 },
+    uk: { 10: 12.66, 25: 31.65, 50: 63.29 },
+    eu: { 10: 10.87, 25: 27.17, 50: 54.35 }
+  };
+  GIFT_CARD_PRODUCTS.forEach(productId => {
+    Object.entries(giftFaceUsd).forEach(([regionKey, amounts]) => {
+      Object.entries(amounts).forEach(([denom, faceUsd]) => {
+        prices[stockKey(productId, regionKey, denom)] = roundUsd(faceUsd);
+      });
+    });
+  });
+
+  return prices;
+}
+
+function isNetflixPriceKey(key) {
+  return String(key).startsWith('netflix');
+}
+
 function buildRetailDefaultsFromReseller(resellerCatalog) {
   const base = resellerCatalog || DEFAULT_PRICE_CATALOG;
+  const officialLb = buildLebanonOfficialRetailPriceMap(base);
   const prices = {};
   Object.entries(base.prices || {}).forEach(([key, value]) => {
-    prices[key] = roundRetailAmount(value);
+    if (isNetflixPriceKey(key)) {
+      prices[key] = roundRetailAmount(value);
+    } else if (officialLb[key] != null) {
+      prices[key] = officialLb[key];
+    } else {
+      prices[key] = roundRetailAmount(value);
+    }
   });
   const customDayRates = {};
   Object.entries(base.customDayRates || {}).forEach(([key, value]) => {
@@ -223,21 +377,40 @@ function buildRetailDefaultsFromReseller(resellerCatalog) {
   };
 }
 
+function retailOverridesApply(stored) {
+  if (!stored || Number(stored.defaultsVersion) !== RETAIL_DEFAULTS_VERSION) {
+    return { prices: {}, customDayRates: {}, jawaker: null };
+  }
+  return {
+    prices: sanitizeNumberMap(stored.prices || {}),
+    customDayRates: sanitizeNumberMap(stored.customDayRates || {}),
+    jawaker: stored.jawaker ? sanitizeJawakerConfig(stored.jawaker) : null
+  };
+}
+
+function clearStaleRetailPriceCatalog(data) {
+  if (!data || !data[RETAIL_PRICE_CATALOG_KEY]) return false;
+  const stored = data[RETAIL_PRICE_CATALOG_KEY];
+  if (Number(stored.defaultsVersion) === RETAIL_DEFAULTS_VERSION) return false;
+  delete data[RETAIL_PRICE_CATALOG_KEY];
+  return true;
+}
+
 function mergeRetailPriceCatalog(data) {
   const reseller = getResellerCatalog(data);
   const defaults = buildRetailDefaultsFromReseller(reseller);
   const stored = data && data[RETAIL_PRICE_CATALOG_KEY] ? data[RETAIL_PRICE_CATALOG_KEY] : {};
-  const storedPrices = stored.prices || {};
-  const storedRates = stored.customDayRates || {};
+  const overrides = retailOverridesApply(stored);
   return {
-    prices: { ...defaults.prices, ...sanitizeNumberMap(storedPrices) },
-    customDayRates: { ...defaults.customDayRates, ...sanitizeNumberMap(storedRates) },
+    prices: { ...defaults.prices, ...overrides.prices },
+    customDayRates: { ...defaults.customDayRates, ...overrides.customDayRates },
     jawaker: {
       ...defaults.jawaker,
-      ...(stored.jawaker ? sanitizeJawakerConfig(stored.jawaker) : {})
+      ...(overrides.jawaker ? overrides.jawaker : {})
     },
     updatedAt: stored.updatedAt || null,
     updatedBy: stored.updatedBy || null,
+    defaultsVersion: RETAIL_DEFAULTS_VERSION,
     tier: 'retail'
   };
 }
@@ -379,6 +552,7 @@ module.exports = {
   PRICE_CATALOG_KEY,
   RETAIL_PRICE_CATALOG_KEY,
   RETAIL_MARKUP,
+  RETAIL_DEFAULTS_VERSION,
   DEFAULT_PRICE_CATALOG,
   buildDefaultPriceCatalog,
   mergePriceCatalog,
@@ -389,6 +563,8 @@ module.exports = {
   userIsReseller,
   roundRetailAmount,
   buildRetailDefaultsFromReseller,
+  buildLebanonOfficialRetailPriceMap,
+  clearStaleRetailPriceCatalog,
   resolvePurchasePrice,
   computeJawakerPrice,
   pricesMatch,

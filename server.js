@@ -171,6 +171,7 @@ const activeTopupCredits = new Set();
 const activeStockAdds = new Set();
 let dbWriteQueue = Promise.resolve();
 let netlifyWriteQueue = Promise.resolve();
+let soldAccIndexCache = { at: 0, index: null };
 
 function enqueueDbWrite(task) {
   const run = dbWriteQueue.then(task);
@@ -212,7 +213,7 @@ function buildSoldAccIndex(data) {
 }
 
 function pickAvailableAccount(data, skey) {
-  const sold = buildSoldAccIndex(data);
+  const sold = getSoldAccIndex(data);
   const accounts = stockAccountsForPlan(data.stock || {}, skey);
   for (const acc of accounts) {
     if (!acc || acc.used) continue;
@@ -744,6 +745,16 @@ function setDbCache(data, dirty = dbDirty) {
   dbCache = cloneData(data);
   dbCacheLoadedAt = Date.now();
   dbDirty = Boolean(dirty);
+  soldAccIndexCache = { at: 0, index: null };
+}
+
+function getSoldAccIndex(data) {
+  if (soldAccIndexCache.at === dbCacheLoadedAt && soldAccIndexCache.index) {
+    return soldAccIndexCache.index;
+  }
+  const index = buildSoldAccIndex(data);
+  soldAccIndexCache = { at: dbCacheLoadedAt, index };
+  return index;
 }
 
 function writeFallbackDb(data) {

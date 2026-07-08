@@ -1917,7 +1917,7 @@ async function validateStoredSession(role){
 async function jbRead(opts,_retry=false){
   const recover=opts===true?false:Boolean(opts&&opts.recover);
   const retry=opts===true||typeof opts==='boolean'?opts:Boolean(_retry);
-  if(Date.now()-lastServerPingAt>120000){
+  if(Date.now()-lastServerPingAt>300000){
     await ensureServerAwake({silent:true}).catch(()=>{});
   }
   const controller=new AbortController();
@@ -2268,6 +2268,7 @@ let _adminPriceTier='reseller';
 let _adminStockTier='reseller';
 let _appliedPriceTier=null;
 const STOREFRONT_CACHE_KEY='rt_storefront_v2';
+const RETAIL_CATALOG_VERSION=2;
 const STOREFRONT_CACHE_MS=60*60*1000;
 
 function expectedPriceTier(){
@@ -2280,7 +2281,7 @@ function canShowStorePrices(){
 function cacheRetailStorefront(payload){
   if(!payload||!payload.catalog)return;
   try{
-    sessionStorage.setItem(STOREFRONT_CACHE_KEY,JSON.stringify({ts:Date.now(),payload}));
+    sessionStorage.setItem(STOREFRONT_CACHE_KEY,JSON.stringify({ts:Date.now(),payload:{...payload,catalogVersion:RETAIL_CATALOG_VERSION}}));
   }catch(e){}
 }
 function loadCachedRetailStorefront(){
@@ -2289,6 +2290,7 @@ function loadCachedRetailStorefront(){
     if(!raw)return false;
     const cached=JSON.parse(raw);
     if(!cached?.payload?.catalog||Date.now()-Number(cached.ts||0)>STOREFRONT_CACHE_MS)return false;
+    if(Number(cached.payload.catalogVersion||0)!==RETAIL_CATALOG_VERSION)return false;
     applyStorefrontSnapshot(cached.payload,{fromCache:true});
     return true;
   }catch(e){return false;}
@@ -2456,9 +2458,8 @@ function enterPublicStore(){
   document.getElementById('tab-store')?.classList.add('active');
   document.querySelectorAll('#page-app .snav').forEach(b=>b.classList.remove('active'));
   document.querySelector('#page-app .snav')?.classList.add('active');
-  renderProducts('all');
-  loadCachedRetailStorefront();
-  if(canShowStorePrices())renderProducts('all');
+  const hadCache=loadCachedRetailStorefront();
+  if(!hadCache)renderProducts('all');
   loadStorefront().then(()=>{renderProducts('all');updateResellerUi();});
 }
 
@@ -4150,10 +4151,10 @@ async function switchAdminTab(name,el){
   if(el)el.classList.add('active');
   const amap={stock:'abn-stock',customers:'abn-customers',wallets:'abn-wallets',topupreqs:'abn-topupreqs',requests:'abn-requests',expiry:'abn-more',dashboard:'abn-dashboard',pending:'abn-more',gameorders:'abn-more',prices:'abn-more',sms:'abn-more'};
   if(amap[name])setActiveAdminNav(amap[name]);
-  const needsFresh=['pending','topupreqs','gameorders','dashboard','requests'].includes(name);
+  const needsFresh=['topupreqs','gameorders','dashboard','requests'].includes(name);
   if(!_jbCache||!users.length||needsFresh){
     await loadData();
-  }else{
+  }else if(name!=='pending'){
     loadData().then(()=>renderActiveAdminTab(name)).catch(()=>{});
   }
   renderActiveAdminTab(name);
@@ -6110,7 +6111,7 @@ function renderAdminPrices(){
   const editProducts=productsWithCatalog(catalog);
   const tierLabel=tier==='retail'?'Retail (public store & normal customers)':'Reseller (wholesale)';
   const tierNote=tier==='retail'
-    ? 'These prices are shown on the <b>public store</b> and to <b>retail customer accounts</b>. If you never saved retail prices here, defaults are reseller +40%.'
+    ? 'These prices are shown on the <b>public store</b> and to <b>retail customer accounts</b>. If you never saved retail prices here, defaults follow <b>official Lebanon retail</b> (Netflix stays reseller +40%).'
     : 'These are <b>reseller (wholesale)</b> prices for approved reseller accounts.';
   let html=`<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
     <button type="button" class="btn-primary" style="${tier==='reseller'?'':'opacity:.55;background:var(--bg3);color:var(--text2)'}" onclick="setAdminPriceTier('reseller')">🏪 Reseller prices</button>
@@ -6126,8 +6127,8 @@ function renderAdminPrices(){
   }else{
     html+=`<div style="background:var(--orange-bg);border:1px solid var(--orange-border);border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px;color:var(--text2)">
     <div style="font-weight:600;color:var(--text);margin-bottom:6px">Reset retail prices</div>
-    <div style="margin-bottom:10px">Clears your custom retail prices and restores the automatic +40% markup from current reseller prices.</div>
-    <button class="btn-secondary" type="button" onclick="resetAdminRetailPrices()">Reset retail to +40% from reseller</button>
+    <div style="margin-bottom:10px">Clears your custom retail prices and restores official Lebanon retail defaults (Netflix keeps +40% over reseller).</div>
+    <button class="btn-secondary" type="button" onclick="resetAdminRetailPrices()">Reset retail to official defaults</button>
   </div>`;
   }
   html+=`<div style="background:var(--blue-bg);border:1px solid var(--blue-border);border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px;color:var(--text2)"><b>${tierLabel}</b> — ${tierNote} Completed purchases and wallet transactions are <b>not changed</b> when you save.</div>
@@ -6145,7 +6146,7 @@ function renderAdminPrices(){
   if(tier==='reseller')loadPriceRecoveryStatus();
 }
 async function resetAdminRetailPrices(){
-  if(!confirm('Reset all retail prices to automatic +40% markup from current reseller prices?'))return;
+  if(!confirm('Reset all retail prices to official Lebanon defaults? (Netflix stays +40% over reseller)'))return;
   try{
     const r=await fetch(RT_SERVER+'/admin/retail-prices/reset',{method:'POST',headers:authHeaders(),body:'{}'});
     const j=await r.json();
@@ -6153,8 +6154,8 @@ async function resetAdminRetailPrices(){
     _rtRetailPriceCatalog=j.catalog||null;
     if(_jbCache)_jbCache.retailPriceCatalog=_rtRetailPriceCatalog;
     renderAdminPrices();
-    showToast('✓ Retail prices reset to +40% from reseller');
-    logActivity('Retail prices reset','+40% from reseller');
+    showToast('✓ Retail prices reset to official defaults');
+    logActivity('Retail prices reset','Official Lebanon defaults');
   }catch(e){showToast('⚠️ '+e.message);}
 }
 async function loadPriceRecoveryStatus(){
@@ -7240,33 +7241,21 @@ async function addAccount(){
 }
 
 async function autoFulfillPending(skey){
-  let pending=[];
-  try{
-    if(!_jbCache)_jbCache=await jbRead();
-    pending=Array.isArray(_jbCache?.pending)?[..._jbCache.pending]:[];
-  }catch(e){return;}
+  const pending=Array.isArray(_jbCache?.pending)?[..._jbCache.pending]:[];
   const waiting=pending.filter(po=>po.skey===skey);
   if(!waiting.length)return;
-  let fulfilled=0;
-  for(const po of waiting){
-    try{
-      const r=await fetch(RT_SERVER+'/admin/fulfill-pending',{method:'POST',headers:authHeaders(),body:JSON.stringify({orderId:po.id})});
-      const j=await r.json();
-      if(!r.ok||!j.success)break;
-      if(j.data)applyDataSnapshot(j.data);
-      else if(j.user){
-        const idx=users.findIndex(x=>normEmail(x.email)===normEmail(j.user.email));
-        if(idx>=0)users[idx]=j.user;
-      }
-      if(_jbCache&&Array.isArray(j.data?.pending))_jbCache.pending=j.data.pending;
-      if(!j.alreadyFulfilled)fulfilled++;
-    }catch(e){console.warn('autoFulfill',po.id,e.message);break;}
-  }
-  if(fulfilled>0){
-    showToast(`✓ Auto-fulfilled ${fulfilled} pending order${fulfilled>1?'s':''}!`);
-    renderAdminPending();
-    renderStockPanels();
-  }
+  try{
+    const r=await fetch(RT_SERVER+'/admin/fulfill-pending-batch',{method:'POST',headers:authHeaders(),body:JSON.stringify({skey})});
+    const j=await r.json();
+    if(!r.ok||!j.success)return;
+    if(j.data)applyDataSnapshot(j.data);
+    const fulfilled=Number(j.fulfilledCount||0);
+    if(fulfilled>0){
+      showToast(`✓ Auto-fulfilled ${fulfilled} pending order${fulfilled>1?'s':''}!`);
+      renderAdminPending();
+      renderStockPanels();
+    }
+  }catch(e){console.warn('autoFulfill',skey,e.message);}
 }
 function adminSubDetailHtml(order,customer){
   const o=order;
@@ -7598,16 +7587,19 @@ function renderAdminPendingHtml(pending){
 async function renderAdminPending(){
   const el=document.getElementById('admin-pending-list');
   if(!el)return;
-  el.innerHTML='<div style="padding:32px;text-align:center;color:var(--text3);font-size:13px">Loading pending orders…</div>';
-  let pending=[];
+  const cached=Array.isArray(_jbCache?.pending)?_jbCache.pending:[];
+  if(cached.length)renderAdminPendingHtml(cached);
+  else el.innerHTML='<div style="padding:32px;text-align:center;color:var(--text3);font-size:13px">Loading pending orders…</div>';
   try{
-    const fresh=await jbRead();
-    applyDataSnapshot(fresh);
-    pending=Array.isArray(fresh?.pending)?fresh.pending:[];
+    const r=await fetch(RT_SERVER+'/admin/pending',{headers:authHeaders()});
+    const j=await r.json();
+    if(r.ok&&j.success&&Array.isArray(j.pending)){
+      if(_jbCache)_jbCache.pending=j.pending;
+      renderAdminPendingHtml(j.pending);
+    }else if(!cached.length)renderAdminPendingHtml([]);
   }catch(e){
-    pending=Array.isArray(_jbCache?.pending)?_jbCache.pending:[];
+    if(!cached.length)renderAdminPendingHtml([]);
   }
-  renderAdminPendingHtml(pending);
 }
 async function cancelPendingOrder(orderId){
   const reason=prompt('Reason for canceling this pending order (optional):')||'';
@@ -8248,13 +8240,15 @@ async function restoreCustomerSession(){
     else return false;
   }
   enterApp({skipRecover:true});
-  recoverMyCustomersOnLogin({immediate:true}).catch(()=>{});
-  jbRead({recover:true}).then(data=>{
-    if(!data)return;
-    applyDataSnapshot(data);
-    bindCurrentUserFromUsers();
-    renderMyCustomers();renderSubs();updateBal();
-  }).catch(()=>{});
+  recoverMyCustomersOnLogin({immediate:false}).catch(()=>{});
+  setTimeout(()=>{
+    jbRead({recover:true}).then(data=>{
+      if(!data)return;
+      applyDataSnapshot(data);
+      bindCurrentUserFromUsers();
+      renderMyCustomers();renderSubs();updateBal();
+    }).catch(()=>{});
+  },8000);
   startRealtimeSync();
   keepServerAwake();
   return true;
@@ -8289,11 +8283,6 @@ async function restoreAdminSession(){
     startRealtimeSync();
     keepServerAwake();
     if(typeof rtSyncChatUI==='function')rtSyncChatUI();
-    jbRead().then(data=>{
-      if(!data)return;
-      applyDataSnapshot(data);
-      renderAdminPanels();
-    }).catch(()=>{});
     return true;
   }catch(e){clearStoredSession();return false;}
 }
