@@ -6092,7 +6092,7 @@ function renderAdminPrices(){
   const editProducts=productsWithCatalog(catalog);
   const tierLabel=tier==='retail'?'Retail (public store & normal customers)':'Reseller (wholesale)';
   const tierNote=tier==='retail'
-    ? 'These prices are shown on the <b>public store</b> and to <b>retail customer accounts</b>. If you never saved retail prices here, defaults are reseller +40%.'
+    ? 'These prices are shown on the <b>public store</b> and to <b>retail customer accounts</b>. If you never saved retail prices here, defaults follow <b>official Lebanon retail</b> (Netflix stays reseller +40%).'
     : 'These are <b>reseller (wholesale)</b> prices for approved reseller accounts.';
   let html=`<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
     <button type="button" class="btn-primary" style="${tier==='reseller'?'':'opacity:.55;background:var(--bg3);color:var(--text2)'}" onclick="setAdminPriceTier('reseller')">🏪 Reseller prices</button>
@@ -6108,8 +6108,8 @@ function renderAdminPrices(){
   }else{
     html+=`<div style="background:var(--orange-bg);border:1px solid var(--orange-border);border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px;color:var(--text2)">
     <div style="font-weight:600;color:var(--text);margin-bottom:6px">Reset retail prices</div>
-    <div style="margin-bottom:10px">Clears your custom retail prices and restores the automatic +40% markup from current reseller prices.</div>
-    <button class="btn-secondary" type="button" onclick="resetAdminRetailPrices()">Reset retail to +40% from reseller</button>
+    <div style="margin-bottom:10px">Clears your custom retail prices and restores official Lebanon retail defaults (Netflix keeps +40% over reseller).</div>
+    <button class="btn-secondary" type="button" onclick="resetAdminRetailPrices()">Reset retail to official defaults</button>
   </div>`;
   }
   html+=`<div style="background:var(--blue-bg);border:1px solid var(--blue-border);border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px;color:var(--text2)"><b>${tierLabel}</b> — ${tierNote} Completed purchases and wallet transactions are <b>not changed</b> when you save.</div>
@@ -6127,7 +6127,7 @@ function renderAdminPrices(){
   if(tier==='reseller')loadPriceRecoveryStatus();
 }
 async function resetAdminRetailPrices(){
-  if(!confirm('Reset all retail prices to automatic +40% markup from current reseller prices?'))return;
+  if(!confirm('Reset all retail prices to official Lebanon defaults? (Netflix stays +40% over reseller)'))return;
   try{
     const r=await fetch(RT_SERVER+'/admin/retail-prices/reset',{method:'POST',headers:authHeaders(),body:'{}'});
     const j=await r.json();
@@ -6135,8 +6135,8 @@ async function resetAdminRetailPrices(){
     _rtRetailPriceCatalog=j.catalog||null;
     if(_jbCache)_jbCache.retailPriceCatalog=_rtRetailPriceCatalog;
     renderAdminPrices();
-    showToast('✓ Retail prices reset to +40% from reseller');
-    logActivity('Retail prices reset','+40% from reseller');
+    showToast('✓ Retail prices reset to official defaults');
+    logActivity('Retail prices reset','Official Lebanon defaults');
   }catch(e){showToast('⚠️ '+e.message);}
 }
 async function loadPriceRecoveryStatus(){

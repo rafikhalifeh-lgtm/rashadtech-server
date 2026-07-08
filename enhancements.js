@@ -433,7 +433,7 @@ function registerEnhancements(app, deps) {
       const data = await readJsonBinRaw();
       delete data[RETAIL_PRICE_CATALOG_KEY];
       await writeJsonBinRaw(data);
-      await appendActivity('Retail prices reset', 'Defaults from reseller +40%', session.email);
+      await appendActivity('Retail prices reset', 'Official Lebanon defaults (Netflix +40%)', session.email);
       res.json({ success: true, catalog: mergeRetailPriceCatalog(data) });
     } catch (e) {
       res.status(500).json({ error: 'Could not reset retail prices' });
