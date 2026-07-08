@@ -635,13 +635,12 @@ So your EmailJS template will receive the user email and verification code corre
       <div class="admin-link"><a onclick="showView('admin')">Admin access</a></div>
     </div>
     <div id="view-signup" style="display:none">
-      <div class="auth-title">Create account</div><div class="auth-desc">Join rashadtech.tv</div>
+      <div class="auth-title">Create account</div><div class="auth-desc">Retail customer signup — email, password, and phone only</div>
       <div class="err-msg" id="signup-err"></div>
-      <div class="field"><label>Full name</label><input type="text" id="su-name" placeholder="Your name"></div>
-      <div class="field"><label>Email</label><input type="email" id="su-email" placeholder="you@email.com">
+      <div class="field"><label>Email</label><input type="email" id="su-email" placeholder="you@email.com" autocomplete="username email">
         <div style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.5">📧 After signup, check your <strong>spam/junk folder</strong> if the verification email is not in your inbox.</div>
       </div>
-      <div class="field"><label>Password</label><input type="password" id="su-pass" placeholder="Min. 6 characters"></div>
+      <div class="field"><label>Password</label><input type="password" id="su-pass" placeholder="Min. 6 characters" autocomplete="new-password"></div>
       <div class="field"><label>Phone number</label><div class="phone-row">
         <select id="su-phone-code">
           <option value="+961">🇱🇧 +961</option><option value="+1">🇺🇸 +1</option><option value="+44">🇬🇧 +44</option>
@@ -650,23 +649,9 @@ So your EmailJS template will receive the user email and verification code corre
           <option value="+212">🇲🇦 +212</option><option value="+216">🇹🇳 +216</option><option value="+213">🇩🇿 +213</option>
           <option value="+90">🇹🇷 +90</option><option value="+33">🇫🇷 +33</option><option value="+49">🇩🇪 +49</option>
         </select>
-        <input type="tel" id="su-phone" placeholder="79 000 000">
+        <input type="tel" id="su-phone" placeholder="79 000 000" autocomplete="tel">
       </div></div>
-      <div class="field"><label>Telegram Chat ID (optional)</label>
-        <input type="text" id="su-tgid" placeholder="e.g. 123456789">
-        <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;margin-top:8px;font-size:12px;color:var(--text2);line-height:1.7">
-          <div style="font-weight:600;color:var(--text);margin-bottom:4px">📱 How to get your Chat ID:</div>
-          <div>1️⃣ Open Telegram and search <strong>@userinfobot</strong></div>
-          <div>2️⃣ Press <strong>Start</strong> or send any message</div>
-          <div>3️⃣ Bot replies with your ID — copy the number</div>
-          <div>4️⃣ Paste it in the box above</div>
-          <div style="display:flex;gap:12px;margin-top:6px;flex-wrap:wrap">
-            <a href="https://t.me/userinfobot" target="_blank" style="color:var(--blue);font-weight:600">🤖 Open @userinfobot</a>
-            <a href="https://t.me/Rashadtech_bot" target="_blank" style="color:var(--green);font-weight:600">✅ Start @Rashadtech_bot</a>
-          </div>
-          <div style="font-size:11px;color:var(--text3);margin-top:5px">You must also start @Rashadtech_bot to receive your purchases on Telegram</div>
-        </div>
-      </div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:14px;line-height:1.5">Telegram Chat ID is optional — add it later in Profile to receive purchases on Telegram.</div>
       <button class="btn-primary" onclick="doSignup()">Create account</button>
       <div class="auth-switch">Have an account? <a onclick="showView('login')">Sign in</a></div>
     </div>
@@ -3586,13 +3571,12 @@ async function doLogin(){
   }
 }
 async function doSignup(){
-  const n=document.getElementById('su-name').value.trim();
   const e=document.getElementById('su-email').value.trim().toLowerCase();
   const p=document.getElementById('su-pass').value;
   const phoneCode=document.getElementById('su-phone-code')?.value||'+961';
   const phoneNum=document.getElementById('su-phone')?.value.trim()||'';
   const err=document.getElementById('signup-err');
-  if(!n||!e||p.length<6||!phoneNum){err.textContent='Please fill all fields (name, email, password min 6 chars, phone).';err.style.display='block';return;}
+  if(!e||p.length<6||!phoneNum){err.textContent='Please enter email, password (min 6 characters), and phone number.';err.style.display='block';return;}
   if(users.find(x=>x.email===e)){err.textContent='Email already registered.';err.style.display='block';return;}
   err.style.display='none';
   try{
@@ -3605,21 +3589,20 @@ async function doSignup(){
     err.style.display='block';
     return;
   }
-  const tgid=document.getElementById('su-tgid')?.value.trim()||'';
   let deliveryResult=null;
   try{
-    const r=await fetch(RT_SERVER+'/auth/signup-start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:n,email:e,tgChatId:tgid})});
+    const r=await fetch(RT_SERVER+'/auth/signup-start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:e})});
     deliveryResult=await deliverClientOtpEmail(await r.json().catch(()=>({})));
     if(!r.ok||!deliveryResult.success)throw new Error(deliveryResult.error||'Could not send verification code.');
     if(!signupCodeDelivered(deliveryResult)){
-      throw new Error('Could not send verification code. Add your Telegram Chat ID on signup, or contact support on WhatsApp +96179306701.');
+      throw new Error('Could not send verification code to your email. Check spam/junk or try again in a minute.');
     }
   }catch(ex){
     err.textContent=ex.message||'Could not send verification code.';
     err.style.display='block';
     return;
   }
-  pendingSignupData={name:n,email:e,pass:p,tgChatId:tgid,phone:phoneCode+phoneNum.replace(/\s+/g,'')};
+  pendingSignupData={email:e,pass:p,phone:phoneCode+phoneNum.replace(/\s+/g,'')};
   document.getElementById('verify-desc').textContent=signupVerifyMessage(deliveryResult,e);
   clearOTP('otp');document.getElementById('verify-err').style.display='none';document.getElementById('verify-ok').style.display='none';
   showView('verify');
@@ -3629,11 +3612,10 @@ async function verifyOTP(){
   if(!e||code.length!==6){document.getElementById('verify-err').style.display='block';return;}
   document.getElementById('verify-err').style.display='none';
   try{
-    const r=await fetch(RT_SERVER+'/auth/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:pendingSignupData.name,email:pendingSignupData.email,password:pendingSignupData.pass,phone:pendingSignupData.phone,tgChatId:pendingSignupData.tgChatId||'',otp:code})});
+    const r=await fetch(RT_SERVER+'/auth/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:pendingSignupData.email,password:pendingSignupData.pass,phone:pendingSignupData.phone,otp:code})});
     const j=await r.json();
     if(!r.ok||!j.success)throw new Error(j.error||'Signup failed');
     const signupPhone=pendingSignupData.phone;
-    const signupPass=pendingSignupData.pass;
     persistAuthToken(j.token,'user');
     applyDataSnapshot(j.data||{users:[j.user]});
     bindCurrentUserFromUsers(j.user||users[0]);pendingSignupData=null;delete pendingOTPs[e];
@@ -3646,10 +3628,10 @@ async function verifyOTP(){
 }
 function resendOTP(){
   if(!pendingSignupData)return;
-  fetch(RT_SERVER+'/auth/signup-start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:pendingSignupData.name,email:pendingSignupData.email,tgChatId:pendingSignupData.tgChatId||''})})
+  fetch(RT_SERVER+'/auth/signup-start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:pendingSignupData.email})})
     .then(r=>r.json().then(j=>deliverClientOtpEmail(j).then(delivered=>{
       if(!r.ok||!delivered.success)throw new Error(delivered.error||'Could not resend code');
-      if(!signupCodeDelivered(delivered))throw new Error('Could not resend code. Add Telegram Chat ID or contact support.');
+      if(!signupCodeDelivered(delivered))throw new Error('Could not resend code to your email. Check spam/junk folder.');
       document.getElementById('verify-desc').textContent=signupVerifyMessage(delivered,pendingSignupData.email);
     })))
     .then(()=>{document.getElementById('verify-ok').style.display='block';document.getElementById('verify-err').style.display='none';})
