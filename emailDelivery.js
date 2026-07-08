@@ -302,6 +302,60 @@ function buildPurchaseReceiptEmailContent({
   return { subject, text, html, config };
 }
 
+function buildTopupConfirmationEmailContent({ name, amount, balanceAfter, label, date }, data) {
+  const config = resolveEmailConfig(data);
+  const displayName = String(name || 'Customer').trim() || 'Customer';
+  const amt = Number(amount);
+  const bal = Number(balanceAfter);
+  const topupLabel = String(label || `$${amt.toFixed(2)}`).trim();
+  const when = String(date || '').trim();
+  const subject = `Wallet topped up — ${topupLabel}`;
+  const text = [
+    `Hello ${displayName},`,
+    '',
+    `${topupLabel} has been added to your rashadtech.tv wallet.`,
+    `New balance: $${bal.toFixed(2)}`,
+    when ? `Date: ${when}` : '',
+    '',
+    `You can now shop at ${config.siteUrl}`,
+    '',
+    'Thank you for choosing RashadTech!'
+  ].filter(Boolean).join('\n');
+  const bodyHtml = `
+    <p style="margin:0 0 14px;line-height:1.6;color:#1f2937;">Hello ${escapeHtml(displayName)},</p>
+    <p style="margin:0 0 14px;line-height:1.6;color:#1f2937;">Your wallet has been credited successfully.</p>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:16px 0 18px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:12px 16px">
+      <tr><td style="padding:8px 0;color:#6b7280;width:38%">Amount added</td><td style="padding:8px 0;font-weight:600;color:#111827">${escapeHtml(topupLabel)}</td></tr>
+      <tr><td style="padding:8px 0;color:#6b7280">New balance</td><td style="padding:8px 0;font-weight:700;color:#059669">$${bal.toFixed(2)}</td></tr>
+      ${when ? `<tr><td style="padding:8px 0;color:#6b7280">Date</td><td style="padding:8px 0">${escapeHtml(when)}</td></tr>` : ''}
+    </table>
+    <p style="margin:0;color:#6b7280;font-size:14px;line-height:1.6;">Shop now at <a href="${escapeHtml(config.siteUrl)}" style="color:#2563eb">${escapeHtml(config.siteUrl.replace(/^https?:\/\//, ''))}</a></p>`;
+  const html = wrapEmailHtml({ title: subject, bodyHtml, preheader: `+$${amt.toFixed(2)} added to your wallet`, config });
+  return { subject, text, html, config };
+}
+
+async function deliverTopupConfirmationEmail({ email, name, amount, balanceAfter, label, date, data, emailJs }) {
+  const content = buildTopupConfirmationEmailContent({ name, amount, balanceAfter, label, date }, data);
+  if (content.config.resendApiKey) {
+    await sendViaResend({
+      to: email,
+      subject: content.subject,
+      text: content.text,
+      html: content.html,
+      headers: { 'X-Entity-Ref-ID': `topup-${Date.now()}` },
+      config: content.config
+    });
+    return { provider: 'resend' };
+  }
+  const baseParams = marketingTemplateParams(email, name, content.subject, content.text, data);
+  await sendViaEmailJS({
+    templateId: emailJs.marketingTemplateId || emailJs.otpTemplateId,
+    templateParams: baseParams,
+    emailJs
+  });
+  return { provider: 'emailjs' };
+}
+
 async function deliverPurchaseReceiptEmail({ email, name, productName, planLabel, orderId, amount, balanceAfter, status, date, assignedCustomerName, data, emailJs }) {
   const content = buildPurchaseReceiptEmailContent({
     name,
@@ -735,10 +789,12 @@ module.exports = {
   buildPurchaseReceiptEmailContent,
   buildSubscriptionEmailContent,
   buildTestEmailContent,
+  buildTopupConfirmationEmailContent,
   deliverMarketingEmail,
   deliverOtpEmail,
   deliverPurchaseReceiptEmail,
   deliverSubscriptionEmail,
+  deliverTopupConfirmationEmail,
   deliverSupportEscalationEmail,
   deliverTestEmail,
   resolveSupportInbox,

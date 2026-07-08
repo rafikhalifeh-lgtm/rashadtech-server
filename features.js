@@ -228,6 +228,10 @@
       const keyHint=document.getElementById('admin-resend-key-hint');
       if(fromInp)fromInp.value=j.fromAddress||'noreply@rashadtech.tv';
       if(replyInp)replyInp.value=j.replyTo||'support@rashadtech.tv';
+      const retailInp=document.getElementById('admin-retail-support-email');
+      const resellerInp=document.getElementById('admin-reseller-support-email');
+      if(retailInp)retailInp.value=j.retailSupportEmail||'';
+      if(resellerInp)resellerInp.value=j.resellerSupportEmail||'';
       if(keyHint){
         keyHint.textContent=j.resendConfigured
           ?`Saved key: ${esc(j.resendApiKeyMasked||'configured')}${j.resendFromEnv?' (from Render env)':''}`
@@ -273,7 +277,9 @@
         body:JSON.stringify({
           resendApiKey:document.getElementById('admin-resend-api-key')?.value||'',
           emailFromAddress:document.getElementById('admin-email-from-address')?.value||'',
-          emailReplyTo:document.getElementById('admin-email-reply-to')?.value||''
+          emailReplyTo:document.getElementById('admin-email-reply-to')?.value||'',
+          retailSupportEmail:document.getElementById('admin-retail-support-email')?.value||'',
+          resellerSupportEmail:document.getElementById('admin-reseller-support-email')?.value||''
         })
       });
       const keyInp=document.getElementById('admin-resend-api-key');
