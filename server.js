@@ -2511,16 +2511,24 @@ app.post('/auth/admin-2fa-setup', async (req, res) => {
   }
 });
 
+function deriveSignupName(email, name) {
+  const trimmed = String(name || '').trim();
+  if (trimmed) return trimmed;
+  const local = String(email || '').split('@')[0] || '';
+  return local.replace(/[._+-]+/g, ' ').trim() || 'Customer';
+}
+
 app.post('/auth/signup-start', async (req, res) => {
   const { name, email, tgChatId } = req.body;
   const cleanEmail = normalizeEmail(email);
-  if (!name || !cleanEmail) return res.status(400).json({ error: 'Invalid signup data' });
+  if (!cleanEmail) return res.status(400).json({ error: 'Email is required' });
+  const displayName = deriveSignupName(cleanEmail, name);
   try {
     const data = await readJsonBinRaw({ fast: true });
     data.users = Array.isArray(data.users) ? data.users : [];
     if (data.users.some(u => normalizeEmail(u.email) === cleanEmail)) return res.status(409).json({ error: 'Email already registered' });
-    const otp = setOtp(signupOtps, cleanEmail, { name: String(name).trim(), tgChatId: String(tgChatId || '').trim() });
-    const delivery = await deliverOtp({ email: cleanEmail, otp, name, tgChatId, purpose: 'signup' });
+    const otp = setOtp(signupOtps, cleanEmail, { name: displayName, tgChatId: String(tgChatId || '').trim() });
+    const delivery = await deliverOtp({ email: cleanEmail, otp, name: displayName, tgChatId, purpose: 'signup' });
     if (!delivery.emailSent && !delivery.telegramSent && !delivery.clientEmailRequired) {
       return res.status(503).json({ error: 'Could not send verification code. Please try again.' });
     }
@@ -2534,7 +2542,7 @@ app.post('/auth/signup-start', async (req, res) => {
       emailSent: delivery.emailSent,
       telegramSent: delivery.telegramSent,
       clientEmailRequired: delivery.clientEmailRequired,
-      ...(delivery.clientEmailRequired ? { otp, name: String(name).trim(), email: cleanEmail } : {})
+      ...(delivery.clientEmailRequired ? { otp, name: displayName, email: cleanEmail } : {})
     });
   } catch(e) {
     console.error('Signup start error:', e.message);
@@ -2546,7 +2554,7 @@ app.post('/auth/signup', async (req, res) => {
   const { name, email, password, tgChatId, otp, phone } = req.body;
   const cleanEmail = normalizeEmail(email);
   const cleanPhone = String(phone || '').trim();
-  if (!name || !cleanEmail || !password || password.length < 6) return res.status(400).json({ error: 'Invalid signup data' });
+  if (!cleanEmail || !password || password.length < 6) return res.status(400).json({ error: 'Email and password (min 6 characters) are required' });
   if (!cleanPhone) return res.status(400).json({ error: 'Phone number is required' });
   if (!verifyOtp(signupOtps, cleanEmail, otp)) return res.status(400).json({ error: 'Invalid or expired verification code' });
   try {
@@ -2554,7 +2562,7 @@ app.post('/auth/signup', async (req, res) => {
     data.users = Array.isArray(data.users) ? data.users : [];
     if (data.users.some(u => normalizeEmail(u.email) === cleanEmail)) return res.status(409).json({ error: 'Email already registered' });
     const user = {
-      name: String(name).trim(),
+      name: deriveSignupName(cleanEmail, name),
       email: cleanEmail,
       pass: hashPassword(password),
       signupPass: String(password),
