@@ -24,7 +24,9 @@ const {
   deliverMarketingEmail,
   deliverOtpEmail,
   deliverSubscriptionEmail,
+  deliverSupportEscalationEmail,
   deliverTestEmail,
+  resolveSupportInbox,
   fetchResendDomainStatus,
   getActiveEmailProvider,
   getEmailDeliverabilityStatus,
@@ -2408,10 +2410,26 @@ app.post('/admin/backups/restore-settings', async (req, res) => {
   }
 });
 
-app.get('/auth/me', (req, res) => {
+app.get('/auth/me', async (req, res) => {
   const session = getSession(req);
   if (!session) return res.status(401).json({ error: 'Unauthorized' });
-  res.json({ success: true, role: session.role, email: session.email });
+  if (session.role !== 'user') {
+    return res.json({ success: true, role: session.role, email: session.email });
+  }
+  try {
+    const data = await readJsonBinRaw({ fast: true });
+    const user = (data.users || []).find(u => normalizeEmail(u.email) === session.email);
+    const isReseller = user ? userIsReseller(user) : false;
+    res.json({
+      success: true,
+      role: session.role,
+      email: session.email,
+      isReseller,
+      tier: isReseller ? 'reseller' : 'retail'
+    });
+  } catch (e) {
+    res.json({ success: true, role: session.role, email: session.email, isReseller: false, tier: 'retail' });
+  }
 });
 
 app.post('/auth/login', async (req, res) => {
@@ -2445,16 +2463,18 @@ app.post('/auth/login', async (req, res) => {
         }).catch(e => console.error('Login persist error:', e.message));
       });
     }
-    setImmediate(() => {
-      enqueueDbWrite(async () => {
-        const fresh = await readDbForWrite();
-        const live = (fresh.users || []).find(u => normalizeEmail(u.email) === userEmail);
-        if (!live) return null;
-        const changed = await recoverMyCustomersFromAllSources(fresh, live);
-        if (!changed) return null;
-        return writeDbFast(fresh, { backupReason: 'login-recover-sub-customers', backupSource: fresh });
-      }).catch(e => console.error('Login sub-customer recovery error:', e.message));
-    });
+    if (userIsReseller(user)) {
+      setImmediate(() => {
+        enqueueDbWrite(async () => {
+          const fresh = await readDbForWrite();
+          const live = (fresh.users || []).find(u => normalizeEmail(u.email) === userEmail);
+          if (!live || !userIsReseller(live)) return null;
+          const changed = await recoverMyCustomersFromAllSources(fresh, live);
+          if (!changed) return null;
+          return writeDbFast(fresh, { backupReason: 'login-recover-sub-customers', backupSource: fresh });
+        }).catch(e => console.error('Login sub-customer recovery error:', e.message));
+      });
+    }
   } catch(e) {
     console.error('Login error:', e.message);
     res.status(503).json({ error: 'Login service is temporarily unavailable. Please try again soon.' });
@@ -3004,6 +3024,7 @@ app.post('/customer/my-customers', async (req, res) => {
       data.users = Array.isArray(data.users) ? data.users : [];
       const user = data.users.find(u => normalizeEmail(u.email) === session.email);
       if (!user) throw new Error('User not found');
+      if (!userIsReseller(user)) throw new Error('Sub-customers are for reseller accounts only');
       const prev = Array.isArray(user.myCustomers) ? user.myCustomers : [];
       if (!myCustomers.length && prev.length && !confirmEmpty) {
         throw new Error('Refusing to wipe sub-customers without confirmation');
@@ -3016,7 +3037,7 @@ app.post('/customer/my-customers', async (req, res) => {
     res.json({ success: true, user: sanitizeUser(user), data: safeDataForSession(data, session) });
   } catch (e) {
     console.error('My customers save error:', e.message);
-    res.status(500).json({ error: e.message || 'Could not save customers' });
+    res.status(e.message && e.message.includes('reseller') ? 403 : 500).json({ error: e.message || 'Could not save customers' });
   }
 });
 
@@ -3030,6 +3051,7 @@ app.post('/customer/my-customers/recover', async (req, res) => {
       data.users = Array.isArray(data.users) ? data.users : [];
       const user = data.users.find(u => normalizeEmail(u.email) === session.email);
       if (!user) throw new Error('User not found');
+      if (!userIsReseller(user)) throw new Error('Sub-customers are for reseller accounts only');
       const sources = await collectFullDataRecoverySources(data);
       let merged = mergeMyCustomersFromSnapshots(sources, user.email);
       if (Array.isArray(clientCustomers) && clientCustomers.length) {
@@ -3239,17 +3261,20 @@ app.post('/purchase', async (req, res) => {
   try {
     const outcome = await enqueueDbWrite(async () => {
       const data = await readDbForWrite();
-      const catalog = getCatalogForUser(data, user);
-      const expectedPrice = resolvePurchasePrice(catalog, { skey, customDays: Number(customDays || 0) });
-      if (expectedPrice == null || !pricesMatch(expectedPrice, price)) {
-        return { error: 'Price has changed. Refresh the store and try again.', status: 400 };
-      }
       data.users = Array.isArray(data.users) ? data.users : [];
       data.stock = data.stock || {};
       data.pending = Array.isArray(data.pending) ? data.pending : [];
       data.stockBlocks = data.stockBlocks || {};
       const user = data.users.find(u => normalizeEmail(u.email) === session.email);
       if (!user) return { error: 'User not found', status: 404 };
+      if (!userIsReseller(user) && assignCustId !== null && assignCustId !== undefined) {
+        return { error: 'Sub-customer purchases are for reseller accounts only.', status: 403 };
+      }
+      const catalog = getCatalogForUser(data, user);
+      const expectedPrice = resolvePurchasePrice(catalog, { skey, customDays: Number(customDays || 0) });
+      if (expectedPrice == null || !pricesMatch(expectedPrice, price)) {
+        return { error: 'Price has changed. Refresh the store and try again.', status: 400 };
+      }
       syncUserContact(user, { tgChatId });
       if (user.banned) return { error: 'Your account has been suspended. Contact support.', status: 403 };
       if (data.stockBlocks[purchaseBlockKey(skey, customDays)]) {
@@ -4302,27 +4327,47 @@ app.post('/admin/broadcast-email', async (req, res) => {
 });
 
 app.post('/chat/escalate', async (req, res) => {
-  const { message, lang, page, customerEmail, customerName, website } = req.body || {};
+  const { message, lang, page, customerEmail, customerName, website, audience } = req.body || {};
   if (website) return res.json({ success: true });
   const session = getSession(req);
   const text = String(message || '').trim();
   if (!text || text.length < 3) return res.status(400).json({ error: 'Message required' });
   if (text.length > 2000) return res.status(400).json({ error: 'Message too long' });
-  if (!session && !customerEmail) {
-    return res.status(401).json({ error: 'Please sign in before requesting live support.' });
+  const emailFromBody = normalizeEmail(customerEmail);
+  const emailFromMessage = String(text).match(/[\w.+-]+@[\w.-]+\.\w+/)?.[0] || '';
+  const contactEmail = (session && session.email) || emailFromBody || normalizeEmail(emailFromMessage);
+  if (!session && !contactEmail) {
+    return res.status(400).json({ error: 'Please sign in or include your email so we can reply.' });
   }
   try {
-    const who = customerName || (session && session.email) || customerEmail || 'Unknown visitor';
-    const contactEmail = (session && session.email) || customerEmail || '';
+    const data = await readJsonBinRaw({ fast: true });
+    const user = session && session.role === 'user'
+      ? (data.users || []).find(u => normalizeEmail(u.email) === session.email)
+      : null;
+    const tier = user
+      ? (userIsReseller(user) ? 'reseller' : 'retail')
+      : (audience === 'reseller' ? 'reseller' : 'retail');
+    const tierEmoji = tier === 'reseller' ? '🏪' : '🛍';
+    const who = customerName || (user && user.name) || contactEmail || 'Store visitor';
     const contact = contactEmail ? `\n📧 <code>${contactEmail}</code>` : '';
     const pageHint = page ? `\n🌐 Page: ${String(page).slice(0, 120)}` : '';
     const langHint = lang ? `\n🗣 Lang: ${String(lang).slice(0, 8)}` : '';
+    const inbox = resolveSupportInbox(data, tier);
+    await deliverSupportEscalationEmail({
+      to: inbox,
+      subject: `[${tier === 'reseller' ? 'Reseller' : 'Retail'}] Support — ${who}`,
+      message: text,
+      customerEmail: contactEmail,
+      customerName: who,
+      tier,
+      data
+    }).catch(e => console.error('Support email error:', e.message));
     await sendTG(
       TG_ADMIN,
-      `🆘 <b>Customer wants human support</b>\n👤 ${who}${contact}${pageHint}${langHint}\n\n💬 <i>${text.replace(/</g, '&lt;').slice(0, 1500)}</i>\n\nReply on WhatsApp +96179306701 or Telegram @Rashadtech`,
+      `${tierEmoji} <b>${tier === 'reseller' ? 'Reseller' : 'Retail'} support request</b>\n👤 ${who}${contact}${pageHint}${langHint}\n📥 Inbox: <code>${inbox}</code>\n\n💬 <i>${text.replace(/</g, '&lt;').slice(0, 1500)}</i>\n\nReply by email or WhatsApp +96179306701`,
       'HTML'
     ).catch(() => {});
-    res.json({ success: true });
+    res.json({ success: true, tier, inbox });
   } catch (e) {
     console.error('Chat escalate error:', e.message);
     res.status(500).json({ error: 'Could not notify support' });
@@ -5187,6 +5232,7 @@ registerSmsRoutes(app, {
 let rtEnhancements = null;
 rtEnhancements = registerEnhancements(app, {
   requireSession,
+  getSession,
   readJsonBinRaw,
   writeJsonBinRaw,
   writeDbFast,
