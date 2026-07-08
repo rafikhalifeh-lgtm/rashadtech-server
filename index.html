@@ -2200,6 +2200,9 @@ const DEFAULT_PRODUCTS=[
 ];
 let products=JSON.parse(JSON.stringify(DEFAULT_PRODUCTS));
 let _rtPriceCatalog=null;
+let _rtResellerPriceCatalog=null;
+let _rtRetailPriceCatalog=null;
+let _adminPriceTier='reseller';
 
 function userSeesResellerPrices(){
   if(isGuestMode||!currentUser)return false;
@@ -2262,13 +2265,11 @@ async function loadStorefront(){
   return false;
 }
 function cloneDefaultProducts(){products=JSON.parse(JSON.stringify(DEFAULT_PRODUCTS));}
-function applyPriceCatalog(catalog){
-  cloneDefaultProducts();
-  if(!catalog)return;
-  _rtPriceCatalog=catalog;
+function applyCatalogToProductList(list,catalog){
+  if(!catalog||!list)return;
   const prices=catalog.prices||{};
   const rates=catalog.customDayRates||{};
-  products.forEach(p=>{
+  list.forEach(p=>{
     if(p.hasUserTypes){
       (p.userTypes||[]).forEach(ut=>{
         const rateKey=p.id+'__'+ut.key;
@@ -2285,6 +2286,41 @@ function applyPriceCatalog(catalog){
       });
     }
   });
+}
+function productsWithCatalog(catalog){
+  const list=JSON.parse(JSON.stringify(DEFAULT_PRODUCTS));
+  applyCatalogToProductList(list,catalog);
+  return list;
+}
+function getAdminPriceCatalog(){
+  return _adminPriceTier==='retail'?_rtRetailPriceCatalog:_rtResellerPriceCatalog;
+}
+function setAdminPriceTier(tier){
+  _adminPriceTier=tier==='retail'?'retail':'reseller';
+  renderAdminPrices();
+}
+async function loadAdminPriceCatalogs(){
+  if(!isAdmin)return;
+  try{
+    const r=await fetch(RT_SERVER+'/admin/prices',{headers:authHeaders()});
+    const j=await r.json();
+    if(!r.ok||!j.success)throw new Error(j.error||'Could not load prices');
+    _rtResellerPriceCatalog=j.catalog||null;
+    _rtRetailPriceCatalog=j.retailCatalog||null;
+    applyPriceCatalog(_rtResellerPriceCatalog);
+    if(!_jbCache)_jbCache={};
+    if(_rtResellerPriceCatalog)_jbCache.priceCatalog=_rtResellerPriceCatalog;
+    if(_rtRetailPriceCatalog)_jbCache.retailPriceCatalog=_rtRetailPriceCatalog;
+  }catch(e){
+    console.warn('admin price catalogs',e);
+    await loadPriceCatalog();
+  }
+}
+function applyPriceCatalog(catalog){
+  cloneDefaultProducts();
+  if(!catalog)return;
+  _rtPriceCatalog=catalog;
+  applyCatalogToProductList(products,catalog);
 }
 async function loadPriceCatalog(){
   try{
@@ -3697,7 +3733,7 @@ async function doAdminLogin(){
     document.getElementById('admin-err').style.display='none';logActivity('Admin login');
     document.getElementById('page-auth').classList.remove('active');
     document.getElementById('page-admin').classList.add('active');
-    await loadPriceCatalog();
+    await loadAdminPriceCatalogs();
     renderAdminPanels();
     refreshAdminBackupStatus();
     if(!window._adminBackupPoll)window._adminBackupPoll=setInterval(refreshAdminBackupStatus,5*60*1000);
@@ -3887,7 +3923,10 @@ function renderActiveAdminTab(name){
   name=name||_activeAdminTab;
   if(name==='wallets')renderWallets();
   if(name==='stock')renderStockPanels();
-  if(name==='prices')renderAdminPrices();
+  if(name==='prices'){
+    loadAdminPriceCatalogs().then(()=>renderAdminPrices()).catch(()=>renderAdminPrices());
+    return;
+  }
   if(name==='customers')renderAdminCustomers();
   if(name==='requests')renderAdminRequestsFresh();
   if(name==='expiry'){renderAdminExpiry();renderNetflixRenewalAlerts();}
@@ -4279,8 +4318,8 @@ function setCustomDays(v){const n=parseInt(v)||0;if(n>0&&curProd&&selUT&&isCusto
 // ── CUSTOM ORDER (Jawaker / PUBG / Roblox) ──
 let customOrderId='', customOrderPassword='', customOrderAmt=0;
 
-function jawPrice(tokens){
-  const jaw=_rtPriceCatalog?.jawaker;
+function jawPrice(tokens,catalog){
+  const jaw=(catalog||getAdminPriceCatalog()||_rtPriceCatalog)?.jawaker;
   const base=jaw?.basePerToken??(1.5/12000);
   let price=tokens*base;
   const tiers=jaw?.tiers||[{min:500000,mult:0.9},{min:100000,mult:0.93},{min:50000,mult:0.96}];
@@ -5176,7 +5215,11 @@ async function restoreBackupSettings(id){
     const j=await r.json();
     if(!r.ok||!j.success)throw new Error(j.error||'Could not restore prices');
     if(j.data)applyDataSnapshot(j.data);
-    if(j.catalog)applyPriceCatalog(j.catalog);
+    if(j.catalog){
+      applyPriceCatalog(j.catalog);
+      _rtResellerPriceCatalog=j.catalog;
+    }
+    if(j.retailCatalog)_rtRetailPriceCatalog=j.retailCatalog;
     renderAdminPrices();renderStockPanels();renderProducts('all');
     showToast(j.recovered?`✓ Restored ${j.customPriceCount||0} custom prices`:'No better prices in that backup');
   }catch(e){showToast('⚠️ '+e.message);}
@@ -5754,8 +5797,8 @@ function adminPriceInputRow(label,inputId,value,extraAttrs){
     <input type="number" step="0.01" min="0" id="${inputId}" ${extraAttrs||''} value="${value}" style="width:96px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg3);color:var(--text)"></div>`;
 }
 function isJawakerProduct(p){return p&&(p.id==='jawaker'||p.customOrderType==='jawaker');}
-function renderJawakerPriceRows(){
-  const jaw=_rtPriceCatalog?.jawaker||{};
+function renderJawakerPriceRows(catalog){
+  const jaw=(catalog||getAdminPriceCatalog()||_rtPriceCatalog)?.jawaker||{};
   const per12k=Math.round((jaw.basePerToken??(1.5/12000))*12000*100)/100;
   const tier50=Math.round((1-((jaw.tiers||[]).find(t=>t.min===50000)?.mult??0.96))*100);
   const tier100=Math.round((1-((jaw.tiers||[]).find(t=>t.min===100000)?.mult??0.93))*100);
@@ -5765,10 +5808,10 @@ function renderJawakerPriceRows(){
   html+=adminPriceInputRow('Discount at 50,000+ tokens (%)','jawaker-tier-50k',tier50,'data-jawaker-tier="50000"');
   html+=adminPriceInputRow('Discount at 100,000+ tokens (%)','jawaker-tier-100k',tier100,'data-jawaker-tier="100000"');
   html+=adminPriceInputRow('Discount at 500,000+ tokens (%)','jawaker-tier-500k',tier500,'data-jawaker-tier="500000"');
-  html+=`<div style="font-size:11px;color:var(--text3);padding:4px 0 8px;line-height:1.6">Store preview: ${picks.map(t=>`${t>=1000000?(t/1000000)+'M':t>=1000?(t/1000)+'K':t} = $${jawPrice(t)}`).join(' · ')}</div>`;
+  html+=`<div style="font-size:11px;color:var(--text3);padding:4px 0 8px;line-height:1.6">Store preview: ${picks.map(t=>`${t>=1000000?(t/1000000)+'M':t>=1000?(t/1000)+'K':t} = $${jawPrice(t,catalog)}`).join(' · ')}</div>`;
   return html;
 }
-function renderProductPriceRows(p){
+function renderProductPriceRows(p,catalog){
   if(p.hasUserTypes){
     return p.userTypes.map(ut=>{
       let rows='';
@@ -5777,7 +5820,7 @@ function renderProductPriceRows(p){
       return rows;
     }).join('');
   }
-  if(isJawakerProduct(p))return renderJawakerPriceRows();
+  if(isJawakerProduct(p))return renderJawakerPriceRows(catalog);
   return (p.plans||[]).map((pl,i)=>adminPriceRow(pl.name,planStockKey(p.id,pl,i),pl.price)).join('');
 }
 function filterAdminPrices(){
@@ -5791,25 +5834,57 @@ function filterAdminPrices(){
 function renderAdminPrices(){
   const el=document.getElementById('admin-prices-body');
   if(!el)return;
-  let html=`<div style="background:var(--orange-bg);border:1px solid var(--orange-border);border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px;color:var(--text2)">
-    <div style="font-weight:600;color:var(--text);margin-bottom:6px">Lost custom prices?</div>
+  const tier=_adminPriceTier;
+  const catalog=getAdminPriceCatalog();
+  const editProducts=productsWithCatalog(catalog);
+  const tierLabel=tier==='retail'?'Retail (public store & normal customers)':'Reseller (wholesale)';
+  const tierNote=tier==='retail'
+    ? 'These prices are shown on the <b>public store</b> and to <b>retail customer accounts</b>. If you never saved retail prices here, defaults are reseller +40%.'
+    : 'These are <b>reseller (wholesale)</b> prices for approved reseller accounts.';
+  let html=`<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+    <button type="button" class="btn-primary" style="${tier==='reseller'?'':'opacity:.55;background:var(--bg3);color:var(--text2)'}" onclick="setAdminPriceTier('reseller')">🏪 Reseller prices</button>
+    <button type="button" class="btn-primary" style="${tier==='retail'?'':'opacity:.55;background:var(--bg3);color:var(--text2)'}" onclick="setAdminPriceTier('retail')">🛍 Retail prices</button>
+  </div>`;
+  if(tier==='reseller'){
+    html+=`<div style="background:var(--orange-bg);border:1px solid var(--orange-border);border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px;color:var(--text2)">
+    <div style="font-weight:600;color:var(--text);margin-bottom:6px">Lost custom reseller prices?</div>
     <div style="margin-bottom:10px">If prices reset to defaults, try recovering them from automatic backups or the price change log.</div>
     <button class="btn-primary" type="button" onclick="recoverAdminPrices()">Recover lost prices</button>
     <div id="admin-price-recovery-status" style="margin-top:10px"></div>
-  </div>
-  <div style="background:var(--blue-bg);border:1px solid var(--blue-border);border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px;color:var(--text2)">These are <b>reseller (wholesale)</b> prices. Retail customer prices are shown on the public store (default +40% unless you set retail overrides in code). Completed purchases and wallet transactions are <b>not changed</b> when you save.</div>
+  </div>`;
+  }else{
+    html+=`<div style="background:var(--orange-bg);border:1px solid var(--orange-border);border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px;color:var(--text2)">
+    <div style="font-weight:600;color:var(--text);margin-bottom:6px">Reset retail prices</div>
+    <div style="margin-bottom:10px">Clears your custom retail prices and restores the automatic +40% markup from current reseller prices.</div>
+    <button class="btn-secondary" type="button" onclick="resetAdminRetailPrices()">Reset retail to +40% from reseller</button>
+  </div>`;
+  }
+  html+=`<div style="background:var(--blue-bg);border:1px solid var(--blue-border);border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px;color:var(--text2)"><b>${tierLabel}</b> — ${tierNote} Completed purchases and wallet transactions are <b>not changed</b> when you save.</div>
     <input id="admin-prices-search" placeholder="🔍 Search products (e.g. Jawaker, Netflix)..." oninput="filterAdminPrices()" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg2);color:var(--text);margin-bottom:14px">`;
   PRICE_CATEGORIES.forEach(cat=>{
-    const items=products.filter(p=>p.cat===cat.key);
+    const items=editProducts.filter(p=>p.cat===cat.key);
     if(!items.length)return;
     html+=`<div class="admin-section-title" data-price-section="1">${cat.label}</div>`;
     items.forEach(p=>{
-      html+=`<div data-price-section="1"><div class="admin-section-title" style="font-size:12px;margin-top:10px">${p.name}</div><div class="admin-panel">${renderProductPriceRows(p)||'<div style="font-size:12px;color:var(--text3);padding:8px">No editable prices</div>'}</div></div>`;
+      html+=`<div data-price-section="1"><div class="admin-section-title" style="font-size:12px;margin-top:10px">${p.name}</div><div class="admin-panel">${renderProductPriceRows(p,catalog)||'<div style="font-size:12px;color:var(--text3);padding:8px">No editable prices</div>'}</div></div>`;
     });
   });
-  html+=`<button class="btn-primary" style="margin-top:14px" onclick="saveAdminPrices()">Save all prices</button>`;
+  html+=`<button class="btn-primary" style="margin-top:14px" onclick="saveAdminPrices()">Save ${tier==='retail'?'retail':'reseller'} prices</button>`;
   el.innerHTML=html;
-  loadPriceRecoveryStatus();
+  if(tier==='reseller')loadPriceRecoveryStatus();
+}
+async function resetAdminRetailPrices(){
+  if(!confirm('Reset all retail prices to automatic +40% markup from current reseller prices?'))return;
+  try{
+    const r=await fetch(RT_SERVER+'/admin/retail-prices/reset',{method:'POST',headers:authHeaders(),body:'{}'});
+    const j=await r.json();
+    if(!r.ok||!j.success)throw new Error(j.error||'Reset failed');
+    _rtRetailPriceCatalog=j.catalog||null;
+    if(_jbCache)_jbCache.retailPriceCatalog=_rtRetailPriceCatalog;
+    renderAdminPrices();
+    showToast('✓ Retail prices reset to +40% from reseller');
+    logActivity('Retail prices reset','+40% from reseller');
+  }catch(e){showToast('⚠️ '+e.message);}
 }
 async function loadPriceRecoveryStatus(){
   const status=document.getElementById('admin-price-recovery-status');
@@ -5840,7 +5915,11 @@ async function recoverAdminPrices(){
     const j=await r.json();
     if(!r.ok||!j.success)throw new Error(j.error||'Recovery failed');
     if(j.data)applyDataSnapshot(j.data);
-    if(j.catalog)applyPriceCatalog(j.catalog);
+    if(j.catalog){
+      applyPriceCatalog(j.catalog);
+      _rtResellerPriceCatalog=j.catalog;
+    }
+    if(j.retailCatalog)_rtRetailPriceCatalog=j.retailCatalog;
     renderAdminPrices();renderStockPanels();renderProducts('all');
     if(j.recovered){
       showToast(`✓ Restored ${j.customPriceCount||0} custom prices`);
@@ -5862,7 +5941,11 @@ async function restoreAdminPricesFromSource(sourceIndex){
     const j=await r.json();
     if(!r.ok||!j.success)throw new Error(j.error||'Restore failed');
     if(j.data)applyDataSnapshot(j.data);
-    if(j.catalog)applyPriceCatalog(j.catalog);
+    if(j.catalog){
+      applyPriceCatalog(j.catalog);
+      _rtResellerPriceCatalog=j.catalog;
+    }
+    if(j.retailCatalog)_rtRetailPriceCatalog=j.retailCatalog;
     renderAdminPrices();renderStockPanels();renderProducts('all');
     if(j.recovered){
       showToast(`✓ Restored ${j.customPriceCount||0} custom prices`);
@@ -5882,6 +5965,7 @@ function readJawakerTierMult(inputId,fallbackMult){
   return Math.max(0.01,Math.min(1,1-(pct/100)));
 }
 async function saveAdminPrices(){
+  const tier=_adminPriceTier;
   const prices={};
   const customDayRates={};
   document.querySelectorAll('#admin-prices-body [data-price-key]').forEach(inp=>{
@@ -5899,18 +5983,27 @@ async function saveAdminPrices(){
       {min:50000,mult:readJawakerTierMult('jawaker-tier-50k',0.96)}
     ]
   };
+  const body={prices,customDayRates,jawaker};
+  const endpoint=tier==='retail'?'/admin/retail-prices':'/admin/prices';
   try{
-    const r=await fetch(RT_SERVER+'/admin/prices',{method:'POST',headers:authHeaders(),body:JSON.stringify({prices,customDayRates,jawaker})});
+    const r=await fetch(RT_SERVER+endpoint,{method:'POST',headers:authHeaders(),body:JSON.stringify(body)});
     const j=await r.json();
     if(!r.ok||!j.success)throw new Error(j.error||'Save failed');
-    applyPriceCatalog(j.catalog);
-    if(!_jbCache)_jbCache={};
-    _jbCache.priceCatalog={prices,customDayRates,jawaker,updatedAt:Date.now(),updatedBy:currentUser?.email||'admin'};
-    renderAdminPrices();renderStockPanels();
+    if(tier==='retail'){
+      _rtRetailPriceCatalog=j.catalog||null;
+      if(_jbCache)_jbCache.retailPriceCatalog=_rtRetailPriceCatalog;
+    }else{
+      applyPriceCatalog(j.catalog);
+      _rtResellerPriceCatalog=j.catalog||null;
+      if(!_jbCache)_jbCache={};
+      _jbCache.priceCatalog={prices,customDayRates,jawaker,updatedAt:Date.now(),updatedBy:currentUser?.email||'admin'};
+      renderStockPanels();
+    }
+    renderAdminPrices();
     const activeCat=document.querySelector('.ftab.active')?.dataset?.cat||'all';
     if(document.getElementById('page-app')?.classList.contains('active'))renderProducts(activeCat);
-    showToast('✓ Prices saved for new purchases');
-    logActivity('Prices updated','catalog');
+    showToast(`✓ ${tier==='retail'?'Retail':'Reseller'} prices saved`);
+    logActivity(`${tier==='retail'?'Retail':'Reseller'} prices updated`,'catalog');
   }catch(e){showToast('⚠️ '+e.message);}
 }
 
@@ -7848,7 +7941,7 @@ async function restoreAdminSession(){
         return false;
       }
     }
-    await loadPriceCatalog();
+    await loadAdminPriceCatalogs();
     renderAdminPanels();
     refreshAdminBackupStatus();
     if(!window._adminBackupPoll)window._adminBackupPoll=setInterval(refreshAdminBackupStatus,5*60*1000);

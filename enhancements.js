@@ -385,6 +385,20 @@ function registerEnhancements(app, deps) {
     }
   });
 
+  app.post('/admin/retail-prices/reset', async (req, res) => {
+    const session = requireSession(req, res, ['admin']);
+    if (!session) return;
+    try {
+      const data = await readJsonBinRaw();
+      delete data[RETAIL_PRICE_CATALOG_KEY];
+      await writeJsonBinRaw(data);
+      await appendActivity('Retail prices reset', 'Defaults from reseller +40%', session.email);
+      res.json({ success: true, catalog: mergeRetailPriceCatalog(data) });
+    } catch (e) {
+      res.status(500).json({ error: 'Could not reset retail prices' });
+    }
+  });
+
   app.post('/admin/toggle-reseller', async (req, res) => {
     const session = requireSession(req, res, ['admin']);
     if (!session) return;
