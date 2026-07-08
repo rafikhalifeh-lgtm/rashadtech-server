@@ -2,13 +2,15 @@ const crypto = require('crypto');
 const {
   PRICE_CATALOG_KEY,
   RETAIL_PRICE_CATALOG_KEY,
+  RETAIL_DEFAULTS_VERSION,
   getMergedCatalog,
   getResellerCatalog,
   mergeRetailPriceCatalog,
   getCatalogForUser,
   userIsReseller,
   mergePriceCatalog,
-  buildCatalogPayload
+  buildCatalogPayload,
+  clearStaleRetailPriceCatalog
 } = require('./priceCatalog');
 const {
   markLinkedStockSold,
@@ -94,6 +96,15 @@ function registerEnhancements(app, deps) {
     } catch (e) {
       console.error('Activity log error:', e.message);
     }
+  }
+
+  async function readDataWithRetailMigration(options = {}) {
+    const data = await readJsonBinRaw(options);
+    if (clearStaleRetailPriceCatalog(data)) {
+      await writeJsonBinRaw(data, { backupReason: 'retail-catalog-migration' });
+      await appendActivity('Retail prices migrated', `Cleared stale overrides (v${RETAIL_DEFAULTS_VERSION})`);
+    }
+    return data;
   }
 
   async function persistSessions() {
@@ -336,7 +347,7 @@ function registerEnhancements(app, deps) {
 
   app.get('/catalog/prices', async (req, res) => {
     try {
-      const data = await readJsonBinRaw();
+      const data = await readDataWithRetailMigration();
       const tier = String(req.query.tier || '').toLowerCase();
       if (tier === 'reseller') {
         const header = req.get('authorization') || '';
@@ -374,7 +385,7 @@ function registerEnhancements(app, deps) {
 
   app.get('/catalog/storefront', async (req, res) => {
     try {
-      const data = await readJsonBinRaw({ fast: true });
+      const data = await readDataWithRetailMigration({ fast: true });
       const stockCounts = {};
       for (const [key, accounts] of Object.entries(data.stock || {})) {
         stockCounts[key] = (accounts || []).filter(acc => acc && !acc.used).length;
@@ -382,6 +393,7 @@ function registerEnhancements(app, deps) {
       res.json({
         success: true,
         catalog: mergeRetailPriceCatalog(data),
+        catalogVersion: RETAIL_DEFAULTS_VERSION,
         tier: 'retail',
         stockCounts,
         stockBlocks: data.stockBlocks || {}
@@ -395,7 +407,7 @@ function registerEnhancements(app, deps) {
     const session = requireSession(req, res, ['admin']);
     if (!session) return;
     try {
-      const data = await readJsonBinRaw();
+      const data = await readDataWithRetailMigration();
       res.json({
         success: true,
         catalog: getResellerCatalog(data),
@@ -415,6 +427,7 @@ function registerEnhancements(app, deps) {
       const data = await readJsonBinRaw();
       data[RETAIL_PRICE_CATALOG_KEY] = {
         ...payload,
+        defaultsVersion: RETAIL_DEFAULTS_VERSION,
         updatedAt: Date.now(),
         updatedBy: session.email
       };
@@ -433,7 +446,7 @@ function registerEnhancements(app, deps) {
       const data = await readJsonBinRaw();
       delete data[RETAIL_PRICE_CATALOG_KEY];
       await writeJsonBinRaw(data);
-      await appendActivity('Retail prices reset', 'Official Lebanon defaults (Netflix +40%)', session.email);
+      await appendActivity('Retail prices reset', `Official Lebanon defaults (v${RETAIL_DEFAULTS_VERSION}, Netflix +40%)`, session.email);
       res.json({ success: true, catalog: mergeRetailPriceCatalog(data) });
     } catch (e) {
       res.status(500).json({ error: 'Could not reset retail prices' });

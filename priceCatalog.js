@@ -1,6 +1,8 @@
 const PRICE_CATALOG_KEY = 'priceCatalog';
 const RETAIL_PRICE_CATALOG_KEY = 'retailPriceCatalog';
 const RETAIL_MARKUP = 1.4;
+/** Bump when built-in Lebanon retail defaults change; stale DB overrides are cleared. */
+const RETAIL_DEFAULTS_VERSION = 2;
 
 const DURATIONS_NF_1U = [
   { key: '1m', price: 1.5 },
@@ -375,21 +377,40 @@ function buildRetailDefaultsFromReseller(resellerCatalog) {
   };
 }
 
+function retailOverridesApply(stored) {
+  if (!stored || Number(stored.defaultsVersion) !== RETAIL_DEFAULTS_VERSION) {
+    return { prices: {}, customDayRates: {}, jawaker: null };
+  }
+  return {
+    prices: sanitizeNumberMap(stored.prices || {}),
+    customDayRates: sanitizeNumberMap(stored.customDayRates || {}),
+    jawaker: stored.jawaker ? sanitizeJawakerConfig(stored.jawaker) : null
+  };
+}
+
+function clearStaleRetailPriceCatalog(data) {
+  if (!data || !data[RETAIL_PRICE_CATALOG_KEY]) return false;
+  const stored = data[RETAIL_PRICE_CATALOG_KEY];
+  if (Number(stored.defaultsVersion) === RETAIL_DEFAULTS_VERSION) return false;
+  delete data[RETAIL_PRICE_CATALOG_KEY];
+  return true;
+}
+
 function mergeRetailPriceCatalog(data) {
   const reseller = getResellerCatalog(data);
   const defaults = buildRetailDefaultsFromReseller(reseller);
   const stored = data && data[RETAIL_PRICE_CATALOG_KEY] ? data[RETAIL_PRICE_CATALOG_KEY] : {};
-  const storedPrices = stored.prices || {};
-  const storedRates = stored.customDayRates || {};
+  const overrides = retailOverridesApply(stored);
   return {
-    prices: { ...defaults.prices, ...sanitizeNumberMap(storedPrices) },
-    customDayRates: { ...defaults.customDayRates, ...sanitizeNumberMap(storedRates) },
+    prices: { ...defaults.prices, ...overrides.prices },
+    customDayRates: { ...defaults.customDayRates, ...overrides.customDayRates },
     jawaker: {
       ...defaults.jawaker,
-      ...(stored.jawaker ? sanitizeJawakerConfig(stored.jawaker) : {})
+      ...(overrides.jawaker ? overrides.jawaker : {})
     },
     updatedAt: stored.updatedAt || null,
     updatedBy: stored.updatedBy || null,
+    defaultsVersion: RETAIL_DEFAULTS_VERSION,
     tier: 'retail'
   };
 }
@@ -531,6 +552,7 @@ module.exports = {
   PRICE_CATALOG_KEY,
   RETAIL_PRICE_CATALOG_KEY,
   RETAIL_MARKUP,
+  RETAIL_DEFAULTS_VERSION,
   DEFAULT_PRICE_CATALOG,
   buildDefaultPriceCatalog,
   mergePriceCatalog,
@@ -542,6 +564,7 @@ module.exports = {
   roundRetailAmount,
   buildRetailDefaultsFromReseller,
   buildLebanonOfficialRetailPriceMap,
+  clearStaleRetailPriceCatalog,
   resolvePurchasePrice,
   computeJawakerPrice,
   pricesMatch,

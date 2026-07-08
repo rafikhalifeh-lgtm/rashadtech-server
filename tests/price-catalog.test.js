@@ -58,3 +58,31 @@ test('jawaker retail price uses marked-up base rate', () => {
   const retailPrice = computeJawakerPrice(retailCatalog, tokens);
   assert.ok(retailPrice > resellerPrice);
 });
+
+test('stale retailPriceCatalog overrides are ignored until migrated', () => {
+  const {
+    mergeRetailPriceCatalog,
+    clearStaleRetailPriceCatalog,
+    RETAIL_PRICE_CATALOG_KEY
+  } = require('../priceCatalog');
+  const data = {
+    [RETAIL_PRICE_CATALOG_KEY]: {
+      prices: { 'spotify__0': 99.99 },
+      updatedAt: Date.now()
+    }
+  };
+  assert.equal(mergeRetailPriceCatalog(data).prices['spotify__0'], 5.49);
+  assert.equal(clearStaleRetailPriceCatalog(data), true);
+  assert.equal(data[RETAIL_PRICE_CATALOG_KEY], undefined);
+});
+
+test('versioned retail overrides still apply', () => {
+  const { mergeRetailPriceCatalog, RETAIL_PRICE_CATALOG_KEY, RETAIL_DEFAULTS_VERSION } = require('../priceCatalog');
+  const data = {
+    [RETAIL_PRICE_CATALOG_KEY]: {
+      defaultsVersion: RETAIL_DEFAULTS_VERSION,
+      prices: { 'spotify__0': 6.99 }
+    }
+  };
+  assert.equal(mergeRetailPriceCatalog(data).prices['spotify__0'], 6.99);
+});

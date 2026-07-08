@@ -2260,7 +2260,8 @@ let _rtResellerPriceCatalog=null;
 let _rtRetailPriceCatalog=null;
 let _adminPriceTier='reseller';
 let _appliedPriceTier=null;
-const STOREFRONT_CACHE_KEY='rt_storefront_v1';
+const STOREFRONT_CACHE_KEY='rt_storefront_v2';
+const RETAIL_CATALOG_VERSION=2;
 const STOREFRONT_CACHE_MS=60*60*1000;
 
 function expectedPriceTier(){
@@ -2273,7 +2274,7 @@ function canShowStorePrices(){
 function cacheRetailStorefront(payload){
   if(!payload||!payload.catalog)return;
   try{
-    sessionStorage.setItem(STOREFRONT_CACHE_KEY,JSON.stringify({ts:Date.now(),payload}));
+    sessionStorage.setItem(STOREFRONT_CACHE_KEY,JSON.stringify({ts:Date.now(),payload:{...payload,catalogVersion:RETAIL_CATALOG_VERSION}}));
   }catch(e){}
 }
 function loadCachedRetailStorefront(){
@@ -2282,6 +2283,7 @@ function loadCachedRetailStorefront(){
     if(!raw)return false;
     const cached=JSON.parse(raw);
     if(!cached?.payload?.catalog||Date.now()-Number(cached.ts||0)>STOREFRONT_CACHE_MS)return false;
+    if(Number(cached.payload.catalogVersion||0)!==RETAIL_CATALOG_VERSION)return false;
     applyStorefrontSnapshot(cached.payload,{fromCache:true});
     return true;
   }catch(e){return false;}
