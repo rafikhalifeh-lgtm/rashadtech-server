@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Service Status — rashadtech.tv</title>
+<meta name="robots" content="noindex, follow">
+<link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/legal/legal.css">
+<style>
+.row{display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid var(--border);font-size:14px}
+.ok{color:#22c55e;font-weight:700}.warn{color:#f59e0b;font-weight:700}.bad{color:#ef4444;font-weight:700}
+#refresh{margin-top:16px;background:var(--accent);color:#fff;border:none;border-radius:8px;padding:10px 16px;font-weight:700;cursor:pointer}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div class="logo">rashadtech<span>.tv</span></div>
+    <nav class="nav"><a href="/">Store</a><a href="/help/">Help</a></nav>
+  </div>
+  <div class="card">
+    <h1>Service Status</h1>
+    <p class="updated" id="checked">Checking…</p>
+    <div id="rows"></div>
+    <p style="font-size:13px;color:var(--text2);margin-top:16px">If the store is slow, wait a moment and refresh. For urgent orders, contact <a href="https://wa.me/96179306701">WhatsApp support</a>.</p>
+    <button id="refresh" type="button">Refresh</button>
+    <footer>Powered by rashadtech.tv</footer>
+  </div>
+</div>
+<script>
+const API='https://rashadtech-server.onrender.com';
+function cls(ok,warn){return ok?'ok':(warn?'warn':'bad');}
+function row(label,state,text){
+  return `<div class="row"><span>${label}</span><span class="${state}">${text}</span></div>`;
+}
+async function load(){
+  const el=document.getElementById('rows');
+  const checked=document.getElementById('checked');
+  el.innerHTML='';
+  let health={}, status={};
+  try{
+    const [h,s]=await Promise.all([
+      fetch(API+'/health',{cache:'no-store'}).then(r=>r.json()),
+      fetch(API+'/status',{cache:'no-store'}).then(r=>r.json()).catch(()=>({}))
+    ]);
+    health=h; status=s;
+  }catch(e){}
+  const storeOk=Boolean(health.ok);
+  const dbOk=health.checks?.db!==false;
+  const emailOk=health.checks?.email!==false;
+  el.innerHTML=[
+    row('Store website','ok','Operational'),
+    row('Order server',cls(storeOk),storeOk?'Operational':'Unavailable'),
+    row('Database',cls(dbOk,health.checks?.db===undefined),dbOk?'Connected':(health.checks?.db===undefined?'Unknown':'Issue')),
+    row('Email delivery',cls(emailOk,health.checks?.email===undefined),emailOk?'Ready':(health.checks?.email===undefined?'Unknown':'Not configured')),
+    status.pending!=null?row('Pending orders','ok',String(status.pending)):'',
+    status.gmailMonitors!=null?row('Gmail monitors','ok',String(status.gmailMonitors)):''
+  ].filter(Boolean).join('');
+  checked.textContent='Last checked: '+new Date().toLocaleString();
+}
+document.getElementById('refresh').onclick=load;
+load();
+setInterval(load,60000);
+</script>
+</body>
+</html>

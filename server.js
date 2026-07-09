@@ -77,6 +77,13 @@ app.use((err, req, res, next) => {
 });
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.set('trust proxy', 1);
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
 
 function normalizeEnvSecret(value) {
   let secret = String(value || '').trim();
@@ -2302,14 +2309,40 @@ function validateNetflixAliasPurchase(data, skey, acc) {
 }
 
 // ── HEALTH ─────────────────────────────────────────────────────────────
+async function buildHealthReport() {
+  const report = { ok: true, ts: Date.now(), ready: true, checks: {} };
+  try {
+    const data = await readJsonBinRaw({ fast: true, skipRecoverWrite: true });
+    report.checks.db = Boolean(data && Array.isArray(data.users));
+    report.checks.storage = data && data.emergencyDb ? 'fallback' : 'primary';
+    if (!report.checks.db) {
+      report.ok = false;
+      report.ready = false;
+    }
+  } catch (e) {
+    report.checks.db = false;
+    report.ok = false;
+    report.ready = false;
+  }
+  try {
+    const mailData = await loadEmailSettingsData();
+    report.checks.email = isServerEmailConfigured(mailData);
+  } catch (e) {
+    report.checks.email = false;
+  }
+  return report;
+}
+
 app.get('/', (req, res) => {
   res.json({ status: 'rashadtech server running', ok: true });
 });
-app.get('/ping', (req, res) => {
-  res.json({ ok: true, ts: Date.now(), ready: true });
+app.get('/ping', async (req, res) => {
+  const report = await buildHealthReport();
+  res.status(report.ok ? 200 : 503).json({ ok: report.ok, ts: Date.now(), ready: report.ready });
 });
-app.get('/health', (req, res) => {
-  res.json({ ok: true, ts: Date.now(), ready: true });
+app.get('/health', async (req, res) => {
+  const report = await buildHealthReport();
+  res.status(report.ok ? 200 : 503).json(report);
 });
 
 app.get('/backup-admin', (req, res) => {
@@ -2375,9 +2408,102 @@ async function restore(id){
 </script></body></html>`);
 });
 
+app.get('/site/contact', async (req, res) => {
+  try {
+    const data = await readJsonBinRaw({ fast: true, skipRecoverWrite: true });
+    const s = (data && data.siteSettings) || {};
+    const whatsappE164 = String(s.whatsappPhone || process.env.WHATSAPP_PHONE || '96179306701').replace(/\D/g, '');
+    res.json({
+      success: true,
+      contact: {
+        whatsappE164,
+        whatsappDisplay: s.whatsappDisplay || '+961 79 306 701',
+        whishDisplay: s.whishDisplay || '+961 79 306 701',
+        supportEmail: s.retailSupportEmail || s.emailReplyTo || 'support@rashadtech.tv',
+        topupSla: s.topupSla || 'usually within a few hours during business hours',
+        telegramUrl: s.telegramUrl || 'https://t.me/Rashadtech',
+        telegramBotUrl: s.telegramBotUrl || 'https://t.me/Rashadtech_bot'
+      }
+    });
+  } catch (e) {
+    res.json({
+      success: true,
+      contact: {
+        whatsappE164: '96179306701',
+        whatsappDisplay: '+961 79 306 701',
+        whishDisplay: '+961 79 306 701',
+        supportEmail: 'support@rashadtech.tv',
+        topupSla: 'usually within a few hours during business hours',
+        telegramUrl: 'https://t.me/Rashadtech',
+        telegramBotUrl: 'https://t.me/Rashadtech_bot'
+      }
+    });
+  }
+});
+
+app.get('/customer/order-receipt/:orderId', async (req, res) => {
+  const session = requireSession(req, res, ['user', 'admin']);
+  if (!session) return;
+  const orderId = String(req.params.orderId || '').trim();
+  if (!orderId) return res.status(400).json({ error: 'Order ID required' });
+  try {
+    const data = await readJsonBinRaw({ fast: true, skipRecoverWrite: true });
+    const users = Array.isArray(data.users) ? data.users : [];
+    let owner = null;
+    let order = null;
+    if (session.role === 'admin') {
+      for (const user of users) {
+        const found = findUserOrderRecord(user, orderId);
+        if (found.order) {
+          owner = user;
+          order = found.order;
+          break;
+        }
+      }
+    } else {
+      owner = users.find(u => normalizeEmail(u.email) === session.email);
+      if (owner) {
+        const found = findUserOrderRecord(owner, orderId);
+        order = found.order;
+      }
+    }
+    if (!owner || !order) return res.status(404).json({ error: 'Order not found' });
+    const safeOrder = sanitizeOrder(order);
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Receipt ${escHtml(orderId)}</title>
+<style>body{font-family:Arial,sans-serif;max-width:640px;margin:24px auto;padding:20px;color:#111}
+h1{font-size:20px;margin:0 0 4px}.muted{color:#666;font-size:13px}.row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #eee;font-size:14px}
+.total{font-weight:700;font-size:16px}.foot{margin-top:20px;font-size:12px;color:#666}@media print{body{margin:0}}</style></head><body>
+<h1>rashadtech.tv — Order Receipt</h1>
+<p class="muted">${escHtml(formatBeirutTime())}</p>
+<div class="row"><span>Customer</span><span>${escHtml(owner.name || owner.email)}</span></div>
+<div class="row"><span>Email</span><span>${escHtml(owner.email)}</span></div>
+<div class="row"><span>Order ID</span><span>${escHtml(orderId)}</span></div>
+<div class="row"><span>Product</span><span>${escHtml(safeOrder.product || '')}</span></div>
+<div class="row"><span>Plan</span><span>${escHtml(safeOrder.plan || '')}</span></div>
+<div class="row"><span>Date</span><span>${escHtml(safeOrder.date || '')}</span></div>
+<div class="row total"><span>Amount paid</span><span>$${Number(safeOrder.price || 0).toFixed(2)}</span></div>
+<p class="foot">Digital subscription purchase · rashadtech.tv · support@rashadtech.tv</p>
+<script>window.onload=function(){window.print()}</script></body></html>`;
+    res.type('html').send(html);
+  } catch (e) {
+    res.status(500).json({ error: 'Could not generate receipt' });
+  }
+});
+
+function escHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 app.use('/auth', rateLimit('auth', 40, 15 * 60 * 1000));
+app.use('/purchase', rateLimit('purchase', 20, 15 * 60 * 1000));
+app.use('/purchase-game', rateLimit('purchase-game', 20, 15 * 60 * 1000));
+app.use('/customer/topup-request', rateLimit('topup', 12, 15 * 60 * 1000));
 app.use('/get-code', rateLimit('get-code', 30, 5 * 60 * 1000));
-app.use('/chat/escalate', rateLimit('chat-escalate', 4, 15 * 60 * 1000));
+app.use('/chat/escalate', rateLimit('chat-escalate', 8, 15 * 60 * 1000));
 app.use('/notify', rateLimit('notify', 60, 5 * 60 * 1000));
 app.use('/links', rateLimit('links', 80, 5 * 60 * 1000));
 app.use('/admin', rateLimit('admin', 120, 15 * 60 * 1000));
@@ -2740,11 +2866,10 @@ app.post('/auth/signup-start', async (req, res) => {
         ? 'Verification code sent to your email'
         : delivery.telegramSent
           ? 'Verification code sent to your Telegram'
-          : 'Complete email delivery from your browser',
+          : 'Could not deliver verification code',
       emailSent: delivery.emailSent,
       telegramSent: delivery.telegramSent,
-      clientEmailRequired: delivery.clientEmailRequired,
-      ...(delivery.clientEmailRequired ? { otp, name: displayName, email: cleanEmail } : {})
+      clientEmailRequired: Boolean(delivery.clientEmailRequired && !delivery.emailSent && !delivery.telegramSent)
     });
   } catch(e) {
     console.error('Signup start error:', e.message);
@@ -2810,8 +2935,7 @@ app.post('/auth/reset-start', async (req, res) => {
       ...(delivery ? {
         emailSent: delivery.emailSent,
         telegramSent: delivery.telegramSent,
-        clientEmailRequired: delivery.clientEmailRequired,
-        ...(delivery.clientEmailRequired ? { otp: otpForClient, name: user.name || cleanEmail, email: cleanEmail } : {})
+        clientEmailRequired: Boolean(delivery.clientEmailRequired && !delivery.emailSent && !delivery.telegramSent)
       } : {})
     });
   } catch(e) {
@@ -3617,7 +3741,8 @@ app.post('/customer/topup-request', async (req, res) => {
         amount: amt,
         label: label || `$${amt}`,
         date: formatBeirutTime(),
-        status: 'pending'
+        status: 'pending',
+        submittedAt: Date.now()
       };
       data.topupreqs.unshift(reqRow);
       await writeDbFast(data);
@@ -3674,6 +3799,7 @@ app.post('/admin/credit-topup', async (req, res) => {
         date: formatBeirutTime()
       });
       reqRow.status = 'credited';
+      reqRow.creditedAt = Date.now();
       await writeDbFast(data);
       return { data, user, reqRow };
     });
