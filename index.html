@@ -1425,7 +1425,7 @@ function setPrivatePageNoIndex(on){
     }
   }else if(meta){meta.remove();}
 }
-const SERVER_WAKE_MAX_MS=90000;
+const SERVER_WAKE_MAX_MS=30000;
 const SERVER_WAKE_INTERVAL_MS=4000;
 let serverWakePromise=null;
 
@@ -2010,7 +2010,7 @@ async function jbRead(opts,_retry=false){
   const recover=opts===true?false:Boolean(opts&&opts.recover);
   const retry=opts===true||typeof opts==='boolean'?opts:Boolean(_retry);
   if(Date.now()-lastServerPingAt>300000){
-    await ensureServerAwake({silent:true}).catch(()=>{});
+    pingServer(6000).catch(()=>{});
   }
   const controller=new AbortController();
   const timeout=setTimeout(()=>controller.abort(),45000);
@@ -3336,6 +3336,37 @@ async function copySubLink(orderId){
   if(!url)return;
   navigator.clipboard.writeText(url).then(()=>showToast('✓ Link copied!')).catch(()=>{});
 }
+async function fetchSubLinkToken(token){
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),20000);
+  try{
+    const r=await fetch(`${RT_SERVER}/links/${encodeURIComponent(token)}`,{cache:'no-store',signal:controller.signal});
+    clearTimeout(timer);
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok||!j.success)throw new Error(j.error||'Subscription link not found');
+    return j.subscription;
+  }catch(e){
+    clearTimeout(timer);
+    if(e.name==='AbortError')throw new Error('Server took too long. Please refresh and try again.');
+    throw e;
+  }
+}
+async function fetchLegacySubLink(orderId){
+  const clean=String(orderId||'').replace(/^#/,'');
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),20000);
+  try{
+    const r=await fetch(`${RT_SERVER}/links/legacy/${encodeURIComponent(clean)}`,{cache:'no-store',signal:controller.signal});
+    clearTimeout(timer);
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok||!j.success)throw new Error(j.error||'Subscription not found');
+    return j.subscription;
+  }catch(e){
+    clearTimeout(timer);
+    if(e.name==='AbortError')throw new Error('Server took too long. Please refresh and try again.');
+    throw e;
+  }
+}
 async function checkSubLink(){
   setPrivatePageNoIndex(true);
   const params=new URLSearchParams(location.search);
@@ -3352,10 +3383,7 @@ async function checkSubLink(){
   if(token){
     _sublinkLinkToken=token;
     try{
-      const r=await fetch(`${RT_SERVER}/links/${encodeURIComponent(token)}`);
-      const j=await r.json();
-      if(!r.ok||!j.success)throw new Error(j.error||'Subscription link not found');
-      found=j.subscription;
+      found=await fetchSubLinkToken(token);
     }catch(e){
       el.textContent=e.message||'Subscription link not found or expired.';
       return true;
@@ -3375,32 +3403,12 @@ async function checkSubLink(){
       return true;
     }
   } else {
-    // Legacy: try to load from JSONBin (may fail for visitors)
-    el.textContent='Loading...';
     try{
-      const r=await Promise.race([
-        fetch(RT_SERVER+'/db/read',{
-          method:'POST',headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({})
-        }).then(res=>res.json()).then(res=>{if(!res.success)throw new Error('proxy error');return res;}),
-        new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),8000))
-      ]);
-      if(r.success){
-        const data=r.data||{};
-        const allUsers=data.users||[];
-        const subIdFull='#'+subId;
-        for(const u of allUsers){
-          for(const o of (u.orders||[])){if(o.id===subId||o.id===subIdFull){found=o;break;}}
-          if(found)break;
-          for(const c of (u.myCustomers||[])){
-            for(const s of (c.subs||[])){if(s.id===subId||s.id===subIdFull){found=s;break;}}
-            if(found)break;
-          }
-          if(found)break;
-        }
-      }
-    }catch(e){}
-    if(!found){el.textContent='Link expired or not found. Please ask for a new link.';return true;}
+      found=await fetchLegacySubLink(subId);
+    }catch(e){
+      el.textContent=e.message||'Link expired or not found. Please ask for a new link.';
+      return true;
+    }
   }
 
   // Populate subscription page
@@ -8325,12 +8333,18 @@ async function init(){
     setPrivatePageNoIndex(true);
     document.querySelectorAll('.page').forEach(p=>{p.classList.remove('active');p.style.display='none';});
     document.getElementById('page-sublink').style.display='flex';
-    try{await ensureServerAwake({silent:false});}catch(e){console.warn(e.message);}
-    await checkSubLink();
+    pingServer(5000).catch(()=>{});
+    if(params.get('s')){
+      await checkSubLink();
+    }else{
+      const linkTask=checkSubLink();
+      ensureServerAwake({silent:true}).catch(()=>{});
+      await linkTask;
+    }
     return;
   }
 
-  try{await ensureServerAwake({silent:true});}catch(e){console.warn(e.message);}
+  ensureServerAwake({silent:true}).catch(()=>{});
 
   if(await restoreCustomerSession())return;
   if(await restoreAdminSession())return;
@@ -8357,6 +8371,15 @@ async function restoreCustomerSession(){
   const sessEmail=normEmail(me.email||getStoredSessionEmail());
   if(!sessEmail)return false;
   try{localStorage.setItem('rt_session',JSON.stringify({email:sessEmail,ts:Date.now()}));}catch(e){}
+  const hadCache=applyOfflineCacheIfAny();
+  if(hadCache){
+    bindCurrentUserFromUsers();
+    enterApp({skipRecover:true,fromCache:true});
+    startRealtimeSync();
+    keepServerAwake();
+    jbRead().then(data=>{if(data){applyDataSnapshot(data);bindCurrentUserFromUsers();updateBal();renderSubs();}}).catch(()=>{});
+    return true;
+  }
   try{
     const data=await jbRead();
     if(data)applyDataSnapshot(data);
@@ -8394,6 +8417,18 @@ async function restoreAdminSession(){
     isAdmin=true;
     document.getElementById('page-auth').classList.remove('active');
     document.getElementById('page-admin').classList.add('active');
+    const hadCache=applyOfflineCacheIfAny();
+    if(hadCache){
+      renderAdminPanels();
+      refreshAdminBackupStatus();
+      loadAdminPriceCatalogs().catch(()=>{});
+      if(!window._adminBackupPoll)window._adminBackupPoll=setInterval(refreshAdminBackupStatus,5*60*1000);
+      startRealtimeSync();
+      keepServerAwake();
+      if(typeof rtSyncChatUI==='function')rtSyncChatUI();
+      jbRead().then(data=>{if(data){applyDataSnapshot(data);renderAdminPanels();}}).catch(()=>{});
+      return true;
+    }
     try{
       const data=await jbRead();
       if(data)applyDataSnapshot(data);

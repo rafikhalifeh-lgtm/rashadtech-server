@@ -3,6 +3,6 @@
 services:
   - type: cron
     name: rashadtech-keep-awake
-    schedule: "*/5 * * * *"
+    schedule: "*/3 * * * *"
     buildCommand: "echo keep-awake"
     startCommand: "curl -fsS https://rashadtech-server.onrender.com/ping || true"

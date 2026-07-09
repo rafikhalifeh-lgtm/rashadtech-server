@@ -1121,6 +1121,8 @@ async function syncDbToJsonBin(force = false) {
 }
 
 let readJsonBinInFlight = null;
+let lastFallbackWriteAt = 0;
+const FALLBACK_WRITE_INTERVAL_MS = 60 * 1000;
 
 async function readJsonBinRaw(options = {}) {
   if (dbCache && !options.forceRefresh) {
@@ -1151,8 +1153,15 @@ async function readJsonBinRaw(options = {}) {
       }
     }
     setDbCache(data, false);
-    writeFallbackDb(data);
-    return cloneData(dbCache);
+    if (Date.now() - lastFallbackWriteAt > FALLBACK_WRITE_INTERVAL_MS) {
+      try {
+        writeFallbackDb(data);
+        lastFallbackWriteAt = Date.now();
+      } catch (e) {
+        console.error('Fallback DB write error:', e.message);
+      }
+    }
+    return options.noClone ? dbCache : cloneData(dbCache);
   };
   readJsonBinInFlight = run().finally(() => { readJsonBinInFlight = null; });
   return readJsonBinInFlight;
@@ -2310,24 +2319,27 @@ function validateNetflixAliasPurchase(data, skey, acc) {
 // ── HEALTH ─────────────────────────────────────────────────────────────
 async function buildHealthReport() {
   const report = { ok: true, ts: Date.now(), ready: true, checks: {} };
-  try {
-    const data = await readJsonBinRaw({ fast: true, skipRecoverWrite: true });
-    report.checks.db = Boolean(data && Array.isArray(data.users));
-    report.checks.storage = data && data.emergencyDb ? 'fallback' : 'primary';
-    if (!report.checks.db) {
-      report.ok = false;
-      report.ready = false;
+  let data = null;
+  if (dbCache && dbCacheLoadedAt && Date.now() - dbCacheLoadedAt < 5 * 60 * 1000) {
+    data = dbCache;
+  } else {
+    try {
+      data = await readJsonBinRaw({ fast: true, skipRecoverWrite: true, noClone: true });
+    } catch (e) {
+      data = null;
     }
-  } catch (e) {
-    report.checks.db = false;
+  }
+  report.checks.db = Boolean(data && Array.isArray(data.users));
+  report.checks.storage = data && data.emergencyDb ? 'fallback' : (data ? 'primary' : 'unknown');
+  if (!report.checks.db) {
     report.ok = false;
     report.ready = false;
   }
   try {
-    const mailData = await loadEmailSettingsData();
-    report.checks.email = isServerEmailConfigured(mailData);
+    const mailData = data ? data : await loadEmailSettingsData().catch(() => ({}));
+    report.checks.email = isServerEmailConfigured(mailData || {});
   } catch (e) {
-    report.checks.email = false;
+    report.checks.email = Boolean(process.env.RESEND_API_KEY || process.env.EMAILJS_PRIVATE_KEY);
   }
   return report;
 }
@@ -2335,9 +2347,9 @@ async function buildHealthReport() {
 app.get('/', (req, res) => {
   res.json({ status: 'rashadtech server running', ok: true });
 });
-app.get('/ping', async (req, res) => {
-  const report = await buildHealthReport();
-  res.status(report.ok ? 200 : 503).json({ ok: report.ok, ts: Date.now(), ready: report.ready });
+app.get('/ping', (req, res) => {
+  const warm = Boolean(dbCache && dbCacheLoadedAt);
+  res.json({ ok: true, ts: Date.now(), ready: warm || true });
 });
 app.get('/health', async (req, res) => {
   const report = await buildHealthReport();
@@ -3008,25 +3020,86 @@ app.post('/links/create', async (req, res) => {
   }
 });
 
+function publicSubscriptionFromOrder(order) {
+  if (!order) return null;
+  const inboxEmail = String(order.mainEmail || order.inboxEmail || '').trim();
+  const codeEmail = String(order.codeEmail || order.email || inboxEmail).trim();
+  return {
+    id: order.id,
+    product: order.product,
+    short: order.short,
+    color: order.color,
+    tc: order.tc,
+    productId: order.productId,
+    plan: order.plan,
+    email: order.email,
+    pass: order.pass,
+    phone: order.phone || '',
+    expiryDate: order.expiryDate || '',
+    profileName: orderProfileName(order) || order.profileName || '',
+    profilePin: order.profilePin || '',
+    serviceLink: order.serviceLink || '',
+    accKey: order.accKey || '',
+    mainEmail: inboxEmail,
+    codeEmail,
+    inboxEmail: inboxEmail || codeEmail,
+    date: order.date || ''
+  };
+}
+
+function findSubscriptionByOrderId(data, orderId) {
+  const target = String(orderId || '').trim();
+  if (!target) return null;
+  for (const user of Array.isArray(data.users) ? data.users : []) {
+    const { order } = findUserOrderRecord(user, target);
+    if (order && order.email) return publicSubscriptionFromOrder(order);
+  }
+  return null;
+}
+
+app.get('/links/legacy/:orderId', async (req, res) => {
+  const orderId = String(req.params.orderId || '').trim().replace(/^#/, '');
+  if (!orderId) return res.status(400).json({ error: 'Order ID required' });
+  try {
+    const data = await readJsonBinRaw({ fast: true, skipRecoverWrite: true, noClone: true });
+    const subscription = findSubscriptionByOrderId(data, orderId);
+    if (!subscription) return res.status(404).json({ error: 'Subscription not found' });
+    res.json({ success: true, subscription });
+  } catch (e) {
+    console.error('Legacy link error:', e.message);
+    res.status(500).json({ error: 'Could not load subscription' });
+  }
+});
+
 app.get('/links/:token', async (req, res) => {
   try {
     if (rtEnhancements && await rtEnhancements.isLinkRevoked(req.params.token)) {
       return res.status(404).json({ error: 'Subscription link has been revoked' });
     }
+    let payload = null;
     try {
-      const payload = decodeLinkToken(req.params.token);
-      if (!payload.subscription || Date.now() > Number(payload.expiresAt || 0)) {
+      payload = decodeLinkToken(req.params.token);
+    } catch (e) {
+      payload = null;
+    }
+    if (payload && payload.subscription) {
+      if (Date.now() > Number(payload.expiresAt || 0)) {
         return res.status(404).json({ error: 'Subscription link not found or expired' });
       }
-      const data = await readJsonBinRaw().catch(() => ({}));
-      const subscription = enrichSubscriptionFromLiveOrder(data, payload.subscription, payload.owner);
+      let subscription = payload.subscription;
+      try {
+        const data = await readJsonBinRaw({ fast: true, skipRecoverWrite: true, noClone: true });
+        subscription = enrichSubscriptionFromLiveOrder(data, payload.subscription, payload.owner);
+      } catch (e) {
+        // Token payload is enough when DB enrich is unavailable.
+      }
       return res.json({ success: true, subscription });
-    } catch(e) {
-      // Continue to legacy database-backed token lookup below.
     }
-    const data = await readJsonBinRaw();
+    const data = await readJsonBinRaw({ fast: true, skipRecoverWrite: true, noClone: true });
     const entry = data[LINK_TOKENS_KEY] && data[LINK_TOKENS_KEY][req.params.token];
-    if (!entry || Date.now() > Number(entry.expiresAt || 0)) return res.status(404).json({ error: 'Subscription link not found or expired' });
+    if (!entry || Date.now() > Number(entry.expiresAt || 0)) {
+      return res.status(404).json({ error: 'Subscription link not found or expired' });
+    }
     const subscription = enrichSubscriptionFromLiveOrder(data, entry.subscription, entry.owner);
     res.json({ success: true, subscription });
   } catch(e) {
@@ -5666,6 +5739,9 @@ app.listen(PORT, () => {
   startServerKeepAlive();
   setImmediate(async () => {
     try {
+      readJsonBinRaw({ fast: true, skipRecoverWrite: true, noClone: true })
+        .then(() => console.log('Database cache warmed'))
+        .catch(e => console.error('DB warm error:', e.message));
       if (rtEnhancements && rtEnhancements.loadPersistedSessions) await rtEnhancements.loadPersistedSessions();
       await loadGmailMonitors();
       syncDbToJsonBin(false).catch(e => console.error('Initial JSONBin sync error:', e.message));
