@@ -81,6 +81,19 @@ function registerEnhancements(app, deps) {
 
   const activeFulfillOrders = new Set();
 
+  async function persistOrderDeliveryStamp(user, orderId, deliveryChannel) {
+    if (!deliveryChannel || !user || !orderId) return;
+    await enqueueDbWrite(async () => {
+      const fresh = await readDbForWrite();
+      const liveUser = (fresh.users || []).find(u => normalizeEmail(u.email) === normalizeEmail(user.email));
+      if (liveUser) {
+        const { order: liveOrder } = findUserOrderRecord(liveUser, orderId);
+        if (liveOrder) stampOrderDelivery(liveOrder, deliveryChannel);
+      }
+      await writeDbFast(fresh);
+    }).catch(() => {});
+  }
+
   async function appendActivity(action, details, actor = 'system') {
     try {
       const data = await readJsonBinRaw();
@@ -1008,6 +1021,7 @@ function registerEnhancements(app, deps) {
               }
             }
             if (order && deliveryChannel) stampOrderDelivery(order, deliveryChannel);
+            if (deliveryChannel) await persistOrderDeliveryStamp(user, order.id, deliveryChannel);
           }
           await appendActivity('Batch pending fulfilled', `${fulfilled.length} order(s)`, session.email);
         });
@@ -1099,17 +1113,7 @@ function registerEnhancements(app, deps) {
           }
         }
         if (order && deliveryChannel) stampOrderDelivery(order, deliveryChannel);
-        if (deliveryChannel) {
-          await enqueueDbWrite(async () => {
-            const fresh = await readDbForWrite();
-            const liveUser = (fresh.users || []).find(u => normalizeEmail(u.email) === normalizeEmail(user.email));
-            if (liveUser) {
-              const { order: liveOrder } = findUserOrderRecord(liveUser, order.id);
-              if (liveOrder) stampOrderDelivery(liveOrder, deliveryChannel);
-            }
-            await writeDbFast(fresh);
-          }).catch(() => {});
-        }
+        if (deliveryChannel) await persistOrderDeliveryStamp(user, order.id, deliveryChannel);
         await appendActivity('Pending order fulfilled', orderId, session.email);
       });
     } catch (e) {

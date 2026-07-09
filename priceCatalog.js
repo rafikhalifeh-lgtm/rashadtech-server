@@ -425,9 +425,7 @@ function getCatalogForUser(data, user) {
 
 function userIsReseller(user) {
   if (!user) return false;
-  if (user.isReseller === true) return true;
-  if (user.isReseller === false) return false;
-  return true;
+  return user.isReseller === true;
 }
 
 function computeJawakerPrice(catalog, tokens) {

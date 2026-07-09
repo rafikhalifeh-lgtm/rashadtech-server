@@ -118,8 +118,14 @@ const OTP_EMAIL_SUBJECT = normalizeEnvSecret(process.env.OTP_EMAIL_SUBJECT) || '
 const MARKETING_EMAIL_SETUP_HINT = 'Create a second EmailJS template (Subject: {{subject}}, Body: {{message}}), then set EMAILJS_MARKETING_TEMPLATE_ID on Render or save the template ID in Admin → Dashboard → Marketing email template.';
 const EMAILJS_PUBLIC_KEY = normalizeEnvSecret(process.env.EMAILJS_PUBLIC_KEY) || 'LyKu6ZB_y6qoFh7Ef';
 const EMAILJS_PRIVATE_KEY = normalizeEnvSecret(process.env.EMAILJS_PRIVATE_KEY);
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'RkhRkh7979@';
-const ADMIN_TOTP_SECRET = sanitizeBase32TotpSecret(normalizeEnvSecret(process.env.ADMIN_TOTP_SECRET) || 'QZA7V6TTYJGUMAMUZLE57JP6AQ');
+const IS_PRODUCTION = process.env.NODE_ENV === 'production' || Boolean(process.env.RENDER);
+const ADMIN_PASSWORD = normalizeEnvSecret(process.env.ADMIN_PASSWORD) || (IS_PRODUCTION ? '' : 'RkhRkh7979@');
+const ADMIN_TOTP_SECRET = sanitizeBase32TotpSecret(
+  normalizeEnvSecret(process.env.ADMIN_TOTP_SECRET) || (IS_PRODUCTION ? '' : 'QZA7V6TTYJGUMAMUZLE57JP6AQ')
+);
+function adminCredentialsConfigured() {
+  return Boolean(ADMIN_PASSWORD) && isValidBase32TotpSecret(ADMIN_TOTP_SECRET);
+}
 const ADMIN_TOTP_ISSUER = 'rashadtech.tv';
 const ADMIN_TOTP_LABEL = 'Admin';
 const ADMIN_TOTP_SETUP_ALLOWED = process.env.ADMIN_TOTP_SETUP_ALLOWED === 'true';
@@ -145,9 +151,21 @@ const OTP_TTL_MS = 10 * 60 * 1000;
 if (!API_SECRET || !TG_TOKEN || !TG_ADMIN) {
   console.error('❌ Missing required env vars: API_SECRET, TG_TOKEN, TG_ADMIN');
 }
-if (!isValidBase32TotpSecret(ADMIN_TOTP_SECRET)) {
-  console.error('❌ ADMIN_TOTP_SECRET must be 16–64 base32 characters (A–Z and 2–7 only)');
+if (!adminCredentialsConfigured()) {
+  if (IS_PRODUCTION) {
+    console.error('❌ Admin login disabled: set ADMIN_PASSWORD and ADMIN_TOTP_SECRET on Render (16–64 base32 chars for TOTP)');
+  } else if (!isValidBase32TotpSecret(ADMIN_TOTP_SECRET)) {
+    console.error('❌ ADMIN_TOTP_SECRET must be 16–64 base32 characters (A–Z and 2–7 only)');
+  }
 }
+
+process.on('unhandledRejection', (reason) => {
+  const detail = reason instanceof Error ? (reason.stack || reason.message) : String(reason);
+  console.error('Unhandled promise rejection:', detail);
+});
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught exception:', err && (err.stack || err.message));
+});
 
 let latestCodes = {};
 let latestShahidResetLinks = {};
@@ -189,7 +207,15 @@ async function readDbForWrite() {
   return readJsonBinRaw({ skipRecoverWrite: true, fast: true });
 }
 
+function stripLegacyPlaintextPasswords(data) {
+  if (!data || !Array.isArray(data.users)) return;
+  for (const user of data.users) {
+    if (user && Object.prototype.hasOwnProperty.call(user, 'signupPass')) delete user.signupPass;
+  }
+}
+
 async function writeDbFast(data, options = {}) {
+  stripLegacyPlaintextPasswords(data);
   return writeJsonBinRaw(data, { ...options, lightWrite: true });
 }
 
@@ -1216,7 +1242,7 @@ function sanitizeUser(user, options = {}) {
   if (!user) return null;
   const safeUser = { ...user };
   delete safeUser.pass;
-  if (!options.admin) delete safeUser.signupPass;
+  delete safeUser.signupPass;
   if (Array.isArray(safeUser.orders)) safeUser.orders = safeUser.orders.map(sanitizeOrder);
   if (Array.isArray(safeUser.myCustomers)) {
     safeUser.myCustomers = safeUser.myCustomers.map(customer => ({
@@ -2632,6 +2658,9 @@ app.post('/auth/login', async (req, res) => {
 });
 
 app.post('/auth/admin-login', async (req, res) => {
+  if (!adminCredentialsConfigured()) {
+    return res.status(503).json({ error: 'Admin login is not configured. Set ADMIN_PASSWORD and ADMIN_TOTP_SECRET on the server.' });
+  }
   const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
   if (adminLoginBlocked(res, ip)) return;
   const { password, totp, pin } = req.body || {};
@@ -2666,6 +2695,9 @@ app.get('/auth/admin-2fa-status', async (req, res) => {
 });
 
 app.post('/auth/admin-2fa-setup', async (req, res) => {
+  if (!adminCredentialsConfigured()) {
+    return res.status(503).json({ error: 'Admin login is not configured. Set ADMIN_PASSWORD and ADMIN_TOTP_SECRET on the server.' });
+  }
   const { password } = req.body || {};
   if (password !== ADMIN_PASSWORD) {
     return res.status(401).json({ error: 'Wrong password' });
@@ -2735,7 +2767,6 @@ app.post('/auth/signup', async (req, res) => {
       name: deriveSignupName(cleanEmail, name),
       email: cleanEmail,
       pass: hashPassword(password),
-      signupPass: String(password),
       phone: cleanPhone,
       tgChatId: String(tgChatId || '').trim(),
       balance: 0,
@@ -2811,7 +2842,7 @@ app.post('/auth/reset-password', async (req, res) => {
     const user = (data.users || []).find(u => normalizeEmail(u.email) === normalizeEmail(email));
     if (!user) return res.status(404).json({ error: 'User not found' });
     user.pass = hashPassword(password);
-    user.signupPass = String(password);
+    delete user.signupPass;
     await writeDbFast(data);
     res.json({ success: true });
   } catch(e) {
@@ -5365,7 +5396,19 @@ async function fetchMonitoredInboxes(targetEmail, options = {}) {
   }
 }
 
-setInterval(() => fetchMonitoredInboxes(null, { silent: true }), 30000); // Poll every 30 seconds (no Telegram spam)
+let gmailPollInFlight = false;
+async function runScheduledGmailPoll() {
+  if (gmailPollInFlight) return;
+  gmailPollInFlight = true;
+  try {
+    await fetchMonitoredInboxes(null, { silent: true });
+  } catch (e) {
+    console.error('Gmail poll error:', e && (e.message || e));
+  } finally {
+    gmailPollInFlight = false;
+  }
+}
+setInterval(() => { runScheduledGmailPoll().catch(e => console.error('Gmail poll error:', e && (e.message || e))); }, 30000);
 setInterval(() => {
   syncDbToJsonBin(false).catch(e => console.error('Periodic JSONBin sync error:', e.message));
 }, Math.min(JSONBIN_SYNC_INTERVAL_MS, 60 * 1000));

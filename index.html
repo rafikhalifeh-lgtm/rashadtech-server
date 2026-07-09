@@ -1110,7 +1110,7 @@ So your EmailJS template will receive the user email and verification code corre
           </select>
         </div>
         <div class="card"><table class="admin-cust-table" style="width:100%">
-          <thead><tr><th>Name</th><th>Email</th><th>Password</th><th>Phone</th><th>Verified</th><th>Account</th><th>Balance</th><th>Purchases</th><th>Joined</th><th></th></tr></thead>
+          <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Verified</th><th>Account</th><th>Balance</th><th>Purchases</th><th>Joined</th><th></th></tr></thead>
           <tbody id="admin-cust-tbody"><tr><td colspan="10" style="text-align:center;padding:32px;color:var(--text3);font-size:13px">No users yet</td></tr></tbody>
         </table></div>
       </div>
@@ -7282,16 +7282,14 @@ function adminSubDetailHtml(order,customer){
 }
 function accountIsReseller(u){
   if(!u)return false;
-  if(u.isReseller===true)return true;
-  if(u.isReseller===false)return false;
-  return true;
+  return u.isReseller===true;
 }
 function isLegacyTierUser(u){return u&&u.isReseller===undefined;}
 function legacyTierUsers(){return users.filter(isLegacyTierUser);}
 function accountTierLabel(u){
   if(u.isReseller===true)return{text:'Reseller',color:'var(--green)'};
   if(u.isReseller===false)return{text:'Retail',color:'var(--blue)'};
-  return{text:'Legacy · wholesale',color:'var(--orange)'};
+  return{text:'Legacy · retail',color:'var(--orange)'};
 }
 function renderLegacyTierBanner(){
   const el=document.getElementById('admin-legacy-tier-banner');
@@ -7300,7 +7298,7 @@ function renderLegacyTierBanner(){
   if(!legacy.length){el.style.display='none';return;}
   el.style.display='block';
   el.innerHTML=`<div style="font-weight:700;color:var(--orange);margin-bottom:6px">⚠️ ${legacy.length} account${legacy.length!==1?'s':''} without explicit tier</div>
-    <div style="color:var(--text2);margin-bottom:10px">These users were created before retail/reseller split and currently default to <strong>wholesale prices</strong>. Set them explicitly so retail customers are not charged reseller rates.</div>
+    <div style="color:var(--text2);margin-bottom:10px">These users were created before the retail/reseller split and currently default to <strong>retail prices</strong>. Mark resellers explicitly so they get wholesale rates.</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button onclick="bulkSetAccountTier(false,true)" style="padding:7px 12px;border:1px solid var(--blue-border);background:var(--blue-bg);color:var(--blue);border-radius:var(--radius-sm);font-size:11px;font-weight:600;cursor:pointer">Mark all legacy → Retail</button>
       <button onclick="bulkSetAccountTier(true,true)" style="padding:7px 12px;border:1px solid var(--green-border);background:var(--green-bg);color:var(--green);border-radius:var(--radius-sm);font-size:11px;font-weight:600;cursor:pointer">Mark all legacy → Reseller</button>
@@ -7338,7 +7336,7 @@ function openAdminCustomerDetail(userIdx){
   </div>
   <div style="font-size:12px;color:var(--text2);margin-bottom:16px;line-height:1.6">
     <div>📞 ${u.phone?esc(u.phone):'—'} · TG: ${u.tgChatId?esc(u.tgChatId):'—'} · Joined: ${esc(u.joinedDate||'—')}</div>
-    <div>${u.verified?'✓ Verified':'⚠ Unverified'}${u.banned?' · 🚫 Banned':''} · ${accountTierLabel(u).text==='Legacy · wholesale'?'⚠ Legacy (defaults wholesale)':accountIsReseller(u)?'🏪 Reseller (wholesale)':'🛍 Retail customer'}</div>
+    <div>${u.verified?'✓ Verified':'⚠ Unverified'}${u.banned?' · 🚫 Banned':''} · ${accountTierLabel(u).text==='Legacy · retail'?'⚠ Legacy (defaults retail)':accountIsReseller(u)?'🏪 Reseller (wholesale)':'🛍 Retail customer'}</div>
   </div>`;
   const txHtml=txs.length?`<div class="admin-cust-detail-section"><h4>Transactions (${txs.length})</h4>
     <table class="tx-table" style="width:100%"><thead><tr><th>#</th><th>Type</th><th>Description</th><th>Amount</th><th>Balance</th><th>Date</th></tr></thead>
@@ -7394,7 +7392,6 @@ function renderAdminCustomers(){
     return `<tr style="${banned?'opacity:0.6':''}">
       <td><div style="font-weight:600">${esc(u.name)}</div>${banned?'<div style="font-size:10px;color:var(--red);font-weight:600">🚫 BANNED</div>':''}</td>
       <td style="font-family:var(--mono);font-size:12px">${esc(u.email)}</td>
-      <td style="font-family:var(--mono);font-size:12px">${u.signupPass?'<span title="Hidden for security">••••</span>':'<span style="color:var(--text3)">—</span>'}</td>
       <td style="font-family:var(--mono);font-size:12px">${u.phone?esc(u.phone):'<span style="color:var(--text3)">—</span>'}</td>
       <td><span class="verified-pill ${u.verified?'vpill-yes':'vpill-no'}">${u.verified?'✓ Verified':'⚠ Unverified'}</span></td>
       <td><span style="font-size:11px;font-weight:600;color:${tier.color}">${tier.text}</span></td>

@@ -11,8 +11,8 @@ const {
   RETAIL_MARKUP
 } = require('../priceCatalog');
 
-test('legacy users without isReseller are treated as resellers', () => {
-  assert.equal(userIsReseller({ email: 'a@b.com' }), true);
+test('legacy users without isReseller default to retail', () => {
+  assert.equal(userIsReseller({ email: 'a@b.com' }), false);
   assert.equal(userIsReseller({ email: 'a@b.com', isReseller: false }), false);
   assert.equal(userIsReseller({ email: 'a@b.com', isReseller: true }), true);
 });
