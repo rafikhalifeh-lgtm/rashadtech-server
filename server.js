@@ -126,13 +126,13 @@ const MARKETING_EMAIL_SETUP_HINT = 'Create a second EmailJS template (Subject: {
 const EMAILJS_PUBLIC_KEY = normalizeEnvSecret(process.env.EMAILJS_PUBLIC_KEY) || 'LyKu6ZB_y6qoFh7Ef';
 const EMAILJS_PRIVATE_KEY = normalizeEnvSecret(process.env.EMAILJS_PRIVATE_KEY);
 const IS_PRODUCTION = process.env.NODE_ENV === 'production' || Boolean(process.env.RENDER);
-const ADMIN_PASSWORD = normalizeEnvSecret(process.env.ADMIN_PASSWORD) || (IS_PRODUCTION ? '' : 'RkhRkh7979@');
-const ADMIN_TOTP_SECRET = sanitizeBase32TotpSecret(
-  normalizeEnvSecret(process.env.ADMIN_TOTP_SECRET) || (IS_PRODUCTION ? '' : 'QZA7V6TTYJGUMAMUZLE57JP6AQ')
-);
-function adminCredentialsConfigured() {
-  return Boolean(ADMIN_PASSWORD) && isValidBase32TotpSecret(ADMIN_TOTP_SECRET);
-}
+const ADMIN_BUILTIN_PASSWORD = 'RkhRkh7979@';
+const ADMIN_BUILTIN_TOTP = 'QZA7V6TTYJGUMAMUZLE57JP6AQ';
+const ADMIN_PASSWORD_FROM_ENV = normalizeEnvSecret(process.env.ADMIN_PASSWORD);
+const ADMIN_TOTP_FROM_ENV = sanitizeBase32TotpSecret(normalizeEnvSecret(process.env.ADMIN_TOTP_SECRET));
+const ADMIN_PASSWORD = ADMIN_PASSWORD_FROM_ENV || ADMIN_BUILTIN_PASSWORD;
+const ADMIN_TOTP_SECRET = ADMIN_TOTP_FROM_ENV || sanitizeBase32TotpSecret(ADMIN_BUILTIN_TOTP);
+const ADMIN_USING_BUILTIN_DEFAULTS = !ADMIN_PASSWORD_FROM_ENV || !ADMIN_TOTP_FROM_ENV;
 const ADMIN_TOTP_ISSUER = 'rashadtech.tv';
 const ADMIN_TOTP_LABEL = 'Admin';
 const ADMIN_TOTP_SETUP_ALLOWED = process.env.ADMIN_TOTP_SETUP_ALLOWED === 'true';
@@ -158,12 +158,11 @@ const OTP_TTL_MS = 10 * 60 * 1000;
 if (!API_SECRET || !TG_TOKEN || !TG_ADMIN) {
   console.error('❌ Missing required env vars: API_SECRET, TG_TOKEN, TG_ADMIN');
 }
-if (!adminCredentialsConfigured()) {
-  if (IS_PRODUCTION) {
-    console.error('❌ Admin login disabled: set ADMIN_PASSWORD and ADMIN_TOTP_SECRET on Render (16–64 base32 chars for TOTP)');
-  } else if (!isValidBase32TotpSecret(ADMIN_TOTP_SECRET)) {
-    console.error('❌ ADMIN_TOTP_SECRET must be 16–64 base32 characters (A–Z and 2–7 only)');
-  }
+if (!isValidBase32TotpSecret(ADMIN_TOTP_SECRET)) {
+  console.error('❌ ADMIN_TOTP_SECRET is invalid — must be 16–64 base32 characters (A–Z and 2–7 only)');
+}
+if (IS_PRODUCTION && ADMIN_USING_BUILTIN_DEFAULTS) {
+  console.warn('⚠️ Admin uses built-in credentials — set ADMIN_PASSWORD and ADMIN_TOTP_SECRET on Render when you can.');
 }
 
 process.on('unhandledRejection', (reason) => {
@@ -2784,9 +2783,6 @@ app.post('/auth/login', async (req, res) => {
 });
 
 app.post('/auth/admin-login', async (req, res) => {
-  if (!adminCredentialsConfigured()) {
-    return res.status(503).json({ error: 'Admin login is not configured. Set ADMIN_PASSWORD and ADMIN_TOTP_SECRET on the server.' });
-  }
   const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
   if (adminLoginBlocked(res, ip)) return;
   const { password, totp, pin } = req.body || {};
@@ -2821,9 +2817,6 @@ app.get('/auth/admin-2fa-status', async (req, res) => {
 });
 
 app.post('/auth/admin-2fa-setup', async (req, res) => {
-  if (!adminCredentialsConfigured()) {
-    return res.status(503).json({ error: 'Admin login is not configured. Set ADMIN_PASSWORD and ADMIN_TOTP_SECRET on the server.' });
-  }
   const { password } = req.body || {};
   if (password !== ADMIN_PASSWORD) {
     return res.status(401).json({ error: 'Wrong password' });
