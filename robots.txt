@@ -1,7 +1,14 @@
 User-agent: *
 Allow: /
+Allow: /terms
+Allow: /privacy
+Allow: /refunds
+Allow: /help/
+Allow: /status
 
-# Private subscription links with tokens should not be indexed
+# Private subscription links should not be indexed
 Disallow: /?t=
+Disallow: /?s=
+Disallow: /?sub=
 
 Sitemap: https://rashadtech.tv/sitemap.xml

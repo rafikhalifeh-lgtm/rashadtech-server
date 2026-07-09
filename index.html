@@ -15,10 +15,16 @@
 <meta property="og:description" content="Buy Netflix, Shahid, Disney+, OSN+ and more. Instant delivery via Telegram.">
 <meta property="og:url" content="https://rashadtech.tv/">
 <meta property="og:locale" content="en_US">
-<meta name="twitter:card" content="summary">
+<meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="rashadtech.tv — Streaming Subscriptions">
 <meta name="twitter:description" content="Buy Netflix, Shahid, Disney+, OSN+ and more. Instant delivery via Telegram.">
 <meta name="theme-color" content="#e50914">
+<link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/assets/og-image.png">
+<meta property="og:image" content="https://rashadtech.tv/assets/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://rashadtech.tv/assets/og-image.png">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -95,6 +101,20 @@ input,button,select,textarea{font-family:var(--font)}
 .store-site-footer .sf-links{display:flex;flex-wrap:wrap;gap:8px 16px;margin-bottom:10px}
 .store-site-footer a{color:var(--text3);text-decoration:none}
 .store-site-footer a:hover{color:var(--text2);text-decoration:underline}
+#rt-cookie-banner{position:fixed;bottom:0;left:0;right:0;z-index:99998;background:var(--bg2);border-top:1px solid var(--border);padding:14px 16px;display:none;box-shadow:0 -8px 24px rgba(0,0,0,.25)}
+#rt-cookie-banner.show{display:block}
+#rt-cookie-banner .cookie-inner{max-width:920px;margin:0 auto;display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;font-size:12px;color:var(--text2);line-height:1.5}
+#rt-cookie-banner a{color:var(--blue)}
+#rt-cookie-banner button{background:var(--red);color:#fff;border:none;border-radius:8px;padding:8px 14px;font-weight:700;cursor:pointer;font-size:12px}
+.wallet-sla{font-size:12px;color:var(--text2);background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:14px;line-height:1.5}
+.wallet-topup-history{margin-top:14px}
+.wallet-topup-item{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);font-size:12px}
+.wallet-topup-status{font-weight:700;font-size:11px;padding:3px 8px;border-radius:999px}
+.wallet-topup-status.pending{background:var(--orange-bg);color:var(--orange)}
+.wallet-topup-status.credited{background:var(--green-bg);color:var(--green)}
+.guest-steps{display:grid;gap:10px;margin:14px 0}
+.guest-step{display:flex;gap:10px;align-items:flex-start;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;font-size:13px}
+.guest-step-num{width:24px;height:24px;border-radius:50%;background:var(--red);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0}
 .legal-modal-body{max-height:min(70vh,560px);overflow:auto;padding:20px 24px;font-size:13px;line-height:1.65;color:var(--text2)}
 .legal-modal-body h4{margin:18px 0 8px;font-size:14px;color:var(--text)}
 .legal-modal-body h4:first-child{margin-top:0}
@@ -670,7 +690,7 @@ So your EmailJS template will receive the user email and verification code corre
         <input type="tel" id="su-phone" placeholder="79 000 000" autocomplete="tel">
       </div></div>
       <div style="font-size:11px;color:var(--text3);margin-bottom:14px;line-height:1.5">Telegram Chat ID is optional — add it later in Profile to receive purchases on Telegram.</div>
-      <div style="font-size:11px;color:var(--text3);margin-bottom:14px;line-height:1.5">By creating an account, you agree to our <a href="#" onclick="openLegalPage('terms');return false" style="color:var(--blue)">Terms</a> and <a href="#" onclick="openLegalPage('privacy');return false" style="color:var(--blue)">Privacy Policy</a>.</div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:14px;line-height:1.5">By creating an account, you agree to our <a href="/terms" style="color:var(--blue)">Terms</a> and <a href="/privacy" style="color:var(--blue)">Privacy Policy</a>.</div>
       <button class="btn-primary" onclick="doSignup()">Create account</button>
       <div class="auth-switch">Have an account? <a onclick="showView('login')">Sign in</a></div>
     </div>
@@ -730,10 +750,11 @@ So your EmailJS template will receive the user email and verification code corre
       <li>Netflix</li><li>Shahid VIP</li><li>Disney+</li><li>OSN+</li><li>Spotify</li><li>Anghami</li><li>Amazon Prime</li><li>Apple TV+</li><li>HBO Max</li>
     </ul>
     <div class="auth-legal-links">
-      <a href="#" onclick="openLegalPage('terms');return false">Terms of Service</a>
-      <a href="#" onclick="openLegalPage('privacy');return false">Privacy Policy</a>
-      <a href="#" onclick="openLegalPage('refunds');return false">Refunds</a>
-      <a href="https://wa.me/96179306701" target="_blank" rel="noopener">Support</a>
+      <a href="/terms">Terms of Service</a>
+      <a href="/privacy">Privacy Policy</a>
+      <a href="/refunds">Refunds</a>
+      <a href="/help/">Help</a>
+      <a href="https://wa.me/96179306701" data-rt-wa target="_blank" rel="noopener">Support</a>
     </div>
   </footer>
   </div>
@@ -827,10 +848,12 @@ So your EmailJS template will receive the user email and verification code corre
         <div class="products-grid" id="products-grid"></div>
         <footer class="store-site-footer" id="store-site-footer">
           <div class="sf-links">
-            <a href="#" onclick="openLegalPage('terms');return false">Terms</a>
-            <a href="#" onclick="openLegalPage('privacy');return false">Privacy</a>
-            <a href="#" onclick="openLegalPage('refunds');return false">Refunds</a>
-            <a href="https://wa.me/96179306701" target="_blank" rel="noopener">WhatsApp Support</a>
+            <a href="/terms">Terms</a>
+            <a href="/privacy">Privacy</a>
+            <a href="/refunds">Refunds</a>
+            <a href="/help/">Help</a>
+            <a href="/status">Status</a>
+            <a href="https://wa.me/96179306701" data-rt-wa target="_blank" rel="noopener">WhatsApp Support</a>
             <a href="https://t.me/Rashadtech" target="_blank" rel="noopener">Telegram</a>
           </div>
           <div>© rashadtech.tv · Digital subscriptions delivered to your account</div>
@@ -911,11 +934,13 @@ So your EmailJS template will receive the user email and verification code corre
               <img src="https://cdn.prod.website-files.com/6762f4acf0dd8a6b998dfa16/676d32a11708f11b333c681b_Whish%20Logo.svg" alt="Whish Money" width="110" height="28" loading="lazy">
               <div class="whish-pay-text"><b>Payment by Whish Money only</b><br>Send the exact amount via Whish, then send the receipt on WhatsApp.</div>
             </div>
+            <div class="wallet-sla" id="wallet-sla-box">⏱ Top-ups are verified manually — <span id="wallet-sla-text">usually within a few hours during business hours</span>. Track status below after you submit a request.</div>
             <div style="font-size:14px;font-weight:600;margin-bottom:4px">Top up</div>
             <div style="font-size:12px;color:var(--text2);margin-bottom:14px">Select an amount, then pay with Whish Money</div>
             <div class="amounts-grid" id="amounts-grid"></div>
             <button class="topup-btn" id="topup-btn" disabled onclick="reqTopup()">Select an amount</button>
-            <div class="info-box">Whish → <b>+961 79 306 701</b> · then WhatsApp receipt to <a href="https://wa.me/96179306701" target="_blank" rel="noopener" style="color:inherit;font-weight:600">+961 79 306 701</a></div>
+            <div class="info-box">Whish → <b data-rt-whish>+961 79 306 701</b> · then WhatsApp receipt to <a href="https://wa.me/96179306701" data-rt-wa data-rt-wa-text target="_blank" rel="noopener" style="color:inherit;font-weight:600">+961 79 306 701</a></div>
+            <div class="wallet-topup-history" id="wallet-topup-history"></div>
           </div>
         </div>
       </div>
@@ -1256,6 +1281,20 @@ So your EmailJS template will receive the user email and verification code corre
   <div class="legal-modal-body" id="legal-modal-body"></div>
 </div></div>
 
+<div class="modal-wrap" id="guest-purchase-modal" onclick="if(event.target===this)closeModal('guest-purchase-modal')"><div class="modal" style="max-width:400px">
+  <div class="modal-head"><h3>How to purchase</h3><button class="mclose" onclick="closeModal('guest-purchase-modal')" aria-label="Close">✕</button></div>
+  <div class="modal-body" style="padding:20px 24px">
+    <p style="font-size:13px;color:var(--text2);margin:0 0 12px;line-height:1.5">Purchases use your wallet balance. Follow these steps:</p>
+    <div class="guest-steps">
+      <div class="guest-step"><div class="guest-step-num">1</div><div><b>Create a free account</b><br><span style="color:var(--text2);font-size:12px">Verify your email in minutes.</span></div></div>
+      <div class="guest-step"><div class="guest-step-num">2</div><div><b>Top up via Whish Money</b><br><span style="color:var(--text2);font-size:12px">Pay to <span data-rt-whish>+961 79 306 701</span> and send the receipt on WhatsApp.</span></div></div>
+      <div class="guest-step"><div class="guest-step-num">3</div><div><b>Buy from the store</b><br><span style="color:var(--text2);font-size:12px">Credentials are delivered to your account and Telegram/email.</span></div></div>
+    </div>
+    <button class="btn-primary" style="width:100%;margin-bottom:8px" onclick="closeModal('guest-purchase-modal');goToAuth('signup')">Create free account</button>
+    <button class="btn-secondary" style="width:100%" onclick="closeModal('guest-purchase-modal');goToAuth('login')">I already have an account</button>
+  </div>
+</div></div>
+
 <div class="modal-wrap" id="buy-modal"><div class="modal">
   <div class="modal-head"><h3 id="modal-title">Buy subscription</h3><button class="mclose" onclick="closeModal('buy-modal')">✕</button></div>
   <div class="modal-body" id="modal-body"></div>
@@ -1269,9 +1308,10 @@ So your EmailJS template will receive the user email and verification code corre
     <div style="font-size:13px;color:var(--text2);margin-bottom:16px;text-align:center">Pay <strong id="topup-amt-lbl"></strong> using <strong>Whish Money only</strong>.</div>
     <div class="whish-pay-box" style="margin-bottom:14px">
       <img src="https://cdn.prod.website-files.com/6762f4acf0dd8a6b998dfa16/676d32a11708f11b333c681b_Whish%20Logo.svg" alt="Whish Money" width="110" height="28" loading="lazy">
-      <div class="whish-pay-text">Send to <b>+961 79 306 701</b> on Whish<br>Use your rashadtech.tv email in the note.</div>
+      <div class="whish-pay-text">Send to <b data-rt-whish>+961 79 306 701</b> on Whish<br>Use your rashadtech.tv email in the note.</div>
     </div>
-    <a href="https://wa.me/96179306701" target="_blank" rel="noopener" style="display:block;width:100%;background:#25D366;color:#fff;border:none;border-radius:var(--radius-sm);padding:11px;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:8px;text-decoration:none;text-align:center"><i class="ti ti-brand-whatsapp" style="font-size:14px;vertical-align:-2px;margin-right:5px"></i>Send Whish receipt on WhatsApp</a>
+    <p style="font-size:12px;color:var(--text2);text-align:center;margin-bottom:12px">We verify receipts manually — <span id="topup-modal-sla">usually within a few hours during business hours</span>.</p>
+    <a href="https://wa.me/96179306701" data-rt-wa target="_blank" rel="noopener" style="display:block;width:100%;background:#25D366;color:#fff;border:none;border-radius:var(--radius-sm);padding:11px;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:8px;text-decoration:none;text-align:center"><i class="ti ti-brand-whatsapp" style="font-size:14px;vertical-align:-2px;margin-right:5px"></i>Send Whish receipt on WhatsApp</a>
     <button class="btn-secondary" style="width:100%" onclick="closeModal('topup-modal')">Close</button>
   </div>
 </div></div>
@@ -1333,6 +1373,58 @@ So your EmailJS template will receive the user email and verification code corre
 // JB_BIN moved to server
 const RT_SERVER='https://rashadtech-server.onrender.com';
 const RT_OFFLINE_CACHE_KEY='rt_data_cache_v1';
+const RT_COOKIE_KEY='rt_cookie_consent_v1';
+const RT_CONTACT={
+  whatsappE164:'96179306701',
+  whatsappDisplay:'+961 79 306 701',
+  whishDisplay:'+961 79 306 701',
+  supportEmail:'support@rashadtech.tv',
+  topupSla:'usually within a few hours during business hours',
+  telegramUrl:'https://t.me/Rashadtech',
+  telegramBotUrl:'https://t.me/Rashadtech_bot'
+};
+function rtWaUrl(msg){const base='https://wa.me/'+RT_CONTACT.whatsappE164;return msg?base+'?text='+encodeURIComponent(msg):base;}
+function rtContactLinksHtml(){
+  return `• <b>WhatsApp: <a href="${rtWaUrl()}" target="_blank" rel="noopener">${RT_CONTACT.whatsappDisplay}</a></b><br>• <b>Telegram: <a href="${RT_CONTACT.telegramUrl}" target="_blank" rel="noopener">@Rashadtech</a></b><br>• <b>Bot: <a href="${RT_CONTACT.telegramBotUrl}" target="_blank" rel="noopener">@Rashadtech_bot</a></b>`;
+}
+async function loadSiteContact(){
+  try{
+    const r=await fetch(RT_SERVER+'/site/contact',{cache:'no-store'});
+    const j=await r.json();
+    if(j.success&&j.contact)Object.assign(RT_CONTACT,j.contact);
+  }catch(e){}
+}
+function applyContactLinks(){
+  document.querySelectorAll('[data-rt-wa]').forEach(el=>{
+    el.href=rtWaUrl(el.getAttribute('data-rt-wa-msg')||'');
+    if(el.hasAttribute('data-rt-wa-text'))el.textContent=RT_CONTACT.whatsappDisplay;
+  });
+  document.querySelectorAll('[data-rt-whish]').forEach(el=>{el.textContent=RT_CONTACT.whishDisplay;});
+  const sla=document.getElementById('wallet-sla-text');
+  if(sla)sla.textContent=RT_CONTACT.topupSla;
+}
+function initCookieBanner(){
+  if(localStorage.getItem(RT_COOKIE_KEY))return;
+  const el=document.getElementById('rt-cookie-banner');
+  if(el)el.classList.add('show');
+}
+function acceptCookies(){
+  localStorage.setItem(RT_COOKIE_KEY,'1');
+  const el=document.getElementById('rt-cookie-banner');
+  if(el)el.classList.remove('show');
+}
+function setPrivatePageNoIndex(on){
+  let meta=document.querySelector('meta[name="robots"][data-private-page]');
+  if(on){
+    if(!meta){
+      meta=document.createElement('meta');
+      meta.name='robots';
+      meta.setAttribute('data-private-page','1');
+      meta.content='noindex, nofollow';
+      document.head.appendChild(meta);
+    }
+  }else if(meta){meta.remove();}
+}
 const SERVER_WAKE_MAX_MS=90000;
 const SERVER_WAKE_INTERVAL_MS=4000;
 let serverWakePromise=null;
@@ -1343,7 +1435,7 @@ function showServerWake(msg){
     el=document.createElement('div');
     el.id='server-wake-overlay';
     el.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
-    el.innerHTML='<div style="background:var(--bg2,#181b22);border:1px solid var(--border,#2b303b);border-radius:12px;padding:20px 24px;max-width:340px;text-align:center;color:var(--text,#f5f5f5)"><div style="font-size:28px;margin-bottom:10px">⏳</div><div id="server-wake-text" style="font-weight:600;margin-bottom:6px">Connecting to server...</div><div style="font-size:12px;color:var(--text2,#9ca3af);line-height:1.5">Free hosting may sleep when idle. First load can take up to a minute.</div></div>';
+    el.innerHTML='<div style="background:var(--bg2,#181b22);border:1px solid var(--border,#2b303b);border-radius:12px;padding:20px 24px;max-width:340px;text-align:center;color:var(--text,#f5f5f5)"><div style="font-size:28px;margin-bottom:10px">⏳</div><div id="server-wake-text" style="font-weight:600;margin-bottom:6px">Connecting securely…</div><div style="font-size:12px;color:var(--text2,#9ca3af);line-height:1.5">This may take a moment if the service was idle. Please wait.</div></div>';
     document.body.appendChild(el);
   }
   const txt=document.getElementById('server-wake-text');
@@ -1375,12 +1467,12 @@ async function ensureServerAwake(options={}){
   if(await pingServer(6000))return true;
   if(serverWakePromise&&!options.force)return serverWakePromise;
   serverWakePromise=(async()=>{
-    if(!silent)showServerWake('Connecting to server...');
+    if(!silent)showServerWake('Connecting securely…');
     const started=Date.now();
     let attempt=0;
     while(Date.now()-started<SERVER_WAKE_MAX_MS){
       attempt+=1;
-      if(!silent)showServerWake(`Waking server... (${attempt})`);
+      if(!silent)showServerWake('Still connecting… ('+attempt+')');
       if(await pingServer(12000)){
         hideServerWake();
         serverWakePromise=null;
@@ -1390,7 +1482,7 @@ async function ensureServerAwake(options={}){
     }
     hideServerWake();
     serverWakePromise=null;
-    throw new Error('Server is still starting. Please wait 30 seconds and tap again.');
+    throw new Error('Could not reach the server. Wait a moment and try again, or check /status for service updates.');
   })();
   return serverWakePromise;
 }
@@ -3245,6 +3337,7 @@ async function copySubLink(orderId){
   navigator.clipboard.writeText(url).then(()=>showToast('✓ Link copied!')).catch(()=>{});
 }
 async function checkSubLink(){
+  setPrivatePageNoIndex(true);
   const params=new URLSearchParams(location.search);
   const token=params.get('t');
   // New format: ?s=base64encodeddata
@@ -3639,11 +3732,17 @@ async function sendOTPEmail(toEmail, otpCode, userName){
 }
 
 async function deliverClientOtpEmail(payload){
-  if(!payload?.otp||!payload?.email)return { ...(payload||{}), emailDelivered:false };
-  if(payload.emailSent)return { ...payload, emailDelivered:true };
-  if(!payload.clientEmailRequired)return { ...payload, emailDelivered:false };
-  const emailDelivered=await sendOTPEmail(payload.email,payload.otp,payload.name||payload.email);
-  return { ...payload, emailDelivered:Boolean(emailDelivered) };
+  if(payload?.emailSent||payload?.telegramSent){
+    return { ...payload, success: true, emailDelivered: Boolean(payload.emailSent) };
+  }
+  if(payload?.clientEmailRequired){
+    return {
+      ...payload,
+      success: false,
+      error: 'Email verification is temporarily unavailable. Please try again in a few minutes or contact us on WhatsApp.'
+    };
+  }
+  return { ...(payload||{}), success: Boolean(payload?.success), emailDelivered:false };
 }
 
 function signupCodeDelivered(payload){
@@ -3997,7 +4096,7 @@ function enterApp(opts={}){
   try{localStorage.setItem('rt_session',JSON.stringify(session));}catch(e){}
   renderProducts('all');
   loadPriceCatalog().then(async()=>{updateResellerUi();await refreshSmsStoreTab();renderProducts('all');});
-  updateBal();renderAmounts();renderSubs();renderTx();renderMyCustomers();renderReqChips();renderMyRequests();renderExpiryTracker();renderMyGameOrders();
+  updateBal();renderAmounts();renderSubs();renderTx();renderMyCustomers();renderReqChips();renderMyRequests();renderExpiryTracker();renderMyGameOrders();renderWalletTopupHistory();
   if(!opts.skipRecover)recoverMyCustomersOnLogin({immediate:Boolean(opts.recoverImmediate)}).catch(()=>{});
   maybePromptCompleteProfile();
 }
@@ -4111,6 +4210,7 @@ function switchTab(name,el){
   if(name==='subscriptions'){renderSubs();const ss=document.getElementById('subs-search');if(ss)ss.value='';}
   if(name==='requests')renderMyRequests();
   if(name==='customers')refreshMyCustomersTab();
+  if(name==='wallet')renderWalletTopupHistory();
 }
 async function refreshMyCustomersTab(){
   bindCurrentUserFromUsers();
@@ -4433,11 +4533,40 @@ async function confirmSmsPurchase(catalogId){
   finally{smsPurchaseInFlight=false;setBuyModalLoading(false);}
 }
 
+function openGuestPurchaseModal(){
+  openModal('guest-purchase-modal');
+  applyContactLinks();
+  const sla=document.getElementById('topup-modal-sla');
+  if(sla)sla.textContent=RT_CONTACT.topupSla;
+}
+function renderWalletTopupHistory(){
+  const el=document.getElementById('wallet-topup-history');
+  if(!el||!currentUser)return;
+  const mine=(topupRequests||[]).filter(r=>normEmail(r.email)===normEmail(currentUser.email)).slice(0,8);
+  if(!mine.length){el.innerHTML='';return;}
+  el.innerHTML='<div style="font-size:13px;font-weight:600;margin-bottom:8px">Your top-up requests</div>'+mine.map(r=>{
+    const credited=r.status==='credited';
+    const label=credited?'Credited':'Verifying receipt';
+    return `<div class="wallet-topup-item"><div><div style="font-weight:600">${esc(r.label||('$'+r.amount))}</div><div style="color:var(--text3);font-size:11px">${esc(r.date||'')}</div></div><span class="wallet-topup-status ${credited?'credited':'pending'}">${label}</span></div>`;
+  }).join('');
+}
+function subOptionReceipt(){
+  closeModal('sub-options-modal');
+  if(!_currentSubId||!authToken)return;
+  const url=RT_SERVER+'/customer/order-receipt/'+encodeURIComponent(_currentSubId);
+  fetch(url,{headers:authHeaders()}).then(async r=>{
+    if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||'Receipt unavailable');}
+    const html=await r.text();
+    const w=window.open('','_blank');
+    if(w){w.document.write(html);w.document.close();}
+    else showToast('Allow pop-ups to open the receipt');
+  }).catch(e=>showToast('⚠️ '+e.message));
+}
+
 // BUY MODAL
 function openBuy(id,forCustId){
   if(isGuestMode||!currentUser){
-    showToast('Create a free account or sign in to purchase');
-    goToAuth('signup');
+    openGuestPurchaseModal();
     return;
   }
   if(!canShowStorePrices()){
@@ -4558,7 +4687,7 @@ function renderConfirm(html,p){
   <hr style="border:none;border-top:1px solid var(--border);margin:9px 0">
   <div class="confirm-row"><span class="cl" style="font-weight:600">After purchase</span><span class="cv">${fmt(Math.max(0,after))}</span></div>
   ${blocked?`<div class="insuf"><i class="ti ti-alert-circle" style="font-size:12px;vertical-align:-1px"></i> This plan is blocked by admin</div>`:(!ok?`<div class="insuf"><i class="ti ti-alert-circle" style="font-size:12px;vertical-align:-1px"></i> Insufficient balance</div>`:'')}
-  <div class="confirm-terms">By confirming, you agree to our <a href="#" onclick="openLegalPage('terms');return false">Terms</a> and <a href="#" onclick="openLegalPage('refunds');return false">Refund Policy</a>.</div>
+  <div class="confirm-terms">By confirming, you agree to our <a href="/terms">Terms</a> and <a href="/refunds">Refund Policy</a>.</div>
   <button class="modal-buy-btn" id="purchase-confirm-btn" ${ok&&!blocked?'':'disabled'} onclick="confirmPurchase()">${blocked?'Blocked':(ok?'Confirm purchase — '+fmt(price):'Insufficient balance')}</button>`;
   document.getElementById('modal-body').innerHTML=html;
 }
@@ -5941,6 +6070,7 @@ async function reqTopup(){
     openModal('topup-modal');
     if(j.duplicate)showToast('You already have a pending top-up for this amount');
     else showToast('✓ Top-up request sent — pay with Whish Money');
+    renderWalletTopupHistory();
   }catch(e){
     showToast('⚠️ '+(e.message||'Could not submit top-up — please try again'));
   }finally{
@@ -8187,12 +8317,15 @@ async function init(){
   initFirebase();
   initTheme();
   initLang();
+  initCookieBanner();
+  loadSiteContact().then(()=>{applyContactLinks();if(typeof rtSyncChatUI==='function')rtSyncChatUI();});
   keepServerAwake();
   window.addEventListener('error',e=>{console.warn('UI error:',e.message);});
   window.addEventListener('unhandledrejection',e=>{console.warn('Async error:',e.reason);e.preventDefault();});
   if(!authToken)applyOfflineCacheIfAny();
   const params=new URLSearchParams(location.search);
   if(params.get('sub')||params.get('s')||params.get('t')){
+    setPrivatePageNoIndex(true);
     document.querySelectorAll('.page').forEach(p=>{p.classList.remove('active');p.style.display='none';});
     document.getElementById('page-sublink').style.display='flex';
     try{await ensureServerAwake({silent:false});}catch(e){console.warn(e.message);}
@@ -8343,6 +8476,7 @@ if(document.readyState==='loading'){
     <div style="display:flex;flex-direction:column;gap:2px">
       <button onclick="subOptionGenLink()" class="sub-option-btn">🔗 Generate Link</button>
       <button onclick="subOptionResendTelegram()" class="sub-option-btn">📲 Resend to Telegram / Email</button>
+      <button onclick="subOptionReceipt()" class="sub-option-btn">🧾 Download receipt</button>
       <button onclick="subOptionAddNote()" class="sub-option-btn">📝 Add Note</button>
       <button onclick="subOptionRenew()" class="sub-option-btn" data-t="requestRenewal">🔄 Request Renewal</button>
       <button onclick="subOptionBuyAgain()" class="sub-option-btn" id="sub-option-buy-again-btn" style="display:none">🛒 Buy again</button>
@@ -8573,6 +8707,14 @@ if(document.readyState==='loading'){
   </div>
 </div>
 
+<!-- COOKIE NOTICE -->
+<div id="rt-cookie-banner" role="dialog" aria-label="Cookie notice">
+  <div class="cookie-inner">
+    <div>We use local storage for sign-in, language, and faster loading. See our <a href="/privacy">Privacy Policy</a>.</div>
+    <button type="button" onclick="acceptCookies()">Got it</button>
+  </div>
+</div>
+
 <!-- RASHADTECH SUPPORT CHATBOT -->
 <button id="rt-chat-bubble" onclick="rtToggleChat()" aria-label="Support chat">
   <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
@@ -8585,7 +8727,7 @@ if(document.readyState==='loading'){
     </div>
     <div class="rt-chat-hdr-info">
       <div class="rt-chat-hdr-name" id="rt-chat-hdr-name">rashadtech Support</div>
-      <div class="rt-chat-hdr-status" id="rt-chat-hdr-status">Online — instant replies</div>
+      <div class="rt-chat-hdr-status" id="rt-chat-hdr-status">Automated help · WhatsApp support available</div>
     </div>
     <button class="rt-chat-close" onclick="rtToggleChat()">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -8606,7 +8748,7 @@ if(document.readyState==='loading'){
 const RT_CHAT_I18N={
   en:{
     name:'rashadtech Support',
-    status:'Online — instant replies',
+    status:'Automated help · WhatsApp support available',
     placeholder:'Type a message...',
     greeting:'Hi! I can help with buying subscriptions, your wallet, Netflix codes, TV setup, and account questions. 👋',
     retailName:'rashadtech Store',
@@ -8672,7 +8814,7 @@ const RT_CHAT_I18N={
   },
   ar:{
     name:'دعم rashadtech',
-    status:'متصل — رد فوري',
+    status:'مساعدة آلية · دعم واتساب متاح',
     placeholder:'اكتب رسالة...',
     greeting:'مرحباً! أستطيع مساعدتك في الشراء، الاشتراكات، المحفظة، أكواد نتفليكس، التلفزيون، وإصلاح شاهد. 👋',
     retailName:'متجر rashadtech',
@@ -8739,6 +8881,11 @@ function rtGetAudience(){
   if(isGuestMode||!currentUser)return 'retail';
   return userSeesResellerPrices()?'reseller':'retail';
 }
+function rtSupportFallback(){
+  return rtChatLang()==='ar'
+    ? 'لم أفهم سؤالك. جرّب موضوعاً سريعاً أدناه، أو تواصل معنا:<br>'+rtContactLinksHtml()
+    : "I'm not sure about that. Try a quick topic below, or contact us:<br>"+rtContactLinksHtml();
+}
 function rtFilteredPack(){
   const base=rtChatPack();
   const aud=rtGetAudience();
@@ -8746,13 +8893,15 @@ function rtFilteredPack(){
   const greeting=aud==='reseller'
     ?(rtChatLang()==='ar'?'مرحباً! دعم موزّعي الجملة — المخزون، العملاء الفرعيون، والأسعار الخاصة. 👋':'Hi! Reseller wholesale support — sub-customers, stock, and your special prices. 👋')
     :base.greeting;
+  const fallback=rtSupportFallback();
   if(aud==='reseller'){
-    return {...base,name,greeting};
+    return {...base,name,greeting,fallback};
   }
   return {
     ...base,
     name,
     greeting,
+    fallback,
     quick:(base.quick||[]).filter(x=>!x.resellerOnly),
     faq:(base.faq||[]).filter(x=>!x.resellerOnly)
   };
@@ -8922,8 +9071,8 @@ function rtRespond(q){
       rtNotifyHumanEscalation(q).then(ok=>{
         if(!ok)return;
         const notified=rtChatLang()==='ar'
-          ?'تم إرسال طلبك إلى فريق الدعم بالبريد الإلكتروني. سنتواصل معك قريباً.<br><br>• <b>واتساب: <a href="https://wa.me/96179306701" target="_blank">+96179306701</a></b>'
-          :'Your request was emailed to our support team. We will reply soon.<br><br>• <b>WhatsApp: <a href="https://wa.me/96179306701" target="_blank">+96179306701</a></b>';
+          ?'تم إرسال طلبك إلى فريق الدعم بالبريد الإلكتروني. سنتواصل معك قريباً.<br><br>'+rtContactLinksHtml()
+          :'Your request was emailed to our support team. We will reply soon.<br><br>'+rtContactLinksHtml();
         rtAddMsg(notified,'bot');
       });
     }else{
