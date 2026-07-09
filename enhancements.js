@@ -75,7 +75,8 @@ function registerEnhancements(app, deps) {
     findUserOrderRecord,
     notifyPurchaseFulfilled,
     pickAvailableAccount,
-    enqueueDbWrite
+    enqueueDbWrite,
+    repairGmailMonitorFromStock
   } = deps;
 
   const activeFulfillOrders = new Set();
@@ -815,9 +816,22 @@ function registerEnhancements(app, deps) {
     const email = normalizeEmail(req.body && req.body.email);
     if (!email) return res.status(400).json({ error: 'Email required' });
     try {
-      await loadGmailMonitors();
-      const creds = monitoredEmails[email];
-      if (!creds) return res.status(404).json({ error: 'Gmail monitor not found' });
+      await loadGmailMonitors(true);
+      let creds = monitoredEmails[email];
+      if (!creds) {
+        const data = await readJsonBinRaw({ fast: true, skipRecoverWrite: true });
+        const repaired = repairGmailMonitorFromStock(data, email);
+        if (repaired) {
+          monitoredEmails[email] = repaired;
+          creds = repaired;
+          await persistGmailMonitors();
+        }
+      }
+      if (!creds) {
+        return res.status(404).json({
+          error: 'Gmail monitor not found. Open the stock account, re-enter the Gmail app password in Main Gmail, and save again.'
+        });
+      }
       await getInboxMaxUid(creds.user || email, creds.pass);
       creds.lastCheckedAt = Date.now();
       await persistGmailMonitors();

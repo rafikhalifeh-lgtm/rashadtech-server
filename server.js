@@ -359,6 +359,56 @@ function normalizeGmailPassword(password) {
   return String(password || '').replace(/\s+/g, '');
 }
 
+function repairGmailMonitorFromStock(data, email) {
+  const key = normalizeEmail(email);
+  if (!key || !isGmailAddress(key)) return null;
+  for (const accounts of Object.values((data && data.stock) || {})) {
+    for (const acc of accounts || []) {
+      if (!acc) continue;
+      const mainEmail = normalizeEmail(acc.mainEmail);
+      if (mainEmail !== key) continue;
+      const pass = normalizeGmailPassword(acc.mainPass || acc.mainPassword);
+      if (pass.length >= 16) {
+        return {
+          user: mainEmail,
+          pass,
+          lastUid: Number(acc.gmailLastUid || 0),
+          lastCheckedAt: Number(acc.gmailLastCheckedAt || 0)
+        };
+      }
+    }
+  }
+  return null;
+}
+
+async function repairAllGmailMonitorsFromStock(data) {
+  const repaired = {};
+  const seen = new Set();
+  for (const accounts of Object.values((data && data.stock) || {})) {
+    for (const acc of accounts || []) {
+      if (!acc) continue;
+      const mainEmail = normalizeEmail(acc.mainEmail);
+      if (!mainEmail || !isGmailAddress(mainEmail) || seen.has(mainEmail)) continue;
+      const pass = normalizeGmailPassword(acc.mainPass || acc.mainPassword);
+      if (pass.length < 16) continue;
+      seen.add(mainEmail);
+      if (!monitoredEmails[mainEmail]) {
+        repaired[mainEmail] = {
+          user: mainEmail,
+          pass,
+          lastUid: 0,
+          lastCheckedAt: 0
+        };
+      }
+    }
+  }
+  if (Object.keys(repaired).length) {
+    Object.assign(monitoredEmails, repaired);
+    await persistGmailMonitors();
+  }
+  return repaired;
+}
+
 function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
   const hash = crypto.pbkdf2Sync(String(password), salt, 120000, 32, 'sha256').toString('hex');
   return `${PASSWORD_HASH_PREFIX}${salt}$${hash}`;
@@ -4619,7 +4669,7 @@ async function sendTG(chatId, text, parse_mode) {
 async function loadGmailMonitors(force = false) {
   if (gmailMonitorsLoaded && !force) return monitoredEmails;
   try {
-    const data = await readJsonBinRaw();
+    const data = await readJsonBinRaw({ fast: true, skipRecoverWrite: true });
     const stored = data[GMAIL_MONITORS_KEY] || {};
     const loaded = {};
     for (const [email, creds] of Object.entries(stored)) {
@@ -4646,7 +4696,36 @@ async function loadGmailMonitors(force = false) {
 async function persistGmailMonitors() {
   await enqueueDbWrite(async () => {
     const data = await readDbForWrite();
-    data[GMAIL_MONITORS_KEY] = monitoredEmails;
+    const existing = data[GMAIL_MONITORS_KEY] || {};
+    const merged = {};
+    Object.entries(existing).forEach(([email, creds]) => {
+      const key = normalizeEmail(email);
+      if (!key || !creds) return;
+      merged[key] = { ...creds };
+    });
+    Object.entries(monitoredEmails).forEach(([email, creds]) => {
+      const key = normalizeEmail(email);
+      if (!key || !creds) return;
+      merged[key] = {
+        user: normalizeEmail(creds.user || key),
+        pass: creds.pass,
+        lastUid: Number(creds.lastUid || 0),
+        lastCheckedAt: Number(creds.lastCheckedAt || 0)
+      };
+    });
+    data[GMAIL_MONITORS_KEY] = merged;
+    monitoredEmails = {};
+    Object.entries(merged).forEach(([email, creds]) => {
+      const key = normalizeEmail(email);
+      const pass = normalizeGmailPassword(creds && (creds.pass || creds.password));
+      if (!key || !pass) return;
+      monitoredEmails[key] = {
+        user: normalizeEmail(creds.user || key),
+        pass,
+        lastUid: Number(creds.lastUid || 0),
+        lastCheckedAt: Number(creds.lastCheckedAt || 0)
+      };
+    });
     await writeDbFast(data, { backupReason: 'gmail-monitor-update' });
   });
 }
@@ -5327,19 +5406,26 @@ app.post('/setup-gmail', async (req, res) => {
   }
 });
 
-app.get('/monitored-emails', (req, res) => {
+app.get('/monitored-emails', async (req, res) => {
   const session = requireSession(req, res, ['admin']);
   if (!session) return;
-  res.json({
-    success: true,
-    emails: Object.entries(monitoredEmails).map(([email, creds]) => ({
-      email,
-      user: creds.user || email,
-      lastUid: creds.lastUid || 0,
-      lastCheckedAt: creds.lastCheckedAt || null,
-      status: creds.lastCheckedAt ? 'connected' : 'unknown'
-    }))
-  });
+  try {
+    await loadGmailMonitors(true);
+    const data = await readJsonBinRaw({ fast: true, skipRecoverWrite: true });
+    await repairAllGmailMonitorsFromStock(data);
+    res.json({
+      success: true,
+      emails: Object.entries(monitoredEmails).map(([email, creds]) => ({
+        email,
+        user: creds.user || email,
+        lastUid: creds.lastUid || 0,
+        lastCheckedAt: creds.lastCheckedAt || null,
+        status: creds.lastCheckedAt ? 'connected' : 'unknown'
+      }))
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
 registerSmsRoutes(app, {
@@ -5394,7 +5480,9 @@ rtEnhancements = registerEnhancements(app, {
   pickAvailableAccount,
   enqueueDbWrite,
   slimMutationData,
-  readDbForWrite
+  readDbForWrite,
+  repairGmailMonitorFromStock,
+  repairAllGmailMonitorsFromStock
 });
 
 const whatsappBot = registerWhatsAppBot(app, {

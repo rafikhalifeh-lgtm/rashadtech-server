@@ -341,7 +341,9 @@
   };
 
   window.rtTestGmail=async function(email){
-    try{rtShowLoading('Testing Gmail...');const j=await api('/admin/gmail-test',{method:'POST',body:JSON.stringify({email})});showToast('✓ '+j.message);loadGmailMonitorPanel();}
+    const clean=String(email||'').trim().toLowerCase();
+    if(!clean)return;
+    try{rtShowLoading('Testing Gmail...');const j=await api('/admin/gmail-test',{method:'POST',body:JSON.stringify({email:clean})});showToast('✓ '+j.message);loadGmailMonitorPanel();}
     catch(e){showToast('⚠️ '+e.message);}finally{rtHideLoading();}
   };
 
@@ -351,8 +353,15 @@
       const j=await api('/monitored-emails');
       el.innerHTML=(j.emails||[]).map(e=>`<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:12px">
         <div><b>${esc(e.email)}</b><div style="color:var(--text3)">Last check: ${e.lastCheckedAt?new Date(e.lastCheckedAt).toLocaleString():'never'}</div></div>
-        <button onclick="rtTestGmail('${esc(e.email)}')" style="padding:6px 10px;border:1px solid var(--border);background:var(--bg3);border-radius:6px;cursor:pointer">Test</button>
+        <button type="button" class="gmail-test-btn" data-gmail="${esc(e.email)}" style="padding:6px 10px;border:1px solid var(--border);background:var(--bg3);border-radius:6px;cursor:pointer">Test</button>
       </div>`).join('')||'<div style="color:var(--text3);font-size:12px">No Gmail monitors configured.</div>';
+      if(!el._gmailTestBound){
+        el._gmailTestBound=true;
+        el.addEventListener('click',(ev)=>{
+          const btn=ev.target.closest('.gmail-test-btn');
+          if(btn&&btn.dataset.gmail)rtTestGmail(btn.dataset.gmail);
+        });
+      }
     }catch(e){el.innerHTML='<div style="color:var(--red);font-size:12px">Could not load monitors</div>';}
   }
   window.loadGmailMonitorPanel=loadGmailMonitorPanel;
