@@ -36,6 +36,10 @@ test('storefront catalog loads', async () => {
   assert.equal(res.status, 200);
   assert.equal(res.json.success, true);
   assert.ok(res.json.catalog && res.json.catalog.prices);
+  if (res.json.sms != null) {
+    assert.equal(typeof res.json.sms.enabled, 'boolean');
+    assert.ok(Array.isArray(res.json.sms.catalog));
+  }
 });
 
 test('site contact loads', async () => {

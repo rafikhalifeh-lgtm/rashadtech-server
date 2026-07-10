@@ -786,6 +786,7 @@ function emptyDbData() {
     stockBlocks: {},
     [RETAIL_STOCK_BLOCKS_KEY]: {},
     requests: [],
+    resellerApplications: [],
     topupreqs: [],
     pending: [],
     gameorders: [],
@@ -2515,6 +2516,7 @@ app.use('/purchase-game', rateLimit('purchase-game', 20, 15 * 60 * 1000));
 app.use('/customer/topup-request', rateLimit('topup', 12, 15 * 60 * 1000));
 app.use('/get-code', rateLimit('get-code', 30, 5 * 60 * 1000));
 app.use('/chat/escalate', rateLimit('chat-escalate', 8, 15 * 60 * 1000));
+app.use('/public/reseller-application', rateLimit('reseller-apply', 6, 30 * 60 * 1000));
 app.use('/notify', rateLimit('notify', 60, 5 * 60 * 1000));
 app.use('/links', rateLimit('links', 80, 5 * 60 * 1000));
 app.use('/admin', rateLimit('admin', 120, 15 * 60 * 1000));
@@ -3924,6 +3926,127 @@ app.post('/admin/delete-topup', async (req, res) => {
   } catch (e) {
     console.error('Delete top-up error:', e.message);
     res.status(500).json({ error: 'Could not remove top-up request' });
+  }
+});
+
+app.post('/public/reseller-application', async (req, res) => {
+  const session = getSession(req);
+  const body = req.body || {};
+  const type = body.type === 'new' ? 'new' : 'upgrade';
+  const contactName = String(body.contactName || '').trim().slice(0, 120);
+  const phone = String(body.phone || '').trim().slice(0, 40);
+  const notes = String(body.notes || '').trim().slice(0, 800);
+  const retailEmail = normalizeEmail(body.retailEmail || body.email || (session && session.email) || '');
+  const businessEmail = normalizeEmail(body.email || (session && session.email) || '');
+  const companyName = String(body.companyName || '').trim().slice(0, 160);
+  const location = String(body.location || '').trim().slice(0, 120);
+  const channel = String(body.channel || '').trim().slice(0, 40);
+  const monthlyVolume = String(body.monthlyVolume || '').trim().slice(0, 120);
+
+  if (type === 'upgrade') {
+    if (!retailEmail) return res.status(400).json({ error: 'Retail account email is required' });
+  } else {
+    if (!companyName) return res.status(400).json({ error: 'Company name is required' });
+    if (!contactName) return res.status(400).json({ error: 'Contact name is required' });
+    if (!businessEmail) return res.status(400).json({ error: 'Email is required' });
+    if (!phone) return res.status(400).json({ error: 'Phone / WhatsApp is required' });
+  }
+
+  try {
+    const outcome = await enqueueDbWrite(async () => {
+      const data = await readDbForWrite();
+      data.resellerApplications = Array.isArray(data.resellerApplications) ? data.resellerApplications : [];
+      const matchEmail = type === 'upgrade' ? retailEmail : businessEmail;
+      const existing = data.resellerApplications.find(app =>
+        !app.resolved &&
+        app.type === type &&
+        normalizeEmail(app.retailEmail || app.email || '') === matchEmail
+      );
+      if (existing) return { duplicate: true, application: existing, data };
+
+      const row = {
+        id: `ra_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        type,
+        retailEmail: type === 'upgrade' ? retailEmail : '',
+        email: type === 'new' ? businessEmail : retailEmail,
+        companyName: type === 'new' ? companyName : '',
+        contactName,
+        phone,
+        location,
+        channel,
+        monthlyVolume,
+        notes,
+        resolved: false,
+        date: formatBeirutTime(),
+        submittedBy: session && session.email ? session.email : ''
+      };
+      data.resellerApplications.unshift(row);
+      await writeDbFast(data);
+      return { data, application: row, created: true };
+    });
+
+    if (outcome.duplicate) {
+      return res.json({ success: true, duplicate: true, application: outcome.application });
+    }
+
+    const { application: row, data } = outcome;
+    res.json({ success: true, created: true, application: row });
+
+    const title = row.type === 'upgrade' ? 'Retail upgrade request' : 'New reseller application';
+    const lines = row.type === 'upgrade'
+      ? [
+        `📧 Retail email: <b>${row.retailEmail}</b>`,
+        row.contactName ? `👤 ${row.contactName}` : '',
+        row.phone ? `📱 ${row.phone}` : '',
+        row.notes ? `📝 ${row.notes}` : ''
+      ]
+      : [
+        `🏢 <b>${row.companyName}</b>`,
+        `👤 ${row.contactName}`,
+        `📧 ${row.email}`,
+        `📱 ${row.phone}`,
+        row.location ? `📍 ${row.location}` : '',
+        row.channel ? `🛒 Channel: ${row.channel}` : '',
+        row.monthlyVolume ? `📊 Volume: ${row.monthlyVolume}` : '',
+        row.notes ? `📝 ${row.notes}` : ''
+      ];
+    runAfterResponse(() => sendTG(
+      TG_ADMIN,
+      `🏪 <b>${title}</b>\n\n${lines.filter(Boolean).join('\n')}\n\n⏰ ${row.date}`,
+      'HTML'
+    ).catch((e) => console.error('Reseller application TG:', e.message)));
+  } catch (e) {
+    console.error('Reseller application error:', e.message);
+    res.status(500).json({ error: 'Could not submit application' });
+  }
+});
+
+app.post('/admin/resolve-reseller-application', async (req, res) => {
+  const session = requireSession(req, res, ['admin']);
+  if (!session) return;
+  const { applicationId } = req.body || {};
+  if (!applicationId) return res.status(400).json({ error: 'Application ID required' });
+  try {
+    const outcome = await enqueueDbWrite(async () => {
+      const data = await readDbForWrite();
+      data.resellerApplications = Array.isArray(data.resellerApplications) ? data.resellerApplications : [];
+      const row = data.resellerApplications.find(app => String(app.id) === String(applicationId));
+      if (!row) return { error: 'Application not found', status: 404 };
+      row.resolved = true;
+      row.resolvedAt = Date.now();
+      await writeDbFast(data);
+      return { data, application: row };
+    });
+    if (outcome.error) return res.status(outcome.status || 400).json({ error: outcome.error });
+    res.json({
+      success: true,
+      application: outcome.application,
+      resellerApplications: outcome.data.resellerApplications || [],
+      data: safeDataForSession(outcome.data, session)
+    });
+  } catch (e) {
+    console.error('Resolve reseller application error:', e.message);
+    res.status(500).json({ error: 'Could not update application' });
   }
 });
 
