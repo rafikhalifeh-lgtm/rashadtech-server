@@ -5470,6 +5470,7 @@ function setLang(lang,silent){
   });
   if(typeof renderSubs==='function'&&currentUser)renderSubs();
   if(typeof renderProducts==='function'&&canShowStorePrices())renderProducts(document.querySelector('.ftab.active')?.dataset?.cat||'all');
+  if(typeof updateResellerPromoBanner==='function')updateResellerPromoBanner();
   if(!silent)showToast(lang==='ar'?'تم تغيير اللغة':'Language changed');
 }
 
