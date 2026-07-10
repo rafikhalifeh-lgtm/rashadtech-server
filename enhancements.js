@@ -27,7 +27,7 @@ const {
   deliverSupportEscalationEmail,
   resolveSupportInbox
 } = require('./emailDelivery');
-const { getPublicSmsCatalogFromData } = require('./smsRoutes');
+const { getPublicSmsCatalogFromData } = require('./smsCatalogPublic');
 
 const PRICE_CHANGE_LOG_KEY = 'priceChangeLog';
 const LOW_STOCK_THRESHOLD = 2;

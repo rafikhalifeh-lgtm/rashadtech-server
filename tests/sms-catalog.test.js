@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { getPublicSmsCatalogFromData } = require('../smsRoutes');
+const { getPublicSmsCatalogFromData } = require('../smsCatalogPublic');
 
 test('public SMS catalog hidden when store disabled', () => {
   const res = getPublicSmsCatalogFromData({
