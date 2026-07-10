@@ -1,6 +1,10 @@
 const grizzlySms = require('./grizzlySms');
-
-const SMS_CONFIG_KEY = 'smsConfig';
+const {
+  SMS_CONFIG_KEY,
+  readSmsConfig,
+  buildPublicSmsCatalogResponse,
+  getPublicSmsCatalogFromData
+} = require('./smsCatalogPublic');
 const SMS_STARTER_CATALOG = [
   { service: 'wa', serviceName: 'WhatsApp', country: '73', countryName: 'Brazil' },
   { service: 'bye', serviceName: 'WhatsApp Business', country: '73', countryName: 'Brazil' },
@@ -29,21 +33,6 @@ function findSmsCatalogItem(config, catalogId) {
 
 function findUserSmsOrder(user, orderId, orderIdsMatch) {
   return (user.orders || []).find(order => orderIdsMatch(order.id, orderId) && order.productId === 'sms') || null;
-}
-
-function buildPublicSmsCatalogResponse(config) {
-  if (!config.storeEnabled) return { success: true, enabled: false, catalog: [] };
-  const catalog = (config.catalog || [])
-    .filter(item => item.enabled !== false && grizzlySms.isPopularSmsService(item.service))
-    .map(item => ({
-      id: item.id,
-      service: item.service,
-      serviceName: item.serviceName,
-      country: item.country,
-      countryName: item.countryName,
-      sellPrice: Number(item.sellPrice || 0)
-    }));
-  return { success: true, enabled: true, catalog };
 }
 
 function registerSmsRoutes(app, deps) {
@@ -657,10 +646,6 @@ function registerSmsRoutes(app, deps) {
       res.status(500).json({ error: 'Could not check SMS status' });
     }
   });
-}
-
-function getPublicSmsCatalogFromData(data) {
-  return buildPublicSmsCatalogResponse(readSmsConfig(data));
 }
 
 module.exports = {

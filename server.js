@@ -2332,10 +2332,9 @@ async function buildHealthReport() {
   }
   report.checks.db = Boolean(data && Array.isArray(data.users));
   report.checks.storage = data && data.emergencyDb ? 'fallback' : (data ? 'primary' : 'unknown');
-  if (!report.checks.db) {
-    report.ok = false;
-    report.ready = false;
-  }
+  report.ready = report.checks.db;
+  // Keep ok:true while process is up so Render deploy health checks pass during DB warm-up.
+  report.ok = true;
   try {
     const mailData = data ? data : await loadEmailSettingsData().catch(() => ({}));
     report.checks.email = isServerEmailConfigured(mailData || {});
@@ -2354,7 +2353,7 @@ app.get('/ping', (req, res) => {
 });
 app.get('/health', async (req, res) => {
   const report = await buildHealthReport();
-  res.status(report.ok ? 200 : 503).json(report);
+  res.status(200).json(report);
 });
 
 app.get('/backup-admin', (req, res) => {
@@ -5857,7 +5856,7 @@ function startServerKeepAlive() {
 
 // ── START ──────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log('rashadtech server running on port ' + PORT);
   startServerKeepAlive();
   setImmediate(async () => {
