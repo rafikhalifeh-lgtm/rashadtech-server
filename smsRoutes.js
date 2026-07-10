@@ -31,6 +31,21 @@ function findUserSmsOrder(user, orderId, orderIdsMatch) {
   return (user.orders || []).find(order => orderIdsMatch(order.id, orderId) && order.productId === 'sms') || null;
 }
 
+function buildPublicSmsCatalogResponse(config) {
+  if (!config.storeEnabled) return { success: true, enabled: false, catalog: [] };
+  const catalog = (config.catalog || [])
+    .filter(item => item.enabled !== false && grizzlySms.isPopularSmsService(item.service))
+    .map(item => ({
+      id: item.id,
+      service: item.service,
+      serviceName: item.serviceName,
+      country: item.country,
+      countryName: item.countryName,
+      sellPrice: Number(item.sellPrice || 0)
+    }));
+  return { success: true, enabled: true, catalog };
+}
+
 function registerSmsRoutes(app, deps) {
   const {
     requireSession,
@@ -57,21 +72,6 @@ function registerSmsRoutes(app, deps) {
       Array.isArray(config.catalog) ? config.catalog.length : 0,
       Number(config.catalogVersion || 0)
     ].join(':');
-  }
-
-  function buildPublicSmsCatalogResponse(config) {
-    if (!config.storeEnabled) return { success: true, enabled: false, catalog: [] };
-    const catalog = (config.catalog || [])
-      .filter(item => item.enabled !== false && grizzlySms.isPopularSmsService(item.service))
-      .map(item => ({
-        id: item.id,
-        service: item.service,
-        serviceName: item.serviceName,
-        country: item.country,
-        countryName: item.countryName,
-        sellPrice: Number(item.sellPrice || 0)
-      }));
-    return { success: true, enabled: true, catalog };
   }
 
   function getCachedPublicSmsCatalog(config) {
@@ -659,9 +659,14 @@ function registerSmsRoutes(app, deps) {
   });
 }
 
+function getPublicSmsCatalogFromData(data) {
+  return buildPublicSmsCatalogResponse(readSmsConfig(data));
+}
+
 module.exports = {
   SMS_CONFIG_KEY,
   grizzlySms,
   readSmsConfig,
+  getPublicSmsCatalogFromData,
   registerSmsRoutes
 };

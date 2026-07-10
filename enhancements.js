@@ -27,6 +27,7 @@ const {
   deliverSupportEscalationEmail,
   resolveSupportInbox
 } = require('./emailDelivery');
+const { getPublicSmsCatalogFromData } = require('./smsRoutes');
 
 const PRICE_CHANGE_LOG_KEY = 'priceChangeLog';
 const LOW_STOCK_THRESHOLD = 2;
@@ -411,7 +412,8 @@ function registerEnhancements(app, deps) {
         tier: 'retail',
         stockCounts,
         stockBlocks: data.retailStockBlocks || {},
-        retailStockBlocks: data.retailStockBlocks || {}
+        retailStockBlocks: data.retailStockBlocks || {},
+        sms: getPublicSmsCatalogFromData(data)
       });
     } catch (e) {
       res.status(500).json({ error: 'Could not load storefront' });

@@ -844,6 +844,7 @@ So your EmailJS template will receive the user email and verification code corre
           <div class="ftab" onclick="filterProd('games',this)" data-cat="games">🎮 Games</div>
           <div class="ftab" onclick="filterProd('tools',this)" data-cat="tools">Tools</div>
           <div class="ftab" onclick="filterProd('giftcards',this)" data-cat="giftcards">Gift Cards</div>
+          <div class="ftab" onclick="filterProd('sms',this)" data-cat="sms">📱 SMS</div>
         </div>
         <div class="products-grid" id="products-grid"></div>
         <footer class="store-site-footer" id="store-site-footer">
@@ -2445,7 +2446,17 @@ function applyStorefrontSnapshot(payload,opts={}){
     _jbCache.retailStockBlocks=payload.retailStockBlocks||payload.stockBlocks;
     _jbCache.stockBlocks=payload.stockBlocksReseller||_jbCache.stockBlocks||{};
   }
+  if(payload.sms)applySmsStorefrontSnapshot(payload.sms);
   if(!opts.fromCache)cacheRetailStorefront(payload);
+}
+function applySmsStorefrontSnapshot(sms){
+  if(!sms)return;
+  if(!_jbCache)_jbCache={};
+  if(sms.enabled&&Array.isArray(sms.catalog)&&sms.catalog.length){
+    _jbCache.smsConfig={enabled:true,storeEnabled:true,catalog:sms.catalog};
+  }else{
+    _jbCache.smsConfig={enabled:Boolean(sms.enabled),storeEnabled:false,catalog:[]};
+  }
 }
 async function loadStorefront(){
   try{
@@ -2552,6 +2563,7 @@ function enterPublicStore(){
   document.querySelector('#page-app .snav')?.classList.add('active');
   const hadCache=loadCachedRetailStorefront();
   if(!hadCache)renderProducts('all');
+  refreshSmsStoreTab(true);
   loadStorefront().then(()=>{renderProducts('all');updateResellerUi();});
 }
 
@@ -4373,6 +4385,10 @@ function filterSmsPicker(q){
     row.style.display=!query||text.includes(query)?'':'none';
   });
 }
+function smsHubDescFromCatalog(catalog){
+  const names=[...new Set(catalog.map(x=>x.serviceName||x.service).filter(Boolean))];
+  return names.slice(0,4).join(' · ')||(currentLang==='ar'?'أرقام تحقق فورية':'Instant verification numbers');
+}
 function smsHubCardHtml(){
   const catalog=getSmsStoreCatalog();
   if(!catalog.length)return '';
@@ -4380,20 +4396,21 @@ function smsHubCardHtml(){
   const minPrice=prices.length?Math.min(...prices):0;
   const services=[...new Set(catalog.map(x=>String(x.service||'').toLowerCase()).filter(Boolean))].slice(0,5);
   const icons=services.map(s=>smsServiceIconHtml(s,30)).join('');
+  const guestCta=!currentUser?(currentLang==='ar'?'سجّل للشراء':'Sign in to buy'):'Choose';
   return `<div class="pcard" onclick="openSmsStoreModal()">
-    <div class="pcard-top" style="background:linear-gradient(135deg,#7c3aed,#5b21b6);display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;padding:14px;min-height:88px">${icons}</div>
+    <div class="pcard-top" style="background:linear-gradient(135deg,#7c3aed,#5b21b6);display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;padding:14px;min-height:88px">${icons}<div class="new-badge">New</div></div>
     <div class="pcard-body">
       <div class="pcard-name">SMS Numbers</div>
-      <div class="pcard-desc">WhatsApp · WhatsApp Business · Telegram · TikTok</div>
+      <div class="pcard-desc">${esc(smsHubDescFromCatalog(catalog))}</div>
       <div class="pcard-footer">
         <div><div class="pfrom">from</div><div class="pprice">${fmt(minPrice)}</div></div>
-        <button class="btn-buy" onclick="event.stopPropagation();openSmsStoreModal()">Choose</button>
+        <button class="btn-buy" onclick="event.stopPropagation();openSmsStoreModal()">${guestCta}</button>
       </div>
     </div>
   </div>`;
 }
 function openSmsStoreModal(){
-  if(!currentUser){showToast('Sign in first');switchTab('store',null);return;}
+  if(!currentUser){goToAuth('login');return;}
   const catalog=getSmsStoreCatalog();
   if(!catalog.length){showToast('SMS numbers are not available yet');return;}
   const apps=getSmsAppsFromCatalog(catalog);
@@ -4413,12 +4430,7 @@ async function refreshSmsStoreTab(force){
   try{
     const r=await fetch(RT_SERVER+'/sms/catalog');
     const j=await r.json();
-    if(j.success&&j.enabled&&Array.isArray(j.catalog)&&j.catalog.length){
-      if(!_jbCache)_jbCache={};
-      _jbCache.smsConfig={enabled:true,storeEnabled:true,catalog:j.catalog};
-    }else if(j.success&&!j.enabled){
-      if(_jbCache?.smsConfig)_jbCache.smsConfig={..._jbCache.smsConfig,storeEnabled:false,catalog:[]};
-    }
+    if(j.success)applySmsStorefrontSnapshot(j);
   }catch(e){}
   const activeCat=document.querySelector('.ftab.active')?.dataset?.cat||'all';
   if(typeof renderProducts==='function'&&document.getElementById('tab-store')?.classList.contains('active'))renderProducts(activeCat);
@@ -4450,10 +4462,14 @@ function renderProducts(cat){
     grid.innerHTML=storePricesLoadingHtml();
     return;
   }
-  const list=cat==='all'?products:products.filter(p=>p.cat===cat);
   const smsHub=smsHubCardHtml();
+  if(cat==='sms'){
+    grid.innerHTML=smsHub||`<div class="empty-state" style="grid-column:1/-1;padding:48px 16px">${currentLang==='ar'?'أرقام SMS غير متوفرة حالياً':'SMS numbers are not available right now'}</div>`;
+    return;
+  }
+  const list=cat==='all'?products:products.filter(p=>p.cat===cat);
   let html='';
-  let smsInserted=false;
+  if(cat==='all'&&smsHub)html+=smsHub;
   list.forEach(p=>{
     const tot=getProductAvail(p);
     let minP=p.hasUserTypes?Math.min(...p.userTypes.map(ut=>Math.min(...ut.durations.map(d=>d.price)))):Math.min(...(p.plans||[]).map(pl=>pl.price));
@@ -4464,12 +4480,7 @@ function renderProducts(cat){
       </div><div class="pcard-body"><div class="pcard-name">${p.name}</div><div class="pcard-desc">${p.desc}</div>
       <div class="pcard-footer"><div><div class="pfrom">from</div><div class="pprice">${fmt(minP)}</div></div>
       <button class="btn-buy" ${blocked?'disabled':''} onclick="event.stopPropagation();openBuy('${p.id}',null)">${blocked?'Unavailable':'Buy'}</button></div></div></div>`;
-    if(cat==='all'&&smsHub&&!smsInserted&&(p.id==='shahid'||(p.id==='netflix'&&!list.some(x=>x.id==='shahid')))){
-      html+=smsHub;
-      smsInserted=true;
-    }
   });
-  if(cat==='all'&&smsHub&&!smsInserted)html+=smsHub;
   grid.innerHTML=html;
 }
 function smsDisclaimerHtml(){
