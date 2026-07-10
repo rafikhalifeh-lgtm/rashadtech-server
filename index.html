@@ -115,6 +115,18 @@ input,button,select,textarea{font-family:var(--font)}
 .guest-steps{display:grid;gap:10px;margin:14px 0}
 .guest-step{display:flex;gap:10px;align-items:flex-start;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;font-size:13px}
 .guest-step-num{width:24px;height:24px;border-radius:50%;background:var(--red);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0}
+.reseller-promo{margin-bottom:16px;padding:14px 16px;border-radius:var(--radius-lg);border:1px solid var(--green-border);background:linear-gradient(135deg,var(--green-bg),var(--bg2));display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap}
+.reseller-promo-icon{font-size:28px;line-height:1;flex-shrink:0}
+.reseller-promo-body{flex:1;min-width:200px}
+.reseller-promo-title{font-size:14px;font-weight:700;color:var(--text);margin-bottom:4px}
+.reseller-promo-text{font-size:12px;color:var(--text2);line-height:1.55;margin-bottom:10px}
+.reseller-promo-actions{display:flex;flex-wrap:wrap;gap:8px}
+.reseller-promo-actions button{font-size:12px;font-weight:600;padding:8px 12px;border-radius:var(--radius-sm);cursor:pointer}
+.reseller-promo-actions .btn-reseller-primary{background:var(--green);color:#fff;border:none}
+.reseller-promo-actions .btn-reseller-secondary{background:var(--bg3);color:var(--text);border:1px solid var(--border)}
+.reseller-apply-tabs{display:flex;gap:8px;margin-bottom:14px}
+.reseller-apply-tab{flex:1;padding:10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text2);font-size:12px;font-weight:600;cursor:pointer;text-align:center}
+.reseller-apply-tab.active{border-color:var(--green-border);background:var(--green-bg);color:var(--green)}
 .legal-modal-body{max-height:min(70vh,560px);overflow:auto;padding:20px 24px;font-size:13px;line-height:1.65;color:var(--text2)}
 .legal-modal-body h4{margin:18px 0 8px;font-size:14px;color:var(--text)}
 .legal-modal-body h4:first-child{margin-top:0}
@@ -756,6 +768,7 @@ So your EmailJS template will receive the user email and verification code corre
       <a href="/help/">Help</a>
       <a href="https://wa.me/96179306701" data-rt-wa target="_blank" rel="noopener">Support</a>
     </div>
+    <p style="margin-top:14px;font-size:12px;color:var(--text3);line-height:1.6">🏪 <b>Wholesale / reseller?</b> Buy at lower prices, manage your own customers, and resell subscriptions. <a href="#" onclick="openResellerApplyModal('upgrade');return false" style="color:var(--green)">Apply with your retail account</a> or <a href="#" onclick="openResellerApplyModal('new');return false" style="color:var(--green)">submit a business application</a>.</p>
   </footer>
   </div>
 </div>
@@ -836,6 +849,18 @@ So your EmailJS template will receive the user email and verification code corre
       <div id="tab-store" class="tab-pane active">
         <div class="pg-title" data-t="store">Store</div>
         <div class="pg-sub" id="store-subtitle" data-t="storeSub">Instant delivery · Pay from your wallet</div>
+        <div class="reseller-promo" id="reseller-promo-banner" style="display:none">
+          <div class="reseller-promo-icon">🏪</div>
+          <div class="reseller-promo-body">
+            <div class="reseller-promo-title" id="reseller-promo-title">Wholesale reseller program</div>
+            <div class="reseller-promo-text" id="reseller-promo-text">Buy at lower wholesale prices, track your own customers, and resell Netflix, Shahid, Disney+ and more. Approval is manual — we review every application.</div>
+            <div class="reseller-promo-actions">
+              <button type="button" class="btn-reseller-primary" onclick="openResellerApplyModal('upgrade')">I have a retail account</button>
+              <button type="button" class="btn-reseller-secondary" onclick="openResellerApplyModal('new')">New business application</button>
+              <button type="button" class="btn-reseller-secondary" onclick="openResellerWhatsApp()">WhatsApp us</button>
+            </div>
+          </div>
+        </div>
         <div class="filter-row">
           <div class="ftab active" onclick="filterProd('all',this)" data-cat="all">All</div>
           <div class="ftab" onclick="filterProd('video',this)" data-cat="video">Video</div>
@@ -985,6 +1010,7 @@ So your EmailJS template will receive the user email and verification code corre
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
       <button onclick="switchAdminTab('pending',null);setActiveAdminNav('abn-more');toggleAdminMore()" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 8px;cursor:pointer;color:var(--text);font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">⏳</span><span data-t="pending">Pending</span></button>
       <button onclick="switchAdminTab('gameorders',null);setActiveAdminNav('abn-more');toggleAdminMore()" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 8px;cursor:pointer;color:var(--text);font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">🎮</span><span data-t="games">Games</span></button>
+      <button onclick="switchAdminTab('reseller-apps',null);setActiveAdminNav('abn-more');toggleAdminMore()" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 8px;cursor:pointer;color:var(--text);font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">🏪</span><span>Resellers</span></button>
       <button onclick="switchAdminTab('requests',null);setActiveAdminNav('abn-more');toggleAdminMore()" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 8px;cursor:pointer;color:var(--text);font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">💡</span><span data-t="requests">Requests</span></button>
       <button onclick="switchAdminTab('expiry',null);setActiveAdminNav('abn-more');toggleAdminMore()" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 8px;cursor:pointer;color:var(--text);font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">⏰</span><span data-t="expiry">Expiry</span></button>
       <button onclick="switchAdminTab('dashboard',null);setActiveAdminNav('abn-more');toggleAdminMore()" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 8px;cursor:pointer;color:var(--text);font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">📊</span><span data-t="dashboard">Dashboard</span></button>
@@ -1003,6 +1029,7 @@ So your EmailJS template will receive the user email and verification code corre
       <button class="snav" onclick="switchAdminTab('customers',this)"><i class="ti ti-users"></i><span data-t="customers">All Customers</span></button>
       <button class="snav" onclick="switchAdminTab('wallets',this)"><i class="ti ti-wallet"></i><span data-t="wallets">Wallets</span></button>
       <button class="snav" onclick="switchAdminTab('requests',this)"><i class="ti ti-bulb"></i><span data-t="requests">Requests</span></button>
+      <button class="snav" onclick="switchAdminTab('reseller-apps',this)"><i class="ti ti-building-store"></i><span>Reseller Apps</span></button>
       <button class="snav" onclick="switchAdminTab('topupreqs',this)"><i class="ti ti-cash"></i><span data-t="topupreqs">Topup Requests</span></button>
       <button class="snav" onclick="switchAdminTab('pending',this)"><span data-t="pendingOrders">⏳ Pending Orders</span></button>
       <button class="snav" onclick="switchAdminTab('gameorders',this)"><i class="ti ti-device-gamepad"></i><span data-t="gameorders">Game Orders</span></button>
@@ -1144,6 +1171,12 @@ So your EmailJS template will receive the user email and verification code corre
         <div class="pg-title">Wallet Management</div>
         <div class="pg-sub">Credit customer wallets after payment confirmation</div>
         <div class="card" id="wallets-list"><div class="empty-state" style="padding:32px"><i class="ti ti-wallet"></i>No registered users yet.</div></div>
+      </div>
+      <!-- ADMIN RESELLER APPLICATIONS -->
+      <div id="admin-reseller-apps" class="tab-pane">
+        <div class="pg-title">Reseller Applications</div>
+        <div class="pg-sub">Retail upgrade requests and new wholesale business applications</div>
+        <div class="card" id="admin-reseller-apps-list"><div class="empty-state" style="padding:32px"><i class="ti ti-building-store"></i>No reseller applications yet.</div></div>
       </div>
       <!-- ADMIN REQUESTS -->
       <div id="admin-requests" class="tab-pane">
@@ -1293,6 +1326,43 @@ So your EmailJS template will receive the user email and verification code corre
     </div>
     <button class="btn-primary" style="width:100%;margin-bottom:8px" onclick="closeModal('guest-purchase-modal');goToAuth('signup')">Create free account</button>
     <button class="btn-secondary" style="width:100%" onclick="closeModal('guest-purchase-modal');goToAuth('login')">I already have an account</button>
+  </div>
+</div></div>
+
+<div class="modal-wrap" id="reseller-apply-modal" onclick="if(event.target===this)closeModal('reseller-apply-modal')"><div class="modal" style="max-width:460px">
+  <div class="modal-head"><h3 id="reseller-apply-title">Become a reseller</h3><button class="mclose" onclick="closeModal('reseller-apply-modal')">✕</button></div>
+  <div class="modal-body" style="padding:20px 24px">
+    <p id="reseller-apply-intro" style="font-size:12px;color:var(--text2);line-height:1.55;margin:0 0 14px">Wholesale accounts get lower prices and a customer manager. Tell us how you sell — we reply within 24 hours.</p>
+    <div class="reseller-apply-tabs">
+      <button type="button" class="reseller-apply-tab active" id="reseller-tab-upgrade" onclick="setResellerApplyMode('upgrade')">Retail account upgrade</button>
+      <button type="button" class="reseller-apply-tab" id="reseller-tab-new" onclick="setResellerApplyMode('new')">New business</button>
+    </div>
+    <div id="reseller-form-upgrade">
+      <div class="field"><label>Retail account email *</label><input type="email" id="reseller-upgrade-email" placeholder="The email you signed up with"></div>
+      <div class="field"><label>Full name</label><input type="text" id="reseller-upgrade-name" placeholder="Your name"></div>
+      <div class="field"><label>Phone / WhatsApp</label><input type="text" id="reseller-upgrade-phone" placeholder="+961..."></div>
+      <div class="field"><label>How do you sell? (optional)</label><input type="text" id="reseller-upgrade-notes" placeholder="e.g. Telegram shop, 50+ customers/month"></div>
+    </div>
+    <div id="reseller-form-new" style="display:none">
+      <div class="field"><label>Company / shop name *</label><input type="text" id="reseller-new-company" placeholder="Your business name"></div>
+      <div class="field"><label>Contact person *</label><input type="text" id="reseller-new-name" placeholder="Full name"></div>
+      <div class="field"><label>Email *</label><input type="email" id="reseller-new-email" placeholder="Business email"></div>
+      <div class="field"><label>Phone / WhatsApp *</label><input type="text" id="reseller-new-phone" placeholder="+961..."></div>
+      <div class="field"><label>Country / city</label><input type="text" id="reseller-new-location" placeholder="Lebanon, Beirut"></div>
+      <div class="field"><label>How you sell</label>
+        <select id="reseller-new-channel" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text);font-size:13px">
+          <option value="shop">Physical shop</option>
+          <option value="online">Website / online store</option>
+          <option value="telegram">Telegram / social</option>
+          <option value="mixed">Mixed channels</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div class="field"><label>Estimated monthly sales (optional)</label><input type="text" id="reseller-new-volume" placeholder="e.g. 30–100 subscriptions/month"></div>
+      <div class="field"><label>Additional info</label><input type="text" id="reseller-new-notes" placeholder="Products you focus on, existing customer base…"></div>
+    </div>
+    <button class="btn-primary" style="width:100%;margin-top:4px" id="reseller-apply-submit" onclick="submitResellerApplication()">Submit application</button>
+    <button class="btn-secondary" style="width:100%" onclick="openResellerWhatsApp();closeModal('reseller-apply-modal')">Prefer WhatsApp? Message us</button>
   </div>
 </div></div>
 
@@ -1945,6 +2015,7 @@ function applyDataSnapshot(data){
   users=Array.isArray(_jbCache.users)?_jbCache.users:[];
   accountStock=_jbCache.stock||{};
   globalRequests=_jbCache.requests||[];
+  globalResellerApplications=_jbCache.resellerApplications||[];
   topupRequests=_jbCache.topupreqs||[];
   dataLoaded=true;
   if(sessionEmail){
@@ -2361,6 +2432,8 @@ let _adminPriceTier='reseller';
 let _adminStockTier='reseller';
 let _appliedPriceTier=null;
 const STOREFRONT_CACHE_KEY='rt_storefront_v2';
+const SMS_CATALOG_CACHE_KEY='rt_sms_catalog_v1';
+const SMS_CATALOG_CACHE_MS=10*60*1000;
 const RETAIL_CATALOG_VERSION=2;
 const STOREFRONT_CACHE_MS=60*60*1000;
 
@@ -2423,6 +2496,140 @@ function updateResellerUi(){
     else if(reseller)sub.textContent=currentLang==='ar'?'أسعار الجملة · شراء عبر المحفظة':'Wholesale prices · Pay from your wallet';
     else sub.textContent=t('storeSub','Instant delivery · Pay from your wallet');
   }
+  updateResellerPromoBanner();
+}
+const RESELLER_PROMO_COPY={
+  en:{title:'Wholesale reseller program',text:'Buy at lower wholesale prices, track your own customers, and resell Netflix, Shahid, Disney+ and more. Approval is manual — we review every application.'},
+  ar:{title:'برنامج موزّعين بالجملة',text:'اشترِ بأسعار جملة أقل، أدر عملاءك، وأعد بيع Netflix وShahid وDisney+ وغيرها. الموافقة يدوية — نراجع كل طلب.'}
+};
+let resellerApplyMode='upgrade';
+function shouldShowResellerPromo(){
+  if(isAdmin)return false;
+  if(userSeesResellerPrices())return false;
+  return true;
+}
+function updateResellerPromoBanner(){
+  const el=document.getElementById('reseller-promo-banner');
+  if(!el)return;
+  const show=shouldShowResellerPromo();
+  el.style.display=show?'flex':'none';
+  if(!show)return;
+  const copy=RESELLER_PROMO_COPY[currentLang==='ar'?'ar':'en']||RESELLER_PROMO_COPY.en;
+  const title=document.getElementById('reseller-promo-title');
+  const text=document.getElementById('reseller-promo-text');
+  if(title)title.textContent=copy.title;
+  if(text)text.textContent=copy.text;
+}
+function setResellerApplyMode(mode){
+  resellerApplyMode=mode==='new'?'new':'upgrade';
+  document.getElementById('reseller-tab-upgrade')?.classList.toggle('active',resellerApplyMode==='upgrade');
+  document.getElementById('reseller-tab-new')?.classList.toggle('active',resellerApplyMode==='new');
+  document.getElementById('reseller-form-upgrade').style.display=resellerApplyMode==='upgrade'?'':'none';
+  document.getElementById('reseller-form-new').style.display=resellerApplyMode==='new'?'':'none';
+}
+function openResellerApplyModal(mode){
+  setResellerApplyMode(mode||'upgrade');
+  const emailEl=document.getElementById('reseller-upgrade-email');
+  if(emailEl&&currentUser?.email)emailEl.value=currentUser.email;
+  const nameEl=document.getElementById('reseller-upgrade-name');
+  if(nameEl&&currentUser?.name)nameEl.value=currentUser.name;
+  const phoneEl=document.getElementById('reseller-upgrade-phone');
+  if(phoneEl&&currentUser?.phone)phoneEl.value=currentUser.phone;
+  if(resellerApplyMode==='new'){
+    const newEmail=document.getElementById('reseller-new-email');
+    if(newEmail&&currentUser?.email)newEmail.value=currentUser.email;
+    const newName=document.getElementById('reseller-new-name');
+    if(newName&&currentUser?.name)newName.value=currentUser.name;
+    const newPhone=document.getElementById('reseller-new-phone');
+    if(newPhone&&currentUser?.phone)newPhone.value=currentUser.phone;
+  }
+  openModal('reseller-apply-modal');
+}
+function openResellerWhatsApp(){
+  const msg=encodeURIComponent(currentLang==='ar'
+    ?'مرحباً، أريد التقدّم لحساب موزّع (جملة) على rashadtech.tv'
+    :'Hi, I would like to apply for a wholesale reseller account on rashadtech.tv');
+  const wa=document.querySelector('[data-rt-wa]')?.getAttribute('href')||'https://wa.me/96179306701';
+  const base=wa.split('?')[0];
+  window.open(base+'?text='+msg,'_blank','noopener');
+}
+async function submitResellerApplication(){
+  const btn=document.getElementById('reseller-apply-submit');
+  if(btn)btn.disabled=true;
+  try{
+    const body={type:resellerApplyMode};
+    if(resellerApplyMode==='upgrade'){
+      body.retailEmail=document.getElementById('reseller-upgrade-email')?.value?.trim()||'';
+      body.contactName=document.getElementById('reseller-upgrade-name')?.value?.trim()||'';
+      body.phone=document.getElementById('reseller-upgrade-phone')?.value?.trim()||'';
+      body.notes=document.getElementById('reseller-upgrade-notes')?.value?.trim()||'';
+      if(!body.retailEmail){showToast('Please enter your retail account email');return;}
+    }else{
+      body.companyName=document.getElementById('reseller-new-company')?.value?.trim()||'';
+      body.contactName=document.getElementById('reseller-new-name')?.value?.trim()||'';
+      body.email=document.getElementById('reseller-new-email')?.value?.trim()||'';
+      body.phone=document.getElementById('reseller-new-phone')?.value?.trim()||'';
+      body.location=document.getElementById('reseller-new-location')?.value?.trim()||'';
+      body.channel=document.getElementById('reseller-new-channel')?.value||'';
+      body.monthlyVolume=document.getElementById('reseller-new-volume')?.value?.trim()||'';
+      body.notes=document.getElementById('reseller-new-notes')?.value?.trim()||'';
+      if(!body.companyName||!body.contactName||!body.email||!body.phone){
+        showToast('Please fill company name, contact, email and phone');
+        return;
+      }
+    }
+    const headers={'Content-Type':'application/json'};
+    if(authToken)headers.Authorization='Bearer '+authToken;
+    const r=await fetch(RT_SERVER+'/public/reseller-application',{method:'POST',headers,body:JSON.stringify(body)});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok||!j.success)throw new Error(j.error||'Could not submit application');
+    closeModal('reseller-apply-modal');
+    showToast(j.duplicate?'You already submitted an application — we will contact you':'✓ Application sent! We will contact you within 24h');
+  }catch(e){
+    showToast('⚠️ '+(e.message||'Could not submit'));
+  }finally{
+    if(btn)btn.disabled=false;
+  }
+}
+let globalResellerApplications=[];
+function renderAdminResellerApplications(){
+  const el=document.getElementById('admin-reseller-apps-list');
+  if(!el)return;
+  const list=Array.isArray(globalResellerApplications)?globalResellerApplications:[];
+  const open=list.filter(a=>a&&!a.resolved);
+  if(!open.length){
+    el.innerHTML='<div class="empty-state" style="padding:32px"><i class="ti ti-building-store"></i>No open reseller applications.</div>';
+    return;
+  }
+  el.innerHTML=open.map(a=>{
+    const isUpgrade=a.type==='upgrade';
+    const title=isUpgrade?`Upgrade: ${esc(a.retailEmail||a.email||'—')}`:`New: ${esc(a.companyName||'—')}`;
+    const lines=[
+      isUpgrade?`Retail email: <b>${esc(a.retailEmail||'—')}</b>`:`Company: <b>${esc(a.companyName||'—')}</b>`,
+      `Contact: ${esc(a.contactName||'—')} · ${esc(a.phone||'—')}`,
+      !isUpgrade?`Email: ${esc(a.email||'—')}`:'',
+      !isUpgrade&&a.location?`Location: ${esc(a.location)}`:'',
+      !isUpgrade&&a.channel?`Channel: ${esc(a.channel)}`:'',
+      a.monthlyVolume?`Volume: ${esc(a.monthlyVolume)}`:'',
+      a.notes?`Notes: ${esc(a.notes)}`:'',
+      `Submitted: ${esc(a.date||'—')}`
+    ].filter(Boolean).join('<br>');
+    return `<div class="admin-wallet-row" style="align-items:flex-start">
+      <div class="aw-info" style="flex:1"><div class="aw-name">${isUpgrade?'🔄':'🏪'} ${title}</div>
+      <div class="aw-email" style="line-height:1.55;margin-top:6px">${lines}</div></div>
+      <button class="aabtn" ${jsOnClick('resolveResellerApplication',a.id)}>✓ Done</button>
+    </div>`;
+  }).join('');
+}
+async function resolveResellerApplication(id){
+  if(!confirm('Mark this reseller application as handled?'))return;
+  try{
+    const j=await rtApi('/admin/resolve-reseller-application',{method:'POST',body:JSON.stringify({applicationId:id})});
+    if(j.data)applyDataSnapshot(j.data);
+    else if(Array.isArray(j.resellerApplications))globalResellerApplications=j.resellerApplications;
+    renderAdminResellerApplications();
+    showToast('✓ Application marked done');
+  }catch(e){showToast('⚠️ '+(e.message||'Could not update'));}
 }
 function goToAuth(view){
   isGuestMode=false;
@@ -2457,6 +2664,17 @@ function applySmsStorefrontSnapshot(sms){
   }else{
     _jbCache.smsConfig={enabled:Boolean(sms.enabled),storeEnabled:false,catalog:[]};
   }
+  try{sessionStorage.setItem(SMS_CATALOG_CACHE_KEY,JSON.stringify({ts:Date.now(),payload:sms}));}catch(e){}
+}
+function loadCachedSmsCatalog(){
+  try{
+    const raw=sessionStorage.getItem(SMS_CATALOG_CACHE_KEY);
+    if(!raw)return false;
+    const cached=JSON.parse(raw);
+    if(!cached?.payload||Date.now()-Number(cached.ts||0)>SMS_CATALOG_CACHE_MS)return false;
+    applySmsStorefrontSnapshot(cached.payload);
+    return true;
+  }catch(e){return false;}
 }
 async function loadStorefront(){
   try{
@@ -2562,7 +2780,9 @@ function enterPublicStore(){
   document.querySelectorAll('#page-app .snav').forEach(b=>b.classList.remove('active'));
   document.querySelector('#page-app .snav')?.classList.add('active');
   const hadCache=loadCachedRetailStorefront();
+  loadCachedSmsCatalog();
   if(!hadCache)renderProducts('all');
+  else if(getSmsStoreCatalog().length)renderProducts('all');
   refreshSmsStoreTab(true);
   loadStorefront().then(()=>{renderProducts('all');updateResellerUi();});
 }
@@ -4271,7 +4491,7 @@ async function switchAdminTab(name,el){
   if(el)el.classList.add('active');
   const amap={stock:'abn-stock',customers:'abn-customers',wallets:'abn-wallets',topupreqs:'abn-topupreqs',requests:'abn-requests',expiry:'abn-more',dashboard:'abn-dashboard',pending:'abn-more',gameorders:'abn-more',prices:'abn-more',sms:'abn-more'};
   if(amap[name])setActiveAdminNav(amap[name]);
-  const needsFresh=['topupreqs','gameorders','dashboard','requests'].includes(name);
+  const needsFresh=['topupreqs','gameorders','dashboard','requests','reseller-apps'].includes(name);
   if(!_jbCache||!users.length||needsFresh){
     await loadData();
   }else if(name!=='pending'){
@@ -4289,6 +4509,7 @@ function renderActiveAdminTab(name){
   }
   if(name==='customers')renderAdminCustomers();
   if(name==='requests')renderAdminRequestsFresh();
+  if(name==='reseller-apps')renderAdminResellerApplications();
   if(name==='expiry'){renderAdminExpiry();renderNetflixRenewalAlerts();}
   if(name==='topupreqs')renderTopupRequests();
   if(name==='gameorders')renderGameOrders();
