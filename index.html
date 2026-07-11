@@ -2479,10 +2479,10 @@ let _rtRetailPriceCatalog=null;
 let _adminPriceTier='reseller';
 let _adminStockTier='reseller';
 let _appliedPriceTier=null;
-const STOREFRONT_CACHE_KEY='rt_storefront_v2';
+const STOREFRONT_CACHE_KEY='rt_storefront_v3';
 const SMS_CATALOG_CACHE_KEY='rt_sms_catalog_v2';
 const SMS_CATALOG_CACHE_MS=10*60*1000;
-const RETAIL_CATALOG_VERSION=2;
+const RETAIL_CATALOG_VERSION=3;
 const STOREFRONT_CACHE_MS=60*60*1000;
 
 function expectedPriceTier(){
@@ -2495,7 +2495,8 @@ function canShowStorePrices(){
 function cacheRetailStorefront(payload){
   if(!payload||!payload.catalog)return;
   try{
-    sessionStorage.setItem(STOREFRONT_CACHE_KEY,JSON.stringify({ts:Date.now(),payload:{...payload,catalogVersion:RETAIL_CATALOG_VERSION}}));
+    const {sms,...rest}=payload;
+    sessionStorage.setItem(STOREFRONT_CACHE_KEY,JSON.stringify({ts:Date.now(),payload:{...rest,catalogVersion:RETAIL_CATALOG_VERSION}}));
   }catch(e){}
 }
 function loadCachedRetailStorefront(){
@@ -2829,10 +2830,8 @@ function enterPublicStore(){
   document.querySelector('#page-app .snav')?.classList.add('active');
   const hadCache=loadCachedRetailStorefront();
   loadCachedSmsCatalog();
-  if(!hadCache){
-    applyPriceCatalog(null,'retail');
-    renderProducts('all');
-  }else if(getSmsStoreCatalog().length)renderProducts('all');
+  if(!hadCache)applyPriceCatalog(null,'retail');
+  renderProducts('all');
   refreshSmsStoreTab(true);
   refreshStrong8kStore(true);
   loadStorefront().then((ok)=>{
@@ -4751,7 +4750,17 @@ function renderProducts(cat){
   if(cat==='all'&&smsHub)html+=smsHub;
   list.forEach(p=>{
     const tot=getProductAvail(p);
-    let minP=p.hasUserTypes?Math.min(...p.userTypes.map(ut=>Math.min(...ut.durations.map(d=>d.price)))):Math.min(...(p.plans||[]).map(pl=>pl.price));
+    let minP=Infinity;
+    if(p.hasUserTypes){
+      p.userTypes.forEach(ut=>{
+        const prices=(ut.durations||[]).map(d=>d.price).filter(n=>Number.isFinite(n));
+        if(prices.length)minP=Math.min(minP,...prices);
+      });
+    }else{
+      const prices=(p.plans||[]).map(pl=>pl.price).filter(n=>Number.isFinite(n));
+      if(prices.length)minP=Math.min(minP,...prices);
+    }
+    if(!Number.isFinite(minP))minP=0;
     const blocked=!hasUnblockedPlan(p);
     const cardClick=blocked?'':`onclick="openBuy('${p.id}',null)"`;
     html+=`<div class="pcard${blocked?' oos':''}" ${cardClick}>
@@ -8742,49 +8751,64 @@ document.addEventListener('visibilitychange',()=>{
 // INIT
 const SESSION_MS=7*24*60*60*1000; // 7 days
 
+async function quickValidateAuthToken(){
+  if(!authToken)return;
+  try{
+    const controller=new AbortController();
+    const timer=setTimeout(()=>controller.abort(),4000);
+    const r=await fetch(RT_SERVER+'/auth/me',{headers:{Authorization:'Bearer '+authToken},signal:controller.signal});
+    clearTimeout(timer);
+    if(r.status===401)clearStoredSession();
+  }catch(e){}
+}
 async function init(){
-  initFirebase();
-  initTheme();
-  initLang();
-  initCookieBanner();
-  loadSiteContact().then(()=>{applyContactLinks();if(typeof rtSyncChatUI==='function')rtSyncChatUI();});
-  keepServerAwake();
-  window.addEventListener('error',e=>{console.warn('UI error:',e.message);});
-  window.addEventListener('unhandledrejection',e=>{console.warn('Async error:',e.reason);e.preventDefault();});
-  if(!authToken)applyOfflineCacheIfAny();
-  const params=new URLSearchParams(location.search);
-  if(params.get('sub')||params.get('s')||params.get('t')){
-    setPrivatePageNoIndex(true);
-    document.querySelectorAll('.page').forEach(p=>{p.classList.remove('active');p.style.display='none';});
-    document.getElementById('page-sublink').style.display='flex';
-    pingServer(5000).catch(()=>{});
-    if(params.get('s')){
-      await checkSubLink();
-    }else{
-      const linkTask=checkSubLink();
-      ensureServerAwake({silent:true}).catch(()=>{});
-      await linkTask;
+  try{
+    initFirebase();
+    initTheme();
+    initLang();
+    initCookieBanner();
+    loadSiteContact().then(()=>{applyContactLinks();if(typeof rtSyncChatUI==='function')rtSyncChatUI();});
+    keepServerAwake();
+    window.addEventListener('error',e=>{console.warn('UI error:',e.message);});
+    window.addEventListener('unhandledrejection',e=>{console.warn('Async error:',e.reason);e.preventDefault();});
+    if(!authToken)applyOfflineCacheIfAny();
+    const params=new URLSearchParams(location.search);
+    if(params.get('sub')||params.get('s')||params.get('t')){
+      setPrivatePageNoIndex(true);
+      document.querySelectorAll('.page').forEach(p=>{p.classList.remove('active');p.style.display='none';});
+      document.getElementById('page-sublink').style.display='flex';
+      pingServer(5000).catch(()=>{});
+      if(params.get('s')){
+        await checkSubLink();
+      }else{
+        const linkTask=checkSubLink();
+        ensureServerAwake({silent:true}).catch(()=>{});
+        await linkTask;
+      }
+      return;
     }
-    return;
+
+    ensureServerAwake({silent:true}).catch(()=>{});
+
+    await quickValidateAuthToken();
+
+    if(await restoreCustomerSession())return;
+    if(await restoreAdminSession())return;
+
+    if(authToken)clearStoredSession();
+
+    await loadData();
+    renderAmounts();renderReqChips();
+    syncAdminLinkVisibility();
+    initLegalFromHash();
+    enterPublicStore();
+    startRealtimeSync();
+    setTimeout(checkExpiryReminders,10000);
+    setTimeout(checkLowStock,15000);
+  }catch(e){
+    console.warn('init error:',e);
+    try{enterPublicStore();}catch(err){console.warn('guest store fallback',err);}
   }
-
-  ensureServerAwake({silent:true}).catch(()=>{});
-
-  if(await restoreCustomerSession())return;
-  if(await restoreAdminSession())return;
-
-  if(authToken){
-    clearStoredSession();
-  }
-
-  await loadData();
-  renderAmounts();renderReqChips();
-  syncAdminLinkVisibility();
-  initLegalFromHash();
-  enterPublicStore();
-  startRealtimeSync();
-  setTimeout(checkExpiryReminders,10000);
-  setTimeout(checkLowStock,15000);
 }
 
 async function restoreCustomerSession(){
