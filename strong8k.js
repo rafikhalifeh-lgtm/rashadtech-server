@@ -241,8 +241,60 @@ function resolvePackFromSellPackages(packageIds, config, region) {
   return joined || null;
 }
 
+function firstBouquetId(raw) {
+  const id = String(raw || '').split(',').map(part => part.trim()).filter(Boolean)[0];
+  return id || '';
+}
+
+function resolveTrialPackBouquetSync(config, region) {
+  const regionKey = String(region || 'me').toLowerCase();
+  const sellPackages = getEnabledSellPackages(config);
+  const exclusive = sellPackages.find(pkg => pkg.exclusive) || sellPackages[0];
+
+  if (exclusive) {
+    const byRegion = exclusive.bouquetIdsByRegion && exclusive.bouquetIdsByRegion[regionKey];
+    const fromRegion = firstBouquetId(byRegion);
+    if (fromRegion) return fromRegion;
+    const fromGlobal = firstBouquetId(exclusive.bouquetIds);
+    if (fromGlobal) return fromGlobal;
+  }
+
+  const regionPack = resolveRegionPack(config, regionKey);
+  if (!isWildcardPack(regionPack)) {
+    const fromRegionPack = firstBouquetId(regionPack);
+    if (fromRegionPack) return fromRegionPack;
+  }
+
+  return '';
+}
+
+async function resolveTrialPackBouquet(config, region) {
+  const sync = resolveTrialPackBouquetSync(config, region);
+  if (sync) return sync;
+
+  const regionKey = String(region || 'me').toLowerCase();
+  const { bouquets } = await getBouquets(config);
+  const regionMatchers = {
+    me: /middle|arab|\bme\b/i,
+    eu: /europe|\beu\b/i,
+    us: /\bus\b|united states/i
+  };
+  const regionRe = regionMatchers[regionKey] || null;
+  const fullMatch = bouquets.find(b => /full/i.test(b.name || '') && (!regionRe || regionRe.test(b.name || '')))
+    || bouquets.find(b => /full/i.test(b.name || ''))
+    || bouquets[0];
+  return fullMatch && fullMatch.id ? String(fullMatch.id).trim() : '';
+}
+
 async function resolvePanelPack(config, { region, packageIds, isTrial } = {}) {
   const regionKey = String(region || 'me').toLowerCase();
+
+  if (isTrial) {
+    const trialPack = await resolveTrialPackBouquet(config, regionKey);
+    if (trialPack) return trialPack;
+    return resolvePackForPanel(config, regionKey);
+  }
+
   const ids = normalizeSellPackageIds(packageIds);
   const sellPackages = getEnabledSellPackages(config);
 
@@ -253,14 +305,6 @@ async function resolvePanelPack(config, { region, packageIds, isTrial } = {}) {
 
   const regionPack = resolveRegionPack(config, regionKey);
   if (!isWildcardPack(regionPack)) return regionPack;
-
-  if (isTrial && sellPackages.length) {
-    const exclusive = sellPackages.find(pkg => pkg.exclusive) || sellPackages[0];
-    if (exclusive) {
-      const fromExclusive = resolveSellPackageBouquetIds(exclusive, regionKey, config);
-      if (fromExclusive) return fromExclusive;
-    }
-  }
 
   return resolvePackForPanel(config, regionKey);
 }
@@ -356,7 +400,7 @@ function panelErrorMessage(payload, fallback) {
   const msg = String(row.message || row.messasge || row.result || row.error || '').trim();
   if (msg) {
     if (/subscription package not found/i.test(msg)) {
-      return 'IPTV bouquet/package ID is invalid. In Admin → Strong8K IPTV, click Load bouquets and set the correct package ID for your region.';
+      return 'IPTV bouquet ID is invalid for this line. In Admin → Strong8K IPTV, set the Full Package bouquet ID for your region (e.g. ME 75605) — use one bouquet ID, not a comma list.';
     }
     return msg;
   }
@@ -606,6 +650,9 @@ module.exports = {
   DURATION_MONTHS,
   resolvePackFromSellPackages,
   resolveSellPackageBouquetIds,
+  resolveTrialPackBouquetSync,
+  resolveTrialPackBouquet,
+  firstBouquetId,
   resolvePanelPack,
   resolveSelectedSellPackages,
   describeSellPackageSelection,

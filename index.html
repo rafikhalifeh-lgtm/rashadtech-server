@@ -5225,7 +5225,7 @@ async function confirmIptvPurchase(){
       region:iptvRegion,
       trial:iptvTrialMode,
       subCustomerPhone:iptvSubPhone,
-      selectedPackages:iptvSelectedPackages
+      selectedPackages:iptvTrialMode?[]:iptvSelectedPackages
     })});
     if(j.data)applyDataSnapshot(j.data);
     if(j.user)mergeUserFromResponse(j.user);

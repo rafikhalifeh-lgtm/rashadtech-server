@@ -316,9 +316,11 @@ function registerStrong8kRoutes(app, deps) {
         const reseller = userIsReseller(user);
         const trials = readIptvTrials(data);
         let plan = null;
-        const packageIds = selectedPackages.length
-          ? selectedPackages
-          : (!isTrial && usesSellPackages && sellPackages[0] ? [sellPackages[0].id] : []);
+        const packageIds = isTrial
+          ? []
+          : (selectedPackages.length
+            ? selectedPackages
+            : (usesSellPackages && sellPackages[0] ? [sellPackages[0].id] : []));
         const packageLabel = packageIds.length
           ? strong8k.describeSellPackageSelection(packageIds, config)
           : '';

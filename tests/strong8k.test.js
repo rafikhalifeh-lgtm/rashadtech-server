@@ -42,7 +42,7 @@ test('computeSellPackagePrice sums add-ons and respects exclusive full package',
   assert.equal(strong8k.describeSellPackageSelection(['lebanese', 'bein'], config), 'Lebanese + beIN');
 });
 
-test('resolvePanelPack uses region bouquet for free trial when packages not selected', async () => {
+test('resolvePanelPack uses single region full bouquet for free trial', async () => {
   const config = {
     panelUrl: 'https://panel.example.com',
     apiKey: 'secret',
@@ -53,12 +53,23 @@ test('resolvePanelPack uses region bouquet for free trial when packages not sele
       us: { id: 'us', name: 'United States', packId: '75606' }
     },
     sellPackages: [
-      { id: 'full', name: 'Full', bouquetIds: '', bouquetIdsByRegion: {}, prices: { 1: 8, 3: 20, 6: 35, 12: 60 }, monthlyPrice: 8, exclusive: true, enabled: true },
+      {
+        id: 'full',
+        name: 'Full',
+        bouquetIds: '',
+        bouquetIdsByRegion: { me: '75605', eu: '75604', us: '75606' },
+        prices: { 1: 8, 3: 20, 6: 35, 12: 60 },
+        monthlyPrice: 8,
+        exclusive: true,
+        enabled: true
+      },
       { id: 'streaming', name: 'Streaming', bouquetIds: '75609', bouquetIdsByRegion: {}, prices: { 1: 4, 3: 10, 6: 18, 12: 32 }, monthlyPrice: 4, exclusive: false, enabled: true }
     ]
   };
   const trialPack = await strong8k.resolvePanelPack(config, { region: 'me', packageIds: [], isTrial: true });
-  assert.equal(trialPack, '75605,75609,75610');
+  assert.equal(trialPack, '75605');
+  const trialWithSelection = await strong8k.resolvePanelPack(config, { region: 'me', packageIds: ['streaming', 'bein'], isTrial: true });
+  assert.equal(trialWithSelection, '75605');
   const paidPack = await strong8k.resolvePanelPack(config, { region: 'me', packageIds: ['streaming'], isTrial: false });
   assert.equal(paidPack, '75609');
 });
