@@ -71,7 +71,7 @@ function defaultStrong8kConfig() {
     apiKey: '',
     packageId: 'all',
     trialEnabled: false,
-    deliveryHost: '',
+    deliveryHost: 'http://rashadtech.xyz',
     regions: { ...IPTV_REGIONS },
     plans: DEFAULT_PLANS.map(p => ({ ...p })),
     sellPackages: DEFAULT_SELL_PACKAGES.map(p => ({ ...p }))

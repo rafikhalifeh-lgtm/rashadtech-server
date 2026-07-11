@@ -2175,6 +2175,29 @@ function isAnghamiSubscription(sub) {
   return Boolean(sub && (sub.productId === 'anghami' || /anghami/i.test(sub.product || '')));
 }
 
+function isStrong8kIptvOrder(order) {
+  return Boolean(order && (order.productId === 'strong8k' || /rashadtech iptv|strong8k/i.test(order.product || '')));
+}
+
+function iptvCustomerCredentialsBlock(order, { html = true } = {}) {
+  const host = String(order && order.iptvHost || '').trim();
+  const username = String(order && order.email || '').trim();
+  const password = String(order && order.pass || '').trim();
+  const m3u = String(order && order.serviceLink || '').trim();
+  if (html) {
+    if (host) {
+      return `🌐 <b>Host:</b> <code>${host}</code>\n👤 <b>Username:</b> <code>${username}</code>\n🔑 <b>Password:</b> <code>${password}</code>`;
+    }
+    if (m3u) return `🔗 <b>M3U playlist:</b>\n<code>${m3u}</code>`;
+    return `👤 <b>Username:</b> <code>${username}</code>\n🔑 <b>Password:</b> <code>${password}</code>`;
+  }
+  if (host) {
+    return `Host: ${host}\nUsername: ${username}\nPassword: ${password}`;
+  }
+  if (m3u) return `M3U playlist: ${m3u}`;
+  return `Username: ${username}\nPassword: ${password}`;
+}
+
 const ANGHAMI_CANCEL_NOTE_EN = 'NOTE: If you already have an Anghami Plus subscription, cancel it then try to click on the link again.';
 const ANGHAMI_CANCEL_NOTE_AR = 'ملاحظة: إذا كان لديك اشتراك Anghami Plus بالفعل، قم بإلغائه ثم اضغط على الرابط مرة أخرى.';
 
@@ -2198,6 +2221,9 @@ function isValidLinkSubscription(subscription) {
   }
   if (isCanvaNewSubscription(subscription) || isCanvaOwnSubscription(subscription)) {
     return Boolean(String(subscription.email || '').trim());
+  }
+  if (isStrong8kIptvOrder(subscription)) {
+    return Boolean(String(subscription.email || '').trim() && String(subscription.pass || '').trim());
   }
   return Boolean(subscription.email && subscription.pass);
 }
@@ -3035,6 +3061,8 @@ function publicSubscriptionFromOrder(order) {
     profileName: orderProfileName(order) || order.profileName || '',
     profilePin: order.profilePin || '',
     serviceLink: order.serviceLink || '',
+    iptvHost: order.iptvHost || '',
+    iptvLineType: order.iptvLineType || '',
     accKey: order.accKey || '',
     mainEmail: inboxEmail,
     codeEmail,
@@ -3259,6 +3287,7 @@ async function notifyPurchaseFulfilled(user, product, planLabel, price, order, a
   const isOsn = isOsnPasswordlessSubscription(order);
   const isCanvaNew = isCanvaNewOrder(order);
   const isCanvaOwn = isCanvaOwnOrder(order);
+  const isIptv = isStrong8kIptvOrder(order);
   let adminMsg = `🎉 <b>New Purchase</b>\n\n📦 <b>Product:</b> ${product.name}\n📋 <b>Plan:</b> ${planLabel}\n💵 <b>Price:</b> $${Number(price).toFixed(2)}\n👤 <b>Buyer:</b> ${user.name} (${user.email})`;
   if (assignedCustomer) {
     adminMsg += `\n👥 <b>Assigned to:</b> ${assignedCustomer.fname} ${assignedCustomer.lname} (${assignedCustomer.code}${assignedCustomer.phone})`;
@@ -3274,6 +3303,8 @@ async function notifyPurchaseFulfilled(user, product, planLabel, price, order, a
     if (profileLabel) adminMsg += `\n👤 Profile: <code>${profileLabel}</code>`;
   } else if (isCanvaNew || isCanvaOwn) {
     adminMsg += `\n\n📧 <b>Canva email:</b> <code>${order.email || '—'}</code>`;
+  } else if (isIptv) {
+    adminMsg += `\n\n📺 <b>IPTV line:</b>\n${iptvCustomerCredentialsBlock(order)}`;
   } else {
     adminMsg += `\n\n🔐 <b>Credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`;
     if (profileLabel) adminMsg += `\n👤 Profile: <code>${profileLabel}</code>`;
@@ -3297,6 +3328,8 @@ async function notifyPurchaseFulfilled(user, product, planLabel, price, order, a
     profileName: order.profileName || '',
     profilePin: order.profilePin || '',
     serviceLink: order.serviceLink || '',
+    iptvHost: order.iptvHost || '',
+    iptvLineType: order.iptvLineType || '',
     accKey: order.accKey || '',
     mainEmail: order.mainEmail || '',
     codeEmail: order.email,
@@ -3330,10 +3363,14 @@ async function notifyPurchaseFulfilled(user, product, planLabel, price, order, a
           ? (assignedCustomer
             ? `✅ <b>Canva Pro activated for ${custName}</b>\n\n📋 ${planLabel}\n👥 <b>For:</b> ${custName}\n\n📧 <b>Email:</b> <code>${order.email || ''}</code>\nPro is now active on this Canva account. Sign in and enjoy!`
             : `✅ <b>Your Canva Pro is active!</b>\n\n📋 ${planLabel}\n\n📧 <b>Email:</b> <code>${order.email || ''}</code>\nPro is now enabled on your Canva account. Sign in and enjoy!`)
-          : (assignedCustomer
+          : isIptv
+            ? (assignedCustomer
+              ? `✅ <b>RashadTech IPTV for ${custName}</b>\n\n📋 ${planLabel}\n👥 <b>For:</b> ${custName}\n\n${iptvCustomerCredentialsBlock(order)}\n\n📱 <b>TiviMate / Smarters:</b> Xtream Codes API → enter host, username, password above.`
+              : `✅ <b>Your RashadTech IPTV is ready!</b>\n\n📋 ${planLabel}\n\n${iptvCustomerCredentialsBlock(order)}\n\n📱 <b>TiviMate / Smarters:</b> Xtream Codes API → enter host, username, password above.`)
+            : (assignedCustomer
         ? `✅ <b>${product.name} subscription for ${custName}</b>\n\n📋 ${planLabel}\n👥 <b>For:</b> ${custName}\n\n🔐 <b>Credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`
         : `✅ <b>Your ${product.name} is ready!</b>\n\n📋 ${planLabel}\n\n🔐 <b>Your credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`);
-  if (!isAnghami && !isDisneyOne && !isOsn && !isCanvaNew && !isCanvaOwn && profileLabel) custMsg += `\n👤 Profile: <code>${profileLabel}</code>`;
+  if (!isAnghami && !isDisneyOne && !isOsn && !isCanvaNew && !isCanvaOwn && !isIptv && profileLabel) custMsg += `\n👤 Profile: <code>${profileLabel}</code>`;
   if (isDisneyOne && profileLabel) custMsg += `\n👤 Profile: <code>${profileLabel}</code>`;
   if (isOsn && profileLabel) custMsg += `\n👤 Profile: <code>${profileLabel}</code>`;
   if (order.expiryDate) custMsg += `\n⏰ Expires: ${order.expiryDate}`;
@@ -3366,7 +3403,9 @@ async function notifyPurchaseFulfilled(user, product, planLabel, price, order, a
               ? `✅ <b>Canva Pro</b>\n\n📋 ${planLabel}\n\n📧 <code>${order.email || ''}</code>\n\n🔗 ${subLink}`
               : isCanvaOwn
                 ? `✅ <b>Canva Pro activated</b>\n\n📋 ${planLabel}\n\n📧 <code>${order.email || ''}</code>\n\n🔗 ${subLink}`
-                : `✅ <b>${product.name} subscription</b>\n\n📋 ${planLabel}\n\n🔐 <b>Credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>${order.profilePin ? `\n🔢 PIN: <code>${order.profilePin}</code>` : ''}\n\n🔗 ${subLink}`;
+                : isIptv
+                  ? `✅ <b>RashadTech IPTV</b>\n\n📋 ${planLabel}\n\n${iptvCustomerCredentialsBlock(order)}\n\n🔗 ${subLink}`
+                  : `✅ <b>${product.name} subscription</b>\n\n📋 ${planLabel}\n\n🔐 <b>Credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>${order.profilePin ? `\n🔢 PIN: <code>${order.profilePin}</code>` : ''}\n\n🔗 ${subLink}`;
         await sendTG(assignedCustomer.tgChatId, assignMsg, 'HTML').catch(() => {});
       }
     } catch (e) {

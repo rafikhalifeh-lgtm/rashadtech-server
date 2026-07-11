@@ -3770,6 +3770,7 @@ async function checkSubLink(){
   document.getElementById('sublink-name').textContent=found.product||'';
   document.getElementById('sublink-plan').textContent=(found.plan||'')+' · '+(found.date||'');
   const anghamiSub=isAnghamiOrder(found);
+  const iptvSub=isStrong8kOrder(found);
   const disneyOneSub=isDisneyOneUserOrder(found);
   const osnSub=isOsnPasswordlessOrder(found);
   const canvaNewSub=isCanvaNewOrder(found);
@@ -3798,7 +3799,20 @@ async function checkSubLink(){
   const credTitle=document.getElementById('sublink-creds-title');
   const emailRow=document.getElementById('sublink-email-row');
   const passRow=document.getElementById('sublink-pass-row');
-  if(credTitle)credTitle.textContent=anghamiSub?'YOUR ANGHAMI ACTIVATION':(disneyOneSub||osnSub||canvaNewSub)?'HOW TO SIGN IN':canvaOwnSub?'YOUR CANVA ACCOUNT':'YOUR CREDENTIALS';
+  const hostRow=document.getElementById('sublink-host-row');
+  const hostEl=document.getElementById('sublink-host');
+  const emailLbl=emailRow?.querySelector('.cred-label');
+  if(credTitle)credTitle.textContent=anghamiSub?'YOUR ANGHAMI ACTIVATION':iptvSub?'YOUR IPTV LINE':(disneyOneSub||osnSub||canvaNewSub)?'HOW TO SIGN IN':canvaOwnSub?'YOUR CANVA ACCOUNT':'YOUR CREDENTIALS';
+  if(hostRow&&hostEl){
+    if(iptvSub&&found.iptvHost){
+      hostRow.style.display='flex';
+      hostEl.textContent=found.iptvHost;
+    }else{
+      hostRow.style.display='none';
+      hostEl.textContent='';
+    }
+  }
+  if(emailLbl)emailLbl.textContent=iptvSub?'Username':'Email';
   if(emailRow)emailRow.style.display=(anghamiSub||disneyOneSub)?'none':'flex';
   if(passRow)passRow.style.display=(anghamiSub||disneyOneSub||osnSub||canvaNewSub||canvaOwnSub)?'none':'flex';
   _sublinkEmail=found.email||'';
@@ -3833,6 +3847,12 @@ async function checkSubLink(){
       serviceLinkEl.textContent=svc;
       const note=document.getElementById('sublink-anghami-note');
       if(note)note.style.display='block';
+    }else if(iptvSub&&svc&&found.iptvLineType==='m3u'){
+      serviceLinkRow.style.display='block';
+      serviceLinkEl.href=svc;
+      serviceLinkEl.textContent='Open M3U playlist';
+      const note=document.getElementById('sublink-anghami-note');
+      if(note)note.style.display='none';
     }else{
       serviceLinkRow.style.display='none';
       serviceLinkEl.href='#';
@@ -5107,6 +5127,24 @@ function iptvHowToHtml(){
     </ol>
   </div>`;
 }
+function showIptvDeliveryModal(order){
+  if(!order)return;
+  const host=order.iptvHost||'';
+  const user=order.email||'';
+  const pass=order.pass||'';
+  const m3u=order.serviceLink||'';
+  let credHtml='';
+  if(host){
+    credHtml=`<div class="sub-cred" style="margin:12px 0">${host?`<span class="cust-sub-cred-line">🌐 Host: <code>${esc(host)}</code></span>`:''}<span class="cust-sub-cred-line">👤 Username: <code>${esc(user)}</code></span><span class="cust-sub-cred-line">🔑 Password: <code>${esc(pass)}</code></span></div>`;
+  }else if(m3u){
+    credHtml=`<div class="sub-cred" style="margin:12px 0"><a class="cust-sub-cred-line" href="${esc(m3u)}" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:none;font-weight:600">🔗 M3U playlist</a></div>`;
+  }else{
+    credHtml=`<div class="sub-cred" style="margin:12px 0"><span class="cust-sub-cred-line">👤 <code>${esc(user)}</code></span><span class="cust-sub-cred-line">🔑 <code>${esc(pass)}</code></span></div>`;
+  }
+  document.getElementById('modal-title').textContent='RashadTech IPTV delivered';
+  document.getElementById('modal-body').innerHTML=`<div style="font-size:13px;color:var(--text2);margin-bottom:8px;line-height:1.55">Your line is active. Credentials are also in <b>My Subscriptions</b> and sent on Telegram/email if connected.</div>${credHtml}${iptvHowToHtml()}<button class="modal-buy-btn" style="margin-top:14px" onclick="closeModal('buy-modal');switchTab('subs',null)">Open My Subscriptions</button>`;
+  openModal('buy-modal');
+}
 function renderIptvWizard(){
   const body=document.getElementById('modal-body');
   if(!body)return;
@@ -5197,8 +5235,8 @@ async function confirmIptvPurchase(){
     if(j.data)applyDataSnapshot(j.data);
     if(j.user)mergeUserFromResponse(j.user);
     syncPausedUntil=Date.now()+20000;
-    closeModal('buy-modal');
-    refreshAfterPurchase();
+    updateBal();renderSubs();renderTx();renderProducts('all');
+    showIptvDeliveryModal(j.order);
     showToast('✓ RashadTech IPTV line delivered!');
   }catch(e){showToast('⚠️ '+(e.message||'Purchase failed'));}
   finally{iptvPurchaseInFlight=false;setBuyModalLoading(false);}
@@ -9588,6 +9626,10 @@ if(document.readyState==='loading'){
       <div id="sublink-plan" style="font-size:13px;color:var(--text2);margin-bottom:20px"></div>
       <div id="sublink-creds" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:16px;text-align:left;margin-bottom:16px">
         <div id="sublink-creds-title">YOUR CREDENTIALS</div>
+        <div id="sublink-host-row" class="cred-line" style="display:none">
+          <span class="cred-label">Host</span>
+          <span id="sublink-host" class="cred-val" onclick="copyText(this)"></span>
+        </div>
         <div id="sublink-email-row" class="cred-line">
           <span class="cred-label">Email</span>
           <span id="sublink-email" class="cred-val" onclick="copyText(this)"></span>
