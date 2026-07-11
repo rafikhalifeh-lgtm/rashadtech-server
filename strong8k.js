@@ -12,11 +12,12 @@ const IPTV_REGIONS = {
 };
 
 const TRIAL_SUB_CODE = 99;
+const TRIAL_SUB_CODES = [99, 1, 0];
 const TRIAL_MIN_PANEL_CREDITS = 12;
 const PANEL_REQUEST_TIMEOUT_MS = 60000;
 const PANEL_REQUEST_RETRIES = 2;
-const MAX_TRIAL_PACK_ATTEMPTS = 4;
-const MAX_TRIAL_PANEL_CALLS = 16;
+const MAX_TRIAL_PACK_ATTEMPTS = 3;
+const MAX_TRIAL_PANEL_CALLS = 18;
 const OMIT_PANEL_PACK = '__OMIT_PACK__';
 const DURATION_MONTHS = [1, 3, 6, 12];
 
@@ -451,7 +452,7 @@ function isPanelRetryableError(payload) {
   const row = unwrapApiPayload(payload);
   const msg = String(row.message || row.messasge || row.result || row.error || '').trim();
   if (!msg) return true;
-  return /subscription package not found|bouquet|package.*not found|invalid.*pack|something is missing|missing|required|not found/i.test(msg);
+  return /subscription package not found|subscription time|bouquet|package.*not found|invalid.*pack|something is missing|missing|required|not found/i.test(msg);
 }
 
 function normalizeTrialPackForPanel(pack) {
@@ -478,25 +479,17 @@ function buildTrialLineRequestVariants(regionKey, panelPack) {
     seen.add(key);
     variants.push(variant);
   };
-  const base = {
-    type: 'm3u',
-    sub: TRIAL_SUB_CODE,
-    pack
-  };
+  const primaryCountry = TRIAL_REGION_PRIMARY_COUNTRY[regionKey] || 'LB';
 
-  if (pack === OMIT_PANEL_PACK) {
-    push({ ...base, httpMethod: 'GET', packParam: 'pack' });
-    push({ ...base, httpMethod: 'POST', packParam: 'pack' });
-    return variants;
-  }
-
-  const countries = trialCountryOptions(regionKey);
-  for (const country of countries) {
-    push({ ...base, httpMethod: 'GET', packParam: 'pack', country: country || undefined, countryParam: 'country' });
-    if (country) {
-      push({ ...base, httpMethod: 'GET', packParam: 'bouquet', country, countryParam: 'country' });
-      push({ ...base, httpMethod: 'POST', packParam: 'pack', country, countryParam: 'country' });
+  for (const sub of TRIAL_SUB_CODES) {
+    if (pack === OMIT_PANEL_PACK) {
+      push({ type: 'm3u', sub, pack, httpMethod: 'GET', packParam: 'pack' });
+      continue;
     }
+    // Activation-panel style: simple GET with sub + pack (demo sub=99, fallback 1/0)
+    push({ type: 'm3u', sub, pack, httpMethod: 'GET', packParam: 'pack' });
+    push({ type: 'm3u', sub, pack, httpMethod: 'GET', packParam: 'pack', country: primaryCountry, countryParam: 'country' });
+    push({ type: 'm3u', sub, pack, httpMethod: 'POST', packParam: 'pack', country: primaryCountry, countryParam: 'country' });
   }
   return variants;
 }
@@ -570,15 +563,13 @@ function buildTrialPackAttemptsFromList(bouquets, config, region) {
 
   if (!list.length) {
     if (!attempts.length && fromConfig && !isWildcardPack(fromConfig)) push(fromConfig);
-    push('all');
-    push(OMIT_PANEL_PACK);
+    if (!attempts.length) push('all');
     return attempts;
   }
 
   list.filter(b => /full/i.test(b.name || '') && matchBouquetNameForRegion(b.name, regionKey))
     .forEach(b => push(firstBouquetId(b.id)));
   push('all');
-  push(OMIT_PANEL_PACK);
   return attempts;
 }
 
@@ -737,7 +728,7 @@ async function createTrialLine(config, { note, region, lineType, pack, packAttem
 
   if (!row || String(row.status || '').toLowerCase() !== 'true') {
     const detail = attemptLog.map(a => `${a.pack}: ${a.message}`).join(' | ');
-    const hint = /something is missing|subscription package not found/i.test(detail)
+    const hint = /something is missing|subscription package not found|subscription time/i.test(detail)
       ? ' Click Load bouquets → Save settings → retry. Need ≥12 panel credits.'
       : '';
     const err = new Error((detail || 'Could not create IPTV trial line on Strong8K panel') + hint);
@@ -1213,6 +1204,7 @@ module.exports = {
   normalizeSellPackageIds,
   IPTV_REGIONS,
   TRIAL_SUB_CODE,
+  TRIAL_SUB_CODES,
   TRIAL_MIN_PANEL_CREDITS,
   defaultStrong8kConfig,
   normalizePanelUrl,

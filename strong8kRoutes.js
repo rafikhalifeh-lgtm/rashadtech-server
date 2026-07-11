@@ -303,6 +303,14 @@ function registerStrong8kRoutes(app, deps) {
       if (!draft.panelUrl || !strong8k.resolveApiKey(draft)) {
         return res.status(400).json({ error: 'Strong8K panel is not configured' });
       }
+      try {
+        const bouquetResult = await strong8k.getBouquets(draft);
+        if ((bouquetResult.bouquets || []).length) {
+          draft = strong8k.applyPanelBouquetsToConfig(draft, bouquetResult.bouquets);
+        }
+      } catch {
+        // continue with saved bouquet mapping
+      }
       const region = String(req.body?.region || 'me').toLowerCase();
       if (!strong8k.IPTV_TRIAL_REGIONS.has(region)) {
         return res.status(400).json({ error: 'Test trial supports Middle East (me) or United States (us) only' });
