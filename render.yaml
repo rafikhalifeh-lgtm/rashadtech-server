@@ -1,15 +1,8 @@
-# Render Blueprint (optional). If the web service was created manually in the dashboard,
-# set Health Check Path to /ping and Build Command to npm install && npm run build.
+# Optional Render Blueprint — cron only. Configure the web service manually in the dashboard:
+#   Build: npm install && npm run build
+#   Start: npm start
+#   Health Check Path: /ping
 services:
-  - type: web
-    name: rashadtech-server
-    runtime: node
-    buildCommand: npm install && npm run build
-    startCommand: npm start
-    healthCheckPath: /ping
-    envVars:
-      - key: NODE_VERSION
-        value: "22"
   - type: cron
     name: rashadtech-keep-awake
     schedule: "*/3 * * * *"

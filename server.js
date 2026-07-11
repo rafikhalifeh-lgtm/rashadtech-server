@@ -86,20 +86,6 @@ app.use((req, res, next) => {
   next();
 });
 
-// Bind port early so Render deploy health checks pass while routes load.
-const PORT = Number(process.env.PORT) || 3000;
-let onServerListening = null;
-app.get('/ping', (req, res) => {
-  res.status(200).json({ ok: true, ts: Date.now(), ready: true });
-});
-app.get('/', (req, res) => {
-  res.json({ status: 'rashadtech server running', ok: true });
-});
-app.listen(PORT, '0.0.0.0', () => {
-  console.log('rashadtech server running on port ' + PORT);
-  if (typeof onServerListening === 'function') onServerListening();
-});
-
 function normalizeEnvSecret(value) {
   let secret = String(value || '').trim();
   if ((secret.startsWith('"') && secret.endsWith('"')) || (secret.startsWith("'") && secret.endsWith("'"))) {
@@ -2355,6 +2341,12 @@ function buildHealthReportSync() {
 app.get('/health', (req, res) => {
   res.status(200).json(buildHealthReportSync());
 });
+app.get('/ping', (req, res) => {
+  res.status(200).json({ ok: true, ts: Date.now(), ready: true });
+});
+app.get('/', (req, res) => {
+  res.json({ status: 'rashadtech server running', ok: true });
+});
 
 app.get('/backup-admin', (req, res) => {
   res.type('html').send(`<!doctype html>
@@ -2515,6 +2507,7 @@ app.use('/purchase-game', rateLimit('purchase-game', 20, 15 * 60 * 1000));
 app.use('/customer/topup-request', rateLimit('topup', 12, 15 * 60 * 1000));
 app.use('/get-code', rateLimit('get-code', 30, 5 * 60 * 1000));
 app.use('/chat/escalate', rateLimit('chat-escalate', 8, 15 * 60 * 1000));
+app.use('/public/reseller-application', rateLimit('reseller-apply', 6, 30 * 60 * 1000));
 app.use('/purchase/strong8k', rateLimit('purchase-strong8k', 8, 15 * 60 * 1000));
 app.use('/notify', rateLimit('notify', 60, 5 * 60 * 1000));
 app.use('/links', rateLimit('links', 80, 5 * 60 * 1000));
@@ -5875,7 +5868,9 @@ function startServerKeepAlive() {
 }
 
 // ── START ──────────────────────────────────────────────────────────────
-onServerListening = () => {
+const PORT = Number(process.env.PORT) || 3000;
+app.listen(PORT, '0.0.0.0', () => {
+  console.log('rashadtech server running on port ' + PORT);
   startServerKeepAlive();
   setImmediate(async () => {
     try {
@@ -5903,4 +5898,4 @@ onServerListening = () => {
       console.error('Deferred startup error:', e.message);
     }
   });
-};
+});
