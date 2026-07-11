@@ -56,6 +56,7 @@ const SIMPLE_PLAN_PRODUCTS = [
   { id: 'xbox', plans: [5, 13, 24] },
   { id: 'psplus', plans: [4, 11, 35] },
   { id: 'ytpremium', plans: [4, 10, 35] },
+  { id: 'strong8k', plans: [8, 20, 35, 60] },
   { id: 'chatgpt', plans: [5, 13, 45] },
   { id: 'linkedin', plans: [6, 16, 55] },
   { id: 'watchit', plans: [3, 8, 25] },

@@ -1016,6 +1016,7 @@ So your EmailJS template will receive the user email and verification code corre
       <button onclick="switchAdminTab('dashboard',null);setActiveAdminNav('abn-more');toggleAdminMore()" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 8px;cursor:pointer;color:var(--text);font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">📊</span><span data-t="dashboard">Dashboard</span></button>
       <button onclick="switchAdminTab('prices',null);setActiveAdminNav('abn-more');toggleAdminMore()" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 8px;cursor:pointer;color:var(--text);font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">💲</span><span>Prices</span></button>
       <button onclick="switchAdminTab('sms',null);setActiveAdminNav('abn-more');toggleAdminMore()" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 8px;cursor:pointer;color:var(--text);font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">📱</span><span>SMS</span></button>
+      <button onclick="switchAdminTab('strong8k',null);setActiveAdminNav('abn-more');toggleAdminMore()" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 8px;cursor:pointer;color:var(--text);font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">📺</span><span>Strong8K</span></button>
       <button onclick="toggleAdminMore();openAnnounce()" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 8px;cursor:pointer;color:var(--text);font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">📢</span><span data-t="announce">Announce</span></button>
       <button onclick="doLogout();toggleAdminMore()" style="background:var(--red-bg);border:1px solid var(--red-border);border-radius:var(--radius-sm);padding:12px 8px;cursor:pointer;color:var(--red);font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">🚪</span><span data-t="logout">Logout</span></button>
     </div>
@@ -1035,6 +1036,7 @@ So your EmailJS template will receive the user email and verification code corre
       <button class="snav" onclick="switchAdminTab('gameorders',this)"><i class="ti ti-device-gamepad"></i><span data-t="gameorders">Game Orders</span></button>
       <button class="snav" onclick="switchAdminTab('expiry',this)"><i class="ti ti-clock-exclamation"></i><span data-t="expiryAlerts">Expiry Alerts</span></button>
       <button class="snav" onclick="switchAdminTab('sms',this)"><i class="ti ti-device-mobile"></i><span>SMS Numbers</span></button>
+      <button class="snav" onclick="switchAdminTab('strong8k',this)"><i class="ti ti-antenna-bars-5"></i><span>Strong8K IPTV</span></button>
     </div>
     <div class="main-content">
       <div id="admin-dashboard" class="tab-pane">
@@ -1274,6 +1276,47 @@ So your EmailJS template will receive the user email and verification code corre
           </div>
           <div style="font-size:12px;color:var(--text3);margin-bottom:8px">Imports popular apps for all Grizzly countries (max 500 items to keep the site fast). Other apps are removed from the catalog.</div>
           <div id="sms-orders-list"><div class="empty-state" style="padding:16px">No SMS orders yet.</div></div>
+        </div>
+      </div>
+      <div id="admin-strong8k" class="tab-pane">
+        <div class="pg-title">Strong8K IPTV</div>
+        <div class="pg-sub">API-provisioned IPTV lines — API key stays on the server only, never shown to customers.</div>
+        <div class="card" style="padding:16px;margin-bottom:14px;background:var(--orange-bg);border:1px solid var(--orange-border)">
+          <div style="font-size:12px;color:var(--text2);line-height:1.6">
+            <b>Security:</b> Save your API key here or set <code>STRONG8K_API_KEY</code> on Render. Customers never see the key or panel URL.
+            Use your reseller panel base URL (example: <code>https://your-panel.com</code>).
+          </div>
+        </div>
+        <div class="card" style="padding:16px;margin-bottom:14px">
+          <div style="font-size:13px;font-weight:700;margin-bottom:10px">API connection</div>
+          <div class="field" style="margin-bottom:10px">
+            <label>Panel URL</label>
+            <input type="url" id="s8k-panel-url" placeholder="https://your-strong8k-panel.com" autocomplete="off">
+          </div>
+          <div class="field" style="margin-bottom:10px">
+            <label>API key</label>
+            <input type="password" id="s8k-api-key" placeholder="Paste API key — stored server-side only" autocomplete="off">
+            <div style="font-size:11px;color:var(--text3);margin-top:4px" id="s8k-api-key-status">Not connected</div>
+          </div>
+          <div class="field" style="margin-bottom:10px">
+            <label>Package / bouquet ID</label>
+            <input type="text" id="s8k-package-id" placeholder="all or bouquet ID from panel" value="all">
+            <div style="font-size:11px;color:var(--text3);margin-top:4px">Use <b>all</b> for full package, or pick an ID after loading bouquets.</div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+            <button class="inline-btn" onclick="saveStrong8kConfig()">Save settings</button>
+            <button class="inline-btn" onclick="testStrong8kConnection()">Test connection</button>
+            <button class="inline-btn" onclick="loadStrong8kBouquets()">Load bouquets</button>
+          </div>
+          <div id="s8k-credits-box" style="font-size:12px;color:var(--text2);margin-bottom:8px"></div>
+          <div id="s8k-bouquets-box" style="font-size:12px;color:var(--text2)"></div>
+        </div>
+        <div class="card" style="padding:16px;margin-bottom:14px">
+          <div style="font-size:13px;font-weight:700;margin-bottom:10px">Sell prices (wallet)</div>
+          <div id="s8k-plans-editor" style="display:grid;gap:10px;margin-bottom:12px"></div>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text2)">
+            <input type="checkbox" id="s8k-store-enabled" onchange="saveStrong8kStoreEnabled()"> Show Strong8K in customer store
+          </label>
         </div>
       </div>
       <!-- ADMIN EXPIRY -->
@@ -1790,6 +1833,7 @@ function isOsnPasswordlessOrder(o){
 function isOsnOneUserOrder(o){return isOsnOrder(o)&&/1\s*user/i.test(String(o.plan||''));}
 function isDisneyOneUserOrder(o){return isDisneyOrder(o)&&/1\s*user/i.test(String(o.plan||''));}
 function isAnghamiOrder(o){return Boolean(o&&(o.productId==='anghami'||/anghami/i.test(o.product||'')));}
+function isStrong8kOrder(o){return Boolean(o&&(o.productId==='strong8k'||/strong8k/i.test(o.product||'')));}
 function isCanvaOrder(o){return Boolean(o&&(o.productId==='canva'||/canva/i.test(o.product||'')));}
 function isCanvaNewOrder(o){
   if(!isCanvaOrder(o))return false;
@@ -2318,6 +2362,7 @@ const PRODUCT_ICONS={
   itunes:'https://www.apple.com/favicon.ico',
   googleplay:'https://play.google.com/favicon.ico',
   watchit:'https://watchit.com/favicon.ico',
+  strong8k:'https://strong8k.org/favicon.ico',
 };
 const SMS_SERVICE_ICONS={
   wa:'https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg',
@@ -2406,6 +2451,9 @@ const DEFAULT_PRODUCTS=[
   // ── VIDEO (more) ──
   {id:'ytpremium',name:'YouTube Premium',short:'YT+',color:'#FF0000',tc:'#fff',cat:'video',badge:'hot',desc:'Ad-free YouTube & Music',hasUserTypes:false,plans:[
     {name:'1 Month',desc:'Individual',price:4},{name:'3 Months',desc:'Individual',price:10},{name:'1 Year',desc:'Best value',price:35}]},
+
+  {id:'strong8k',name:'Strong8K IPTV',short:'8K',color:'#FF6B00',tc:'#fff',cat:'video',badge:'new',desc:'IPTV · M3U instant delivery · 8K/4K/HD',hasUserTypes:false,apiProvisioned:true,plans:[
+    {name:'1 Month',desc:'M3U line · all channels',price:8,durationMonths:1},{name:'3 Months',desc:'M3U line · all channels',price:20,durationMonths:3},{name:'6 Months',desc:'M3U line · best value',price:35,durationMonths:6},{name:'12 Months',desc:'M3U line · annual',price:60,durationMonths:12}]},
 
   // ── TOOLS ──
   {id:'chatgpt',name:'ChatGPT Plus',short:'GPT',color:'#10A37F',tc:'#fff',cat:'tools',badge:'hot',desc:'GPT-4 · faster responses',hasUserTypes:false,plans:[
@@ -2784,6 +2832,7 @@ function enterPublicStore(){
   if(!hadCache)renderProducts('all');
   else if(getSmsStoreCatalog().length)renderProducts('all');
   refreshSmsStoreTab(true);
+  refreshStrong8kStore(true);
   loadStorefront().then(()=>{renderProducts('all');updateResellerUi();});
 }
 
@@ -4335,7 +4384,7 @@ function enterApp(opts={}){
   const session={email:currentUser.email,ts:Date.now()};
   try{localStorage.setItem('rt_session',JSON.stringify(session));}catch(e){}
   renderProducts('all');
-  loadPriceCatalog().then(async()=>{updateResellerUi();await refreshSmsStoreTab();renderProducts('all');});
+  loadPriceCatalog().then(async()=>{updateResellerUi();await refreshSmsStoreTab();await refreshStrong8kStore();renderProducts('all');});
   updateBal();renderAmounts();renderSubs();renderTx();renderMyCustomers();renderReqChips();renderMyRequests();renderExpiryTracker();renderMyGameOrders();renderWalletTopupHistory();
   if(!opts.skipRecover)recoverMyCustomersOnLogin({immediate:Boolean(opts.recoverImmediate)}).catch(()=>{});
   maybePromptCompleteProfile();
@@ -4489,7 +4538,7 @@ async function switchAdminTab(name,el){
   document.getElementById('admin-'+name)?.classList.add('active');
   document.querySelectorAll('#page-admin .snav').forEach(b=>b.classList.remove('active'));
   if(el)el.classList.add('active');
-  const amap={stock:'abn-stock',customers:'abn-customers',wallets:'abn-wallets',topupreqs:'abn-topupreqs',requests:'abn-requests',expiry:'abn-more',dashboard:'abn-dashboard',pending:'abn-more',gameorders:'abn-more',prices:'abn-more',sms:'abn-more'};
+  const amap={stock:'abn-stock',customers:'abn-customers',wallets:'abn-wallets',topupreqs:'abn-topupreqs',requests:'abn-requests',expiry:'abn-more',dashboard:'abn-dashboard',pending:'abn-more',gameorders:'abn-more',prices:'abn-more',sms:'abn-more',strong8k:'abn-more',reseller-apps:'abn-more'};
   if(amap[name])setActiveAdminNav(amap[name]);
   const needsFresh=['topupreqs','gameorders','dashboard','requests','reseller-apps'].includes(name);
   if(!_jbCache||!users.length||needsFresh){
@@ -4516,6 +4565,7 @@ function renderActiveAdminTab(name){
   if(name==='pending')renderAdminPending();
   if(name==='dashboard')renderDashboard();
   if(name==='sms')renderSmsAdmin();
+  if(name==='strong8k')renderStrong8kAdmin();
 }
 function updateBal(){
   const b=currentUser?fmt(currentUser.balance):'$0.00';
@@ -4658,6 +4708,7 @@ async function refreshSmsStoreTab(force){
 }
 function filterProd(cat,el){document.querySelectorAll('.ftab').forEach(c=>c.classList.remove('active'));if(el)el.classList.add('active');renderProducts(cat);}
 function getProductAvail(p){
+  if(p.apiProvisioned)return isStrong8kStoreEnabled()?1:0;
   let t=0;
   if(p.hasUserTypes)p.userTypes.forEach(ut=>{
     if(ut.noStock)return;
@@ -4667,6 +4718,7 @@ function getProductAvail(p){
   return t;
 }
 function hasUnblockedPlan(p){
+  if(p.apiProvisioned)return isStrong8kStoreEnabled();
   if(p.hasCustomOrder)return true;
   if(p.hasUserTypes)return p.userTypes.some(ut=>{
     if(ut.noStock)return ut.durations.some(d=>!isStockBlocked(sk(p.id,ut.key,d.key)));
@@ -4898,7 +4950,7 @@ function renderBuyBody(){
       html+=`<div class="plan-section-label">Choose a plan</div>`;
     }
     html+=`${(p.plans||[]).map((pl,i)=>{
-      const key=planStockKey(p.id,pl,i);const blocked=isStockBlocked(key);
+      const key=planStockKey(p.id,pl,i);const blocked=!p.apiProvisioned&&isStockBlocked(key);
       return `<div class="plan-row${selPlan&&selPlan.idx===i?' sel':''}" style="${blocked?'opacity:.45;pointer-events:none':''}" ${blocked?'':'onclick="selPlanFn('+i+')"'} >
         <div><div class="plan-name">${pl.name}</div><div class="plan-desc">${pl.desc}</div></div>
         <div style="text-align:right"><div class="plan-price">${blocked?'Blocked':fmt(pl.price)}</div></div>
@@ -5071,6 +5123,25 @@ async function confirmPurchase(){
   }
   if(!skey){showToast('Please complete your selection');return;}
   if(!currentUser)return;
+  if(p.apiProvisioned&&p.id==='strong8k'){
+    if(purchaseInFlight){showToast('Purchase already processing…');return;}
+    if(currentUser.balance<price){showToast('⚠️ Insufficient balance. Please top up your wallet.');return;}
+    const months=selPlan?.durationMonths||selPlan?.months;
+    if(!months){showToast('Please select a plan');return;}
+    purchaseInFlight=true;
+    setBuyModalLoading(true,currentLang==='ar'?'جاري إنشاء خط IPTV…':'Creating your IPTV line…');
+    try{
+      const j=await rtApi('/purchase/strong8k',{method:'POST',body:JSON.stringify({months,price,planLabel})});
+      if(j.data)applyDataSnapshot(j.data);
+      if(j.user)mergeUserFromResponse(j.user);
+      syncPausedUntil=Date.now()+20000;
+      closeModal('buy-modal');
+      refreshAfterPurchase();
+      showToast('✓ Strong8K line delivered!');
+    }catch(e){showToast('⚠️ '+(e.message||'Purchase failed'));}
+    finally{purchaseInFlight=false;setBuyModalLoading(false);}
+    return;
+  }
   if(assignCustId!==null){
     const assignedCustomer=currentUser.myCustomers?.find(x=>x.id===assignCustId);
     if(assignedCustomer)extraFields.profileName=assignedCustomer.fname;
@@ -5224,7 +5295,9 @@ function subRow(o,forCustomer){
   const iconHtml=ico?`<img src="${ico}" width="40" height="40" style="border-radius:9px;object-fit:contain;background:#fff;padding:2px" onerror="this.outerHTML='<div style=\'width:40px;height:40px;border-radius:9px;background:${o.color};color:${o.tc};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700\'>${o.short}</div>'">`:`<div style="width:40px;height:40px;border-radius:9px;background:${o.color};color:${o.tc};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700">${o.short}</div>`;
   const shahidBtns=isShahidOrder(o)?shahidActionButtons(o.id):'';
   const deliveryNote=o.telegramDeliveredAt?`<div class="delivery-proof">✓ Delivered to Telegram · ${esc(formatTs(o.telegramDeliveredAt))}</div>`:(o.emailDeliveredAt?`<div class="delivery-proof">✓ Delivered to email · ${esc(formatTs(o.emailDeliveredAt))}</div>`:(o.deliveredAt?`<div class="delivery-proof">✓ Delivered · ${esc(formatTs(o.deliveredAt))}</div>`:''));
-  const credHtml=isAnghamiOrder(o)
+  const credHtml=isStrong8kOrder(o)
+    ?`<div class="sub-cred">${o.serviceLink?`<a class="cust-sub-cred-line" href="${esc(o.serviceLink)}" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:none;font-weight:600">🔗 Open M3U playlist</a>`:''}<span class="cust-sub-cred-line">👤 ${esc(o.email||'—')}</span><span class="cust-sub-cred-line">🔑 ${esc(o.pass||'—')}</span>${o.expiryDate?`<span class="cust-sub-cred-line">⏰ Exp: ${esc(o.expiryDate)}</span>`:''}</div>`
+    :isAnghamiOrder(o)
     ?`<div class="sub-cred">${o.serviceLink?`<a class="cust-sub-cred-line" href="${esc(o.serviceLink)}" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:none;font-weight:600">🔗 Open Anghami activation link</a>`:'<span class="cust-sub-cred-line">Link pending</span>'}${o.expiryDate?`<div class="cust-sub-cred-line" style="margin-top:6px;color:var(--orange);font-weight:600">⏰ Expires: ${esc(o.expiryDate)}</div>`:''}<div style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.4">${esc(ANGHAMI_CANCEL_NOTE_EN)}</div></div>`
     :isCanvaNewOrder(o)
     ?`<div class="sub-cred"><span class="cust-sub-cred-line">📧 ${esc(o.email)}</span><span class="cust-sub-cred-line" style="color:var(--text3)">Sign in with email + code on your subscription link</span></div>`
@@ -8005,6 +8078,118 @@ async function smsAdminApi(path,options={}){
   const j=await r.json().catch(()=>({}));
   if(!r.ok||j.success===false)throw new Error(j.error||'SMS request failed');
   return j;
+}
+
+let _strong8kStore={enabled:false,plans:[]};
+function isStrong8kStoreEnabled(){
+  return Boolean(_strong8kStore&&_strong8kStore.enabled);
+}
+async function refreshStrong8kStore(force){
+  if(!force&&Date.now()-(_strong8kStore._ts||0)<120000)return;
+  try{
+    const r=await fetch(RT_SERVER+'/strong8k/store');
+    const j=await r.json();
+    if(j.success){
+      _strong8kStore={enabled:Boolean(j.enabled),plans:Array.isArray(j.plans)?j.plans:[],_ts:Date.now()};
+    }
+  }catch(e){}
+  if(typeof renderProducts==='function'&&document.getElementById('tab-store')?.classList.contains('active')){
+    renderProducts(document.querySelector('.ftab.active')?.dataset?.cat||'all');
+  }
+}
+
+async function strong8kAdminApi(path,opts={}){
+  const r=await fetch(RT_SERVER+path,{...opts,headers:{...authHeaders(),'Content-Type':'application/json',...(opts.headers||{})}});
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok||j.success===false)throw new Error(j.error||'Strong8K request failed');
+  return j;
+}
+let _strong8kConfigCache={};
+function renderStrong8kPlansEditor(plans){
+  const el=document.getElementById('s8k-plans-editor');
+  if(!el)return;
+  const list=Array.isArray(plans)&&plans.length?plans:[
+    {months:1,name:'1 Month',sellPrice:8},{months:3,name:'3 Months',sellPrice:20},{months:6,name:'6 Months',sellPrice:35},{months:12,name:'12 Months',sellPrice:60}
+  ];
+  el.innerHTML=list.map((plan,i)=>`
+    <div style="display:grid;grid-template-columns:1fr 1fr 100px;gap:8px;align-items:end">
+      <div class="field" style="margin:0"><label>Plan ${i+1}</label><input type="text" id="s8k-plan-name-${i}" value="${esc(plan.name||'')}" placeholder="Plan name"></div>
+      <div class="field" style="margin:0"><label>Months</label><input type="number" id="s8k-plan-months-${i}" min="1" max="12" value="${Number(plan.months||1)}"></div>
+      <div class="field" style="margin:0"><label>Price $</label><input type="number" id="s8k-plan-price-${i}" min="1" step="0.01" value="${Number(plan.sellPrice||0).toFixed(2)}"></div>
+    </div>`).join('');
+}
+function readStrong8kPlansFromEditor(){
+  return [0,1,2,3].map(i=>({
+    name:document.getElementById('s8k-plan-name-'+i)?.value?.trim()||'',
+    months:Number(document.getElementById('s8k-plan-months-'+i)?.value||0),
+    sellPrice:Number(document.getElementById('s8k-plan-price-'+i)?.value||0)
+  })).filter(p=>p.months>0&&p.sellPrice>0);
+}
+async function renderStrong8kAdmin(){
+  const statusEl=document.getElementById('s8k-api-key-status');
+  try{
+    const j=await strong8kAdminApi('/admin/strong8k/config');
+    _strong8kConfigCache=j.config||{};
+    const panel=document.getElementById('s8k-panel-url');
+    const pkg=document.getElementById('s8k-package-id');
+    const store=document.getElementById('s8k-store-enabled');
+    if(panel)panel.value=_strong8kConfigCache.panelUrl||'';
+    if(pkg)pkg.value=_strong8kConfigCache.packageId||'all';
+    if(store)store.checked=Boolean(_strong8kConfigCache.storeEnabled);
+    if(statusEl){
+      statusEl.textContent=_strong8kConfigCache.hasApiKey
+        ?(_strong8kConfigCache.hasEnvApiKey?'API key set via Render env (secure)':'API key saved on server')
+        :'No API key saved yet — set STRONG8K_API_KEY on Render or paste below';
+    }
+    renderStrong8kPlansEditor(_strong8kConfigCache.plans||[]);
+    document.getElementById('s8k-credits-box').textContent='';
+    document.getElementById('s8k-bouquets-box').textContent='';
+  }catch(e){
+    if(statusEl)statusEl.textContent='Could not load Strong8K settings: '+e.message;
+  }
+}
+async function saveStrong8kConfig(){
+  const panelUrl=document.getElementById('s8k-panel-url')?.value?.trim()||'';
+  const apiKey=document.getElementById('s8k-api-key')?.value?.trim();
+  const packageId=document.getElementById('s8k-package-id')?.value?.trim()||'all';
+  const plans=readStrong8kPlansFromEditor();
+  try{
+    const body={panelUrl,packageId,plans,enabled:true,storeEnabled:Boolean(document.getElementById('s8k-store-enabled')?.checked)};
+    if(apiKey)body.apiKey=apiKey;
+    await strong8kAdminApi('/admin/strong8k/config',{method:'POST',body:JSON.stringify(body)});
+    document.getElementById('s8k-api-key').value='';
+    showToast('✓ Strong8K settings saved');
+    renderStrong8kAdmin();
+    refreshStrong8kStore(true);
+  }catch(e){showToast('⚠️ '+e.message);}
+}
+async function saveStrong8kStoreEnabled(){
+  try{
+    await strong8kAdminApi('/admin/strong8k/config',{method:'POST',body:JSON.stringify({storeEnabled:Boolean(document.getElementById('s8k-store-enabled')?.checked)})});
+    refreshStrong8kStore(true);
+    showToast('✓ Store visibility updated');
+  }catch(e){showToast('⚠️ '+e.message);}
+}
+async function testStrong8kConnection(){
+  const panelUrl=document.getElementById('s8k-panel-url')?.value?.trim()||'';
+  const apiKey=document.getElementById('s8k-api-key')?.value?.trim();
+  try{
+    const body={};
+    if(panelUrl)body.panelUrl=panelUrl;
+    if(apiKey)body.apiKey=apiKey;
+    const j=await strong8kAdminApi('/admin/strong8k/test',{method:'POST',body:JSON.stringify(body)});
+    document.getElementById('s8k-credits-box').textContent=`Connected as ${j.username||'reseller'} · Credits: ${j.credits??'—'}`;
+    showToast('✓ Strong8K panel connected');
+  }catch(e){showToast('⚠️ '+e.message);}
+}
+async function loadStrong8kBouquets(){
+  try{
+    const j=await strong8kAdminApi('/admin/strong8k/bouquets');
+    const list=Array.isArray(j.bouquets)?j.bouquets:[];
+    document.getElementById('s8k-bouquets-box').innerHTML=list.length
+      ?list.map(b=>`<button type="button" class="inline-btn" style="margin:0 6px 6px 0" onclick="document.getElementById('s8k-package-id').value='${esc(b.id)}'">${esc(b.name)} (${esc(b.id)})</button>`).join('')
+      :'No bouquets returned — you can keep package ID as <b>all</b>.';
+  }catch(e){showToast('⚠️ '+e.message);}
 }
 
 async function renderSmsAdmin(){
