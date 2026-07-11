@@ -2322,29 +2322,33 @@ function validateNetflixAliasPurchase(data, skey, acc) {
 }
 
 // ── HEALTH ─────────────────────────────────────────────────────────────
-async function buildHealthReport() {
-  const report = { ok: true, ts: Date.now(), ready: true, checks: {} };
-  let data = null;
+const HEALTH_DB_TIMEOUT_MS = Number(process.env.HEALTH_DB_TIMEOUT_MS || 2500);
+
+async function readDbForHealthCheck() {
   if (dbCache && dbCacheLoadedAt && Date.now() - dbCacheLoadedAt < 5 * 60 * 1000) {
-    data = dbCache;
-  } else {
-    try {
-      data = await readJsonBinRaw({ fast: true, skipRecoverWrite: true, noClone: true });
-    } catch (e) {
-      data = null;
-    }
+    return dbCache;
   }
+  try {
+    return await Promise.race([
+      readJsonBinRaw({ fast: true, skipRecoverWrite: true, noClone: true }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('health db timeout')), HEALTH_DB_TIMEOUT_MS))
+    ]);
+  } catch (e) {
+    return null;
+  }
+}
+
+async function buildHealthReport() {
+  const report = { ok: true, ts: Date.now(), ready: false, checks: {} };
+  const data = await readDbForHealthCheck();
   report.checks.db = Boolean(data && Array.isArray(data.users));
   report.checks.storage = data && data.emergencyDb ? 'fallback' : (data ? 'primary' : 'unknown');
   report.ready = report.checks.db;
   // Keep ok:true while process is up so Render deploy health checks pass during DB warm-up.
   report.ok = true;
-  try {
-    const mailData = data ? data : await loadEmailSettingsData().catch(() => ({}));
-    report.checks.email = isServerEmailConfigured(mailData || {});
-  } catch (e) {
-    report.checks.email = Boolean(process.env.RESEND_API_KEY || process.env.EMAILJS_PRIVATE_KEY);
-  }
+  report.checks.email = data
+    ? isServerEmailConfigured(data)
+    : Boolean(process.env.RESEND_API_KEY || process.env.EMAILJS_PRIVATE_KEY);
   return report;
 }
 
