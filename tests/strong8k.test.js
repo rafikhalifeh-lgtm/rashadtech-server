@@ -54,6 +54,21 @@ test('buildTrialLineRequestVariants includes POST and country_lock attempts', ()
   assert.ok(variants.some(v => v.packParam === 'both'));
 });
 
+test('resolveRegionalBouquetIds prefers saved ids and fixes ME/US swap', () => {
+  const bouquets = [
+    { id: '75605', name: 'Full Middle East' },
+    { id: '75606', name: 'Full United States' },
+    { id: '75604', name: 'Full Europe' }
+  ];
+  const cfg = {
+    regions: { me: { packId: '75606' }, eu: { packId: '75604' }, us: { packId: '75605' } },
+    sellPackages: [{ id: 'full', exclusive: true, enabled: true, name: 'Full', bouquetIdsByRegion: {} }]
+  };
+  const ids = strong8k.resolveRegionalBouquetIds(bouquets, cfg);
+  assert.equal(ids.me, '75605');
+  assert.equal(ids.us, '75606');
+});
+
 test('sanitizeRegions keeps single bouquet id from comma-separated packId', () => {
   const regions = strong8k.sanitizeRegions({
     me: { packId: '75605,75609,75610' },

@@ -13,6 +13,10 @@ const IPTV_REGIONS = {
 
 const TRIAL_SUB_CODE = 99;
 const TRIAL_MIN_PANEL_CREDITS = 12;
+const PANEL_REQUEST_TIMEOUT_MS = 60000;
+const PANEL_REQUEST_RETRIES = 2;
+const MAX_TRIAL_PACK_ATTEMPTS = 5;
+const MAX_TRIAL_PANEL_CALLS = 24;
 const OMIT_PANEL_PACK = '__OMIT_PACK__';
 const DURATION_MONTHS = [1, 3, 6, 12];
 
@@ -370,14 +374,55 @@ function findBouquetByNamePattern(bouquets, pattern) {
   return hit ? firstBouquetId(hit.id) : '';
 }
 
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function fixRegionBouquetSwap(meId, usId) {
+  const me = String(meId || '').trim();
+  const us = String(usId || '').trim();
+  if (me === FULL_PACKAGE_REGION_BOUQUETS.us && us === FULL_PACKAGE_REGION_BOUQUETS.me) {
+    return { meId: us, usId: me };
+  }
+  return { meId: me, usId: us };
+}
+
+function savedRegionBouquetId(cfg, regionKey) {
+  const key = String(regionKey || 'me').toLowerCase();
+  const exclusive = getEnabledSellPackages(cfg).find(pkg => pkg.exclusive);
+  const fromPkg = firstBouquetId(exclusive && exclusive.bouquetIdsByRegion && exclusive.bouquetIdsByRegion[key]);
+  if (fromPkg) return fromPkg;
+  const fromRegion = firstBouquetId(resolveRegionPack(cfg, key));
+  if (fromRegion && !isWildcardPack(fromRegion)) return fromRegion;
+  return FULL_PACKAGE_REGION_BOUQUETS[key] || '';
+}
+
+function resolveRegionalBouquetIds(list, cfg) {
+  const rows = formatBouquetRows(list);
+  const ids = { me: '', eu: '', us: '' };
+  ['me', 'eu', 'us'].forEach(key => {
+    const saved = savedRegionBouquetId(cfg, key);
+    if (saved && rows.some(b => b.id === saved)) {
+      ids[key] = saved;
+      return;
+    }
+    ids[key] = findBouquetForRegion(rows, key, cfg);
+  });
+  const fixed = fixRegionBouquetSwap(ids.me, ids.us);
+  ids.me = fixed.meId;
+  ids.us = fixed.usId;
+  return ids;
+}
+
 function applyPanelBouquetsToConfig(config, bouquets) {
   const cfg = sanitizeStrong8kConfig(config);
   const list = formatBouquetRows(bouquets);
   if (!list.length) return cfg;
 
-  const meId = findBouquetForRegion(list, 'me', cfg);
-  const euId = findBouquetForRegion(list, 'eu', cfg);
-  const usId = findBouquetForRegion(list, 'us', cfg);
+  const regional = resolveRegionalBouquetIds(list, cfg);
+  const meId = regional.me;
+  const euId = regional.eu;
+  const usId = regional.us;
   const streamingId = findBouquetByNamePattern(list, /stream/i);
   const beinId = findBouquetByNamePattern(list, /bein|world\s*cup/i);
 
@@ -552,20 +597,31 @@ function buildTrialPackAttemptsFromList(bouquets, config, region) {
 async function buildTrialPackAttempts(config, region) {
   const regionKey = String(region || 'me').toLowerCase();
   let bouquets = [];
+  let panelError = null;
   try {
     bouquets = (await getBouquets(config)).bouquets || [];
   } catch (e) {
-    throw new Error(`Could not load bouquets from Strong8K panel: ${e.message}`);
+    panelError = e;
   }
   const list = formatBouquetRows(bouquets);
   if (!list.length) {
-    throw new Error('No bouquets found on your Strong8K panel. In Admin → Strong8K IPTV, click Test connection then Load bouquets.');
+    const fromConfig = resolveTrialPackBouquetSync(config, regionKey);
+    if (fromConfig && !isWildcardPack(fromConfig)) {
+      bouquets = [{ id: fromConfig, name: 'Saved bouquet' }];
+    } else if (panelError) {
+      throw new Error(
+        `Could not load bouquets from Strong8K panel: ${panelError.message}. Set Middle East to one bouquet ID (e.g. 75605), click Save settings, then retry Test ME trial.`
+      );
+    } else {
+      throw new Error('No bouquets found on your Strong8K panel. In Admin → Strong8K IPTV, click Test connection then Load bouquets.');
+    }
   }
-  const attempts = buildTrialPackAttemptsFromList(bouquets, config, regionKey);
+  let attempts = buildTrialPackAttemptsFromList(bouquets, config, regionKey);
   if (!attempts.length) {
     throw new Error('Could not resolve a bouquet for free trial on your panel.');
   }
-  return { attempts, bouquets: list };
+  attempts = attempts.slice(0, MAX_TRIAL_PACK_ATTEMPTS);
+  return { attempts, bouquets: formatBouquetRows(bouquets) };
 }
 
 async function requestNewPanelLine(config, { sub, pack, note, type = 'm3u', country, countryParam = 'country', packParam = 'pack', httpMethod = 'GET' }) {
@@ -628,22 +684,23 @@ async function assertTrialPanelCredits(config) {
   }
 }
 
-async function createTrialLine(config, { note, region, lineType, pack }) {
+async function createTrialLine(config, { note, region, lineType, pack, packAttempts, bouquetsCache } = {}) {
   const regionKey = String(region || 'me').toLowerCase();
-  const sub = TRIAL_SUB_CODE;
   const attemptLog = [];
-  let bouquets = [];
+  let bouquets = Array.isArray(bouquetsCache) ? bouquetsCache : [];
 
   await assertTrialPanelCredits(config);
 
   const presetPack = pack ? String(pack).trim() : '';
   const attemptList = presetPack
     ? [presetPack]
-    : (await buildTrialPackAttempts(config, regionKey)).attempts;
+    : (Array.isArray(packAttempts) && packAttempts.length
+      ? packAttempts
+      : (await buildTrialPackAttempts(config, regionKey)).attempts);
 
-  if (!presetPack) {
+  if (!bouquets.length && !presetPack) {
     try {
-      bouquets = (await getBouquets(config)).bouquets || [];
+      bouquets = formatBouquetRows((await getBouquets(config)).bouquets || []);
     } catch {
       bouquets = [];
     }
@@ -653,6 +710,7 @@ async function createTrialLine(config, { note, region, lineType, pack }) {
   let successPack = null;
   let successAttempt = null;
   const noteText = String(note || 'rashadtech.tv trial').slice(0, 200);
+  let panelCalls = 0;
 
   outer:
   for (let packIndex = 0; packIndex < attemptList.length; packIndex++) {
@@ -660,6 +718,8 @@ async function createTrialLine(config, { note, region, lineType, pack }) {
     const thorough = packIndex === 0 || panelPack === 'all';
     const variants = buildTrialLineRequestVariants(regionKey, panelPack, { thorough });
     for (const variant of variants) {
+      if (panelCalls >= MAX_TRIAL_PANEL_CALLS) break outer;
+      panelCalls += 1;
       const data = await requestNewPanelLine(config, { ...variant, note: noteText });
       row = unwrapApiPayload(data);
       const ok = String(row.status || '').toLowerCase() === 'true';
@@ -889,7 +949,7 @@ async function resolvePackForPanel(config, regionId) {
   return joined;
 }
 
-async function requestPanel(config, params, { method = 'GET' } = {}) {
+async function requestPanelOnce(config, params, { method = 'GET' } = {}) {
   const panelUrl = normalizePanelUrl(config && config.panelUrl);
   const apiKey = resolveApiKey(config);
   if (!panelUrl) throw new Error('Strong8K panel URL is not configured');
@@ -913,7 +973,7 @@ async function requestPanel(config, params, { method = 'GET' } = {}) {
       ...(httpMethod === 'POST' ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {})
     },
     body: httpMethod === 'POST' ? bodyParams.toString() : undefined,
-    signal: AbortSignal.timeout(45000)
+    signal: AbortSignal.timeout(PANEL_REQUEST_TIMEOUT_MS)
   });
   const text = await res.text();
   let data;
@@ -926,6 +986,22 @@ async function requestPanel(config, params, { method = 'GET' } = {}) {
     throw new Error(panelErrorMessage(data, `Strong8K panel HTTP ${res.status}`));
   }
   return data;
+}
+
+async function requestPanel(config, params, { method = 'GET', retries = PANEL_REQUEST_RETRIES } = {}) {
+  let lastError = null;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await requestPanelOnce(config, params, { method });
+    } catch (e) {
+      lastError = e;
+      const msg = String(e && e.message || '');
+      const retryable = /timeout|aborted|network|fetch failed|econnreset|etimedout|socket/i.test(msg);
+      if (!retryable || attempt >= retries) throw e;
+      await sleep(1500 * (attempt + 1));
+    }
+  }
+  throw lastError || new Error('Strong8K panel request failed');
 }
 
 async function getResellerInfo(config) {
@@ -1001,18 +1077,24 @@ function assertPanelSuccess(data, fallback) {
 }
 
 async function getBouquets(config) {
-  const actions = ['bouquet', 'bouquets', 'package', 'packages'];
+  const actions = ['bouquet', 'bouquets'];
   let lastData = null;
+  let lastError = null;
   for (const action of actions) {
-    const data = await requestPanel(config, { action });
-    lastData = data;
-    assertPanelSuccess(data, 'Could not load bouquets from panel');
-    const list = normalizeBouquetList(data);
-    const bouquets = formatBouquetRows(list);
-    if (bouquets.length) return { success: true, bouquets };
+    try {
+      const data = await requestPanel(config, { action });
+      lastData = data;
+      assertPanelSuccess(data, 'Could not load bouquets from panel');
+      const list = normalizeBouquetList(data);
+      const bouquets = formatBouquetRows(list);
+      if (bouquets.length) return { success: true, bouquets };
+    } catch (e) {
+      lastError = e;
+    }
   }
 
   if (lastData) assertPanelSuccess(lastData, 'Could not load bouquets from panel');
+  if (lastError) throw lastError;
   return { success: true, bouquets: [] };
 }
 
@@ -1126,6 +1208,8 @@ module.exports = {
   findBouquetForRegion,
   findBouquetByNamePattern,
   applyPanelBouquetsToConfig,
+  resolveRegionalBouquetIds,
+  fixRegionBouquetSwap,
   syncStrong8kBouquetsFromPanel,
   matchBouquetNameForRegion,
   IPTV_TRIAL_REGIONS,

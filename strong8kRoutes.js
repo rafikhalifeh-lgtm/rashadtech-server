@@ -314,19 +314,21 @@ function registerStrong8kRoutes(app, deps) {
       } catch {
         panelCredits = null;
       }
-      const attempts = await strong8k.buildTrialPackAttempts(draft, region);
+      const built = await strong8k.buildTrialPackAttempts(draft, region);
       const result = await strong8k.createTrialLine(draft, {
         note: `rashadtech.tv admin trial test · ${session.email}`,
         region,
-        lineType: 'stable'
+        lineType: 'stable',
+        packAttempts: built.attempts,
+        bouquetsCache: built.bouquets
       });
       res.json({
         success: true,
         region,
         panelCredits,
         trialMinCredits: strong8k.TRIAL_MIN_PANEL_CREDITS,
-        packAttempts: attempts.attempts.map(p => strong8k.formatPackAttemptLabel(p)),
-        bouquets: attempts.bouquets,
+        packAttempts: built.attempts.map(p => strong8k.formatPackAttemptLabel(p)),
+        bouquets: built.bouquets,
         sellPackageCount: strong8k.getEnabledSellPackages(draft).length,
         successPack: result.successPack,
         attemptLog: result.attemptLog,

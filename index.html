@@ -1330,8 +1330,9 @@ So your EmailJS template will receive the user email and verification code corre
           <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px">
             <div class="field" style="margin:0"><label>Middle East</label><input type="text" id="s8k-pack-me" placeholder="75605"><div style="font-size:10px;color:var(--text3);margin-top:4px">One bouquet ID only (e.g. 75605) — not a comma list</div></div>
             <div class="field" style="margin:0"><label>Europe</label><input type="text" id="s8k-pack-eu" placeholder="all"></div>
-            <div class="field" style="margin:0"><label>United States</label><input type="text" id="s8k-pack-us" placeholder="all"></div>
+            <div class="field" style="margin:0"><label>United States</label><input type="text" id="s8k-pack-us" placeholder="75606"></div>
           </div>
+          <div id="s8k-region-swap-warn" style="display:none;font-size:11px;color:var(--orange);margin-bottom:10px;line-height:1.55"></div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
             <button class="inline-btn" onclick="saveStrong8kConfig()">Save settings</button>
             <button class="inline-btn" onclick="testStrong8kConnection()">Test connection</button>
@@ -8719,6 +8720,14 @@ async function renderStrong8kAdmin(){
       const el=document.getElementById('s8k-pack-'+k);
       if(el)el.value=(regions[k]&&regions[k].packId)||'all';
     });
+    const mePack=(regions.me&&regions.me.packId)||'';
+    const usPack=(regions.us&&regions.us.packId)||'';
+    const swapWarn=document.getElementById('s8k-region-swap-warn');
+    if(swapWarn){
+      const looksSwapped=mePack==='75606'||usPack==='75605';
+      swapWarn.style.display=looksSwapped?'block':'none';
+      swapWarn.textContent=looksSwapped?'⚠️ Middle East should be 75605 and United States should be 75606. Click Load bouquets to fix IDs.':'';
+    }
     if(statusEl){
       statusEl.textContent=_strong8kConfigCache.hasApiKey
         ?(_strong8kConfigCache.hasEnvApiKey?'API key set via Render env (secure)':'API key saved on server')
