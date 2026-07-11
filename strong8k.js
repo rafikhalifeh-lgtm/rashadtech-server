@@ -12,6 +12,7 @@ const IPTV_REGIONS = {
 };
 
 const TRIAL_SUB_CODE = 99;
+const OMIT_PANEL_PACK = '__OMIT_PACK__';
 const DURATION_MONTHS = [1, 3, 6, 12];
 
 const PACKAGE_PRICE_DEFAULTS = {
@@ -353,6 +354,12 @@ function isPanelPackRejection(payload) {
   return /subscription package not found|bouquet|package.*not found|invalid.*pack/i.test(msg);
 }
 
+function isPanelDemoLimitError(payload) {
+  const row = unwrapApiPayload(payload);
+  const msg = String(row.message || row.messasge || row.result || row.error || '').trim();
+  return /demo|trial.*limit|no.*ticket|ticket/i.test(msg);
+}
+
 function resolveTrialPackBouquetSync(config, region) {
   const regionKey = String(region || 'me').toLowerCase();
   if (!IPTV_TRIAL_REGIONS.has(regionKey)) return '';
@@ -388,8 +395,9 @@ function assertTrialPanelPack(pack, regionKey) {
   return single;
 }
 
-async function buildTrialPackAttempts(config, region) {
+function buildTrialPackAttemptsFromList(bouquets, config, region) {
   const regionKey = String(region || 'me').toLowerCase();
+  const list = formatBouquetRows(bouquets);
   const attempts = [];
   const seen = new Set();
   const push = (value) => {
@@ -399,22 +407,118 @@ async function buildTrialPackAttempts(config, region) {
     attempts.push(id);
   };
 
-  // Strong8K / Xtream reseller API: sub=99 demo uses pack=all (all bouquets).
+  if (!list.length) return attempts;
+
+  const regional = findBouquetForRegion(list, regionKey, config);
+  if (regional) push(regional);
+
+  list.filter(b => /full/i.test(b.name || '')).forEach(b => push(firstBouquetId(b.id)));
+  list.forEach(b => push(firstBouquetId(b.id)));
   push('all');
-
-  try {
-    const { bouquets } = await getBouquets(config);
-    push(findBouquetForRegion(bouquets, regionKey, config));
-  } catch {
-    // continue with saved config fallback
-  }
-
-  push(resolveTrialPackBouquetSync(config, regionKey));
+  push(OMIT_PANEL_PACK);
   return attempts;
 }
 
+async function buildTrialPackAttempts(config, region) {
+  const regionKey = String(region || 'me').toLowerCase();
+  let bouquets = [];
+  try {
+    bouquets = (await getBouquets(config)).bouquets || [];
+  } catch (e) {
+    throw new Error(`Could not load bouquets from Strong8K panel: ${e.message}`);
+  }
+  const list = formatBouquetRows(bouquets);
+  if (!list.length) {
+    throw new Error('No bouquets found on your Strong8K panel. In Admin → Strong8K IPTV, click Test connection then Load bouquets.');
+  }
+  const attempts = buildTrialPackAttemptsFromList(bouquets, config, regionKey);
+  if (!attempts.length) {
+    throw new Error('Could not resolve a bouquet for free trial on your panel.');
+  }
+  return { attempts, bouquets: list };
+}
+
+async function requestNewM3uLine(config, { sub, pack, note }) {
+  const params = { action: 'new', type: 'm3u', sub, note: String(note || '').slice(0, 200) };
+  if (pack !== OMIT_PANEL_PACK && pack != null && String(pack).trim() !== '') {
+    params.pack = String(pack).trim();
+  }
+  return requestPanel(config, params);
+}
+
+function formatPackAttemptLabel(pack) {
+  return pack === OMIT_PANEL_PACK ? '(no pack param)' : String(pack);
+}
+
+async function createTrialLine(config, { note, region, lineType, pack }) {
+  const regionKey = String(region || 'me').toLowerCase();
+  const sub = TRIAL_SUB_CODE;
+  const attemptLog = [];
+  let bouquets = [];
+
+  const presetPack = pack ? String(pack).trim() : '';
+  const attemptList = presetPack
+    ? [presetPack]
+    : (await buildTrialPackAttempts(config, regionKey)).attempts;
+
+  if (!presetPack) {
+    try {
+      bouquets = (await getBouquets(config)).bouquets || [];
+    } catch {
+      bouquets = [];
+    }
+  }
+
+  let row = null;
+  let successPack = null;
+  for (const panelPack of attemptList) {
+    const data = await requestNewM3uLine(config, { sub, pack: panelPack, note });
+    row = unwrapApiPayload(data);
+    const ok = String(row.status || '').toLowerCase() === 'true';
+    const panelMsg = String(row.message || row.messasge || row.result || row.error || '').trim();
+    attemptLog.push({
+      pack: formatPackAttemptLabel(panelPack),
+      sub,
+      ok,
+      message: panelMsg || (ok ? 'OK' : 'Failed')
+    });
+    if (ok) {
+      successPack = panelPack;
+      break;
+    }
+    if (isPanelDemoLimitError(data)) {
+      throw new Error(panelMsg || 'Strong8K demo/trial limit reached on your panel. Try again tomorrow or add demo credits.');
+    }
+    if (!isPanelPackRejection(data)) {
+      throw new Error(panelErrorMessage(data, 'Could not create IPTV trial line'));
+    }
+  }
+
+  if (!row || String(row.status || '').toLowerCase() !== 'true') {
+    const detail = attemptLog.map(a => `${a.pack}: ${a.message}`).join(' | ');
+    throw new Error(detail || 'Could not create IPTV trial line on Strong8K panel');
+  }
+
+  const creds = parseLineCredentials(row, row.url);
+  return {
+    success: true,
+    userId: String(row.user_id || row.userId || '').trim(),
+    username: creds.username,
+    password: creds.password,
+    url: creds.url,
+    host: creds.host,
+    lineType: lineType === 'm3u' ? 'm3u' : 'stable',
+    isTrial: true,
+    region: regionKey,
+    message: String(row.message || '').trim(),
+    successPack: formatPackAttemptLabel(successPack),
+    attemptLog,
+    bouquetCount: bouquets.length
+  };
+}
+
 async function resolveTrialPackBouquet(config, region) {
-  const attempts = await buildTrialPackAttempts(config, region);
+  const { attempts } = await buildTrialPackAttempts(config, region);
   return attempts[0] || 'all';
 }
 
@@ -425,7 +529,7 @@ async function resolvePanelPack(config, { region, packageIds, isTrial } = {}) {
     if (!IPTV_TRIAL_REGIONS.has(regionKey)) {
       throw new Error('Free trial is only available for Middle East or United States');
     }
-    const attempts = await buildTrialPackAttempts(config, regionKey);
+    const { attempts } = await buildTrialPackAttempts(config, regionKey);
     return attempts[0] || 'all';
   }
 
@@ -534,7 +638,7 @@ function panelErrorMessage(payload, fallback) {
   const msg = String(row.message || row.messasge || row.result || row.error || '').trim();
   if (msg) {
     if (/subscription package not found/i.test(msg)) {
-      return 'IPTV line could not be created — bouquet not found on panel. Bouquets are loaded automatically from your panel; try again in a moment.';
+      return msg;
     }
     return msg;
   }
@@ -733,38 +837,7 @@ async function createLine(config, { months, note, region, isTrial, lineType, pac
   const regionKey = String(region || 'me').toLowerCase();
 
   if (isTrial) {
-    const attempts = pack ? [String(pack).trim()] : await buildTrialPackAttempts(config, regionKey);
-    let lastError = 'Could not create IPTV trial line';
-    let row = null;
-    for (const panelPack of attempts) {
-      const data = await requestPanel(config, {
-        action: 'new',
-        type: 'm3u',
-        sub,
-        pack: panelPack,
-        note: noteText
-      });
-      row = unwrapApiPayload(data);
-      if (String(row.status || '').toLowerCase() === 'true') break;
-      lastError = panelErrorMessage(data, 'Could not create IPTV trial line');
-      if (!isPanelPackRejection(data)) throw new Error(lastError);
-    }
-    if (!row || String(row.status || '').toLowerCase() !== 'true') {
-      throw new Error(lastError);
-    }
-    const creds = parseLineCredentials(row, row.url);
-    return {
-      success: true,
-      userId: String(row.user_id || row.userId || '').trim(),
-      username: creds.username,
-      password: creds.password,
-      url: creds.url,
-      host: creds.host,
-      lineType: lineType === 'm3u' ? 'm3u' : 'stable',
-      isTrial: true,
-      region: regionKey,
-      message: String(row.message || '').trim()
-    };
+    return createTrialLine(config, { note: noteText, region: regionKey, lineType, pack });
   }
 
   const resolvedPack = pack || await resolvePanelPack(config, {
@@ -827,6 +900,15 @@ module.exports = {
   resolveTrialPackBouquet,
   assertTrialPanelPack,
   buildTrialPackAttempts,
+  buildTrialPackAttemptsFromList,
+  createTrialLine,
+  requestNewM3uLine,
+  formatPackAttemptLabel,
+  OMIT_PANEL_PACK,
+  buildTrialPackAttemptsFromList,
+  createTrialLine,
+  requestNewM3uLine,
+  OMIT_PANEL_PACK,
   firstBouquetId,
   findBouquetForRegion,
   findBouquetByNamePattern,

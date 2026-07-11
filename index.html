@@ -8774,7 +8774,8 @@ async function testStrong8kTrial(region){
     if(apiKey)body.apiKey=apiKey;
     const j=await strong8kAdminApi('/admin/strong8k/test-trial',{method:'POST',body:JSON.stringify(body)});
     const label=region==='us'?'United States':'Middle East';
-    if(box)box.innerHTML=`<div style="color:var(--green);margin-bottom:8px">✓ Test trial created (${label})</div><div style="font-size:11px;line-height:1.65;color:var(--text2)">Tried packs: <b>${esc((j.packAttempts||[]).join(' → '))}</b><br>👤 <code>${esc(j.username||'')}</code> · 🔑 <code>${esc(j.password||'')}</code>${j.host?`<br>🌐 <code>${esc(j.host)}</code>`:''}</div>`;
+    const log=(j.attemptLog||[]).map(a=>`${a.pack}: ${a.message}`).join('<br>');
+    if(box)box.innerHTML=`<div style="color:var(--green);margin-bottom:8px">✓ Test trial created (${label}) · pack <b>${esc(j.successPack||'')}</b></div><div style="font-size:11px;line-height:1.65;color:var(--text2)">${log?`Attempts:<br>${log}<br>`:''}👤 <code>${esc(j.username||'')}</code> · 🔑 <code>${esc(j.password||'')}</code>${j.host?`<br>🌐 <code>${esc(j.host)}</code>`:''}</div>`;
     showToast('✓ Test trial line created on panel');
   }catch(e){
     if(box)box.innerHTML=`<span style="color:var(--red)">${esc(e.message||'Trial test failed')}</span>`;

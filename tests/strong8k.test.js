@@ -42,6 +42,21 @@ test('computeSellPackagePrice sums add-ons and respects exclusive full package',
   assert.equal(strong8k.describeSellPackageSelection(['lebanese', 'bein'], config), 'Lebanese + beIN');
 });
 
+test('buildTrialPackAttemptsFromList uses only live panel bouquet ids', () => {
+  const bouquets = [
+    { id: '100', name: 'Full Middle East' },
+    { id: '200', name: 'Full United States' },
+    { id: '300', name: 'Streaming' }
+  ];
+  const attempts = strong8k.buildTrialPackAttemptsFromList(bouquets, {}, 'me');
+  assert.equal(attempts[0], '100');
+  assert.ok(attempts.includes('200'));
+  assert.ok(attempts.includes('300'));
+  assert.ok(attempts.includes('all'));
+  assert.ok(attempts.includes(strong8k.OMIT_PANEL_PACK));
+  assert.ok(!attempts.includes('75605'));
+});
+
 test('resolvePanelPack uses single region full bouquet for free trial', async () => {
   const config = {
     panelUrl: 'https://panel.example.com',
@@ -66,13 +81,6 @@ test('resolvePanelPack uses single region full bouquet for free trial', async ()
       { id: 'streaming', name: 'Streaming', bouquetIds: '75609', bouquetIdsByRegion: {}, prices: { 1: 4, 3: 10, 6: 18, 12: 32 }, monthlyPrice: 4, exclusive: false, enabled: true }
     ]
   };
-  const trialPack = await strong8k.resolvePanelPack(config, { region: 'me', packageIds: [], isTrial: true });
-  assert.equal(trialPack, 'all');
-  const trialUs = await strong8k.resolvePanelPack(config, { region: 'us', packageIds: [], isTrial: true });
-  assert.equal(trialUs, 'all');
-  const attempts = await strong8k.buildTrialPackAttempts(config, 'me');
-  assert.equal(attempts[0], 'all');
-  assert.ok(attempts.includes('75605'));
   const paidPack = await strong8k.resolvePanelPack(config, { region: 'me', packageIds: ['streaming'], isTrial: false });
   assert.equal(paidPack, '75609');
   await assert.rejects(
@@ -264,9 +272,9 @@ test('applyPanelBouquetsToConfig writes region and full package ids from panel',
   assert.equal(next.sellPackages[0].bouquetIdsByRegion.us, '200');
 });
 
-test('panelErrorMessage maps missing package to retry hint', () => {
+test('panelErrorMessage passes through panel subscription errors', () => {
   const msg = strong8k.panelErrorMessage({ status: 'false', message: 'Subscription package not found' }, 'fallback');
-  assert.match(msg, /automatically|try again/i);
+  assert.equal(msg, 'Subscription package not found');
 });
 
 test('purchase handler does not redeclare isTrial when unpacking outcome', () => {

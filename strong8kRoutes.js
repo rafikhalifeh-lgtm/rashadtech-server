@@ -299,17 +299,18 @@ function registerStrong8kRoutes(app, deps) {
         return res.status(400).json({ error: 'Test trial supports Middle East (me) or United States (us) only' });
       }
       const attempts = await strong8k.buildTrialPackAttempts(draft, region);
-      const result = await strong8k.createLine(draft, {
-        months: 1,
+      const result = await strong8k.createTrialLine(draft, {
         note: `rashadtech.tv admin trial test · ${session.email}`,
         region,
-        isTrial: true,
         lineType: 'stable'
       });
       res.json({
         success: true,
         region,
-        packAttempts: attempts,
+        packAttempts: attempts.attempts.map(p => strong8k.formatPackAttemptLabel(p)),
+        bouquets: attempts.bouquets,
+        successPack: result.successPack,
+        attemptLog: result.attemptLog,
         username: result.username,
         password: result.password,
         host: result.host,
