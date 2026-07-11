@@ -21,17 +21,45 @@ test('sanitizeStrong8kConfigForClient exposes regions and line types', () => {
 
 test('computeSellPackagePrice sums add-ons and respects exclusive full package', () => {
   const config = {
+    regions: {
+      me: { id: 'me', name: 'Middle East', packId: '75605' },
+      eu: { id: 'eu', name: 'Europe', packId: '75604' },
+      us: { id: 'us', name: 'United States', packId: '75606' }
+    },
     sellPackages: [
-      { id: 'full', name: 'Full', bouquetIds: '1,2,3', monthlyPrice: 8, exclusive: true, enabled: true },
-      { id: 'lebanese', name: 'Lebanese', bouquetIds: '4', monthlyPrice: 3, exclusive: false, enabled: true },
-      { id: 'bein', name: 'beIN', bouquetIds: '5', monthlyPrice: 5, exclusive: false, enabled: true }
+      { id: 'full', name: 'Full', bouquetIds: '', bouquetIdsByRegion: { me: '75605', eu: '75604', us: '75606' }, monthlyPrice: 8, exclusive: true, enabled: true },
+      { id: 'lebanese', name: 'Lebanese', bouquetIds: '4', bouquetIdsByRegion: {}, monthlyPrice: 3, exclusive: false, enabled: true },
+      { id: 'bein', name: 'beIN', bouquetIds: '75610', bouquetIdsByRegion: {}, monthlyPrice: 5, exclusive: false, enabled: true }
     ]
   };
   assert.equal(strong8k.computeSellPackagePrice(['lebanese', 'bein'], 1, config), 8);
   assert.equal(strong8k.computeSellPackagePrice(['full', 'bein'], 1, config), 8);
   assert.equal(strong8k.computeSellPackagePrice(['full'], 3, config), 24);
-  assert.equal(strong8k.resolvePackFromSellPackages(['lebanese', 'bein'], config), '4,5');
+  assert.equal(strong8k.resolvePackFromSellPackages(['lebanese', 'bein'], config, 'me'), '4,75610');
+  assert.equal(strong8k.resolvePackFromSellPackages(['full'], config, 'me'), '75605');
+  assert.equal(strong8k.resolveSellPackageBouquetIds(config.sellPackages[0], 'eu', config), '75604');
   assert.equal(strong8k.describeSellPackageSelection(['lebanese', 'bein'], config), 'Lebanese + beIN');
+});
+
+test('resolvePanelPack uses region bouquet for free trial when packages not selected', async () => {
+  const config = {
+    panelUrl: 'https://panel.example.com',
+    apiKey: 'secret',
+    packageId: 'all',
+    regions: {
+      me: { id: 'me', name: 'Middle East', packId: '75605,75609,75610' },
+      eu: { id: 'eu', name: 'Europe', packId: '75604' },
+      us: { id: 'us', name: 'United States', packId: '75606' }
+    },
+    sellPackages: [
+      { id: 'full', name: 'Full', bouquetIds: '', bouquetIdsByRegion: {}, monthlyPrice: 8, exclusive: true, enabled: true },
+      { id: 'streaming', name: 'Streaming', bouquetIds: '75609', bouquetIdsByRegion: {}, monthlyPrice: 4, exclusive: false, enabled: true }
+    ]
+  };
+  const trialPack = await strong8k.resolvePanelPack(config, { region: 'me', packageIds: [], isTrial: true });
+  assert.equal(trialPack, '75605,75609,75610');
+  const paidPack = await strong8k.resolvePanelPack(config, { region: 'me', packageIds: ['streaming'], isTrial: false });
+  assert.equal(paidPack, '75609');
 });
 
 test('extractHostFromUrl parses server host', () => {

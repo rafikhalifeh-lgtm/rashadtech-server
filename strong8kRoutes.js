@@ -314,13 +314,10 @@ function registerStrong8kRoutes(app, deps) {
         let plan = null;
         const packageIds = selectedPackages.length
           ? selectedPackages
-          : (usesSellPackages && sellPackages[0] ? [sellPackages[0].id] : []);
+          : (!isTrial && usesSellPackages && sellPackages[0] ? [sellPackages[0].id] : []);
         const packageLabel = packageIds.length
           ? strong8k.describeSellPackageSelection(packageIds, config)
           : '';
-        const packOverride = packageIds.length
-          ? strong8k.resolvePackFromSellPackages(packageIds, config)
-          : null;
         const expectedPackagePrice = (!isTrial && packageIds.length)
           ? strong8k.computeSellPackagePrice(packageIds, months, config)
           : null;
@@ -362,18 +359,13 @@ function registerStrong8kRoutes(app, deps) {
         }
 
         const regionName = strong8k.sanitizeRegions(config.regions)[region]?.name || region;
-        let panelPack = packOverride;
-        if (!panelPack && isTrial && usesSellPackages) {
-          const trialIds = packageIds.length ? packageIds : (sellPackages.find(p => p.exclusive) || sellPackages[0] ? [sellPackages.find(p => p.exclusive)?.id || sellPackages[0].id] : []);
-          panelPack = strong8k.resolvePackFromSellPackages(trialIds, config);
-        }
         const panelResult = await strong8k.createLine(config, {
           months: isTrial ? 1 : months,
           note: `rashadtech.tv · ${user.email}${reseller && subCustomerPhone ? ` · sub ${subCustomerPhone}` : ''} · ${regionName}${packageLabel ? ` · ${packageLabel}` : ''}`,
           region,
           isTrial,
           lineType,
-          pack: panelPack || undefined
+          packageIds
         });
 
         if (!isTrial) user.balance = Number(user.balance || 0) - price;

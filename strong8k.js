@@ -96,6 +96,16 @@ function slugifySellPackageId(raw, fallback) {
   return base || 'package';
 }
 
+function sanitizeBouquetIdsByRegion(raw) {
+  const input = raw && typeof raw === 'object' ? raw : {};
+  const out = {};
+  ['me', 'eu', 'us'].forEach(key => {
+    const value = String(input[key] || '').trim();
+    if (value) out[key] = value;
+  });
+  return out;
+}
+
 function sanitizeSellPackages(raw) {
   const list = Array.isArray(raw) && raw.length ? raw : DEFAULT_SELL_PACKAGES;
   const seen = new Set();
@@ -110,6 +120,7 @@ function sanitizeSellPackages(raw) {
       name: String(row && row.name || fallback.name).trim().slice(0, 48) || fallback.name,
       desc: String(row && row.desc || fallback.desc || '').trim().slice(0, 160),
       bouquetIds: String(row && row.bouquetIds || '').trim(),
+      bouquetIdsByRegion: sanitizeBouquetIdsByRegion(row && row.bouquetIdsByRegion),
       monthlyPrice: Number.isFinite(monthlyPrice) && monthlyPrice >= 0
         ? Math.round(monthlyPrice * 100) / 100
         : Number(fallback.monthlyPrice || 0),
@@ -158,18 +169,59 @@ function computeSellPackagePrice(packageIds, months, config) {
   return Math.round(monthly * m * 100) / 100;
 }
 
-function resolvePackFromSellPackages(packageIds, config) {
+function resolveSellPackageBouquetIds(pkg, region, config) {
+  const regionKey = String(region || 'me').toLowerCase();
+  const byRegion = pkg.bouquetIdsByRegion && typeof pkg.bouquetIdsByRegion === 'object' ? pkg.bouquetIdsByRegion : {};
+  const fromRegion = String(byRegion[regionKey] || '').trim();
+  if (fromRegion) return fromRegion;
+  const global = String(pkg.bouquetIds || '').trim();
+  if (global) return global;
+  if (pkg.exclusive && config) {
+    const regionPack = resolveRegionPack(config, regionKey);
+    if (!isWildcardPack(regionPack)) return regionPack;
+  }
+  return '';
+}
+
+function addBouquetIdsToSet(target, raw) {
+  String(raw || '').split(',')
+    .map(part => part.trim())
+    .filter(Boolean)
+    .forEach(id => target.add(id));
+}
+
+function resolvePackFromSellPackages(packageIds, config, region) {
   const selected = resolveSelectedSellPackages(packageIds, config);
   if (!selected.length) return null;
+  const regionKey = String(region || 'me').toLowerCase();
   const bouquetSet = new Set();
-  selected.forEach(pkg => {
-    String(pkg.bouquetIds || '').split(',')
-      .map(part => part.trim())
-      .filter(Boolean)
-      .forEach(id => bouquetSet.add(id));
-  });
+  selected.forEach(pkg => addBouquetIdsToSet(bouquetSet, resolveSellPackageBouquetIds(pkg, regionKey, config)));
   const joined = [...bouquetSet].join(',');
   return joined || null;
+}
+
+async function resolvePanelPack(config, { region, packageIds, isTrial } = {}) {
+  const regionKey = String(region || 'me').toLowerCase();
+  const ids = normalizeSellPackageIds(packageIds);
+  const sellPackages = getEnabledSellPackages(config);
+
+  if (ids.length) {
+    const fromPackages = resolvePackFromSellPackages(ids, config, regionKey);
+    if (fromPackages) return fromPackages;
+  }
+
+  const regionPack = resolveRegionPack(config, regionKey);
+  if (!isWildcardPack(regionPack)) return regionPack;
+
+  if (isTrial && sellPackages.length) {
+    const exclusive = sellPackages.find(pkg => pkg.exclusive) || sellPackages[0];
+    if (exclusive) {
+      const fromExclusive = resolveSellPackageBouquetIds(exclusive, regionKey, config);
+      if (fromExclusive) return fromExclusive;
+    }
+  }
+
+  return resolvePackForPanel(config, regionKey);
 }
 
 function describeSellPackageSelection(packageIds, config) {
@@ -452,12 +504,16 @@ function parseLineCredentials(row, url) {
   return { username, password, url: playlistUrl, host };
 }
 
-async function createLine(config, { months, note, region, isTrial, lineType, pack }) {
+async function createLine(config, { months, note, region, isTrial, lineType, pack, packageIds }) {
   const sub = isTrial ? TRIAL_SUB_CODE : Number(months);
   if (!isTrial && ![1, 3, 6, 12].includes(sub)) {
     throw new Error('Invalid subscription length');
   }
-  const resolvedPack = pack || await resolvePackForPanel(config, region);
+  const resolvedPack = pack || await resolvePanelPack(config, {
+    region,
+    packageIds,
+    isTrial: Boolean(isTrial)
+  });
   const data = await requestPanel(config, {
     action: 'new',
     type: 'm3u',
@@ -505,6 +561,8 @@ module.exports = {
   computeSellPackagePrice,
   computeSellPackageMonthlyTotal,
   resolvePackFromSellPackages,
+  resolveSellPackageBouquetIds,
+  resolvePanelPack,
   resolveSelectedSellPackages,
   describeSellPackageSelection,
   normalizeSellPackageIds,

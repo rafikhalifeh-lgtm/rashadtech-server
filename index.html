@@ -1342,7 +1342,7 @@ So your EmailJS template will receive the user email and verification code corre
         </div>
         <div class="card" style="padding:16px;margin-bottom:14px">
           <div style="font-size:13px;font-weight:700;margin-bottom:8px">Channel packages for customers</div>
-          <div style="font-size:12px;color:var(--text2);line-height:1.55;margin-bottom:10px">Create custom bouquets in your Strong8K panel (Bouquets page), then paste each bouquet ID here. Customers can choose <b>Full Package</b> alone or combine add-ons (e.g. Lebanese + beIN).</div>
+          <div style="font-size:12px;color:var(--text2);line-height:1.55;margin-bottom:10px">Create custom bouquets in your Strong8K panel, click <b>Load bouquets</b>, then set each package's <b>monthly price</b> and bouquet IDs. Full Package uses per-region IDs (75605 ME, 75604 EU, etc.). Streaming and beIN use one ID for all regions.</div>
           <div id="s8k-sell-packages-editor" style="display:grid;gap:10px;margin-bottom:10px"></div>
         </div>
         <div class="card" style="padding:16px;margin-bottom:14px">
@@ -5050,9 +5050,6 @@ function iptvWizardBack(){
 }
 function iptvWizardNext(){
   if(iptvWizardStep===1&&!iptvRegion){showToast('Please choose your region');return;}
-  if(iptvWizardStep===3&&iptvHasSellPackages()){
-    if(!iptvSelectedPackages.length){showToast('Select at least one channel package');return;}
-  }
   if(iptvWizardStep===iptvPlanStep()){
     if(iptvTrialReseller()&&iptvSubPhone.trim()&&!iptvTrialMode&&iptvPlanIdx==null)iptvTrialMode=true;
     if(iptvTrialMode){
@@ -5060,7 +5057,10 @@ function iptvWizardNext(){
       if(iptvTrialReseller()&&!iptvSubPhone.trim()){showToast('Enter sub-customer phone number');return;}
       if(!iptvTrialReseller()&&iptvTrialInfo?.needsProfilePhone){showToast('Add your phone in Profile first');return;}
       if(iptvTrialInfo&&!iptvTrialInfo.eligible){showToast(iptvTrialInfo.reason||'Complete trial requirements');return;}
-    }else if(iptvPlanIdx==null){showToast('Select a duration or free trial');return;}
+    }else{
+      if(iptvHasSellPackages()&&!iptvSelectedPackages.length){showToast('Select at least one channel package');return;}
+      if(iptvPlanIdx==null){showToast('Select a duration or free trial');return;}
+    }
   }
   let next=iptvWizardStep+1;
   if(iptvWizardStep===2&&!iptvHasSellPackages())next=iptvPlanStep();
@@ -5129,7 +5129,7 @@ function renderIptvWizard(){
     }
   }else if(iptvWizardStep===3&&iptvHasSellPackages()){
     const monthly=iptvSellPackageMonthlyTotal();
-    html+=`<div class="plan-section-label">Choose channel packages</div><div style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.55">Pick <b>Full Package</b> or combine add-ons (e.g. Lebanese + beIN). Price is per month × duration on the next step.</div>`;
+    html+=`<div class="plan-section-label">Choose channel packages</div><div style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.55">Pick <b>Full Package</b> or combine add-ons (e.g. Streaming + beIN). Each pack has its own monthly price × duration. <b>Free trial</b> uses your region's Full Package — you can skip this step and choose trial on the next screen.</div>`;
     html+=(meta.sellPackages||[]).map(pkg=>{
       const sel=iptvSelectedPackages.includes(pkg.id);
       return `<div class="plan-row${sel?' sel':''}" style="cursor:pointer;margin-bottom:8px" onclick="toggleIptvPackage('${esc(pkg.id)}')"><div><div class="plan-name">${esc(pkg.name)}${pkg.exclusive?' · All-in-one':''}</div><div class="plan-desc">${esc(pkg.desc||'')}</div></div><div class="plan-price">${fmt(pkg.monthlyPrice)}/mo</div></div>`;
@@ -8473,16 +8473,18 @@ function readStrong8kPlansFromEditor(){
   })).filter(p=>p.months>0&&p.sellPrice>0);
 }
 const S8K_DEFAULT_SELL_PACKAGES=[
-  {id:'full',name:'Full Package',desc:'All bouquets — sports, movies, Arabic, streaming & more',bouquetIds:'',monthlyPrice:8,exclusive:true,enabled:true},
-  {id:'lebanese',name:'Lebanese Channels',desc:'MBC · LBC · Tele Liban · local Lebanese TV',bouquetIds:'',monthlyPrice:3,exclusive:false,enabled:true},
-  {id:'streaming',name:'Streaming Apps',desc:'Netflix · Shahid · Amazon · Disney+ style channels',bouquetIds:'',monthlyPrice:4,exclusive:false,enabled:true},
-  {id:'bein',name:'beIN + World Cup',desc:'beIN Sports · World Cup 2026 · live football',bouquetIds:'',monthlyPrice:5,exclusive:false,enabled:true}
+  {id:'full',name:'Full Package',desc:'All channels for your region — sports, movies, Arabic & more',bouquetIds:'',bouquetIdsByRegion:{},monthlyPrice:8,exclusive:true,enabled:true},
+  {id:'streaming',name:'Streaming Apps',desc:'Netflix · Shahid · Amazon · Disney+ style channels',bouquetIds:'',bouquetIdsByRegion:{},monthlyPrice:4,exclusive:false,enabled:true},
+  {id:'bein',name:'beIN + World Cup',desc:'beIN Sports · World Cup 2026 · live football',bouquetIds:'',bouquetIdsByRegion:{},monthlyPrice:5,exclusive:false,enabled:true},
+  {id:'lebanese',name:'Lebanese Channels',desc:'MBC · LBC · Tele Liban · local Lebanese TV',bouquetIds:'',bouquetIdsByRegion:{},monthlyPrice:3,exclusive:false,enabled:true}
 ];
 function renderStrong8kSellPackagesEditor(packages){
   const el=document.getElementById('s8k-sell-packages-editor');
   if(!el)return;
   const list=Array.isArray(packages)&&packages.length?packages:S8K_DEFAULT_SELL_PACKAGES;
-  el.innerHTML=list.map((pkg,i)=>`
+  el.innerHTML=list.map((pkg,i)=>{
+    const byRegion=pkg.bouquetIdsByRegion&&typeof pkg.bouquetIdsByRegion==='object'?pkg.bouquetIdsByRegion:{};
+    return `
     <div style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;background:var(--bg3)">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
         <div style="font-size:12px;font-weight:700">Package ${i+1}</div>
@@ -8493,24 +8495,48 @@ function renderStrong8kSellPackagesEditor(packages){
         <div class="field" style="margin:0"><label>Monthly price $</label><input type="number" id="s8k-sp-price-${i}" min="0" step="0.01" value="${Number(pkg.monthlyPrice||0).toFixed(2)}"></div>
       </div>
       <div class="field" style="margin:0 0 8px"><label>Description (shown to customers)</label><input type="text" id="s8k-sp-desc-${i}" value="${esc(pkg.desc||'')}" placeholder="Short description"></div>
-      <div class="field" style="margin:0 0 8px"><label>Bouquet IDs from panel</label><input type="text" id="s8k-sp-bouquets-${i}" value="${esc(pkg.bouquetIds||'')}" placeholder="e.g. 12 or 12,34"><div style="font-size:10px;color:var(--text3);margin-top:4px">Create the bouquet in your panel → copy its ID → paste here (Load bouquets above).</div></div>
+      <div class="field" style="margin:0 0 8px"><label>Bouquet IDs (all regions)</label><input type="text" id="s8k-sp-bouquets-${i}" value="${esc(pkg.bouquetIds||'')}" placeholder="e.g. 75609 for Streaming"><div style="font-size:10px;color:var(--text3);margin-top:4px">Use for packs same in every region (Streaming, beIN). Leave empty for Full Package — set per region below.</div></div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px">
+        <div class="field" style="margin:0"><label>ME bouquet ID</label><input type="text" id="s8k-sp-bouquets-me-${i}" value="${esc(byRegion.me||'')}" placeholder="75605"></div>
+        <div class="field" style="margin:0"><label>EU bouquet ID</label><input type="text" id="s8k-sp-bouquets-eu-${i}" value="${esc(byRegion.eu||'')}" placeholder="75604"></div>
+        <div class="field" style="margin:0"><label>US bouquet ID</label><input type="text" id="s8k-sp-bouquets-us-${i}" value="${esc(byRegion.us||'')}" placeholder="75606"></div>
+      </div>
       <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2)"><input type="checkbox" id="s8k-sp-exclusive-${i}" ${pkg.exclusive?'checked':''}> All-in-one (cannot combine with other packs)</label>
       <input type="hidden" id="s8k-sp-id-${i}" value="${esc(pkg.id||'')}">
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 function readStrong8kSellPackagesFromEditor(){
   const el=document.getElementById('s8k-sell-packages-editor');
   if(!el)return [];
   const count=el.querySelectorAll('[id^="s8k-sp-name-"]').length;
-  return [...Array(count).keys()].map(i=>({
-    id:document.getElementById('s8k-sp-id-'+i)?.value?.trim()||'',
-    name:document.getElementById('s8k-sp-name-'+i)?.value?.trim()||'',
-    desc:document.getElementById('s8k-sp-desc-'+i)?.value?.trim()||'',
-    bouquetIds:document.getElementById('s8k-sp-bouquets-'+i)?.value?.trim()||'',
-    monthlyPrice:Number(document.getElementById('s8k-sp-price-'+i)?.value||0),
-    exclusive:Boolean(document.getElementById('s8k-sp-exclusive-'+i)?.checked),
-    enabled:document.getElementById('s8k-sp-enabled-'+i)?.checked!==false
-  })).filter(p=>p.name);
+  return [...Array(count).keys()].map(i=>{
+    const bouquetIdsByRegion={};
+    ['me','eu','us'].forEach(k=>{
+      const value=document.getElementById('s8k-sp-bouquets-'+k+'-'+i)?.value?.trim();
+      if(value)bouquetIdsByRegion[k]=value;
+    });
+    return {
+      id:document.getElementById('s8k-sp-id-'+i)?.value?.trim()||'',
+      name:document.getElementById('s8k-sp-name-'+i)?.value?.trim()||'',
+      desc:document.getElementById('s8k-sp-desc-'+i)?.value?.trim()||'',
+      bouquetIds:document.getElementById('s8k-sp-bouquets-'+i)?.value?.trim()||'',
+      bouquetIdsByRegion,
+      monthlyPrice:Number(document.getElementById('s8k-sp-price-'+i)?.value||0),
+      exclusive:Boolean(document.getElementById('s8k-sp-exclusive-'+i)?.checked),
+      enabled:document.getElementById('s8k-sp-enabled-'+i)?.checked!==false
+    };
+  }).filter(p=>p.name);
+}
+function applyBouquetToSellPackage(pkgIndex,bouquetId){
+  const input=document.getElementById('s8k-sp-bouquets-'+pkgIndex);
+  if(!input)return;
+  const current=input.value.trim();
+  input.value=current?current+','+bouquetId:bouquetId;
+}
+function applyBouquetToSellPackageRegion(pkgIndex,region,bouquetId){
+  const input=document.getElementById('s8k-sp-bouquets-'+region+'-'+pkgIndex);
+  if(input)input.value=bouquetId;
 }
 async function renderStrong8kAdmin(){
   const statusEl=document.getElementById('s8k-api-key-status');
@@ -8598,8 +8624,25 @@ async function loadStrong8kBouquets(){
     if(apiKey)body.apiKey=apiKey;
     const j=await strong8kAdminApi('/admin/strong8k/bouquets',{method:'POST',body:JSON.stringify(body)});
     const list=Array.isArray(j.bouquets)?j.bouquets:[];
+    const findByName=(re)=>list.find(b=>re.test(b.name||''));
+    const fullMe=findByName(/full.*middle|middle.*full/i)||findByName(/middle east/i);
+    const fullEu=findByName(/full.*europe|europe.*full/i);
+    const fullUs=findByName(/full.*us|united states/i);
+    const streaming=findByName(/stream/i);
+    const bein=findByName(/bein|world cup/i);
+    if(fullMe)applyBouquetToSellPackageRegion(0,'me',fullMe.id);
+    if(fullEu)applyBouquetToSellPackageRegion(0,'eu',fullEu.id);
+    if(fullUs)applyBouquetToSellPackageRegion(0,'us',fullUs.id);
+    if(streaming){
+      const spIdx=[...document.querySelectorAll('[id^="s8k-sp-name-"]')].findIndex((_,i)=>/stream/i.test(document.getElementById('s8k-sp-name-'+i)?.value||''));
+      applyBouquetToSellPackage(spIdx>=0?spIdx:1,streaming.id);
+    }
+    if(bein){
+      const beIdx=[...document.querySelectorAll('[id^="s8k-sp-name-"]')].findIndex((_,i)=>/bein|world cup/i.test(document.getElementById('s8k-sp-name-'+i)?.value||''));
+      applyBouquetToSellPackage(beIdx>=0?beIdx:2,bein.id);
+    }
     document.getElementById('s8k-bouquets-box').innerHTML=list.length
-      ?`<div style="margin-bottom:8px;line-height:1.55">${list.map(b=>`<button type="button" class="inline-btn" style="margin:0 6px 6px 0" onclick="document.getElementById('s8k-package-id').value='${esc(b.id)}'">${esc(b.name)} (${esc(b.id)})</button>`).join('')}</div><button type="button" class="inline-btn" onclick="document.getElementById('s8k-package-id').value='${esc(list.map(b=>b.id).join(','))}';['me','eu','us'].forEach(k=>{const el=document.getElementById('s8k-pack-'+k);if(el)el.value='${esc(list.map(b=>b.id).join(','))}';})">Use all bouquets (${list.length})</button>`
+      ?`<div style="margin-bottom:8px;line-height:1.55">${list.map(b=>`<button type="button" class="inline-btn" style="margin:0 6px 6px 0" onclick="document.getElementById('s8k-package-id').value='${esc(b.id)}'">${esc(b.name)} (${esc(b.id)})</button>`).join('')}</div><div style="font-size:11px;color:var(--text3);margin-bottom:8px;line-height:1.55">Bouquet IDs auto-filled into sell packages when names match. Click <b>Save settings</b> after reviewing.</div><button type="button" class="inline-btn" onclick="document.getElementById('s8k-package-id').value='${esc(list.map(b=>b.id).join(','))}';['me','eu','us'].forEach(k=>{const el=document.getElementById('s8k-pack-'+k);if(el)el.value='${esc(list.map(b=>b.id).join(','))}';})">Use all bouquets (${list.length})</button>`
       :'No bouquets returned. Click <b>Save settings</b>, then <b>Test connection</b>. If connection works, copy a bouquet ID from your panel login at '+esc(panelUrl)+' and paste it into Package / bouquet ID.';
   }catch(e){
     document.getElementById('s8k-bouquets-box').innerHTML=`<span style="color:var(--red)">${esc(e.message||'Could not load bouquets')}</span>`;
