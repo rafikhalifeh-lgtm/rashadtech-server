@@ -2480,7 +2480,7 @@ let _adminPriceTier='reseller';
 let _adminStockTier='reseller';
 let _appliedPriceTier=null;
 const STOREFRONT_CACHE_KEY='rt_storefront_v2';
-const SMS_CATALOG_CACHE_KEY='rt_sms_catalog_v1';
+const SMS_CATALOG_CACHE_KEY='rt_sms_catalog_v2';
 const SMS_CATALOG_CACHE_MS=10*60*1000;
 const RETAIL_CATALOG_VERSION=2;
 const STOREFRONT_CACHE_MS=60*60*1000;
@@ -2829,11 +2829,17 @@ function enterPublicStore(){
   document.querySelector('#page-app .snav')?.classList.add('active');
   const hadCache=loadCachedRetailStorefront();
   loadCachedSmsCatalog();
-  if(!hadCache)renderProducts('all');
-  else if(getSmsStoreCatalog().length)renderProducts('all');
+  if(!hadCache){
+    applyPriceCatalog(null,'retail');
+    renderProducts('all');
+  }else if(getSmsStoreCatalog().length)renderProducts('all');
   refreshSmsStoreTab(true);
   refreshStrong8kStore(true);
-  loadStorefront().then(()=>{renderProducts('all');updateResellerUi();});
+  loadStorefront().then((ok)=>{
+    if(!ok&&!canShowStorePrices())applyPriceCatalog(null,'retail');
+    renderProducts('all');
+    updateResellerUi();
+  });
 }
 
 // Requestable services not yet in store
@@ -8769,7 +8775,6 @@ async function init(){
 
   if(authToken){
     clearStoredSession();
-    return;
   }
 
   await loadData();
