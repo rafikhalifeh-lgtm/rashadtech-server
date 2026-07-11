@@ -7000,7 +7000,7 @@ function renderProductPriceRows(p,catalog){
   return (p.plans||[]).map((pl,i)=>adminPriceRow(pl.name,planStockKey(p.id,pl,i),pl.price)).join('');
 }
 function renderIptvSellPackagePriceRows(catalog,packages){
-  const pkgs=(Array.isArray(packages)&&packages.length?packages:S8K_DEFAULT_SELL_PACKAGES).filter(p=>p.enabled!==false);
+  const pkgs=filterAdminSellPackages(packages).filter(p=>p.enabled!==false);
   if(!pkgs.length)return '';
   const prices=catalog?.prices||{};
   const durationLabels={1:'1 Month',3:'3 Months',6:'6 Months',12:'12 Months'};
@@ -8589,11 +8589,17 @@ async function strong8kAdminApi(path,opts={}){
   return j;
 }
 let _strong8kConfigCache={};
+function applyStrong8kConfigCache(config){
+  _strong8kConfigCache=config||{};
+  if(_strong8kConfigCache.sellPackages){
+    _strong8kConfigCache.sellPackages=filterAdminSellPackages(_strong8kConfigCache.sellPackages);
+  }
+}
 async function ensureStrong8kConfigForPrices(){
   if(!isAdmin)return;
   try{
     const j=await strong8kAdminApi('/admin/strong8k/config');
-    _strong8kConfigCache=j.config||{};
+    applyStrong8kConfigCache(j.config||{});
   }catch(e){}
 }
 function renderStrong8kPlansEditor(plans){
@@ -8621,10 +8627,19 @@ const S8K_DEFAULT_SELL_PACKAGES=[
   {id:'streaming',name:'Streaming Apps',desc:'Netflix · Shahid · Amazon · Disney+ style channels',bouquetIds:'75609',bouquetIdsByRegion:{},prices:{1:4,3:10,6:18,12:32},monthlyPrice:4,exclusive:false,enabled:true},
   {id:'bein',name:'beIN + World Cup',desc:'beIN Sports · World Cup 2026 · live football',bouquetIds:'75610',bouquetIdsByRegion:{},prices:{1:5,3:13,6:22,12:38},monthlyPrice:5,exclusive:false,enabled:true}
 ];
+function filterAdminSellPackages(packages){
+  const list=Array.isArray(packages)&&packages.length?packages:S8K_DEFAULT_SELL_PACKAGES;
+  return list.filter(pkg=>{
+    const id=String(pkg?.id||'').toLowerCase();
+    if(id==='lebanese')return false;
+    if(/lebanese/i.test(String(pkg?.name||'')))return false;
+    return true;
+  });
+}
 function renderStrong8kSellPackagesEditor(packages){
   const el=document.getElementById('s8k-sell-packages-editor');
   if(!el)return;
-  const list=Array.isArray(packages)&&packages.length?packages:S8K_DEFAULT_SELL_PACKAGES;
+  const list=filterAdminSellPackages(packages);
   const globalPlans=document.getElementById('s8k-global-plans-card');
   if(globalPlans)globalPlans.style.display=list.length?'none':'block';
   el.innerHTML=list.map((pkg,i)=>{
@@ -8686,7 +8701,7 @@ async function renderStrong8kAdmin(){
   const statusEl=document.getElementById('s8k-api-key-status');
   try{
     const j=await strong8kAdminApi('/admin/strong8k/config');
-    _strong8kConfigCache=j.config||{};
+    applyStrong8kConfigCache(j.config||{});
     const panel=document.getElementById('s8k-panel-url');
     const pkg=document.getElementById('s8k-package-id');
     const store=document.getElementById('s8k-store-enabled');
@@ -8721,7 +8736,6 @@ async function saveStrong8kConfig(){
   const apiKey=document.getElementById('s8k-api-key')?.value?.trim();
   const packageId=document.getElementById('s8k-package-id')?.value?.trim()||'all';
   const plans=readStrong8kPlansFromEditor();
-  const sellPackages=readStrong8kSellPackagesFromEditor();
   const regions={
     me:{packId:document.getElementById('s8k-pack-me')?.value?.trim()||'all'},
     eu:{packId:document.getElementById('s8k-pack-eu')?.value?.trim()||'all'},
@@ -8729,7 +8743,9 @@ async function saveStrong8kConfig(){
   };
   try{
     const body={
-      panelUrl,packageId,plans,sellPackages,regions,
+      panelUrl,packageId,plans,
+      sellPackages:filterAdminSellPackages(readStrong8kSellPackagesFromEditor()),
+      regions,
       trialEnabled:Boolean(document.getElementById('s8k-trial-enabled')?.checked),
       enabled:true,
       storeEnabled:Boolean(document.getElementById('s8k-store-enabled')?.checked)

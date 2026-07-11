@@ -61,12 +61,13 @@ test('sanitizeSellPackages drops legacy Lebanese package from saved config', () 
   const saved = [
     { id: 'full', name: 'Full Package', bouquetIds: '', bouquetIdsByRegion: { me: '100' }, prices: { 1: 8, 3: 20, 6: 35, 12: 60 }, exclusive: true, enabled: true },
     { id: 'lebanese', name: 'Lebanese', bouquetIds: '99', bouquetIdsByRegion: {}, prices: { 1: 3, 3: 8, 6: 14, 12: 25 }, exclusive: false, enabled: true },
+    { id: 'custom-1', name: 'Lebanese Channels', bouquetIds: '88', bouquetIdsByRegion: {}, prices: { 1: 3, 3: 8, 6: 14, 12: 25 }, exclusive: false, enabled: true },
     { id: 'streaming', name: 'Streaming', bouquetIds: '300', bouquetIdsByRegion: {}, prices: { 1: 4, 3: 10, 6: 18, 12: 32 }, exclusive: false, enabled: true },
     { id: 'bein', name: 'beIN', bouquetIds: '400', bouquetIdsByRegion: {}, prices: { 1: 5, 3: 13, 6: 22, 12: 38 }, exclusive: false, enabled: true }
   ];
   const merged = strong8k.sanitizeSellPackages(saved);
   assert.equal(merged.length, 3);
-  assert.ok(!merged.some(pkg => pkg.id === 'lebanese'));
+  assert.ok(!merged.some(pkg => strong8k.isRetiredSellPackage(pkg)));
 });
 
 test('resolvePanelPack uses single region full bouquet for free trial', async () => {

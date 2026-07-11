@@ -188,9 +188,18 @@ function registerStrong8kRoutes(app, deps) {
     if (!session) return;
     try {
       const data = await readDbFast();
+      const raw = data && data[STRONG8K_CONFIG_KEY];
+      const rawPackages = Array.isArray(raw && raw.sellPackages) ? raw.sellPackages : [];
+      let config = readStrong8kConfig(data);
+      if (rawPackages.some(pkg => strong8k.isRetiredSellPackage(pkg))) {
+        config = await saveStrong8kConfig(() => ({
+          ...config,
+          sellPackages: config.sellPackages
+        }));
+      }
       res.json({
         success: true,
-        config: strong8k.sanitizeStrong8kConfigForClient(readStrong8kConfig(data), true)
+        config: strong8k.sanitizeStrong8kConfigForClient(config, true)
       });
     } catch (e) {
       res.status(500).json({ error: 'Could not load Strong8K settings' });

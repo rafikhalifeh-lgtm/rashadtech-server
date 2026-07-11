@@ -118,6 +118,7 @@ function resolveIptvSellPackagesMeta(rawPackages) {
   const list = Array.isArray(rawPackages) && rawPackages.length ? rawPackages : IPTV_SELL_PACKAGE_DEFAULTS;
   return list
     .filter(pkg => pkg && pkg.enabled !== false && pkg.name)
+    .filter(pkg => String(pkg.id || '').toLowerCase() !== 'lebanese' && !/lebanese/i.test(String(pkg.name || '')))
     .map(pkg => ({
       id: String(pkg.id || '').trim().toLowerCase(),
       name: String(pkg.name || '').trim(),

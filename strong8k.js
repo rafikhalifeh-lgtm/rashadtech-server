@@ -39,6 +39,18 @@ const DEFAULT_SELL_PACKAGES = [
 
 const FULL_PACKAGE_REGION_BOUQUETS = { me: '75605', eu: '75604', us: '75606' };
 const IPTV_TRIAL_REGIONS = new Set(['me', 'us']);
+const RETIRED_SELL_PACKAGE_IDS = new Set(['lebanese']);
+
+function isRetiredSellPackage(pkg) {
+  const id = String(pkg && pkg.id || '').trim().toLowerCase();
+  const name = String(pkg && pkg.name || '').trim();
+  if (RETIRED_SELL_PACKAGE_IDS.has(id)) return true;
+  return /lebanese/i.test(name);
+}
+
+function filterRetiredSellPackages(packages) {
+  return (Array.isArray(packages) ? packages : []).filter(pkg => !isRetiredSellPackage(pkg));
+}
 
 function defaultBouquetIdsByRegionForPackage(packageId) {
   if (String(packageId || '').toLowerCase() === 'full') return { ...FULL_PACKAGE_REGION_BOUQUETS };
@@ -195,7 +207,7 @@ function mergeMissingDefaultSellPackages(packages) {
 
 function sanitizeSellPackages(raw) {
   const input = Array.isArray(raw) && raw.length ? raw : DEFAULT_SELL_PACKAGES;
-  const list = input.filter(row => String(row && row.id || '').toLowerCase() !== 'lebanese');
+  const list = filterRetiredSellPackages(input);
   const seen = new Set();
   const sanitized = list.map((row, index) => sanitizeSellPackageRow(row, index, seen))
     .filter(pkg => pkg.name);
@@ -970,6 +982,9 @@ module.exports = {
   syncStrong8kBouquetsFromPanel,
   matchBouquetNameForRegion,
   IPTV_TRIAL_REGIONS,
+  RETIRED_SELL_PACKAGE_IDS,
+  isRetiredSellPackage,
+  filterRetiredSellPackages,
   FULL_PACKAGE_REGION_BOUQUETS,
   resolvePanelPack,
   resolveSelectedSellPackages,
