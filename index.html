@@ -124,6 +124,27 @@ input,button,select,textarea{font-family:var(--font)}
 .reseller-promo-actions button{font-size:12px;font-weight:600;padding:8px 12px;border-radius:var(--radius-sm);cursor:pointer}
 .reseller-promo-actions .btn-reseller-primary{background:var(--green);color:#fff;border:none}
 .reseller-promo-actions .btn-reseller-secondary{background:var(--bg3);color:var(--text);border:1px solid var(--border)}
+.iptv-worldcup-promo-wrap{margin-bottom:16px}
+.iptv-worldcup-promo{display:block;position:relative;border-radius:var(--radius-lg);overflow:hidden;border:1px solid rgba(255,215,0,.35);box-shadow:0 10px 40px rgba(0,0,0,.45),0 0 0 1px rgba(233,30,99,.15);text-decoration:none;transition:transform .18s ease,box-shadow .18s ease}
+.iptv-worldcup-promo:hover{transform:translateY(-2px);box-shadow:0 16px 48px rgba(233,30,99,.28),0 0 24px rgba(255,215,0,.12)}
+.iptv-worldcup-promo:active{transform:translateY(0)}
+.iptv-worldcup-promo-glow{position:absolute;inset:0;background:linear-gradient(135deg,rgba(233,30,99,.12),transparent 45%,rgba(255,215,0,.08));pointer-events:none;z-index:1}
+.iptv-worldcup-promo img{width:100%;height:auto;display:block;aspect-ratio:16/9;object-fit:cover;object-position:center 42%}
+.iptv-worldcup-promo-overlay{position:absolute;left:0;right:0;bottom:0;z-index:2;padding:14px 16px 16px;background:linear-gradient(to top,rgba(8,6,18,.92) 0%,rgba(8,6,18,.55) 55%,transparent 100%);display:flex;flex-direction:column;align-items:flex-start;gap:4px}
+.iptv-worldcup-promo-badge{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:#ffd54f;background:rgba(255,213,79,.12);border:1px solid rgba(255,213,79,.35);border-radius:999px;padding:4px 10px}
+.iptv-worldcup-promo-title{font-size:clamp(16px,4vw,22px);font-weight:800;color:#fff;line-height:1.15;text-shadow:0 2px 12px rgba(0,0,0,.5)}
+.iptv-worldcup-promo-sub{font-size:clamp(11px,2.8vw,13px);color:rgba(255,255,255,.82);line-height:1.4;max-width:520px}
+.iptv-worldcup-promo-btn{margin-top:6px;display:inline-flex;align-items:center;gap:6px;background:linear-gradient(135deg,#e91e63,#c2185b);color:#fff;font-size:clamp(12px,3vw,14px);font-weight:700;padding:9px 16px;border-radius:999px;box-shadow:0 4px 16px rgba(233,30,99,.45)}
+@media (max-width:640px){
+  .iptv-worldcup-promo img{aspect-ratio:5/4;object-position:center 38%;min-height:200px;max-height:min(52vw,280px)}
+  .iptv-worldcup-promo-overlay{padding:10px 12px 12px;gap:3px}
+  .iptv-worldcup-promo-badge{font-size:9px;padding:3px 8px}
+  .iptv-worldcup-promo-btn{margin-top:4px;padding:8px 14px;width:100%;justify-content:center;box-sizing:border-box}
+}
+@media (min-width:900px){
+  .iptv-worldcup-promo img{max-height:340px}
+  .iptv-worldcup-promo-overlay{padding:18px 22px 20px}
+}
 .reseller-apply-tabs{display:flex;gap:8px;margin-bottom:14px}
 .reseller-apply-tab{flex:1;padding:10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text2);font-size:12px;font-weight:600;cursor:pointer;text-align:center}
 .reseller-apply-tab.active{border-color:var(--green-border);background:var(--green-bg);color:var(--green)}
@@ -861,6 +882,7 @@ So your EmailJS template will receive the user email and verification code corre
             </div>
           </div>
         </div>
+        <div id="iptv-worldcup-promo-wrap" class="iptv-worldcup-promo-wrap" style="display:none" aria-hidden="true"></div>
         <div class="filter-row">
           <div class="ftab active" onclick="filterProd('all',this)" data-cat="all">All</div>
           <div class="ftab" onclick="filterProd('video',this)" data-cat="video">Video</div>
@@ -4397,7 +4419,7 @@ function enterApp(opts={}){
   const session={email:currentUser.email,ts:Date.now()};
   try{localStorage.setItem('rt_session',JSON.stringify(session));}catch(e){}
   renderProducts('all');
-  loadPriceCatalog().then(async()=>{updateResellerUi();await refreshSmsStoreTab();await refreshStrong8kStore();renderProducts('all');});
+  loadPriceCatalog().then(async()=>{updateResellerUi();await refreshSmsStoreTab();await refreshStrong8kStore();renderProducts('all');handleIptvPromoDeepLink();});
   updateBal();renderAmounts();renderSubs();renderTx();renderMyCustomers();renderReqChips();renderMyRequests();renderExpiryTracker();renderMyGameOrders();renderWalletTopupHistory();
   if(!opts.skipRecover)recoverMyCustomersOnLogin({immediate:Boolean(opts.recoverImmediate)}).catch(()=>{});
   maybePromptCompleteProfile();
@@ -4781,6 +4803,7 @@ function renderProducts(cat){
   if(cat==='all'&&smsHub)html+=smsHub;
   list.forEach(p=>{html+=productCardHtml(p);});
   grid.innerHTML=html;
+  updateIptvWorldcupPromo();
 }
 function smsDisclaimerHtml(){
   return `<div style="background:var(--orange-bg);border:1px solid var(--orange-border);border-radius:var(--radius-sm);padding:12px;margin-bottom:14px">
@@ -4893,6 +4916,64 @@ let iptvPurchaseInFlight=false;
 const IPTV_REGION_LABELS={me:'Middle East',eu:'Europe',us:'United States'};
 function iptvStoreMeta(){return _strong8kStore||{enabled:false,plans:[],regions:[],lineTypes:[],features:{},trialEnabled:false};}
 function iptvTrialReseller(){return Boolean(iptvTrialInfo?.isReseller||userSeesResellerPrices());}
+const IPTV_PROMO_HASH='rashadtech-iptv';
+function wantsIptvPromoDeepLink(){
+  const p=new URLSearchParams(location.search);
+  return p.get('iptv')==='1'||p.get('buy')==='iptv'||(location.hash||'')==='#'+IPTV_PROMO_HASH;
+}
+function clearIptvPromoDeepLink(){
+  try{
+    const u=new URL(location.href);
+    let changed=false;
+    if(u.searchParams.has('iptv')){u.searchParams.delete('iptv');changed=true;}
+    if(u.searchParams.get('buy')==='iptv'){u.searchParams.delete('buy');changed=true;}
+    let hash=u.hash;
+    if(hash==='#'+IPTV_PROMO_HASH){hash='';changed=true;}
+    if(changed)history.replaceState({},'',u.pathname+(u.search||'')+hash);
+  }catch(e){}
+}
+async function openIptvPromoLink(ev){
+  if(ev)ev.preventDefault();
+  if(isGuestMode||!currentUser){
+    if(typeof openGuestPurchaseModal==='function')openGuestPurchaseModal();
+    else showToast('Sign in to activate RashadTech IPTV');
+    return false;
+  }
+  if(typeof openIptvWizard==='function')await openIptvWizard();
+  return false;
+}
+function iptvWorldcupPromoHtml(){
+  const src='/assets/iptv-worldcup-promo.webp';
+  return `<a class="iptv-worldcup-promo" href="/?iptv=1" onclick="return openIptvPromoLink(event)" aria-label="Activate RashadTech IPTV — Watch World Cup live. Try free 1-day trial.">
+    <div class="iptv-worldcup-promo-glow"></div>
+    <img src="${src}" alt="RashadTech IPTV — Watch World Cup Live — Activate Now — Free 1-Day Trial" width="1536" height="1024" loading="eager" decoding="async" fetchpriority="high">
+    <div class="iptv-worldcup-promo-overlay">
+      <div class="iptv-worldcup-promo-badge">🏆 World Cup Live</div>
+      <div class="iptv-worldcup-promo-title">Activate RashadTech IPTV Now</div>
+      <div class="iptv-worldcup-promo-sub">60,000+ channels · beIN Sports · every match live · 1-day free trial</div>
+      <div class="iptv-worldcup-promo-btn">Try Free Trial →</div>
+    </div>
+  </a>`;
+}
+function updateIptvWorldcupPromo(){
+  const wrap=document.getElementById('iptv-worldcup-promo-wrap');
+  if(!wrap)return;
+  const show=isStrong8kStoreEnabled();
+  wrap.style.display=show?'block':'none';
+  wrap.setAttribute('aria-hidden',show?'false':'true');
+  if(show&&!wrap.dataset.loaded){wrap.innerHTML=iptvWorldcupPromoHtml();wrap.dataset.loaded='1';}
+}
+function handleIptvPromoDeepLink(){
+  if(!wantsIptvPromoDeepLink())return;
+  switchTab('store',null);
+  const run=async()=>{
+    if(typeof refreshStrong8kStore==='function')await refreshStrong8kStore(true);
+    updateIptvWorldcupPromo();
+    if(isStrong8kStoreEnabled())await openIptvPromoLink();
+    clearIptvPromoDeepLink();
+  };
+  setTimeout(()=>{run().catch(()=>{});},500);
+}
 async function refreshIptvTrialEligibility(subPhone){
   try{
     const q=subPhone?`?subCustomerPhone=${encodeURIComponent(subPhone)}`:'';
@@ -8283,6 +8364,7 @@ async function refreshStrong8kStore(force){
     const j=await r.json();
     if(j.success){
       _strong8kStore={enabled:Boolean(j.enabled),plans:Array.isArray(j.plans)?j.plans:[],regions:Array.isArray(j.regions)?j.regions:[],lineTypes:Array.isArray(j.lineTypes)?j.lineTypes:[],features:j.features||{},trialEnabled:Boolean(j.trialEnabled),_ts:Date.now()};
+      updateIptvWorldcupPromo();
     }
   }catch(e){}
   if(typeof renderProducts==='function'&&document.getElementById('tab-store')?.classList.contains('active')){
@@ -8996,6 +9078,7 @@ async function init(){
     syncAdminLinkVisibility();
     initLegalFromHash();
     enterPublicStore();
+    handleIptvPromoDeepLink();
     startRealtimeSync();
     setTimeout(checkExpiryReminders,10000);
     setTimeout(checkLowStock,15000);
