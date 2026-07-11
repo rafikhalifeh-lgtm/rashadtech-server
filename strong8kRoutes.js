@@ -1,4 +1,8 @@
 const strong8k = require('./strong8k');
+const {
+  computeIptvPackageSelectionPrice,
+  resolvePurchasePrice
+} = require('./priceCatalog');
 
 const STRONG8K_CONFIG_KEY = 'strong8kConfig';
 const IPTV_TRIALS_KEY = 'iptvTrials';
@@ -318,9 +322,6 @@ function registerStrong8kRoutes(app, deps) {
         const packageLabel = packageIds.length
           ? strong8k.describeSellPackageSelection(packageIds, config)
           : '';
-        const expectedPackagePrice = (!isTrial && packageIds.length)
-          ? strong8k.computeSellPackagePrice(packageIds, months, config)
-          : null;
 
         if (isTrial) {
           if (!config.trialEnabled) return { error: 'Free trials are not available right now', status: 403 };
@@ -342,17 +343,16 @@ function registerStrong8kRoutes(app, deps) {
         } else {
           plan = strong8k.findPlan(config, months);
           if (!plan) return { error: 'Invalid plan selected', status: 400 };
-          if (expectedPackagePrice != null && expectedPackagePrice > 0) {
-            if (!pricesMatch(expectedPackagePrice, price)) {
-              return { error: 'Price has changed. Refresh the store and try again.', status: 400 };
-            }
-          } else if (!pricesMatch(plan.sellPrice, price)) {
-            return { error: 'Price has changed. Refresh the store and try again.', status: 400 };
-          }
           const catalog = getCatalogForUser(data, user);
-          const skey = `strong8k__${Math.max(0, config.plans.findIndex(p => Number(p.months) === months))}`;
-          const catalogPrice = catalog && catalog.prices ? Number(catalog.prices[skey]) : null;
-          if (expectedPackagePrice == null && catalogPrice != null && !pricesMatch(catalogPrice, price)) {
+          let expectedPrice = null;
+          if (usesSellPackages && packageIds.length) {
+            expectedPrice = computeIptvPackageSelectionPrice(catalog, packageIds, months, sellPackages);
+          } else {
+            const planIndex = Math.max(0, config.plans.findIndex(p => Number(p.months) === months));
+            expectedPrice = resolvePurchasePrice(catalog, { skey: `strong8k__${planIndex}` });
+            if (expectedPrice == null) expectedPrice = Number(plan.sellPrice);
+          }
+          if (expectedPrice == null || expectedPrice <= 0 || !pricesMatch(expectedPrice, price)) {
             return { error: 'Price has changed. Refresh the store and try again.', status: 400 };
           }
           if (Number(user.balance || 0) < price) return { error: 'Insufficient balance', status: 400 };

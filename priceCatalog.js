@@ -79,6 +79,85 @@ function stockKey(productId, userTypeKey, durationOrPlanKey) {
   return userTypeKey ? `${productId}__${userTypeKey}__${durationOrPlanKey}` : `${productId}__${durationOrPlanKey}`;
 }
 
+const IPTV_DURATION_MONTHS = [1, 3, 6, 12];
+
+const IPTV_SELL_PACKAGE_DEFAULTS = [
+  { id: 'full', name: 'Full Package', exclusive: true, prices: { 1: 8, 3: 20, 6: 35, 12: 60 } },
+  { id: 'lebanese', name: 'Lebanese Channels', exclusive: false, prices: { 1: 3, 3: 8, 6: 14, 12: 25 } },
+  { id: 'streaming', name: 'Streaming Apps', exclusive: false, prices: { 1: 4, 3: 10, 6: 18, 12: 32 } },
+  { id: 'bein', name: 'beIN + World Cup', exclusive: false, prices: { 1: 5, 3: 13, 6: 22, 12: 38 } }
+];
+
+function iptvPackageStockKey(packageId, months) {
+  return stockKey('strong8k', String(packageId || '').trim().toLowerCase(), String(months));
+}
+
+function buildIptvPackageDefaultPrices() {
+  const prices = {};
+  IPTV_SELL_PACKAGE_DEFAULTS.forEach(pkg => {
+    IPTV_DURATION_MONTHS.forEach(m => {
+      prices[iptvPackageStockKey(pkg.id, m)] = pkg.prices[m];
+    });
+  });
+  return prices;
+}
+
+function normalizeIptvPackageIds(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  const seen = new Set();
+  raw.forEach(item => {
+    const id = String(item || '').trim().toLowerCase();
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    out.push(id);
+  });
+  return out;
+}
+
+function resolveIptvSellPackagesMeta(rawPackages) {
+  const list = Array.isArray(rawPackages) && rawPackages.length ? rawPackages : IPTV_SELL_PACKAGE_DEFAULTS;
+  return list
+    .filter(pkg => pkg && pkg.enabled !== false && pkg.name)
+    .map(pkg => ({
+      id: String(pkg.id || '').trim().toLowerCase(),
+      name: String(pkg.name || '').trim(),
+      exclusive: Boolean(pkg.exclusive),
+      prices: pkg.prices || {}
+    }))
+    .filter(pkg => pkg.id);
+}
+
+function getIptvPackageCatalogPrice(catalog, packageId, months) {
+  const m = Number(months);
+  if (!IPTV_DURATION_MONTHS.includes(m)) return null;
+  const key = iptvPackageStockKey(packageId, m);
+  const fromCatalog = catalog && catalog.prices ? Number(catalog.prices[key]) : NaN;
+  if (Number.isFinite(fromCatalog) && fromCatalog >= 0) return fromCatalog;
+  const fallback = IPTV_SELL_PACKAGE_DEFAULTS.find(p => p.id === packageId);
+  if (fallback && fallback.prices[m] != null) return Number(fallback.prices[m]);
+  return null;
+}
+
+function computeIptvPackageSelectionPrice(catalog, packageIds, months, sellPackages) {
+  const m = Number(months);
+  if (!IPTV_DURATION_MONTHS.includes(m)) return 0;
+  const ids = normalizeIptvPackageIds(packageIds);
+  const packages = resolveIptvSellPackagesMeta(sellPackages);
+  if (!ids.length || !packages.length) return 0;
+  const selected = packages.filter(pkg => ids.includes(pkg.id));
+  if (!selected.length) return 0;
+  const exclusive = selected.find(pkg => pkg.exclusive);
+  const list = exclusive ? [exclusive] : selected;
+  const total = list.reduce((sum, pkg) => {
+    const rowPrice = getIptvPackageCatalogPrice(catalog, pkg.id, m);
+    const metaPrice = Number(pkg.prices && (pkg.prices[m] ?? pkg.prices[String(m)]));
+    const price = rowPrice != null ? rowPrice : (Number.isFinite(metaPrice) ? metaPrice : 0);
+    return sum + price;
+  }, 0);
+  return Math.round(total * 100) / 100;
+}
+
 function buildDefaultPriceCatalog() {
   const prices = {};
   const customDayRates = { 'netflix__1user': 0.06 };
@@ -122,10 +201,13 @@ function buildDefaultPriceCatalog() {
   prices[stockKey('osn', 'full', '1y')] = 80;
 
   SIMPLE_PLAN_PRODUCTS.forEach(product => {
+    if (product.id === 'strong8k') return;
     product.plans.forEach((price, index) => {
       prices[stockKey(product.id, null, index)] = price;
     });
   });
+
+  Object.assign(prices, buildIptvPackageDefaultPrices());
 
   GIFT_CARD_PRODUCTS.forEach(productId => {
     Object.entries(GIFT_CARD_REGION_AMOUNTS).forEach(([regionKey, amounts]) => {
@@ -307,6 +389,14 @@ function buildLebanonOfficialRetailPriceMap(resellerCatalog) {
   addSimplePlanPrices(prices, 'linkedin', 29.99, [1, 3, 12]);
   addSimplePlanPrices(prices, 'xbox', 19.99, [1, 3, 6]);
   addSimplePlanPrices(prices, 'psplus', 9.99, [1, 3, 12]);
+
+  IPTV_SELL_PACKAGE_DEFAULTS.forEach(pkg => {
+    IPTV_DURATION_MONTHS.forEach(m => {
+      const reseller = Number(pkg.prices[m]);
+      if (!Number.isFinite(reseller) || reseller <= 0) return;
+      prices[iptvPackageStockKey(pkg.id, m)] = roundRetailAmount(reseller);
+    });
+  });
 
   // In-game currency — App Store / Play official USD pack prices
   prices[stockKey('pubg', null, 0)] = 0.99;
@@ -569,6 +659,12 @@ module.exports = {
   pricesMatch,
   buildCatalogPayload,
   stockKey,
+  iptvPackageStockKey,
+  IPTV_SELL_PACKAGE_DEFAULTS,
+  IPTV_DURATION_MONTHS,
+  computeIptvPackageSelectionPrice,
+  getIptvPackageCatalogPrice,
+  resolveIptvSellPackagesMeta,
   sanitizeNumberMap,
   countCustomPriceDeltas,
   reconstructCatalogFromChangeLog

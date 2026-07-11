@@ -1342,19 +1342,19 @@ So your EmailJS template will receive the user email and verification code corre
         </div>
         <div class="card" style="padding:16px;margin-bottom:14px">
           <div style="font-size:13px;font-weight:700;margin-bottom:8px">Channel packages for customers <span style="font-size:10px;font-weight:600;color:var(--green);background:var(--green-bg);border:1px solid var(--green-border);padding:2px 6px;border-radius:999px;margin-left:6px">NEW</span></div>
-          <div style="font-size:12px;color:var(--text2);line-height:1.55;margin-bottom:10px">Set <b>1 / 3 / 6 / 12 month prices</b> inside each package below. The old table at the bottom is hidden when packages are active.</div>
+          <div style="font-size:12px;color:var(--text2);line-height:1.55;margin-bottom:10px">Set bouquet IDs here. Set <b>retail &amp; reseller prices</b> in Admin → <b>Prices</b> (per package: 1 / 3 / 6 / 12 months). IPTV is not stocked — no accounts to add.</div>
           <div id="s8k-sell-packages-editor" style="display:grid;gap:10px;margin-bottom:10px"></div>
-        </div>
-        <div class="card" style="padding:16px;margin-bottom:14px" id="s8k-global-plans-card">
-          <div style="font-size:13px;font-weight:700;margin-bottom:10px">Subscription length prices</div>
-          <div style="font-size:11px;color:var(--text3);margin-bottom:10px;line-height:1.55" id="s8k-global-plans-note">Only used when sell packages are disabled. Set 1 / 3 / 6 / 12 month prices inside each package above.</div>
-          <div id="s8k-plans-editor" style="display:grid;gap:10px;margin-bottom:12px"></div>
           <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text2);margin-bottom:10px">
             <input type="checkbox" id="s8k-trial-enabled" checked> Allow 1-day free trials in store
           </label>
           <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text2)">
             <input type="checkbox" id="s8k-store-enabled" onchange="saveStrong8kStoreEnabled()"> Show RashadTech IPTV in customer store
           </label>
+        </div>
+        <div class="card" style="padding:16px;margin-bottom:14px;display:none" id="s8k-global-plans-card">
+          <div style="font-size:13px;font-weight:700;margin-bottom:10px">Subscription length prices</div>
+          <div style="font-size:11px;color:var(--text3);margin-bottom:10px;line-height:1.55" id="s8k-global-plans-note">IPTV prices are managed in Admin → <b>Prices</b> (reseller &amp; retail tabs), not here.</div>
+          <div id="s8k-plans-editor" style="display:grid;gap:10px;margin-bottom:12px"></div>
         </div>
       </div>
       <!-- ADMIN EXPIRY -->
@@ -4595,7 +4595,7 @@ function renderActiveAdminTab(name){
   if(name==='wallets')renderWallets();
   if(name==='stock')setAdminStockTier(_adminStockTier);
   if(name==='prices'){
-    loadAdminPriceCatalogs().then(()=>renderAdminPrices()).catch(()=>renderAdminPrices());
+    loadAdminPriceCatalogs().then(()=>ensureStrong8kConfigForPrices()).then(()=>renderAdminPrices()).catch(()=>renderAdminPrices());
     return;
   }
   if(name==='customers')renderAdminCustomers();
@@ -4936,14 +4936,21 @@ function iptvSellPackageMonthlyTotal(){
   const list=exclusive?[exclusive]:selected;
   return list.reduce((sum,p)=>sum+Number((p.prices&&p.prices[1])||p.monthlyPrice||0),0);
 }
+function iptvPackageStockKey(packageId,months){return `strong8k__${String(packageId||'').trim().toLowerCase()}__${months}`;}
 function iptvPackagePriceForMonths(months){
   const pkgs=iptvStoreMeta().sellPackages||[];
   const selected=pkgs.filter(p=>iptvSelectedPackages.includes(p.id));
   if(!selected.length)return 0;
   const exclusive=selected.find(p=>p.exclusive);
   const list=exclusive?[exclusive]:selected;
+  const catalog=(_rtPriceCatalog&&_appliedPriceTier===expectedPriceTier())?_rtPriceCatalog:null;
   const m=Number(months);
-  return Math.round(list.reduce((sum,p)=>sum+Number((p.prices&&p.prices[m])||(p.monthlyPrice||0)*m),0)*100)/100;
+  return Math.round(list.reduce((sum,p)=>{
+    const key=iptvPackageStockKey(p.id,m);
+    const fromCatalog=catalog?.prices?.[key];
+    if(fromCatalog!=null)return sum+Number(fromCatalog);
+    return sum+Number((p.prices&&p.prices[m])||((p.monthlyPrice||0)*m));
+  },0)*100)/100;
 }
 function iptvComputedPrice(){
   if(iptvTrialMode)return 0;
@@ -5047,6 +5054,7 @@ async function openIptvWizard(){
     await loadPriceCatalog();
   }
   await refreshStrong8kStore(true);
+  if(!_rtPriceCatalog||_appliedPriceTier!==expectedPriceTier())await loadPriceCatalog();
   iptvWizardStep=0;iptvRegion='';iptvLineType='stable';iptvPlanIdx=null;iptvTrialMode=false;iptvSubPhone='';iptvSelectedPackages=[];
   await refreshIptvTrialEligibility('');
   document.getElementById('modal-title').textContent='RashadTech IPTV';
@@ -6895,6 +6903,21 @@ function renderProductPriceRows(p,catalog){
   if(isJawakerProduct(p))return renderJawakerPriceRows(catalog);
   return (p.plans||[]).map((pl,i)=>adminPriceRow(pl.name,planStockKey(p.id,pl,i),pl.price)).join('');
 }
+function renderIptvSellPackagePriceRows(catalog,packages){
+  const pkgs=(Array.isArray(packages)&&packages.length?packages:S8K_DEFAULT_SELL_PACKAGES).filter(p=>p.enabled!==false);
+  if(!pkgs.length)return '';
+  const prices=catalog?.prices||{};
+  const durationLabels={1:'1 Month',3:'3 Months',6:'6 Months',12:'12 Months'};
+  return pkgs.map(pkg=>{
+    const rows=[1,3,6,12].map(m=>{
+      const key=iptvPackageStockKey(pkg.id,m);
+      const fallback=Number((pkg.prices&&pkg.prices[m])||((pkg.monthlyPrice||0)*m));
+      const price=prices[key]!=null?prices[key]:fallback;
+      return adminPriceRow(`${pkg.name} · ${durationLabels[m]}`,key,price);
+    }).join('');
+    return rows;
+  }).join('');
+}
 function filterAdminPrices(){
   const q=(document.getElementById('admin-prices-search')?.value||'').trim().toLowerCase();
   document.querySelectorAll('#admin-prices-body [data-price-section]').forEach(section=>{
@@ -6938,7 +6961,15 @@ function renderAdminPrices(){
     if(!items.length)return;
     html+=`<div class="admin-section-title" data-price-section="1">${cat.label}</div>`;
     items.forEach(p=>{
-      html+=`<div data-price-section="1"><div class="admin-section-title" style="font-size:12px;margin-top:10px">${p.name}</div><div class="admin-panel">${renderProductPriceRows(p,catalog)||'<div style="font-size:12px;color:var(--text3);padding:8px">No editable prices</div>'}</div></div>`;
+      let rows='';
+      if(p.id==='strong8k'){
+        rows=renderIptvSellPackagePriceRows(catalog,_strong8kConfigCache.sellPackages||[]);
+        if(!rows)rows=renderProductPriceRows(p,catalog);
+        html+=`<div data-price-section="1"><div class="admin-section-title" style="font-size:12px;margin-top:10px">${p.name} <span style="font-size:10px;color:var(--text3)">(API — no stock)</span></div><div style="font-size:11px;color:var(--text3);margin-bottom:8px;line-height:1.55">Set separate reseller and retail prices per package and duration. Bouquets are configured in Strong8K IPTV tab.</div><div class="admin-panel">${rows||'<div style="font-size:12px;color:var(--text3);padding:8px">No IPTV packages configured</div>'}</div></div>`;
+        return;
+      }
+      rows=renderProductPriceRows(p,catalog);
+      html+=`<div data-price-section="1"><div class="admin-section-title" style="font-size:12px;margin-top:10px">${p.name}</div><div class="admin-panel">${rows||'<div style="font-size:12px;color:var(--text3);padding:8px">No editable prices</div>'}</div></div>`;
     });
   });
   html+=`<button class="btn-primary" style="margin-top:14px" onclick="saveAdminPrices()">Save ${tier==='retail'?'retail':'reseller'} prices</button>`;
@@ -7104,7 +7135,7 @@ function setAdminStockTier(tier){
   renderStockPanels();
 }
 function renderStockPanels(){
-  document.getElementById('stock-panels').innerHTML=products.map(p=>`<div class="admin-section-title">${p.name}</div><div class="admin-panel">${renderStockRows(p)}</div>`).join('');
+  document.getElementById('stock-panels').innerHTML=products.filter(p=>!p.apiProvisioned).map(p=>`<div class="admin-section-title">${p.name}</div><div class="admin-panel">${renderStockRows(p)}</div>`).join('');
 }
 function renderStockRows(p){
   const tier=_adminStockTier;
@@ -8462,6 +8493,13 @@ async function strong8kAdminApi(path,opts={}){
   return j;
 }
 let _strong8kConfigCache={};
+async function ensureStrong8kConfigForPrices(){
+  if(!isAdmin)return;
+  try{
+    const j=await strong8kAdminApi('/admin/strong8k/config');
+    _strong8kConfigCache=j.config||{};
+  }catch(e){}
+}
 function renderStrong8kPlansEditor(plans){
   const el=document.getElementById('s8k-plans-editor');
   if(!el)return;
@@ -8488,11 +8526,6 @@ const S8K_DEFAULT_SELL_PACKAGES=[
   {id:'bein',name:'beIN + World Cup',desc:'beIN Sports · World Cup 2026 · live football',bouquetIds:'',bouquetIdsByRegion:{},prices:{1:5,3:13,6:22,12:38},monthlyPrice:5,exclusive:false,enabled:true},
   {id:'lebanese',name:'Lebanese Channels',desc:'MBC · LBC · Tele Liban · local Lebanese TV',bouquetIds:'',bouquetIdsByRegion:{},prices:{1:3,3:8,6:14,12:25},monthlyPrice:3,exclusive:false,enabled:true}
 ];
-function s8kPriceField(pkg,i,months,label){
-  const prices=pkg.prices&&typeof pkg.prices==='object'?pkg.prices:{};
-  const value=Number(prices[months]??((pkg.monthlyPrice||0)*months));
-  return `<div class="field" style="margin:0"><label>${label}</label><input type="number" id="s8k-sp-price-${months}-${i}" min="0" step="0.01" value="${value.toFixed(2)}"></div>`;
-}
 function renderStrong8kSellPackagesEditor(packages){
   const el=document.getElementById('s8k-sell-packages-editor');
   if(!el)return;
@@ -8511,13 +8544,7 @@ function renderStrong8kSellPackagesEditor(packages){
         <div class="field" style="margin:0"><label>Name</label><input type="text" id="s8k-sp-name-${i}" value="${esc(pkg.name||'')}" placeholder="Full Package"></div>
         <div class="field" style="margin:0"><label>Description (shown to customers)</label><input type="text" id="s8k-sp-desc-${i}" value="${esc(pkg.desc||'')}" placeholder="Short description"></div>
       </div>
-      <div style="font-size:11px;font-weight:700;color:var(--text2);margin-bottom:6px">Prices for this package</div>
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px">
-        ${s8kPriceField(pkg,i,1,'1 Month $')}
-        ${s8kPriceField(pkg,i,3,'3 Months $')}
-        ${s8kPriceField(pkg,i,6,'6 Months $')}
-        ${s8kPriceField(pkg,i,12,'12 Months $')}
-      </div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:8px;line-height:1.55">Prices: Admin → Prices → RashadTech IPTV (reseller &amp; retail tabs)</div>
       <div class="field" style="margin:0 0 8px"><label>Bouquet IDs (all regions)</label><input type="text" id="s8k-sp-bouquets-${i}" value="${esc(pkg.bouquetIds||'')}" placeholder="e.g. 75609 for Streaming"><div style="font-size:10px;color:var(--text3);margin-top:4px">Use for packs same in every region (Streaming, beIN). Leave empty for Full Package — set per region below.</div></div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px">
         <div class="field" style="margin:0"><label>ME bouquet ID</label><input type="text" id="s8k-sp-bouquets-me-${i}" value="${esc(byRegion.me||'')}" placeholder="75605"></div>
@@ -8539,18 +8566,12 @@ function readStrong8kSellPackagesFromEditor(){
       const value=document.getElementById('s8k-sp-bouquets-'+k+'-'+i)?.value?.trim();
       if(value)bouquetIdsByRegion[k]=value;
     });
-    const prices={};
-    [1,3,6,12].forEach(m=>{
-      prices[m]=Number(document.getElementById('s8k-sp-price-'+m+'-'+i)?.value||0);
-    });
     return {
       id:document.getElementById('s8k-sp-id-'+i)?.value?.trim()||'',
       name:document.getElementById('s8k-sp-name-'+i)?.value?.trim()||'',
       desc:document.getElementById('s8k-sp-desc-'+i)?.value?.trim()||'',
       bouquetIds:document.getElementById('s8k-sp-bouquets-'+i)?.value?.trim()||'',
       bouquetIdsByRegion,
-      prices,
-      monthlyPrice:prices[1]||0,
       exclusive:Boolean(document.getElementById('s8k-sp-exclusive-'+i)?.checked),
       enabled:document.getElementById('s8k-sp-enabled-'+i)?.checked!==false
     };

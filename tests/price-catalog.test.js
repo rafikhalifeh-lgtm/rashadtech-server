@@ -8,7 +8,9 @@ const {
   resolvePurchasePrice,
   computeJawakerPrice,
   pricesMatch,
-  RETAIL_MARKUP
+  RETAIL_MARKUP,
+  computeIptvPackageSelectionPrice,
+  iptvPackageStockKey
 } = require('../priceCatalog');
 
 test('legacy users without isReseller default to retail', () => {
@@ -85,4 +87,19 @@ test('versioned retail overrides still apply', () => {
     }
   };
   assert.equal(mergeRetailPriceCatalog(data).prices['spotify__0'], 6.99);
+});
+
+test('IPTV sell packages use separate catalog keys per package and duration', () => {
+  const data = {};
+  const reseller = getCatalogForUser(data, { isReseller: true });
+  const retail = getCatalogForUser(data, { isReseller: false });
+  const sellPackages = [
+    { id: 'full', name: 'Full Package', exclusive: true, enabled: true },
+    { id: 'streaming', name: 'Streaming', exclusive: false, enabled: true },
+    { id: 'bein', name: 'beIN', exclusive: false, enabled: true }
+  ];
+  assert.equal(iptvPackageStockKey('full', 3), 'strong8k__full__3');
+  assert.equal(computeIptvPackageSelectionPrice(reseller, ['full'], 3, sellPackages), 20);
+  assert.equal(computeIptvPackageSelectionPrice(reseller, ['streaming', 'bein'], 1, sellPackages), 9);
+  assert.ok(computeIptvPackageSelectionPrice(retail, ['full'], 1, sellPackages) > reseller.prices['strong8k__full__1']);
 });
