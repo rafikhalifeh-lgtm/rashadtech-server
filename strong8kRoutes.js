@@ -483,7 +483,13 @@ function registerStrong8kRoutes(app, deps) {
       });
 
       if (!isTrial && typeof notifyPurchaseFulfilled === 'function') {
-        notifyPurchaseFulfilled(user, { name: order.product }, order.plan, order.price, order, null, { data }).catch(() => {});
+        notifyPurchaseFulfilled(user, {
+          id: 'strong8k',
+          name: order.product,
+          short: order.short,
+          color: order.color,
+          tc: order.tc
+        }, order.plan, order.price, order, null, { data }).catch(() => {});
       }
       if (!isTrial && typeof sendPurchaseReceiptEmail === 'function') {
         sendPurchaseReceiptEmail(user, { name: order.product }, order.plan, order.price, order, {

@@ -181,13 +181,22 @@ function buildSubscriptionEmailContent({
     lines.push(`Your ${product}${plan ? ` (${plan})` : ''} subscription is ready.`);
     if (assignedCustomerName) lines.push(`Assigned to: ${assignedCustomerName}`);
     lines.push('');
-    if (order?.serviceLink) {
+    if (order?.serviceLink && !order?.iptvHost) {
       lines.push(`Activation link: ${order.serviceLink}`);
+    } else if (order?.iptvHost) {
+      lines.push(`Host: ${order.iptvHost}`);
+      lines.push(`Username: ${order.email}`);
+      lines.push(`Password: ${order.pass}`);
+      lines.push('Open TiviMate or IPTV Smarters Pro → Xtream Codes API → enter host, username, password.');
     } else if (order?.phone && !order?.pass) {
       lines.push(`Phone (with country code): ${order.phone}`);
       lines.push('Open the Disney+ app, enter this phone, then use Request Sign-in Code on your subscription link.');
     } else if (order?.email) {
-      lines.push(`Email: ${order.email}`);
+      if (order?.iptvHost) {
+        lines.push(`Username: ${order.email}`);
+      } else {
+        lines.push(`Email: ${order.email}`);
+      }
       if (order.pass) lines.push(`Password: ${order.pass}`);
       else lines.push('Sign in with email + one-time code on your subscription link.');
     }
@@ -207,14 +216,18 @@ function buildSubscriptionEmailContent({
 
   const credRows = [];
   if (!isPending) {
-    if (order?.serviceLink) {
+    if (order?.serviceLink && !order?.iptvHost) {
       credRows.push(`<tr><td style="padding:8px 0;color:#6b7280;width:110px">Activation</td><td style="padding:8px 0"><a href="${escapeHtml(order.serviceLink)}" style="color:#2563eb;word-break:break-all">${escapeHtml(order.serviceLink)}</a></td></tr>`);
+    }
+    if (order?.iptvHost) {
+      credRows.push(`<tr><td style="padding:8px 0;color:#6b7280">Host</td><td style="padding:8px 0;font-family:monospace;font-size:15px;word-break:break-all">${escapeHtml(order.iptvHost)}</td></tr>`);
     }
     if (order?.phone) {
       credRows.push(`<tr><td style="padding:8px 0;color:#6b7280">Phone</td><td style="padding:8px 0;font-family:monospace;font-size:15px">${escapeHtml(order.phone)}</td></tr>`);
     }
     if (order?.email) {
-      credRows.push(`<tr><td style="padding:8px 0;color:#6b7280">Email</td><td style="padding:8px 0;font-family:monospace;font-size:15px">${escapeHtml(order.email)}</td></tr>`);
+      const emailLabel = order?.iptvHost ? 'Username' : 'Email';
+      credRows.push(`<tr><td style="padding:8px 0;color:#6b7280">${emailLabel}</td><td style="padding:8px 0;font-family:monospace;font-size:15px">${escapeHtml(order.email)}</td></tr>`);
     }
     if (order?.pass) {
       credRows.push(`<tr><td style="padding:8px 0;color:#6b7280">Password</td><td style="padding:8px 0;font-family:monospace;font-size:15px">${escapeHtml(order.pass)}</td></tr>`);
