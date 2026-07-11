@@ -13,6 +13,13 @@ const IPTV_REGIONS = {
 
 const TRIAL_SUB_CODE = 99;
 
+const DEFAULT_SELL_PACKAGES = [
+  { id: 'full', name: 'Full Package', desc: 'All bouquets — sports, movies, Arabic, streaming & more', bouquetIds: '', monthlyPrice: 8, exclusive: true, enabled: true },
+  { id: 'lebanese', name: 'Lebanese Channels', desc: 'MBC · LBC · Tele Liban · local Lebanese TV', bouquetIds: '', monthlyPrice: 3, exclusive: false, enabled: true },
+  { id: 'streaming', name: 'Streaming Apps', desc: 'Netflix · Shahid · Amazon · Disney+ style channels', bouquetIds: '', monthlyPrice: 4, exclusive: false, enabled: true },
+  { id: 'bein', name: 'beIN + World Cup', desc: 'beIN Sports · World Cup 2026 · live football', bouquetIds: '', monthlyPrice: 5, exclusive: false, enabled: true }
+];
+
 function defaultStrong8kConfig() {
   return {
     enabled: false,
@@ -22,7 +29,8 @@ function defaultStrong8kConfig() {
     packageId: 'all',
     trialEnabled: true,
     regions: { ...IPTV_REGIONS },
-    plans: DEFAULT_PLANS.map(p => ({ ...p }))
+    plans: DEFAULT_PLANS.map(p => ({ ...p })),
+    sellPackages: DEFAULT_SELL_PACKAGES.map(p => ({ ...p }))
   };
 }
 
@@ -80,6 +88,96 @@ function sanitizePlans(plans) {
     .slice(0, 4);
 }
 
+function slugifySellPackageId(raw, fallback) {
+  const base = String(raw || fallback || 'package').trim().toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 32);
+  return base || 'package';
+}
+
+function sanitizeSellPackages(raw) {
+  const list = Array.isArray(raw) && raw.length ? raw : DEFAULT_SELL_PACKAGES;
+  const seen = new Set();
+  return list.map((row, index) => {
+    const fallback = DEFAULT_SELL_PACKAGES[index] || DEFAULT_SELL_PACKAGES[0];
+    const id = slugifySellPackageId(row && row.id, fallback.id + '-' + (index + 1));
+    const uniqueId = seen.has(id) ? `${id}-${index + 1}` : id;
+    seen.add(uniqueId);
+    const monthlyPrice = Number(row && row.monthlyPrice);
+    return {
+      id: uniqueId,
+      name: String(row && row.name || fallback.name).trim().slice(0, 48) || fallback.name,
+      desc: String(row && row.desc || fallback.desc || '').trim().slice(0, 160),
+      bouquetIds: String(row && row.bouquetIds || '').trim(),
+      monthlyPrice: Number.isFinite(monthlyPrice) && monthlyPrice >= 0
+        ? Math.round(monthlyPrice * 100) / 100
+        : Number(fallback.monthlyPrice || 0),
+      exclusive: Boolean(row && row.exclusive),
+      enabled: row && row.enabled === false ? false : true
+    };
+  }).filter(pkg => pkg.name).slice(0, 12);
+}
+
+function getEnabledSellPackages(config) {
+  return sanitizeSellPackages(config && config.sellPackages).filter(pkg => pkg.enabled);
+}
+
+function normalizeSellPackageIds(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  const seen = new Set();
+  raw.forEach(item => {
+    const id = String(item || '').trim().toLowerCase();
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    out.push(id);
+  });
+  return out;
+}
+
+function resolveSelectedSellPackages(packageIds, config) {
+  const ids = normalizeSellPackageIds(packageIds);
+  const packages = getEnabledSellPackages(config);
+  if (!ids.length) return [];
+  return packages.filter(pkg => ids.includes(pkg.id));
+}
+
+function computeSellPackageMonthlyTotal(packageIds, config) {
+  const selected = resolveSelectedSellPackages(packageIds, config);
+  if (!selected.length) return 0;
+  const exclusive = selected.find(pkg => pkg.exclusive);
+  if (exclusive) return exclusive.monthlyPrice;
+  return selected.reduce((sum, pkg) => sum + Number(pkg.monthlyPrice || 0), 0);
+}
+
+function computeSellPackagePrice(packageIds, months, config) {
+  const m = Number(months);
+  if (![1, 3, 6, 12].includes(m)) return 0;
+  const monthly = computeSellPackageMonthlyTotal(packageIds, config);
+  return Math.round(monthly * m * 100) / 100;
+}
+
+function resolvePackFromSellPackages(packageIds, config) {
+  const selected = resolveSelectedSellPackages(packageIds, config);
+  if (!selected.length) return null;
+  const bouquetSet = new Set();
+  selected.forEach(pkg => {
+    String(pkg.bouquetIds || '').split(',')
+      .map(part => part.trim())
+      .filter(Boolean)
+      .forEach(id => bouquetSet.add(id));
+  });
+  const joined = [...bouquetSet].join(',');
+  return joined || null;
+}
+
+function describeSellPackageSelection(packageIds, config) {
+  const selected = resolveSelectedSellPackages(packageIds, config);
+  if (!selected.length) return '';
+  return selected.map(pkg => pkg.name).join(' + ');
+}
+
 function sanitizeStrong8kConfig(raw) {
   const base = defaultStrong8kConfig();
   const input = raw && typeof raw === 'object' ? raw : {};
@@ -93,7 +191,8 @@ function sanitizeStrong8kConfig(raw) {
     storeEnabled: Boolean(input.storeEnabled),
     trialEnabled: input.trialEnabled !== undefined ? Boolean(input.trialEnabled) : base.trialEnabled,
     regions: sanitizeRegions(input.regions),
-    plans: sanitizePlans(input.plans)
+    plans: sanitizePlans(input.plans),
+    sellPackages: sanitizeSellPackages(input.sellPackages)
   };
 }
 
@@ -106,12 +205,20 @@ function sanitizeStrong8kConfigForClient(config, isAdmin) {
   }));
   if (!isAdmin) {
     if (!cfg.storeEnabled || !hasApiKey || !cfg.panelUrl) {
-      return { enabled: false, plans: [], regions: [], trialEnabled: false, lineTypes: [] };
+      return { enabled: false, plans: [], regions: [], trialEnabled: false, lineTypes: [], sellPackages: [] };
     }
+    const sellPackages = getEnabledSellPackages(cfg).map(pkg => ({
+      id: pkg.id,
+      name: pkg.name,
+      desc: pkg.desc,
+      monthlyPrice: pkg.monthlyPrice,
+      exclusive: pkg.exclusive
+    }));
     return {
       enabled: true,
       trialEnabled: Boolean(cfg.trialEnabled),
       regions,
+      sellPackages,
       lineTypes: [
         { id: 'stable', name: 'Stable (Xtream)', desc: 'Server host + username + password — best for TiviMate & Smarters' },
         { id: 'm3u', name: 'M3U Playlist', desc: 'Single playlist URL for simple players' }
@@ -139,6 +246,7 @@ function sanitizeStrong8kConfigForClient(config, isAdmin) {
     panelUrl: formatPanelUrlForDisplay(cfg.panelUrl),
     packageId: cfg.packageId,
     regions: cfg.regions,
+    sellPackages: cfg.sellPackages,
     plans: cfg.plans
   };
 }
@@ -344,17 +452,17 @@ function parseLineCredentials(row, url) {
   return { username, password, url: playlistUrl, host };
 }
 
-async function createLine(config, { months, note, region, isTrial, lineType }) {
+async function createLine(config, { months, note, region, isTrial, lineType, pack }) {
   const sub = isTrial ? TRIAL_SUB_CODE : Number(months);
   if (!isTrial && ![1, 3, 6, 12].includes(sub)) {
     throw new Error('Invalid subscription length');
   }
-  const pack = await resolvePackForPanel(config, region);
+  const resolvedPack = pack || await resolvePackForPanel(config, region);
   const data = await requestPanel(config, {
     action: 'new',
     type: 'm3u',
     sub,
-    pack,
+    pack: resolvedPack,
     note: String(note || '').slice(0, 200)
   });
   const row = unwrapApiPayload(data);
@@ -391,6 +499,15 @@ function normalizePhoneDigits(phone) {
 
 module.exports = {
   DEFAULT_PLANS,
+  DEFAULT_SELL_PACKAGES,
+  sanitizeSellPackages,
+  getEnabledSellPackages,
+  computeSellPackagePrice,
+  computeSellPackageMonthlyTotal,
+  resolvePackFromSellPackages,
+  resolveSelectedSellPackages,
+  describeSellPackageSelection,
+  normalizeSellPackageIds,
   IPTV_REGIONS,
   TRIAL_SUB_CODE,
   defaultStrong8kConfig,

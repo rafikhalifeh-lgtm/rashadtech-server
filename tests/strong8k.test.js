@@ -16,6 +16,22 @@ test('sanitizeStrong8kConfigForClient exposes regions and line types', () => {
   assert.equal(pub.lineTypes.length, 2);
   assert.equal(pub.trialEnabled, true);
   assert.equal(pub.features.channels, '60,000+');
+  assert.equal(pub.sellPackages.length, 4);
+});
+
+test('computeSellPackagePrice sums add-ons and respects exclusive full package', () => {
+  const config = {
+    sellPackages: [
+      { id: 'full', name: 'Full', bouquetIds: '1,2,3', monthlyPrice: 8, exclusive: true, enabled: true },
+      { id: 'lebanese', name: 'Lebanese', bouquetIds: '4', monthlyPrice: 3, exclusive: false, enabled: true },
+      { id: 'bein', name: 'beIN', bouquetIds: '5', monthlyPrice: 5, exclusive: false, enabled: true }
+    ]
+  };
+  assert.equal(strong8k.computeSellPackagePrice(['lebanese', 'bein'], 1, config), 8);
+  assert.equal(strong8k.computeSellPackagePrice(['full', 'bein'], 1, config), 8);
+  assert.equal(strong8k.computeSellPackagePrice(['full'], 3, config), 24);
+  assert.equal(strong8k.resolvePackFromSellPackages(['lebanese', 'bein'], config), '4,5');
+  assert.equal(strong8k.describeSellPackageSelection(['lebanese', 'bein'], config), 'Lebanese + beIN');
 });
 
 test('extractHostFromUrl parses server host', () => {

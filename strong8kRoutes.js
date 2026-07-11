@@ -207,6 +207,7 @@ function registerStrong8kRoutes(app, deps) {
         packageId: body.packageId !== undefined ? body.packageId : current.packageId,
         regions: body.regions !== undefined ? body.regions : current.regions,
         plans: Array.isArray(body.plans) ? body.plans : current.plans,
+        sellPackages: Array.isArray(body.sellPackages) ? body.sellPackages : current.sellPackages,
         apiKey: body.apiKey !== undefined ? String(body.apiKey || '').trim() : current.apiKey
       }));
       res.json({
@@ -279,6 +280,7 @@ function registerStrong8kRoutes(app, deps) {
     const region = String(req.body?.region || 'me').toLowerCase();
     const isTrial = Boolean(req.body?.trial);
     const subCustomerPhone = String(req.body?.subCustomerPhone || '').trim();
+    const selectedPackages = strong8k.normalizeSellPackageIds(req.body?.selectedPackages);
 
     try {
       const outcome = await enqueueDbWrite(async () => {
@@ -286,10 +288,20 @@ function registerStrong8kRoutes(app, deps) {
         const config = readStrong8kConfig(data);
         if (!config.storeEnabled) return { error: 'IPTV is not available right now', status: 403 };
         if (!config.panelUrl || !strong8k.resolveApiKey(config)) {
-          return { error: 'IPTV is not configured yet. Contact support.', status: 503 };
+          return { error: 'IPTV is not configured yet. Contact support.', status: 403 };
         }
         if (!strong8k.sanitizeRegions(config.regions)[region]) {
           return { error: 'Please select a valid region', status: 400 };
+        }
+
+        const sellPackages = strong8k.getEnabledSellPackages(config);
+        const usesSellPackages = sellPackages.length > 0;
+        if (usesSellPackages && !selectedPackages.length && !isTrial) {
+          return { error: 'Select at least one channel package', status: 400 };
+        }
+        if (usesSellPackages && selectedPackages.length) {
+          const valid = strong8k.resolveSelectedSellPackages(selectedPackages, config);
+          if (!valid.length) return { error: 'Invalid channel package selection', status: 400 };
         }
 
         data.users = Array.isArray(data.users) ? data.users : [];
@@ -300,6 +312,18 @@ function registerStrong8kRoutes(app, deps) {
         const reseller = userIsReseller(user);
         const trials = readIptvTrials(data);
         let plan = null;
+        const packageIds = selectedPackages.length
+          ? selectedPackages
+          : (usesSellPackages && sellPackages[0] ? [sellPackages[0].id] : []);
+        const packageLabel = packageIds.length
+          ? strong8k.describeSellPackageSelection(packageIds, config)
+          : '';
+        const packOverride = packageIds.length
+          ? strong8k.resolvePackFromSellPackages(packageIds, config)
+          : null;
+        const expectedPackagePrice = (!isTrial && packageIds.length)
+          ? strong8k.computeSellPackagePrice(packageIds, months, config)
+          : null;
 
         if (isTrial) {
           if (!config.trialEnabled) return { error: 'Free trials are not available right now', status: 403 };
@@ -321,25 +345,35 @@ function registerStrong8kRoutes(app, deps) {
         } else {
           plan = strong8k.findPlan(config, months);
           if (!plan) return { error: 'Invalid plan selected', status: 400 };
-          if (!pricesMatch(plan.sellPrice, price)) {
+          if (expectedPackagePrice != null && expectedPackagePrice > 0) {
+            if (!pricesMatch(expectedPackagePrice, price)) {
+              return { error: 'Price has changed. Refresh the store and try again.', status: 400 };
+            }
+          } else if (!pricesMatch(plan.sellPrice, price)) {
             return { error: 'Price has changed. Refresh the store and try again.', status: 400 };
           }
           const catalog = getCatalogForUser(data, user);
           const skey = `strong8k__${Math.max(0, config.plans.findIndex(p => Number(p.months) === months))}`;
           const catalogPrice = catalog && catalog.prices ? Number(catalog.prices[skey]) : null;
-          if (catalogPrice != null && !pricesMatch(catalogPrice, price)) {
+          if (expectedPackagePrice == null && catalogPrice != null && !pricesMatch(catalogPrice, price)) {
             return { error: 'Price has changed. Refresh the store and try again.', status: 400 };
           }
           if (Number(user.balance || 0) < price) return { error: 'Insufficient balance', status: 400 };
         }
 
         const regionName = strong8k.sanitizeRegions(config.regions)[region]?.name || region;
+        let panelPack = packOverride;
+        if (!panelPack && isTrial && usesSellPackages) {
+          const trialIds = packageIds.length ? packageIds : (sellPackages.find(p => p.exclusive) || sellPackages[0] ? [sellPackages.find(p => p.exclusive)?.id || sellPackages[0].id] : []);
+          panelPack = strong8k.resolvePackFromSellPackages(trialIds, config);
+        }
         const panelResult = await strong8k.createLine(config, {
           months: isTrial ? 1 : months,
-          note: `rashadtech.tv · ${user.email}${reseller && subCustomerPhone ? ` · sub ${subCustomerPhone}` : ''} · ${regionName}`,
+          note: `rashadtech.tv · ${user.email}${reseller && subCustomerPhone ? ` · sub ${subCustomerPhone}` : ''} · ${regionName}${packageLabel ? ` · ${packageLabel}` : ''}`,
           region,
           isTrial,
-          lineType
+          lineType,
+          pack: panelPack || undefined
         });
 
         if (!isTrial) user.balance = Number(user.balance || 0) - price;
@@ -347,8 +381,8 @@ function registerStrong8kRoutes(app, deps) {
         const dateStr = formatBeirutTime();
         const orderId = '#' + (Math.floor(Math.random() * 90000) + 10000);
         const finalPlanLabel = isTrial
-          ? `1-Day Free Trial · ${regionName} · ${lineType === 'm3u' ? 'M3U' : 'Stable'}`
-          : (planLabel || plan.name);
+          ? `1-Day Free Trial · ${packageLabel || regionName} · ${lineType === 'm3u' ? 'M3U' : 'Stable'}`
+          : `${planLabel || plan.name}${packageLabel ? ` · ${packageLabel}` : ''}`;
         const order = {
           id: orderId,
           productId: 'strong8k',
@@ -365,6 +399,7 @@ function registerStrong8kRoutes(app, deps) {
           iptvHost: panelResult.host,
           iptvLineType: panelResult.lineType,
           iptvRegion: region,
+          iptvPackages: packageIds,
           iptvTrial: isTrial,
           iptvSubPhone: reseller && subCustomerPhone ? strong8k.normalizePhoneDigits(subCustomerPhone) : '',
           strong8kUserId: panelResult.userId,
