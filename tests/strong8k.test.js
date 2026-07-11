@@ -49,10 +49,10 @@ test('isPanelRetryableError treats Something is missing as retryable', () => {
 
 test('buildTrialLineRequestVariants tries regional bouquet with GET and POST', () => {
   const variants = strong8k.buildTrialLineRequestVariants('me', '75605');
-  assert.ok(variants.some(v => v.httpMethod === 'GET' && v.pack === '75605' && !v.country));
+  assert.ok(variants.some(v => v.httpMethod === 'GET' && v.pack === '75605' && v.sub === 99));
+  assert.ok(variants.some(v => v.httpMethod === 'GET' && v.sub === 1));
   assert.ok(variants.some(v => v.httpMethod === 'POST' && v.country === 'LB'));
-  assert.ok(variants.some(v => v.packParam === 'bouquet' && v.country === 'LB'));
-  assert.ok(variants.length <= 8);
+  assert.ok(variants.length <= 12);
 });
 
 test('buildTrialPackAttemptsFromList prefers regional bouquet before pack=all', () => {
@@ -64,8 +64,12 @@ test('buildTrialPackAttemptsFromList prefers regional bouquet before pack=all', 
   const attempts = strong8k.buildTrialPackAttemptsFromList(bouquets, {}, 'me');
   assert.equal(attempts[0], '100');
   assert.ok(attempts.includes('all'));
-  assert.ok(attempts.includes(strong8k.OMIT_PANEL_PACK));
+  assert.ok(!attempts.includes(strong8k.OMIT_PANEL_PACK));
   assert.ok(!attempts.includes('75605'));
+});
+
+test('isPanelRetryableError treats subscription time errors as retryable', () => {
+  assert.equal(strong8k.isPanelRetryableError({ status: 'false', message: 'No Subscription time selected' }), true);
 });
 
 test('resolveRegionalBouquetIds prefers saved ids and fixes ME/US swap', () => {
