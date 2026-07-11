@@ -86,6 +86,20 @@ app.use((req, res, next) => {
   next();
 });
 
+// Bind port early so Render deploy health checks pass while routes load.
+const PORT = Number(process.env.PORT) || 3000;
+let onServerListening = null;
+app.get('/ping', (req, res) => {
+  res.status(200).json({ ok: true, ts: Date.now(), ready: true });
+});
+app.get('/', (req, res) => {
+  res.json({ status: 'rashadtech server running', ok: true });
+});
+app.listen(PORT, '0.0.0.0', () => {
+  console.log('rashadtech server running on port ' + PORT);
+  if (typeof onServerListening === 'function') onServerListening();
+});
+
 function normalizeEnvSecret(value) {
   let secret = String(value || '').trim();
   if ((secret.startsWith('"') && secret.endsWith('"')) || (secret.startsWith("'") && secret.endsWith("'"))) {
@@ -2322,46 +2336,24 @@ function validateNetflixAliasPurchase(data, skey, acc) {
 }
 
 // ── HEALTH ─────────────────────────────────────────────────────────────
-const HEALTH_DB_TIMEOUT_MS = Number(process.env.HEALTH_DB_TIMEOUT_MS || 2500);
-
-async function readDbForHealthCheck() {
-  if (dbCache && dbCacheLoadedAt && Date.now() - dbCacheLoadedAt < 5 * 60 * 1000) {
-    return dbCache;
-  }
-  try {
-    return await Promise.race([
-      readJsonBinRaw({ fast: true, skipRecoverWrite: true, noClone: true }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('health db timeout')), HEALTH_DB_TIMEOUT_MS))
-    ]);
-  } catch (e) {
-    return null;
-  }
+function buildHealthReportSync() {
+  const data = dbCache && dbCacheLoadedAt ? dbCache : null;
+  return {
+    ok: true,
+    ts: Date.now(),
+    ready: Boolean(data && Array.isArray(data.users)),
+    checks: {
+      db: Boolean(data && Array.isArray(data.users)),
+      storage: data && data.emergencyDb ? 'fallback' : (data ? 'primary' : 'warming'),
+      email: data
+        ? isServerEmailConfigured(data)
+        : Boolean(process.env.RESEND_API_KEY || process.env.EMAILJS_PRIVATE_KEY)
+    }
+  };
 }
 
-async function buildHealthReport() {
-  const report = { ok: true, ts: Date.now(), ready: false, checks: {} };
-  const data = await readDbForHealthCheck();
-  report.checks.db = Boolean(data && Array.isArray(data.users));
-  report.checks.storage = data && data.emergencyDb ? 'fallback' : (data ? 'primary' : 'unknown');
-  report.ready = report.checks.db;
-  // Keep ok:true while process is up so Render deploy health checks pass during DB warm-up.
-  report.ok = true;
-  report.checks.email = data
-    ? isServerEmailConfigured(data)
-    : Boolean(process.env.RESEND_API_KEY || process.env.EMAILJS_PRIVATE_KEY);
-  return report;
-}
-
-app.get('/', (req, res) => {
-  res.json({ status: 'rashadtech server running', ok: true });
-});
-app.get('/ping', (req, res) => {
-  const warm = Boolean(dbCache && dbCacheLoadedAt);
-  res.json({ ok: true, ts: Date.now(), ready: warm || true });
-});
-app.get('/health', async (req, res) => {
-  const report = await buildHealthReport();
-  res.status(200).json(report);
+app.get('/health', (req, res) => {
+  res.status(200).json(buildHealthReportSync());
 });
 
 app.get('/backup-admin', (req, res) => {
@@ -5883,9 +5875,7 @@ function startServerKeepAlive() {
 }
 
 // ── START ──────────────────────────────────────────────────────────────
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, '0.0.0.0', () => {
-  console.log('rashadtech server running on port ' + PORT);
+onServerListening = () => {
   startServerKeepAlive();
   setImmediate(async () => {
     try {
@@ -5913,4 +5903,4 @@ app.listen(PORT, '0.0.0.0', () => {
       console.error('Deferred startup error:', e.message);
     }
   });
-});
+};
