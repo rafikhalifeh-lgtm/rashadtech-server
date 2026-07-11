@@ -143,7 +143,12 @@ function unwrapApiPayload(data) {
 function panelErrorMessage(payload, fallback) {
   const row = unwrapApiPayload(payload);
   const msg = String(row.message || row.messasge || row.result || row.error || '').trim();
-  if (msg) return msg;
+  if (msg) {
+    if (/subscription package not found/i.test(msg)) {
+      return 'IPTV bouquet/package ID is invalid. In Admin → Strong8K IPTV, click Load bouquets and set the correct package ID for your region.';
+    }
+    return msg;
+  }
   if (String(row.status || '').toLowerCase() === 'true') return '';
   return fallback || 'Strong8K panel request failed';
 }
@@ -164,6 +169,32 @@ function resolveRegionPack(config, regionId) {
   const key = String(regionId || 'me').toLowerCase();
   if (regions[key] && regions[key].packId) return regions[key].packId;
   return String(config && config.packageId || 'all').trim() || 'all';
+}
+
+function isWildcardPack(pack) {
+  const value = String(pack || '').trim().toLowerCase();
+  return !value || value === 'all' || value === '*' || value === 'default';
+}
+
+function joinBouquetIds(bouquets) {
+  return (Array.isArray(bouquets) ? bouquets : [])
+    .map(item => String(item && item.id || '').trim())
+    .filter(Boolean)
+    .join(',');
+}
+
+async function resolvePackForPanel(config, regionId) {
+  const configured = resolveRegionPack(config, regionId);
+  if (!isWildcardPack(configured)) return configured;
+
+  const { bouquets } = await getBouquets(config);
+  const joined = joinBouquetIds(bouquets);
+  if (!joined) {
+    throw new Error(
+      'IPTV bouquet not configured. In Admin → Strong8K IPTV, click Load bouquets and set a valid package/bouquet ID for your region.'
+    );
+  }
+  return joined;
 }
 
 async function requestPanel(config, params) {
@@ -214,13 +245,18 @@ async function getResellerInfo(config) {
 
 async function getBouquets(config) {
   const data = await requestPanel(config, { action: 'bouquet' });
-  if (!Array.isArray(data)) return { success: true, bouquets: [] };
+  let list = [];
+  if (Array.isArray(data)) list = data;
+  else if (data && Array.isArray(data.bouquets)) list = data.bouquets;
+  else if (data && typeof data === 'object') {
+    list = Object.values(data).filter(item => item && typeof item === 'object' && (item.id || item.name));
+  }
   return {
     success: true,
-    bouquets: data
+    bouquets: list
       .map(item => ({
-        id: String(item.id || '').trim(),
-        name: String(item.name || item.id || '').trim()
+        id: String(item.id || item.bouquet_id || '').trim(),
+        name: String(item.name || item.bouquet_name || item.id || '').trim()
       }))
       .filter(item => item.id)
   };
@@ -249,7 +285,7 @@ async function createLine(config, { months, note, region, isTrial, lineType }) {
   if (!isTrial && ![1, 3, 6, 12].includes(sub)) {
     throw new Error('Invalid subscription length');
   }
-  const pack = resolveRegionPack(config, region);
+  const pack = await resolvePackForPanel(config, region);
   const data = await requestPanel(config, {
     action: 'new',
     type: 'm3u',
@@ -305,6 +341,11 @@ module.exports = {
   createM3uLine,
   findPlan,
   normalizePhoneDigits,
+  joinBouquetIds,
+  isWildcardPack,
+  resolveRegionPack,
+  resolvePackForPanel,
   extractHostFromUrl,
-  parseLineCredentials
+  parseLineCredentials,
+  panelErrorMessage
 };

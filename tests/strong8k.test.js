@@ -100,6 +100,27 @@ test('reseller can select trial before sub-customer phone is entered', () => {
   assert.equal(ready.eligible, true);
 });
 
+test('joinBouquetIds builds comma-separated bouquet list for panel API', () => {
+  assert.equal(strong8k.joinBouquetIds([
+    { id: '12', name: 'Full' },
+    { id: '34', name: 'Sports' }
+  ]), '12,34');
+  assert.equal(strong8k.joinBouquetIds([]), '');
+});
+
+test('isWildcardPack detects unset or all package ids', () => {
+  assert.equal(strong8k.isWildcardPack('all'), true);
+  assert.equal(strong8k.isWildcardPack('ALL'), true);
+  assert.equal(strong8k.isWildcardPack(''), true);
+  assert.equal(strong8k.isWildcardPack('12,34'), false);
+  assert.equal(strong8k.isWildcardPack('99'), false);
+});
+
+test('panelErrorMessage maps missing package to admin setup hint', () => {
+  const msg = strong8k.panelErrorMessage({ status: 'false', message: 'Subscription package not found' }, 'fallback');
+  assert.match(msg, /bouquet|package/i);
+});
+
 test('purchase handler does not redeclare isTrial when unpacking outcome', () => {
   const fs = require('fs');
   const path = require('path');

@@ -1323,7 +1323,7 @@ So your EmailJS template will receive the user email and verification code corre
           <div class="field" style="margin-bottom:10px">
             <label>Package / bouquet ID (default)</label>
             <input type="text" id="s8k-package-id" placeholder="all or bouquet ID from panel" value="all">
-            <div style="font-size:11px;color:var(--text3);margin-top:4px">Fallback when a region pack is empty. Use <b>all</b> or pick from bouquets.</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:4px">Use a bouquet ID from your panel (click Load bouquets). Leave as <b>all</b> to auto-use every bouquet from the panel.</div>
           </div>
           <div style="font-size:12px;font-weight:700;margin-bottom:8px">Region bouquet IDs</div>
           <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px">
@@ -8478,8 +8478,8 @@ async function loadStrong8kBouquets(){
     const j=await strong8kAdminApi('/admin/strong8k/bouquets');
     const list=Array.isArray(j.bouquets)?j.bouquets:[];
     document.getElementById('s8k-bouquets-box').innerHTML=list.length
-      ?list.map(b=>`<button type="button" class="inline-btn" style="margin:0 6px 6px 0" onclick="document.getElementById('s8k-package-id').value='${esc(b.id)}'">${esc(b.name)} (${esc(b.id)})</button>`).join('')
-      :'No bouquets returned — you can keep package ID as <b>all</b>.';
+      ?`<div style="margin-bottom:8px;line-height:1.55">${list.map(b=>`<button type="button" class="inline-btn" style="margin:0 6px 6px 0" onclick="document.getElementById('s8k-package-id').value='${esc(b.id)}'">${esc(b.name)} (${esc(b.id)})</button>`).join('')}</div><button type="button" class="inline-btn" onclick="document.getElementById('s8k-package-id').value='${esc(list.map(b=>b.id).join(','))}';['me','eu','us'].forEach(k=>{const el=document.getElementById('s8k-pack-'+k);if(el)el.value='${esc(list.map(b=>b.id).join(','))}';})">Use all bouquets (${list.length})</button>`
+      :'No bouquets returned — check panel URL/API key, then set a bouquet ID manually.';
   }catch(e){showToast('⚠️ '+e.message);}
 }
 
