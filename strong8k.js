@@ -265,6 +265,94 @@ function firstBouquetId(raw) {
   return id || '';
 }
 
+function matchBouquetNameForRegion(name, regionKey) {
+  const n = String(name || '');
+  const regionPatterns = {
+    me: [/middle\s*east/i, /\barab/i, /\bmena\b/i, /\blevant/i],
+    eu: [/europe/i, /\beu\b/i, /\buk\b/i],
+    us: [/united\s*states/i, /\busa\b/i, /\bus\b/i, /america/i]
+  };
+  return (regionPatterns[regionKey] || []).some(re => re.test(n));
+}
+
+function findBouquetForRegion(bouquets, regionKey, config, { preferFull = true } = {}) {
+  const list = formatBouquetRows(bouquets);
+  if (!list.length) return '';
+
+  if (preferFull) {
+    const fullRegional = list.find(b => /full/i.test(b.name) && matchBouquetNameForRegion(b.name, regionKey));
+    if (fullRegional) return firstBouquetId(fullRegional.id);
+  }
+
+  const regional = list.find(b => matchBouquetNameForRegion(b.name, regionKey));
+  if (regional) return firstBouquetId(regional.id);
+
+  if (preferFull) {
+    const full = list.find(b => /full/i.test(b.name));
+    if (full) return firstBouquetId(full.id);
+  }
+
+  if (config) {
+    const exclusive = getEnabledSellPackages(config).find(pkg => pkg.exclusive);
+    const fromPkg = firstBouquetId(exclusive && exclusive.bouquetIdsByRegion && exclusive.bouquetIdsByRegion[regionKey]);
+    if (fromPkg && list.some(b => b.id === fromPkg)) return fromPkg;
+    const saved = firstBouquetId(resolveRegionPack(config, regionKey));
+    if (saved && !isWildcardPack(saved) && list.some(b => b.id === saved)) return saved;
+  }
+
+  return '';
+}
+
+function findBouquetByNamePattern(bouquets, pattern) {
+  const list = formatBouquetRows(bouquets);
+  const hit = list.find(b => pattern.test(b.name || ''));
+  return hit ? firstBouquetId(hit.id) : '';
+}
+
+function applyPanelBouquetsToConfig(config, bouquets) {
+  const cfg = sanitizeStrong8kConfig(config);
+  const list = formatBouquetRows(bouquets);
+  if (!list.length) return cfg;
+
+  const meId = findBouquetForRegion(list, 'me', cfg);
+  const euId = findBouquetForRegion(list, 'eu', cfg);
+  const usId = findBouquetForRegion(list, 'us', cfg);
+  const streamingId = findBouquetByNamePattern(list, /stream/i);
+  const beinId = findBouquetByNamePattern(list, /bein|world\s*cup/i);
+
+  const regions = { ...cfg.regions };
+  if (meId) regions.me = { ...regions.me, id: 'me', packId: meId };
+  if (euId) regions.eu = { ...regions.eu, id: 'eu', packId: euId };
+  if (usId) regions.us = { ...regions.us, id: 'us', packId: usId };
+
+  const sellPackages = getEnabledSellPackages(cfg).map(pkg => {
+    if (pkg.exclusive || /full/i.test(pkg.name)) {
+      const byRegion = { ...(pkg.bouquetIdsByRegion || {}) };
+      if (meId) byRegion.me = meId;
+      if (euId) byRegion.eu = euId;
+      if (usId) byRegion.us = usId;
+      return { ...pkg, bouquetIdsByRegion: byRegion };
+    }
+    if (/stream/i.test(pkg.name) && streamingId) return { ...pkg, bouquetIds: streamingId };
+    if (/bein|world\s*cup/i.test(pkg.name) && beinId) return { ...pkg, bouquetIds: beinId };
+    return pkg;
+  });
+
+  const packageId = meId || euId || usId || cfg.packageId;
+  return { ...cfg, regions, sellPackages, packageId };
+}
+
+async function syncStrong8kBouquetsFromPanel(config) {
+  const { bouquets } = await getBouquets(config);
+  return applyPanelBouquetsToConfig(config, bouquets);
+}
+
+function isPanelPackRejection(payload) {
+  const row = unwrapApiPayload(payload);
+  const msg = String(row.message || row.messasge || row.result || row.error || '').trim();
+  return /subscription package not found|bouquet|package.*not found|invalid.*pack/i.test(msg);
+}
+
 function resolveTrialPackBouquetSync(config, region) {
   const regionKey = String(region || 'me').toLowerCase();
   if (!IPTV_TRIAL_REGIONS.has(regionKey)) return '';
@@ -293,9 +381,8 @@ function resolveTrialPackBouquetSync(config, region) {
 function assertTrialPanelPack(pack, regionKey) {
   const single = firstBouquetId(pack);
   if (!single || isWildcardPack(single)) {
-    const hint = regionKey === 'us' ? 'US bouquet 75606' : 'ME bouquet 75605';
     throw new Error(
-      `IPTV trial needs one Full Package bouquet ID for ${regionKey === 'us' ? 'United States' : 'Middle East'}. In Admin → Strong8K IPTV, set ${hint} on Full Package (one ID only, not a comma list).`
+      `Could not activate IPTV free trial for ${regionKey === 'us' ? 'United States' : 'Middle East'}. Bouquets could not be loaded from your panel — try again shortly.`
     );
   }
   return single;
@@ -303,19 +390,17 @@ function assertTrialPanelPack(pack, regionKey) {
 
 async function resolveTrialPackBouquet(config, region) {
   const regionKey = String(region || 'me').toLowerCase();
-  const sync = resolveTrialPackBouquetSync(config, regionKey);
-  if (sync) return sync;
+  if (!IPTV_TRIAL_REGIONS.has(regionKey)) return '';
 
-  const { bouquets } = await getBouquets(config);
-  const regionMatchers = {
-    me: /middle|arab|\bme\b/i,
-    us: /\bus\b|united states/i
-  };
-  const regionRe = regionMatchers[regionKey] || null;
-  const fullMatch = bouquets.find(b => /full/i.test(b.name || '') && (!regionRe || regionRe.test(b.name || '')))
-    || bouquets.find(b => /full/i.test(b.name || ''))
-    || bouquets[0];
-  return fullMatch && fullMatch.id ? firstBouquetId(fullMatch.id) : '';
+  try {
+    const { bouquets } = await getBouquets(config);
+    const fromPanel = findBouquetForRegion(bouquets, regionKey, config);
+    if (fromPanel) return fromPanel;
+  } catch {
+    // fall back to saved config below
+  }
+
+  return resolveTrialPackBouquetSync(config, regionKey);
 }
 
 async function resolvePanelPack(config, { region, packageIds, isTrial } = {}) {
@@ -434,7 +519,7 @@ function panelErrorMessage(payload, fallback) {
   const msg = String(row.message || row.messasge || row.result || row.error || '').trim();
   if (msg) {
     if (/subscription package not found/i.test(msg)) {
-      return 'IPTV bouquet ID is invalid for this line. In Admin → Strong8K IPTV, set the Full Package bouquet ID for your region (e.g. ME 75605) — use one bouquet ID, not a comma list.';
+      return 'IPTV line could not be created — bouquet not found on panel. Bouquets are loaded automatically from your panel; try again in a moment.';
     }
     return msg;
   }
@@ -634,17 +719,33 @@ async function createLine(config, { months, note, region, isTrial, lineType, pac
     packageIds,
     isTrial: Boolean(isTrial)
   });
-  const panelPack = isTrial
+  let panelPack = isTrial
     ? assertTrialPanelPack(resolvedPack, String(region || 'me').toLowerCase())
     : String(resolvedPack || '').trim();
-  const data = await requestPanel(config, {
+  let data = await requestPanel(config, {
     action: 'new',
     type: 'm3u',
     sub,
     pack: panelPack,
     note: String(note || '').slice(0, 200)
   });
-  const row = unwrapApiPayload(data);
+  let row = unwrapApiPayload(data);
+  if (String(row.status || '').toLowerCase() !== 'true' && isTrial && isPanelPackRejection(data)) {
+    const regionKey = String(region || 'me').toLowerCase();
+    const { bouquets } = await getBouquets(config);
+    const retryPack = assertTrialPanelPack(findBouquetForRegion(bouquets, regionKey, config), regionKey);
+    if (retryPack !== panelPack) {
+      panelPack = retryPack;
+      data = await requestPanel(config, {
+        action: 'new',
+        type: 'm3u',
+        sub,
+        pack: panelPack,
+        note: String(note || '').slice(0, 200)
+      });
+      row = unwrapApiPayload(data);
+    }
+  }
   if (String(row.status || '').toLowerCase() !== 'true') {
     throw new Error(panelErrorMessage(data, isTrial ? 'Could not create IPTV trial line' : 'Could not create IPTV line'));
   }
@@ -691,6 +792,11 @@ module.exports = {
   resolveTrialPackBouquet,
   assertTrialPanelPack,
   firstBouquetId,
+  findBouquetForRegion,
+  findBouquetByNamePattern,
+  applyPanelBouquetsToConfig,
+  syncStrong8kBouquetsFromPanel,
+  matchBouquetNameForRegion,
   IPTV_TRIAL_REGIONS,
   FULL_PACKAGE_REGION_BOUQUETS,
   resolvePanelPack,

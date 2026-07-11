@@ -234,9 +234,38 @@ test('isWildcardPack detects unset or all package ids', () => {
   assert.equal(strong8k.isWildcardPack('99'), false);
 });
 
-test('panelErrorMessage maps missing package to admin setup hint', () => {
+test('findBouquetForRegion matches panel bouquet names and saved config ids', () => {
+  const bouquets = [
+    { id: '75605', name: 'Full Middle East' },
+    { id: '75604', name: 'Full Europe' },
+    { id: '75606', name: 'Full United States' },
+    { id: '75609', name: 'Streaming Apps' }
+  ];
+  assert.equal(strong8k.findBouquetForRegion(bouquets, 'me'), '75605');
+  assert.equal(strong8k.findBouquetForRegion(bouquets, 'us'), '75606');
+  const config = {
+    regions: { me: { id: 'me', packId: 'all' } },
+    sellPackages: [{ id: 'full', exclusive: true, bouquetIdsByRegion: { me: '75605' }, enabled: true, name: 'Full' }]
+  };
+  assert.equal(strong8k.findBouquetForRegion([{ id: '75605', name: 'Package A' }], 'me', config), '75605');
+});
+
+test('applyPanelBouquetsToConfig writes region and full package ids from panel', () => {
+  const config = { regions: {}, sellPackages: [{ id: 'full', name: 'Full Package', exclusive: true, enabled: true, bouquetIdsByRegion: {} }] };
+  const bouquets = [
+    { id: '100', name: 'Full Middle East' },
+    { id: '200', name: 'Full United States' }
+  ];
+  const next = strong8k.applyPanelBouquetsToConfig(config, bouquets);
+  assert.equal(next.regions.me.packId, '100');
+  assert.equal(next.regions.us.packId, '200');
+  assert.equal(next.sellPackages[0].bouquetIdsByRegion.me, '100');
+  assert.equal(next.sellPackages[0].bouquetIdsByRegion.us, '200');
+});
+
+test('panelErrorMessage maps missing package to retry hint', () => {
   const msg = strong8k.panelErrorMessage({ status: 'false', message: 'Subscription package not found' }, 'fallback');
-  assert.match(msg, /bouquet|package/i);
+  assert.match(msg, /automatically|try again/i);
 });
 
 test('purchase handler does not redeclare isTrial when unpacking outcome', () => {

@@ -1324,7 +1324,7 @@ So your EmailJS template will receive the user email and verification code corre
           <div class="field" style="margin-bottom:10px">
             <label>Package / bouquet ID (default)</label>
             <input type="text" id="s8k-package-id" placeholder="all or bouquet ID from panel" value="all">
-            <div style="font-size:11px;color:var(--text3);margin-top:4px">Use a bouquet ID from your panel (click Load bouquets). Leave as <b>all</b> to auto-use every bouquet from the panel.</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:4px">Filled automatically when you click <b>Load bouquets</b> or <b>Save settings</b>.</div>
           </div>
           <div style="font-size:12px;font-weight:700;margin-bottom:8px">Region bouquet IDs</div>
           <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px">
@@ -1342,7 +1342,7 @@ So your EmailJS template will receive the user email and verification code corre
         </div>
         <div class="card" style="padding:16px;margin-bottom:14px">
           <div style="font-size:13px;font-weight:700;margin-bottom:8px">Channel packages for customers <span style="font-size:10px;font-weight:600;color:var(--green);background:var(--green-bg);border:1px solid var(--green-border);padding:2px 6px;border-radius:999px;margin-left:6px">NEW</span></div>
-          <div style="font-size:12px;color:var(--text2);line-height:1.55;margin-bottom:10px">Set bouquet IDs here. Set <b>retail &amp; reseller prices</b> in Admin → <b>Prices</b> (per package: 1 / 3 / 6 / 12 months). IPTV is not stocked — no accounts to add.</div>
+          <div style="font-size:12px;color:var(--text2);line-height:1.55;margin-bottom:10px">Bouquet IDs are loaded automatically from your panel — click <b>Test connection</b> or <b>Load bouquets</b> once. Set <b>retail &amp; reseller prices</b> in Admin → <b>Prices</b>.</div>
           <div id="s8k-sell-packages-editor" style="display:grid;gap:10px;margin-bottom:10px"></div>
           <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text2);margin-bottom:10px">
             <input type="checkbox" id="s8k-trial-enabled" checked> Allow 1-day free trials in store
@@ -8770,26 +8770,14 @@ async function loadStrong8kBouquets(){
     if(apiKey)body.apiKey=apiKey;
     const j=await strong8kAdminApi('/admin/strong8k/bouquets',{method:'POST',body:JSON.stringify(body)});
     const list=Array.isArray(j.bouquets)?j.bouquets:[];
-    const findByName=(re)=>list.find(b=>re.test(b.name||''));
-    const fullMe=findByName(/full.*middle|middle.*full/i)||findByName(/middle east/i);
-    const fullEu=findByName(/full.*europe|europe.*full/i);
-    const fullUs=findByName(/full.*us|united states/i);
-    const streaming=findByName(/stream/i);
-    const bein=findByName(/bein|world cup/i);
-    if(fullMe)applyBouquetToSellPackageRegion(0,'me',fullMe.id);
-    if(fullEu)applyBouquetToSellPackageRegion(0,'eu',fullEu.id);
-    if(fullUs)applyBouquetToSellPackageRegion(0,'us',fullUs.id);
-    if(streaming){
-      const spIdx=[...document.querySelectorAll('[id^="s8k-sp-name-"]')].findIndex((_,i)=>/stream/i.test(document.getElementById('s8k-sp-name-'+i)?.value||''));
-      applyBouquetToSellPackage(spIdx>=0?spIdx:1,streaming.id);
-    }
-    if(bein){
-      const beIdx=[...document.querySelectorAll('[id^="s8k-sp-name-"]')].findIndex((_,i)=>/bein|world cup/i.test(document.getElementById('s8k-sp-name-'+i)?.value||''));
-      applyBouquetToSellPackage(beIdx>=0?beIdx:2,bein.id);
+    if(j.synced){
+      showToast('✓ Bouquets loaded from panel and saved automatically');
+      await renderStrong8kAdmin();
+      refreshStrong8kStore(true);
     }
     document.getElementById('s8k-bouquets-box').innerHTML=list.length
-      ?`<div style="margin-bottom:8px;line-height:1.55">${list.map(b=>`<button type="button" class="inline-btn" style="margin:0 6px 6px 0" onclick="document.getElementById('s8k-package-id').value='${esc(b.id)}'">${esc(b.name)} (${esc(b.id)})</button>`).join('')}</div><div style="font-size:11px;color:var(--text3);margin-bottom:8px;line-height:1.55">Bouquet IDs auto-filled into sell packages when names match. Click <b>Save settings</b> after reviewing.</div><button type="button" class="inline-btn" onclick="document.getElementById('s8k-package-id').value='${esc(list.map(b=>b.id).join(','))}';['me','eu','us'].forEach(k=>{const el=document.getElementById('s8k-pack-'+k);if(el)el.value='${esc(list.map(b=>b.id).join(','))}';})">Use all bouquets (${list.length})</button>`
-      :'No bouquets returned. Click <b>Save settings</b>, then <b>Test connection</b>. If connection works, copy a bouquet ID from your panel login at '+esc(panelUrl)+' and paste it into Package / bouquet ID.';
+      ?`<div style="margin-bottom:8px;line-height:1.55;color:var(--green)">✓ ${list.length} bouquet(s) loaded — package IDs saved automatically for Full Package (ME/US/EU), Streaming, and beIN.</div><div style="margin-bottom:8px;line-height:1.55">${list.map(b=>`<span style="display:inline-block;margin:0 6px 6px 0;padding:4px 8px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;font-size:11px">${esc(b.name)} <b>${esc(b.id)}</b></span>`).join('')}</div>`
+      :'<span style="color:var(--orange)">No bouquets returned from panel. Check Panel URL and API key, then Test connection.</span>';
   }catch(e){
     document.getElementById('s8k-bouquets-box').innerHTML=`<span style="color:var(--red)">${esc(e.message||'Could not load bouquets')}</span>`;
     showToast('⚠️ '+e.message);

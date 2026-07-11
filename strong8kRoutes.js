@@ -202,7 +202,7 @@ function registerStrong8kRoutes(app, deps) {
     if (!session) return;
     const body = req.body || {};
     try {
-      const next = await saveStrong8kConfig(current => ({
+      let next = await saveStrong8kConfig(current => ({
         ...current,
         enabled: body.enabled !== undefined ? Boolean(body.enabled) : current.enabled,
         storeEnabled: body.storeEnabled !== undefined ? Boolean(body.storeEnabled) : current.storeEnabled,
@@ -214,6 +214,14 @@ function registerStrong8kRoutes(app, deps) {
         sellPackages: Array.isArray(body.sellPackages) ? body.sellPackages : current.sellPackages,
         apiKey: body.apiKey !== undefined ? String(body.apiKey || '').trim() : current.apiKey
       }));
+      if (next.panelUrl && strong8k.resolveApiKey(next)) {
+        try {
+          const bouquetResult = await strong8k.getBouquets(next);
+          next = await saveStrong8kConfig(() => strong8k.applyPanelBouquetsToConfig(next, bouquetResult.bouquets));
+        } catch {
+          // keep saved config if live bouquet sync fails
+        }
+      }
       res.json({
         success: true,
         config: strong8k.sanitizeStrong8kConfigForClient(next, true)
@@ -262,7 +270,14 @@ function registerStrong8kRoutes(app, deps) {
       if (req.body && req.body.panelUrl !== undefined) draft.panelUrl = String(req.body.panelUrl || '').trim();
       if (req.body && req.body.apiKey) draft.apiKey = String(req.body.apiKey || '').trim();
       const result = await strong8k.getBouquets(draft);
-      res.json({ success: true, bouquets: result.bouquets || [] });
+      const synced = strong8k.applyPanelBouquetsToConfig(draft, result.bouquets || []);
+      const saved = await saveStrong8kConfig(() => synced);
+      res.json({
+        success: true,
+        bouquets: result.bouquets || [],
+        synced: true,
+        config: strong8k.sanitizeStrong8kConfigForClient(saved, true)
+      });
     } catch (e) {
       res.status(400).json({ error: e.message || 'Could not load bouquets' });
     }
