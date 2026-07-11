@@ -49,12 +49,23 @@ test('buildTrialPackAttemptsFromList uses only live panel bouquet ids', () => {
     { id: '300', name: 'Streaming' }
   ];
   const attempts = strong8k.buildTrialPackAttemptsFromList(bouquets, {}, 'me');
-  assert.equal(attempts[0], '100');
+  assert.equal(attempts[0], 'all');
+  assert.equal(attempts[1], '100');
   assert.ok(attempts.includes('200'));
   assert.ok(attempts.includes('300'));
-  assert.ok(attempts.includes('all'));
   assert.ok(attempts.includes(strong8k.OMIT_PANEL_PACK));
   assert.ok(!attempts.includes('75605'));
+});
+
+test('sanitizeSellPackages restores missing default packages like Lebanese', () => {
+  const saved = [
+    { id: 'full', name: 'Full Package', bouquetIds: '', bouquetIdsByRegion: { me: '100' }, prices: { 1: 8, 3: 20, 6: 35, 12: 60 }, exclusive: true, enabled: true },
+    { id: 'streaming', name: 'Streaming', bouquetIds: '300', bouquetIdsByRegion: {}, prices: { 1: 4, 3: 10, 6: 18, 12: 32 }, exclusive: false, enabled: true },
+    { id: 'bein', name: 'beIN', bouquetIds: '400', bouquetIdsByRegion: {}, prices: { 1: 5, 3: 13, 6: 22, 12: 38 }, exclusive: false, enabled: true }
+  ];
+  const merged = strong8k.sanitizeSellPackages(saved);
+  assert.equal(merged.length, 4);
+  assert.ok(merged.some(pkg => pkg.id === 'lebanese'));
 });
 
 test('resolvePanelPack uses single region full bouquet for free trial', async () => {

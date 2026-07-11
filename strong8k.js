@@ -12,6 +12,7 @@ const IPTV_REGIONS = {
 };
 
 const TRIAL_SUB_CODE = 99;
+const TRIAL_MIN_PANEL_CREDITS = 12;
 const OMIT_PANEL_PACK = '__OMIT_PACK__';
 const DURATION_MONTHS = [1, 3, 6, 12];
 
@@ -155,29 +156,51 @@ function sanitizePackagePrices(row, fallbackId, fallbackMonthly) {
   return out;
 }
 
+function sanitizeSellPackageRow(row, index, seen) {
+  const fallback = DEFAULT_SELL_PACKAGES[index] || DEFAULT_SELL_PACKAGES[0];
+  const id = slugifySellPackageId(row && row.id, fallback.id + '-' + (index + 1));
+  const uniqueId = seen.has(id) ? `${id}-${index + 1}` : id;
+  seen.add(uniqueId);
+  const prices = sanitizePackagePrices(row, fallback.id, fallback.prices && fallback.prices[1]);
+  const defaultByRegion = defaultBouquetIdsByRegionForPackage(fallback.id);
+  const byRegion = sanitizeBouquetIdsByRegion(row && row.bouquetIdsByRegion);
+  return {
+    id: uniqueId,
+    name: String(row && row.name || fallback.name).trim().slice(0, 48) || fallback.name,
+    desc: String(row && row.desc || fallback.desc || '').trim().slice(0, 160),
+    bouquetIds: String(row && row.bouquetIds || fallback.bouquetIds || '').trim(),
+    bouquetIdsByRegion: { ...defaultByRegion, ...byRegion },
+    prices,
+    monthlyPrice: prices[1] || 0,
+    exclusive: Boolean(row && row.exclusive),
+    enabled: row && row.enabled === false ? false : true
+  };
+}
+
+function mergeMissingDefaultSellPackages(packages) {
+  const out = Array.isArray(packages) ? packages.map(pkg => ({ ...pkg })) : [];
+  const seen = new Set(out.map(pkg => String(pkg.id || '').toLowerCase()));
+  DEFAULT_SELL_PACKAGES.forEach((defaultPkg, index) => {
+    if (seen.has(defaultPkg.id)) return;
+    const seenForRow = new Set(out.map(pkg => pkg.id));
+    out.push(sanitizeSellPackageRow(defaultPkg, index, seenForRow));
+    seen.add(defaultPkg.id);
+  });
+  const order = new Map(DEFAULT_SELL_PACKAGES.map((pkg, index) => [pkg.id, index]));
+  out.sort((a, b) => {
+    const ai = order.has(a.id) ? order.get(a.id) : 99;
+    const bi = order.has(b.id) ? order.get(b.id) : 99;
+    return ai - bi;
+  });
+  return out.slice(0, 12);
+}
+
 function sanitizeSellPackages(raw) {
   const list = Array.isArray(raw) && raw.length ? raw : DEFAULT_SELL_PACKAGES;
   const seen = new Set();
-  return list.map((row, index) => {
-    const fallback = DEFAULT_SELL_PACKAGES[index] || DEFAULT_SELL_PACKAGES[0];
-    const id = slugifySellPackageId(row && row.id, fallback.id + '-' + (index + 1));
-    const uniqueId = seen.has(id) ? `${id}-${index + 1}` : id;
-    seen.add(uniqueId);
-    const prices = sanitizePackagePrices(row, fallback.id, fallback.prices && fallback.prices[1]);
-    const defaultByRegion = defaultBouquetIdsByRegionForPackage(fallback.id);
-    const byRegion = sanitizeBouquetIdsByRegion(row && row.bouquetIdsByRegion);
-    return {
-      id: uniqueId,
-      name: String(row && row.name || fallback.name).trim().slice(0, 48) || fallback.name,
-      desc: String(row && row.desc || fallback.desc || '').trim().slice(0, 160),
-      bouquetIds: String(row && row.bouquetIds || fallback.bouquetIds || '').trim(),
-      bouquetIdsByRegion: { ...defaultByRegion, ...byRegion },
-      prices,
-      monthlyPrice: prices[1] || 0,
-      exclusive: Boolean(row && row.exclusive),
-      enabled: row && row.enabled === false ? false : true
-    };
-  }).filter(pkg => pkg.name).slice(0, 12);
+  const sanitized = list.map((row, index) => sanitizeSellPackageRow(row, index, seen))
+    .filter(pkg => pkg.name);
+  return mergeMissingDefaultSellPackages(sanitized);
 }
 
 function getEnabledSellPackages(config) {
@@ -320,6 +343,7 @@ function applyPanelBouquetsToConfig(config, bouquets) {
   const usId = findBouquetForRegion(list, 'us', cfg);
   const streamingId = findBouquetByNamePattern(list, /stream/i);
   const beinId = findBouquetByNamePattern(list, /bein|world\s*cup/i);
+  const lebaneseId = findBouquetByNamePattern(list, /lebanese|lebanon|lbc|tele\s*liban|mena\s*local/i);
 
   const regions = { ...cfg.regions };
   if (meId) regions.me = { ...regions.me, id: 'me', packId: meId };
@@ -336,6 +360,7 @@ function applyPanelBouquetsToConfig(config, bouquets) {
     }
     if (/stream/i.test(pkg.name) && streamingId) return { ...pkg, bouquetIds: streamingId };
     if (/bein|world\s*cup/i.test(pkg.name) && beinId) return { ...pkg, bouquetIds: beinId };
+    if (/lebanese|lebanon|lbc/i.test(pkg.name) && lebaneseId) return { ...pkg, bouquetIds: lebaneseId };
     return pkg;
   });
 
@@ -395,6 +420,12 @@ function assertTrialPanelPack(pack, regionKey) {
   return single;
 }
 
+function panelListHasBouquetId(list, bouquetId) {
+  const id = firstBouquetId(bouquetId);
+  if (!id) return false;
+  return list.some(b => b.id === id);
+}
+
 function buildTrialPackAttemptsFromList(bouquets, config, region) {
   const regionKey = String(region || 'me').toLowerCase();
   const list = formatBouquetRows(bouquets);
@@ -407,14 +438,22 @@ function buildTrialPackAttemptsFromList(bouquets, config, region) {
     attempts.push(id);
   };
 
-  if (!list.length) return attempts;
+  // Panel API: sub=99 demo uses pack=all for full bouquet access.
+  push('all');
+
+  const fromConfig = resolveTrialPackBouquetSync(config, regionKey);
+  if (fromConfig && panelListHasBouquetId(list, fromConfig)) push(fromConfig);
+
+  if (!list.length) {
+    push(OMIT_PANEL_PACK);
+    return attempts;
+  }
 
   const regional = findBouquetForRegion(list, regionKey, config);
   if (regional) push(regional);
 
   list.filter(b => /full/i.test(b.name || '')).forEach(b => push(firstBouquetId(b.id)));
   list.forEach(b => push(firstBouquetId(b.id)));
-  push('all');
   push(OMIT_PANEL_PACK);
   return attempts;
 }
@@ -450,11 +489,29 @@ function formatPackAttemptLabel(pack) {
   return pack === OMIT_PANEL_PACK ? '(no pack param)' : String(pack);
 }
 
+async function assertTrialPanelCredits(config) {
+  try {
+    const info = await getResellerInfo(config);
+    const credits = Number(info.credits || 0);
+    if (credits < TRIAL_MIN_PANEL_CREDITS) {
+      throw new Error(
+        `Strong8K panel needs at least ${TRIAL_MIN_PANEL_CREDITS} credits for free trials (current balance: ${credits}). Add credits on your panel, then try again.`
+      );
+    }
+    return info;
+  } catch (e) {
+    if (/at least \d+ credits/i.test(e.message || '')) throw e;
+    return null;
+  }
+}
+
 async function createTrialLine(config, { note, region, lineType, pack }) {
   const regionKey = String(region || 'me').toLowerCase();
   const sub = TRIAL_SUB_CODE;
   const attemptLog = [];
   let bouquets = [];
+
+  await assertTrialPanelCredits(config);
 
   const presetPack = pack ? String(pack).trim() : '';
   const attemptList = presetPack
@@ -905,10 +962,10 @@ module.exports = {
   requestNewM3uLine,
   formatPackAttemptLabel,
   OMIT_PANEL_PACK,
-  buildTrialPackAttemptsFromList,
-  createTrialLine,
-  requestNewM3uLine,
-  OMIT_PANEL_PACK,
+  mergeMissingDefaultSellPackages,
+  assertTrialPanelCredits,
+  panelListHasBouquetId,
+  TRIAL_MIN_PANEL_CREDITS,
   firstBouquetId,
   findBouquetForRegion,
   findBouquetByNamePattern,
@@ -923,6 +980,7 @@ module.exports = {
   normalizeSellPackageIds,
   IPTV_REGIONS,
   TRIAL_SUB_CODE,
+  TRIAL_MIN_PANEL_CREDITS,
   defaultStrong8kConfig,
   normalizePanelUrl,
   formatPanelUrlForDisplay,

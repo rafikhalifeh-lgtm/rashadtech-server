@@ -298,6 +298,13 @@ function registerStrong8kRoutes(app, deps) {
       if (!strong8k.IPTV_TRIAL_REGIONS.has(region)) {
         return res.status(400).json({ error: 'Test trial supports Middle East (me) or United States (us) only' });
       }
+      let panelCredits = null;
+      try {
+        const info = await strong8k.getResellerInfo(draft);
+        panelCredits = Number(info.credits || 0);
+      } catch {
+        panelCredits = null;
+      }
       const attempts = await strong8k.buildTrialPackAttempts(draft, region);
       const result = await strong8k.createTrialLine(draft, {
         note: `rashadtech.tv admin trial test · ${session.email}`,
@@ -307,8 +314,11 @@ function registerStrong8kRoutes(app, deps) {
       res.json({
         success: true,
         region,
+        panelCredits,
+        trialMinCredits: strong8k.TRIAL_MIN_PANEL_CREDITS,
         packAttempts: attempts.attempts.map(p => strong8k.formatPackAttemptLabel(p)),
         bouquets: attempts.bouquets,
+        sellPackageCount: strong8k.getEnabledSellPackages(draft).length,
         successPack: result.successPack,
         attemptLog: result.attemptLog,
         username: result.username,
