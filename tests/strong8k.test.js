@@ -99,3 +99,16 @@ test('reseller can select trial before sub-customer phone is entered', () => {
   assert.equal(ready.needsSubPhone, false);
   assert.equal(ready.eligible, true);
 });
+
+test('purchase handler does not redeclare isTrial when unpacking outcome', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const src = fs.readFileSync(path.join(__dirname, '../strong8kRoutes.js'), 'utf8');
+  const start = src.indexOf("app.post('/purchase/strong8k'");
+  assert.ok(start > -1);
+  const end = src.indexOf("activeStrong8kPurchases.delete(lockKey);", start);
+  assert.ok(end > start);
+  const block = src.slice(start, end);
+  assert.match(block, /const isTrial = Boolean\(req\.body\?\.trial\)/);
+  assert.doesNotMatch(block, /const \{[^}]*\bisTrial\b[^}]*\} = outcome/);
+});

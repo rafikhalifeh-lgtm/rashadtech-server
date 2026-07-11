@@ -389,7 +389,7 @@ function registerStrong8kRoutes(app, deps) {
         return res.status(outcome.status || 400).json({ error: outcome.error });
       }
 
-      const { data, user, order, dateStr, panelResult, isTrial, reseller, regionName } = outcome;
+      const { data, user, order, dateStr, panelResult, reseller, regionName } = outcome;
       res.json({
         success: true,
         order,
