@@ -1314,6 +1314,11 @@ So your EmailJS template will receive the user email and verification code corre
             <input type="password" id="s8k-api-key" placeholder="Paste API key — stored server-side only" autocomplete="off">
             <div style="font-size:11px;color:var(--text3);margin-top:4px" id="s8k-api-key-status">Not connected</div>
           </div>
+          <div class="field" style="margin-bottom:10px">
+            <label>Customer delivery host (Xtream)</label>
+            <input type="url" id="s8k-delivery-host" placeholder="http://rashadtech.xyz" autocomplete="off">
+            <div style="font-size:11px;color:var(--text3);margin-top:4px;line-height:1.55">Each new line gets a fresh <b>username</b> and <b>password</b> from Strong8K. This host is what customers see for Stable (Xtream) login — set your My Hosts domain here after DNS is active (e.g. rashadtech.xyz). Leave empty to use the host from the panel M3U link.</div>
+          </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
             <button class="inline-btn" onclick="saveStrong8kConfig()">Save settings</button>
             <button class="inline-btn" onclick="testStrong8kConnection()">Test connection</button>
@@ -8576,6 +8581,8 @@ async function renderStrong8kAdmin(){
     const pkg=document.getElementById('s8k-package-id');
     const store=document.getElementById('s8k-store-enabled');
     if(panel)panel.value=_strong8kConfigCache.panelUrl||'';
+    const deliveryHost=document.getElementById('s8k-delivery-host');
+    if(deliveryHost)deliveryHost.value=_strong8kConfigCache.deliveryHost||'';
     if(pkg)pkg.value=_strong8kConfigCache.packageId||'all';
     if(store)store.checked=Boolean(_strong8kConfigCache.storeEnabled);
     const regions=_strong8kConfigCache.regions||{};
@@ -8610,6 +8617,7 @@ if(document.getElementById('s8k-sell-packages-editor'))renderStrong8kSellPackage
 async function saveStrong8kConfig(){
   const panelUrl=document.getElementById('s8k-panel-url')?.value?.trim()||'';
   const apiKey=document.getElementById('s8k-api-key')?.value?.trim();
+  const deliveryHost=document.getElementById('s8k-delivery-host')?.value?.trim()||'';
   const packageId=document.getElementById('s8k-package-id')?.value?.trim()||'all';
   const plans=readStrong8kPlansFromEditor();
   const regions={
@@ -8619,7 +8627,7 @@ async function saveStrong8kConfig(){
   };
   try{
     const body={
-      panelUrl,packageId,plans,
+      panelUrl,deliveryHost,packageId,plans,
       sellPackages:filterAdminSellPackages(readStrong8kSellPackagesFromEditor()),
       regions,
       enabled:true,

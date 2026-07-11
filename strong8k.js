@@ -71,6 +71,7 @@ function defaultStrong8kConfig() {
     apiKey: '',
     packageId: 'all',
     trialEnabled: false,
+    deliveryHost: '',
     regions: { ...IPTV_REGIONS },
     plans: DEFAULT_PLANS.map(p => ({ ...p })),
     sellPackages: DEFAULT_SELL_PACKAGES.map(p => ({ ...p }))
@@ -98,6 +99,37 @@ function formatPanelUrlForDisplay(raw) {
 
 function resolveApiKey(config) {
   return String(process.env.STRONG8K_API_KEY || (config && config.apiKey) || '').trim();
+}
+
+function normalizeDeliveryHost(raw) {
+  let host = String(raw || '').trim();
+  if (!host) return '';
+  if (!/^https?:\/\//i.test(host)) host = `http://${host}`;
+  return host.replace(/\/+$/, '');
+}
+
+function resolveDeliveryHost(config) {
+  return normalizeDeliveryHost(
+    (config && config.deliveryHost) || process.env.STRONG8K_DELIVERY_HOST || ''
+  );
+}
+
+function applyDeliveryHostToCredentials(creds, deliveryHost) {
+  const normalized = normalizeDeliveryHost(deliveryHost);
+  if (!normalized || !creds) return creds;
+  const next = { ...creds, host: normalized };
+  if (next.url) {
+    try {
+      const parsed = new URL(next.url);
+      const delivery = new URL(normalized.endsWith('/') ? normalized : `${normalized}/`);
+      parsed.protocol = delivery.protocol;
+      parsed.host = delivery.host;
+      next.url = parsed.toString();
+    } catch {
+      // keep original playlist url
+    }
+  }
+  return next;
 }
 
 function sanitizeRegionPackId(raw, fallback) {
@@ -736,7 +768,10 @@ async function createTrialLine(config, { note, region, lineType, pack, packAttem
     throw err;
   }
 
-  const creds = parseLineCredentials(row, row.url);
+  const creds = applyDeliveryHostToCredentials(
+    parseLineCredentials(row, row.url),
+    resolveDeliveryHost(config)
+  );
   return {
     success: true,
     userId: String(row.user_id || row.userId || '').trim(),
@@ -805,6 +840,7 @@ function sanitizeStrong8kConfig(raw) {
     enabled: Boolean(input.enabled),
     storeEnabled: Boolean(input.storeEnabled),
     trialEnabled: false,
+    deliveryHost: normalizeDeliveryHost(input.deliveryHost || base.deliveryHost),
     regions: sanitizeRegions(input.regions),
     plans: sanitizePlans(input.plans),
     sellPackages: sanitizeSellPackages(input.sellPackages)
@@ -861,6 +897,7 @@ function sanitizeStrong8kConfigForClient(config, isAdmin) {
     hasEnvApiKey: Boolean(String(process.env.STRONG8K_API_KEY || '').trim()),
     panelUrl: formatPanelUrlForDisplay(cfg.panelUrl),
     packageId: cfg.packageId,
+    deliveryHost: cfg.deliveryHost || '',
     regions: cfg.regions,
     sellPackages: cfg.sellPackages,
     plans: cfg.plans
@@ -1126,7 +1163,10 @@ async function createLine(config, { months, note, region, isTrial, lineType, pac
   if (String(row.status || '').toLowerCase() !== 'true') {
     throw new Error(panelErrorMessage(data, 'Could not create IPTV line'));
   }
-  const creds = parseLineCredentials(row, row.url);
+  const creds = applyDeliveryHostToCredentials(
+    parseLineCredentials(row, row.url),
+    resolveDeliveryHost(config)
+  );
   return {
     success: true,
     userId: String(row.user_id || row.userId || '').trim(),
@@ -1210,6 +1250,9 @@ module.exports = {
   normalizePanelUrl,
   formatPanelUrlForDisplay,
   resolveApiKey,
+  resolveDeliveryHost,
+  normalizeDeliveryHost,
+  applyDeliveryHostToCredentials,
   sanitizeStrong8kConfig,
   sanitizeStrong8kConfigForClient,
   sanitizeRegions,

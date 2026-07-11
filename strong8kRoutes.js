@@ -216,6 +216,7 @@ function registerStrong8kRoutes(app, deps) {
         enabled: body.enabled !== undefined ? Boolean(body.enabled) : current.enabled,
         storeEnabled: body.storeEnabled !== undefined ? Boolean(body.storeEnabled) : current.storeEnabled,
         trialEnabled: false,
+        deliveryHost: body.deliveryHost !== undefined ? body.deliveryHost : current.deliveryHost,
         panelUrl: body.panelUrl !== undefined ? body.panelUrl : current.panelUrl,
         packageId: body.packageId !== undefined ? body.packageId : current.packageId,
         regions: body.regions !== undefined ? body.regions : current.regions,
