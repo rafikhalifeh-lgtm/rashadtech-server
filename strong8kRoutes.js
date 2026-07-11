@@ -239,7 +239,24 @@ function registerStrong8kRoutes(app, deps) {
     if (!session) return;
     try {
       const data = await readDbFast();
-      const result = await strong8k.getBouquets(readStrong8kConfig(data));
+      const draft = { ...readStrong8kConfig(data) };
+      if (req.query.panelUrl) draft.panelUrl = String(req.query.panelUrl).trim();
+      const result = await strong8k.getBouquets(draft);
+      res.json({ success: true, bouquets: result.bouquets || [] });
+    } catch (e) {
+      res.status(400).json({ error: e.message || 'Could not load bouquets' });
+    }
+  });
+
+  app.post('/admin/strong8k/bouquets', async (req, res) => {
+    const session = requireSession(req, res, ['admin']);
+    if (!session) return;
+    try {
+      const data = await readDbFast();
+      const draft = { ...readStrong8kConfig(data) };
+      if (req.body && req.body.panelUrl !== undefined) draft.panelUrl = String(req.body.panelUrl || '').trim();
+      if (req.body && req.body.apiKey) draft.apiKey = String(req.body.apiKey || '').trim();
+      const result = await strong8k.getBouquets(draft);
       res.json({ success: true, bouquets: result.bouquets || [] });
     } catch (e) {
       res.status(400).json({ error: e.message || 'Could not load bouquets' });

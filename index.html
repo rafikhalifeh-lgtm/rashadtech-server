@@ -8471,16 +8471,25 @@ async function testStrong8kConnection(){
     const j=await strong8kAdminApi('/admin/strong8k/test',{method:'POST',body:JSON.stringify(body)});
     document.getElementById('s8k-credits-box').textContent=`Connected as ${j.username||'reseller'} · Credits: ${j.credits??'—'}`;
     showToast('✓ Strong8K panel connected');
+    loadStrong8kBouquets().catch(()=>{});
   }catch(e){showToast('⚠️ '+e.message);}
 }
 async function loadStrong8kBouquets(){
+  const panelUrl=document.getElementById('s8k-panel-url')?.value?.trim()||'';
+  const apiKey=document.getElementById('s8k-api-key')?.value?.trim();
+  if(!panelUrl){showToast('Enter Panel URL first');return;}
   try{
-    const j=await strong8kAdminApi('/admin/strong8k/bouquets');
+    const body={panelUrl};
+    if(apiKey)body.apiKey=apiKey;
+    const j=await strong8kAdminApi('/admin/strong8k/bouquets',{method:'POST',body:JSON.stringify(body)});
     const list=Array.isArray(j.bouquets)?j.bouquets:[];
     document.getElementById('s8k-bouquets-box').innerHTML=list.length
       ?`<div style="margin-bottom:8px;line-height:1.55">${list.map(b=>`<button type="button" class="inline-btn" style="margin:0 6px 6px 0" onclick="document.getElementById('s8k-package-id').value='${esc(b.id)}'">${esc(b.name)} (${esc(b.id)})</button>`).join('')}</div><button type="button" class="inline-btn" onclick="document.getElementById('s8k-package-id').value='${esc(list.map(b=>b.id).join(','))}';['me','eu','us'].forEach(k=>{const el=document.getElementById('s8k-pack-'+k);if(el)el.value='${esc(list.map(b=>b.id).join(','))}';})">Use all bouquets (${list.length})</button>`
-      :'No bouquets returned — check panel URL/API key, then set a bouquet ID manually.';
-  }catch(e){showToast('⚠️ '+e.message);}
+      :'No bouquets returned. Click <b>Save settings</b>, then <b>Test connection</b>. If connection works, copy a bouquet ID from your panel login at '+esc(panelUrl)+' and paste it into Package / bouquet ID.';
+  }catch(e){
+    document.getElementById('s8k-bouquets-box').innerHTML=`<span style="color:var(--red)">${esc(e.message||'Could not load bouquets')}</span>`;
+    showToast('⚠️ '+e.message);
+  }
 }
 
 async function renderSmsAdmin(){

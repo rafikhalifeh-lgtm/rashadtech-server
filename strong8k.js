@@ -243,23 +243,78 @@ async function getResellerInfo(config) {
   };
 }
 
-async function getBouquets(config) {
-  const data = await requestPanel(config, { action: 'bouquet' });
-  let list = [];
-  if (Array.isArray(data)) list = data;
-  else if (data && Array.isArray(data.bouquets)) list = data.bouquets;
-  else if (data && typeof data === 'object') {
-    list = Object.values(data).filter(item => item && typeof item === 'object' && (item.id || item.name));
+function formatBouquetRows(list) {
+  return (Array.isArray(list) ? list : [])
+    .map(item => ({
+      id: String(item.id || item.bouquet_id || item.package_id || item.packageId || '').trim(),
+      name: String(item.name || item.bouquet_name || item.package_name || item.title || item.id || '').trim()
+    }))
+    .filter(item => item.id);
+}
+
+function normalizeBouquetList(data) {
+  if (!data) return [];
+  if (Array.isArray(data)) return data;
+
+  if (typeof data === 'object') {
+    const candidates = [data.bouquets, data.packages, data.package, data.data, data.list];
+    for (const candidate of candidates) {
+      if (Array.isArray(candidate) && candidate.length) return candidate;
+      if (typeof candidate === 'string') {
+        try {
+          const parsed = JSON.parse(candidate);
+          if (Array.isArray(parsed) && parsed.length) return parsed;
+        } catch {
+          // ignore malformed JSON
+        }
+      }
+    }
+
+    if (typeof data.result === 'string') {
+      try {
+        const parsed = JSON.parse(data.result);
+        if (Array.isArray(parsed) && parsed.length) return parsed;
+      } catch {
+        // result is plain text, not a bouquet list
+      }
+    } else if (Array.isArray(data.result) && data.result.length) {
+      return data.result;
+    }
+
+    const objects = Object.entries(data)
+      .filter(([key]) => !['status', 'message', 'error', 'result', 'messasge'].includes(key))
+      .map(([, value]) => value)
+      .filter(value => value && typeof value === 'object' && (value.id || value.bouquet_id || value.name || value.bouquet_name));
+    if (objects.length) return objects;
+
+    if (data.id || data.bouquet_id) return [data];
   }
-  return {
-    success: true,
-    bouquets: list
-      .map(item => ({
-        id: String(item.id || item.bouquet_id || '').trim(),
-        name: String(item.name || item.bouquet_name || item.id || '').trim()
-      }))
-      .filter(item => item.id)
-  };
+
+  return [];
+}
+
+function assertPanelSuccess(data, fallback) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return;
+  const status = String(data.status || '').toLowerCase();
+  if (status === 'error' || status === 'false') {
+    throw new Error(panelErrorMessage(data, fallback));
+  }
+}
+
+async function getBouquets(config) {
+  const actions = ['bouquet', 'bouquets', 'package', 'packages'];
+  let lastData = null;
+  for (const action of actions) {
+    const data = await requestPanel(config, { action });
+    lastData = data;
+    assertPanelSuccess(data, 'Could not load bouquets from panel');
+    const list = normalizeBouquetList(data);
+    const bouquets = formatBouquetRows(list);
+    if (bouquets.length) return { success: true, bouquets };
+  }
+
+  if (lastData) assertPanelSuccess(lastData, 'Could not load bouquets from panel');
+  return { success: true, bouquets: [] };
 }
 
 function parseLineCredentials(row, url) {
@@ -345,6 +400,8 @@ module.exports = {
   isWildcardPack,
   resolveRegionPack,
   resolvePackForPanel,
+  normalizeBouquetList,
+  formatBouquetRows,
   extractHostFromUrl,
   parseLineCredentials,
   panelErrorMessage
