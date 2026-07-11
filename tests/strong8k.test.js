@@ -100,6 +100,17 @@ test('reseller can select trial before sub-customer phone is entered', () => {
   assert.equal(ready.eligible, true);
 });
 
+test('formatPanelUrlForDisplay shows clean panel domain in admin', () => {
+  assert.equal(
+    strong8k.formatPanelUrlForDisplay('https://8k.cms-only.ru/api/api.php'),
+    'https://8k.cms-only.ru'
+  );
+  assert.equal(
+    strong8k.normalizePanelUrl('https://8k.cms-only.ru'),
+    'https://8k.cms-only.ru/api/api.php'
+  );
+});
+
 test('normalizeBouquetList parses wrapped and keyed bouquet responses', () => {
   assert.deepEqual(strong8k.normalizeBouquetList([
     { id: '1', name: 'Full' }
