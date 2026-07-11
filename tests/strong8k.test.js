@@ -27,14 +27,15 @@ test('computeSellPackagePrice sums add-ons and respects exclusive full package',
       us: { id: 'us', name: 'United States', packId: '75606' }
     },
     sellPackages: [
-      { id: 'full', name: 'Full', bouquetIds: '', bouquetIdsByRegion: { me: '75605', eu: '75604', us: '75606' }, monthlyPrice: 8, exclusive: true, enabled: true },
-      { id: 'lebanese', name: 'Lebanese', bouquetIds: '4', bouquetIdsByRegion: {}, monthlyPrice: 3, exclusive: false, enabled: true },
-      { id: 'bein', name: 'beIN', bouquetIds: '75610', bouquetIdsByRegion: {}, monthlyPrice: 5, exclusive: false, enabled: true }
+      { id: 'full', name: 'Full', bouquetIds: '', bouquetIdsByRegion: { me: '75605', eu: '75604', us: '75606' }, prices: { 1: 8, 3: 20, 6: 35, 12: 60 }, monthlyPrice: 8, exclusive: true, enabled: true },
+      { id: 'lebanese', name: 'Lebanese', bouquetIds: '4', bouquetIdsByRegion: {}, prices: { 1: 3, 3: 8, 6: 14, 12: 25 }, monthlyPrice: 3, exclusive: false, enabled: true },
+      { id: 'bein', name: 'beIN', bouquetIds: '75610', bouquetIdsByRegion: {}, prices: { 1: 5, 3: 13, 6: 22, 12: 38 }, monthlyPrice: 5, exclusive: false, enabled: true }
     ]
   };
   assert.equal(strong8k.computeSellPackagePrice(['lebanese', 'bein'], 1, config), 8);
+  assert.equal(strong8k.computeSellPackagePrice(['lebanese', 'bein'], 3, config), 21);
   assert.equal(strong8k.computeSellPackagePrice(['full', 'bein'], 1, config), 8);
-  assert.equal(strong8k.computeSellPackagePrice(['full'], 3, config), 24);
+  assert.equal(strong8k.computeSellPackagePrice(['full'], 3, config), 20);
   assert.equal(strong8k.resolvePackFromSellPackages(['lebanese', 'bein'], config, 'me'), '4,75610');
   assert.equal(strong8k.resolvePackFromSellPackages(['full'], config, 'me'), '75605');
   assert.equal(strong8k.resolveSellPackageBouquetIds(config.sellPackages[0], 'eu', config), '75604');
@@ -52,8 +53,8 @@ test('resolvePanelPack uses region bouquet for free trial when packages not sele
       us: { id: 'us', name: 'United States', packId: '75606' }
     },
     sellPackages: [
-      { id: 'full', name: 'Full', bouquetIds: '', bouquetIdsByRegion: {}, monthlyPrice: 8, exclusive: true, enabled: true },
-      { id: 'streaming', name: 'Streaming', bouquetIds: '75609', bouquetIdsByRegion: {}, monthlyPrice: 4, exclusive: false, enabled: true }
+      { id: 'full', name: 'Full', bouquetIds: '', bouquetIdsByRegion: {}, prices: { 1: 8, 3: 20, 6: 35, 12: 60 }, monthlyPrice: 8, exclusive: true, enabled: true },
+      { id: 'streaming', name: 'Streaming', bouquetIds: '75609', bouquetIdsByRegion: {}, prices: { 1: 4, 3: 10, 6: 18, 12: 32 }, monthlyPrice: 4, exclusive: false, enabled: true }
     ]
   };
   const trialPack = await strong8k.resolvePanelPack(config, { region: 'me', packageIds: [], isTrial: true });

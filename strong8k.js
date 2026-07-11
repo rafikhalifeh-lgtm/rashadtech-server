@@ -12,12 +12,20 @@ const IPTV_REGIONS = {
 };
 
 const TRIAL_SUB_CODE = 99;
+const DURATION_MONTHS = [1, 3, 6, 12];
+
+const PACKAGE_PRICE_DEFAULTS = {
+  full: { 1: 8, 3: 20, 6: 35, 12: 60 },
+  lebanese: { 1: 3, 3: 8, 6: 14, 12: 25 },
+  streaming: { 1: 4, 3: 10, 6: 18, 12: 32 },
+  bein: { 1: 5, 3: 13, 6: 22, 12: 38 }
+};
 
 const DEFAULT_SELL_PACKAGES = [
-  { id: 'full', name: 'Full Package', desc: 'All bouquets — sports, movies, Arabic, streaming & more', bouquetIds: '', monthlyPrice: 8, exclusive: true, enabled: true },
-  { id: 'lebanese', name: 'Lebanese Channels', desc: 'MBC · LBC · Tele Liban · local Lebanese TV', bouquetIds: '', monthlyPrice: 3, exclusive: false, enabled: true },
-  { id: 'streaming', name: 'Streaming Apps', desc: 'Netflix · Shahid · Amazon · Disney+ style channels', bouquetIds: '', monthlyPrice: 4, exclusive: false, enabled: true },
-  { id: 'bein', name: 'beIN + World Cup', desc: 'beIN Sports · World Cup 2026 · live football', bouquetIds: '', monthlyPrice: 5, exclusive: false, enabled: true }
+  { id: 'full', name: 'Full Package', desc: 'All bouquets — sports, movies, Arabic, streaming & more', bouquetIds: '', prices: { ...PACKAGE_PRICE_DEFAULTS.full }, exclusive: true, enabled: true },
+  { id: 'lebanese', name: 'Lebanese Channels', desc: 'MBC · LBC · Tele Liban · local Lebanese TV', bouquetIds: '', prices: { ...PACKAGE_PRICE_DEFAULTS.lebanese }, exclusive: false, enabled: true },
+  { id: 'streaming', name: 'Streaming Apps', desc: 'Netflix · Shahid · Amazon · Disney+ style channels', bouquetIds: '', prices: { ...PACKAGE_PRICE_DEFAULTS.streaming }, exclusive: false, enabled: true },
+  { id: 'bein', name: 'beIN + World Cup', desc: 'beIN Sports · World Cup 2026 · live football', bouquetIds: '', prices: { ...PACKAGE_PRICE_DEFAULTS.bein }, exclusive: false, enabled: true }
 ];
 
 function defaultStrong8kConfig() {
@@ -106,6 +114,29 @@ function sanitizeBouquetIdsByRegion(raw) {
   return out;
 }
 
+function sanitizePackagePrices(row, fallbackId, fallbackMonthly) {
+  const defaults = PACKAGE_PRICE_DEFAULTS[fallbackId] || {};
+  const input = row && (row.prices || row.durationPrices);
+  const monthly = Number(row && row.monthlyPrice);
+  const out = {};
+  DURATION_MONTHS.forEach(m => {
+    const raw = input && (input[m] ?? input[String(m)]);
+    const v = Number(raw);
+    if (Number.isFinite(v) && v >= 0) {
+      out[m] = Math.round(v * 100) / 100;
+    } else if (defaults[m] != null) {
+      out[m] = defaults[m];
+    } else if (Number.isFinite(monthly) && monthly > 0) {
+      out[m] = Math.round(monthly * m * 100) / 100;
+    } else if (Number.isFinite(fallbackMonthly) && fallbackMonthly > 0) {
+      out[m] = Math.round(fallbackMonthly * m * 100) / 100;
+    } else {
+      out[m] = 0;
+    }
+  });
+  return out;
+}
+
 function sanitizeSellPackages(raw) {
   const list = Array.isArray(raw) && raw.length ? raw : DEFAULT_SELL_PACKAGES;
   const seen = new Set();
@@ -114,16 +145,15 @@ function sanitizeSellPackages(raw) {
     const id = slugifySellPackageId(row && row.id, fallback.id + '-' + (index + 1));
     const uniqueId = seen.has(id) ? `${id}-${index + 1}` : id;
     seen.add(uniqueId);
-    const monthlyPrice = Number(row && row.monthlyPrice);
+    const prices = sanitizePackagePrices(row, fallback.id, fallback.prices && fallback.prices[1]);
     return {
       id: uniqueId,
       name: String(row && row.name || fallback.name).trim().slice(0, 48) || fallback.name,
       desc: String(row && row.desc || fallback.desc || '').trim().slice(0, 160),
       bouquetIds: String(row && row.bouquetIds || '').trim(),
       bouquetIdsByRegion: sanitizeBouquetIdsByRegion(row && row.bouquetIdsByRegion),
-      monthlyPrice: Number.isFinite(monthlyPrice) && monthlyPrice >= 0
-        ? Math.round(monthlyPrice * 100) / 100
-        : Number(fallback.monthlyPrice || 0),
+      prices,
+      monthlyPrice: prices[1] || 0,
       exclusive: Boolean(row && row.exclusive),
       enabled: row && row.enabled === false ? false : true
     };
@@ -154,19 +184,30 @@ function resolveSelectedSellPackages(packageIds, config) {
   return packages.filter(pkg => ids.includes(pkg.id));
 }
 
+function getSellPackagePriceForMonths(pkg, months) {
+  const m = Number(months);
+  if (!DURATION_MONTHS.includes(m)) return 0;
+  const prices = pkg && pkg.prices ? pkg.prices : {};
+  const direct = Number(prices[m]);
+  if (Number.isFinite(direct) && direct >= 0) return direct;
+  const monthly = Number(pkg && pkg.monthlyPrice);
+  if (Number.isFinite(monthly) && monthly > 0) return Math.round(monthly * m * 100) / 100;
+  return 0;
+}
+
 function computeSellPackageMonthlyTotal(packageIds, config) {
-  const selected = resolveSelectedSellPackages(packageIds, config);
-  if (!selected.length) return 0;
-  const exclusive = selected.find(pkg => pkg.exclusive);
-  if (exclusive) return exclusive.monthlyPrice;
-  return selected.reduce((sum, pkg) => sum + Number(pkg.monthlyPrice || 0), 0);
+  return computeSellPackagePrice(packageIds, 1, config);
 }
 
 function computeSellPackagePrice(packageIds, months, config) {
   const m = Number(months);
-  if (![1, 3, 6, 12].includes(m)) return 0;
-  const monthly = computeSellPackageMonthlyTotal(packageIds, config);
-  return Math.round(monthly * m * 100) / 100;
+  if (!DURATION_MONTHS.includes(m)) return 0;
+  const selected = resolveSelectedSellPackages(packageIds, config);
+  if (!selected.length) return 0;
+  const exclusive = selected.find(pkg => pkg.exclusive);
+  const list = exclusive ? [exclusive] : selected;
+  const total = list.reduce((sum, pkg) => sum + getSellPackagePriceForMonths(pkg, m), 0);
+  return Math.round(total * 100) / 100;
 }
 
 function resolveSellPackageBouquetIds(pkg, region, config) {
@@ -263,7 +304,8 @@ function sanitizeStrong8kConfigForClient(config, isAdmin) {
       id: pkg.id,
       name: pkg.name,
       desc: pkg.desc,
-      monthlyPrice: pkg.monthlyPrice,
+      prices: pkg.prices,
+      monthlyPrice: pkg.prices[1] || pkg.monthlyPrice || 0,
       exclusive: pkg.exclusive
     }));
     return {
@@ -560,6 +602,8 @@ module.exports = {
   getEnabledSellPackages,
   computeSellPackagePrice,
   computeSellPackageMonthlyTotal,
+  getSellPackagePriceForMonths,
+  DURATION_MONTHS,
   resolvePackFromSellPackages,
   resolveSellPackageBouquetIds,
   resolvePanelPack,
