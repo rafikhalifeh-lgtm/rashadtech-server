@@ -29,7 +29,7 @@ function trialBlockReason(trials, { email, phone, isReseller, subCustomerPhone }
 
   if (isReseller) {
     if (!normSubPhone || normSubPhone.length < 8) {
-      return 'Enter your sub-customer phone number for the free trial';
+      return null;
     }
     if (trials.resellerSubPhones[normSubPhone]) {
       return 'This sub-customer phone number already used a free trial';
@@ -39,11 +39,39 @@ function trialBlockReason(trials, { email, phone, isReseller, subCustomerPhone }
 
   if (!normEmail) return 'Account email is required for a free trial';
   if (!normPhone || normPhone.length < 8) {
-    return 'Add your phone number in Profile before requesting a free trial';
+    return null;
   }
   if (trials.emails[normEmail]) return 'This email already used a free trial';
   if (trials.phones[normPhone]) return 'This phone number already used a free trial';
   return null;
+}
+
+function trialEligibilityDetails(trials, { email, phone, isReseller, subCustomerPhone }) {
+  const normEmail = String(email || '').trim().toLowerCase();
+  const normPhone = strong8k.normalizePhoneDigits(phone);
+  const normSubPhone = strong8k.normalizePhoneDigits(subCustomerPhone);
+  const hardReason = trialBlockReason(trials, { email, phone, isReseller, subCustomerPhone });
+  if (hardReason) {
+    return { eligible: false, hardBlocked: true, reason: hardReason, needsSubPhone: false, needsProfilePhone: false };
+  }
+  if (isReseller) {
+    const needsSubPhone = !normSubPhone || normSubPhone.length < 8;
+    return {
+      eligible: !needsSubPhone,
+      hardBlocked: false,
+      needsSubPhone,
+      needsProfilePhone: false,
+      reason: needsSubPhone ? 'Enter your sub-customer phone number below' : null
+    };
+  }
+  const needsProfilePhone = !normPhone || normPhone.length < 8;
+  return {
+    eligible: !needsProfilePhone,
+    hardBlocked: false,
+    needsSubPhone: false,
+    needsProfilePhone,
+    reason: needsProfilePhone ? 'Add your phone number in Profile before the free trial' : null
+  };
 }
 
 function recordTrial(trials, { email, phone, isReseller, subCustomerPhone, orderId, resellerEmail }) {
@@ -122,18 +150,27 @@ function registerStrong8kRoutes(app, deps) {
       if (!user) return res.status(404).json({ error: 'User not found' });
       const reseller = userIsReseller(user);
       const subCustomerPhone = String(req.query.subCustomerPhone || '').trim();
-      const reason = config.trialEnabled
-        ? trialBlockReason(trials, {
-          email: user.email,
-          phone: user.phone,
+      if (!config.trialEnabled) {
+        return res.json({
+          success: true,
+          eligible: false,
+          hardBlocked: true,
+          needsSubPhone: false,
+          needsProfilePhone: false,
+          reason: 'Free trials are not available right now',
           isReseller: reseller,
-          subCustomerPhone: reseller ? subCustomerPhone : ''
-        })
-        : 'Free trials are not available right now';
+          trialEnabled: false
+        });
+      }
+      const details = trialEligibilityDetails(trials, {
+        email: user.email,
+        phone: user.phone,
+        isReseller: reseller,
+        subCustomerPhone: reseller ? subCustomerPhone : ''
+      });
       res.json({
         success: true,
-        eligible: !reason,
-        reason: reason || null,
+        ...details,
         isReseller: reseller,
         trialEnabled: Boolean(config.trialEnabled)
       });
@@ -249,13 +286,20 @@ function registerStrong8kRoutes(app, deps) {
 
         if (isTrial) {
           if (!config.trialEnabled) return { error: 'Free trials are not available right now', status: 403 };
-          const block = trialBlockReason(trials, {
+          const trialDetails = trialEligibilityDetails(trials, {
             email: user.email,
             phone: user.phone,
             isReseller: reseller,
             subCustomerPhone
           });
-          if (block) return { error: block, status: 403 };
+          if (trialDetails.hardBlocked) return { error: trialDetails.reason, status: 403 };
+          if (reseller && (!subCustomerPhone || strong8k.normalizePhoneDigits(subCustomerPhone).length < 8)) {
+            return { error: 'Enter your sub-customer phone number for the free trial', status: 400 };
+          }
+          if (!reseller && strong8k.normalizePhoneDigits(user.phone).length < 8) {
+            return { error: 'Add your phone number in Profile before requesting a free trial', status: 400 };
+          }
+          if (!trialDetails.eligible) return { error: trialDetails.reason || 'Free trial not available', status: 403 };
           if (price !== 0) return { error: 'Invalid trial price', status: 400 };
         } else {
           plan = strong8k.findPlan(config, months);
@@ -386,5 +430,6 @@ module.exports = {
   readStrong8kConfig,
   readIptvTrials,
   trialBlockReason,
+  trialEligibilityDetails,
   registerStrong8kRoutes
 };

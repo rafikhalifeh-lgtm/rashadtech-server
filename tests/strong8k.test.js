@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const strong8k = require('../strong8k');
-const { trialBlockReason, readIptvTrials } = require('../strong8kRoutes');
+const { trialBlockReason, trialEligibilityDetails, readIptvTrials } = require('../strong8kRoutes');
 
 test('sanitizeStrong8kConfigForClient exposes regions and line types', () => {
   const pub = strong8k.sanitizeStrong8kConfigForClient({
@@ -75,4 +75,27 @@ test('reseller trial requires unique sub-customer phone', () => {
     isReseller: true,
     subCustomerPhone: '96170999999'
   }), null);
+});
+
+test('reseller can select trial before sub-customer phone is entered', () => {
+  const trials = readIptvTrials({ iptvTrials: { emails: {}, phones: {}, resellerSubPhones: {} } });
+  const pending = trialEligibilityDetails(trials, {
+    email: 'reseller@test.com',
+    phone: '+96179111111',
+    isReseller: true,
+    subCustomerPhone: ''
+  });
+  assert.equal(pending.hardBlocked, false);
+  assert.equal(pending.needsSubPhone, true);
+  assert.equal(pending.eligible, false);
+
+  const ready = trialEligibilityDetails(trials, {
+    email: 'reseller@test.com',
+    phone: '+96179111111',
+    isReseller: true,
+    subCustomerPhone: '+961 70 999 999'
+  });
+  assert.equal(ready.hardBlocked, false);
+  assert.equal(ready.needsSubPhone, false);
+  assert.equal(ready.eligible, true);
 });
