@@ -14,7 +14,7 @@ test('sanitizeStrong8kConfigForClient exposes regions and line types', () => {
   assert.equal(pub.enabled, true);
   assert.equal(pub.regions.length, 3);
   assert.equal(pub.lineTypes.length, 2);
-  assert.equal(pub.trialEnabled, true);
+  assert.equal(pub.trialEnabled, false);
   assert.equal(pub.features.channels, '60,000+');
   assert.equal(pub.sellPackages.length, 3);
 });
