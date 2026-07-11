@@ -46,6 +46,7 @@ const {
   initGameOrder
 } = require('./orderHelpers');
 const { SMS_CONFIG_KEY, grizzlySms, registerSmsRoutes } = require('./smsRoutes');
+const { STRONG8K_CONFIG_KEY, registerStrong8kRoutes } = require('./strong8kRoutes');
 const {
   isValidOsnOtp,
   isLikelyOsnPhoneFragment,
@@ -792,6 +793,7 @@ function emptyDbData() {
     gameorders: [],
     smsorders: [],
     [SMS_CONFIG_KEY]: grizzlySms.defaultSmsConfig(),
+    [STRONG8K_CONFIG_KEY]: require('./strong8k').defaultStrong8kConfig(),
     [LINK_TOKENS_KEY]: {},
     [GMAIL_MONITORS_KEY]: {}
   };
@@ -1223,6 +1225,7 @@ function stripPrivateData(data) {
   const publicData = { ...(data || {}) };
   delete publicData[GMAIL_MONITORS_KEY];
   delete publicData.sessions;
+  delete publicData[STRONG8K_CONFIG_KEY];
   if (publicData[SMS_CONFIG_KEY]) {
     publicData[SMS_CONFIG_KEY] = grizzlySms.sanitizeSmsConfigForClient(publicData[SMS_CONFIG_KEY], false);
   }
@@ -1365,6 +1368,7 @@ function dataForSession(data, session) {
     const adminData = { ...publicData };
     // SMS catalog can be 250KB+ — load via /admin/sms/config on demand.
     delete adminData[SMS_CONFIG_KEY];
+    delete adminData[STRONG8K_CONFIG_KEY];
     return adminData;
   }
   const user = (publicData.users || []).find(u => normalizeEmail(u.email) === session.email);
@@ -2515,7 +2519,7 @@ app.use('/purchase-game', rateLimit('purchase-game', 20, 15 * 60 * 1000));
 app.use('/customer/topup-request', rateLimit('topup', 12, 15 * 60 * 1000));
 app.use('/get-code', rateLimit('get-code', 30, 5 * 60 * 1000));
 app.use('/chat/escalate', rateLimit('chat-escalate', 8, 15 * 60 * 1000));
-app.use('/public/reseller-application', rateLimit('reseller-apply', 6, 30 * 60 * 1000));
+app.use('/purchase/strong8k', rateLimit('purchase-strong8k', 8, 15 * 60 * 1000));
 app.use('/notify', rateLimit('notify', 60, 5 * 60 * 1000));
 app.use('/links', rateLimit('links', 80, 5 * 60 * 1000));
 app.use('/admin', rateLimit('admin', 120, 15 * 60 * 1000));
@@ -5796,6 +5800,26 @@ registerSmsRoutes(app, {
   sendTG,
   TG_ADMIN,
   orderIdsMatch
+});
+
+registerStrong8kRoutes(app, {
+  requireSession,
+  readJsonBinRaw,
+  writeJsonBinRaw,
+  writeDbFast,
+  getDbCache: () => dbCache,
+  normalizeEmail,
+  sanitizeUser,
+  safeDataForSession,
+  sendTG,
+  TG_ADMIN,
+  enqueueDbWrite,
+  readDbForWrite,
+  getCatalogForUser,
+  pricesMatch,
+  notifyPurchaseFulfilled,
+  sendPurchaseReceiptEmail,
+  formatBeirutTime
 });
 
 let rtEnhancements = null;
