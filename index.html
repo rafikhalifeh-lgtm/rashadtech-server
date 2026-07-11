@@ -1301,57 +1301,52 @@ So your EmailJS template will receive the user email and verification code corre
         </div>
       </div>
       <div id="admin-strong8k" class="tab-pane">
-        <div class="pg-title">Strong8K IPTV</div>
-        <div class="pg-sub">API-provisioned IPTV lines — API key stays on the server only, never shown to customers.</div>
-        <div class="card" style="padding:16px;margin-bottom:14px;background:var(--orange-bg);border:1px solid var(--orange-border)">
-          <div style="font-size:12px;color:var(--text2);line-height:1.6">
-            <b>Security:</b> Save your API key here or set <code>STRONG8K_API_KEY</code> on Render. Customers never see the key or panel URL.
-            Use your reseller panel base URL (example: <code>https://your-panel.com</code>).
-          </div>
-        </div>
+        <div class="pg-title">RashadTech IPTV</div>
+        <div class="pg-sub">Connect your Strong8K panel — free trials, packages &amp; prices run automatically.</div>
         <div class="card" style="padding:16px;margin-bottom:14px">
-          <div style="font-size:13px;font-weight:700;margin-bottom:10px">API connection</div>
+          <div style="font-size:13px;font-weight:700;margin-bottom:10px">Step 1 — Connect panel</div>
           <div class="field" style="margin-bottom:10px">
             <label>Panel URL</label>
             <input type="url" id="s8k-panel-url" placeholder="https://8k.cms-only.ru" autocomplete="off">
-            <div style="font-size:11px;color:var(--text3);margin-top:4px">Enter your panel domain only — <code>/api/api.php</code> is added automatically when saving.</div>
           </div>
           <div class="field" style="margin-bottom:10px">
             <label>API key</label>
             <input type="password" id="s8k-api-key" placeholder="Paste API key — stored server-side only" autocomplete="off">
             <div style="font-size:11px;color:var(--text3);margin-top:4px" id="s8k-api-key-status">Not connected</div>
           </div>
-          <div class="card" style="padding:12px;margin-bottom:12px;background:var(--bg3);border:1px solid var(--border)">
-            <div style="font-size:12px;color:var(--text2);line-height:1.6">
-              <b>Your Strong8K panel shows bouquet names only</b> (e.g. “Full Package MIDDLE EAST”) — there is no “bouquet ID” field in the panel.
-              Click <b>Load bouquets</b> below: we call the panel API and fill the hidden API numbers for you. You do <b>not</b> need to rename bouquets or look up IDs manually.
-            </div>
-          </div>
-          <div class="field" style="margin-bottom:10px">
-            <label>Default package (API)</label>
-            <input type="text" id="s8k-package-id" placeholder="all — filled automatically" value="all">
-            <div style="font-size:11px;color:var(--text3);margin-top:4px">Auto-filled when you click <b>Load bouquets</b>. Usually <code>all</code> or a number from the table below.</div>
-          </div>
-          <div style="font-size:12px;font-weight:700;margin-bottom:8px">Region mapping (auto-filled from panel names)</div>
-          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px">
-            <div class="field" style="margin:0"><label>Middle East</label><input type="text" id="s8k-pack-me" placeholder="auto"><div style="font-size:10px;color:var(--text3);margin-top:4px">Matches “Full Package MIDDLE EAST” after Load bouquets</div></div>
-            <div class="field" style="margin:0"><label>Europe</label><input type="text" id="s8k-pack-eu" placeholder="auto"></div>
-            <div class="field" style="margin:0"><label>United States</label><input type="text" id="s8k-pack-us" placeholder="auto"><div style="font-size:10px;color:var(--text3);margin-top:4px">Matches “Full Package US” after Load bouquets</div></div>
-          </div>
-          <div id="s8k-region-swap-warn" style="display:none;font-size:11px;color:var(--orange);margin-bottom:10px;line-height:1.55"></div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
             <button class="inline-btn" onclick="saveStrong8kConfig()">Save settings</button>
             <button class="inline-btn" onclick="testStrong8kConnection()">Test connection</button>
-            <button class="inline-btn" onclick="testStrong8kTrial('me')">Test ME trial</button>
-            <button class="inline-btn" onclick="testStrong8kTrial('us')">Test US trial</button>
             <button class="inline-btn" onclick="loadStrong8kBouquets()">Load bouquets</button>
           </div>
           <div id="s8k-credits-box" style="font-size:12px;color:var(--text2);margin-bottom:8px"></div>
           <div id="s8k-bouquets-box" style="font-size:12px;color:var(--text2)"></div>
+          <div style="font-size:11px;color:var(--text3);line-height:1.55;margin-top:8px">Your panel shows bouquet <b>names</b> only (Full Package MIDDLE EAST, STREAMING, etc.). <b>Load bouquets</b> fetches the API numbers — you never type them in Strong8K.</div>
         </div>
         <div class="card" style="padding:16px;margin-bottom:14px">
-          <div style="font-size:13px;font-weight:700;margin-bottom:8px">Channel packages for customers <span style="font-size:10px;font-weight:600;color:var(--green);background:var(--green-bg);border:1px solid var(--green-border);padding:2px 6px;border-radius:999px;margin-left:6px">NEW</span></div>
-          <div style="font-size:12px;color:var(--text2);line-height:1.55;margin-bottom:10px">Panel names are matched automatically — click <b>Load bouquets</b> once (no manual IDs in Strong8K). Set <b>retail &amp; reseller prices</b> in Admin → <b>Prices</b>.</div>
+          <div style="font-size:13px;font-weight:700;margin-bottom:10px">Step 2 — Test free trial</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+            <button class="inline-btn" onclick="testStrong8kTrial('me')">Test ME trial</button>
+            <button class="inline-btn" onclick="testStrong8kTrial('us')">Test US trial</button>
+          </div>
+          <div style="font-size:11px;color:var(--text3);line-height:1.55">Needs ≥12 panel credits · ~10 demo tickets/day. Trial uses your regional Full Package bouquet automatically.</div>
+          <details style="margin-top:10px">
+            <summary style="font-size:11px;color:var(--text3);cursor:pointer">Advanced region mapping (auto-filled)</summary>
+            <div class="field" style="margin-top:10px;margin-bottom:8px">
+              <label>Default package (API)</label>
+              <input type="text" id="s8k-package-id" placeholder="auto" value="all">
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px">
+              <div class="field" style="margin:0"><label>Middle East</label><input type="text" id="s8k-pack-me" placeholder="auto" readonly style="opacity:0.85"></div>
+              <div class="field" style="margin:0"><label>Europe</label><input type="text" id="s8k-pack-eu" placeholder="auto" readonly style="opacity:0.85"></div>
+              <div class="field" style="margin:0"><label>United States</label><input type="text" id="s8k-pack-us" placeholder="auto" readonly style="opacity:0.85"></div>
+            </div>
+            <div id="s8k-region-swap-warn" style="display:none;font-size:11px;color:var(--orange);line-height:1.55"></div>
+          </details>
+        </div>
+        <div class="card" style="padding:16px;margin-bottom:14px">
+          <div style="font-size:13px;font-weight:700;margin-bottom:8px">Step 3 — Store packages &amp; prices</div>
+          <div style="font-size:12px;color:var(--text2);line-height:1.55;margin-bottom:10px"><b>Full Package</b> $8/$20/$35/$60 · <b>Streaming</b> $4/$10/$18/$32 · <b>beIN Sports + World Cup</b> $5/$13/$22/$38 (1/3/6/12 mo). Edit retail &amp; reseller prices in Admin → <b>Prices</b>.</div>
           <div id="s8k-sell-packages-editor" style="display:grid;gap:10px;margin-bottom:10px"></div>
           <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text2);margin-bottom:10px">
             <input type="checkbox" id="s8k-trial-enabled" checked> Allow 1-day free trials in store
@@ -8635,8 +8630,8 @@ function readStrong8kPlansFromEditor(){
 }
 const S8K_DEFAULT_SELL_PACKAGES=[
   {id:'full',name:'Full Package',desc:'All channels for your region — sports, movies, Arabic & more',bouquetIds:'',bouquetIdsByRegion:{me:'75605',eu:'75604',us:'75606'},prices:{1:8,3:20,6:35,12:60},monthlyPrice:8,exclusive:true,enabled:true},
-  {id:'streaming',name:'Streaming Apps',desc:'Netflix · Shahid · Amazon · Disney+ style channels',bouquetIds:'75609',bouquetIdsByRegion:{},prices:{1:4,3:10,6:18,12:32},monthlyPrice:4,exclusive:false,enabled:true},
-  {id:'bein',name:'beIN + World Cup',desc:'beIN Sports · World Cup 2026 · live football',bouquetIds:'75610',bouquetIdsByRegion:{},prices:{1:5,3:13,6:22,12:38},monthlyPrice:5,exclusive:false,enabled:true}
+  {id:'streaming',name:'Streaming',desc:'Netflix · Shahid · Amazon · Disney+ style apps',bouquetIds:'75609',bouquetIdsByRegion:{},prices:{1:4,3:10,6:18,12:32},monthlyPrice:4,exclusive:false,enabled:true},
+  {id:'bein',name:'beIN Sports + World Cup',desc:'beIN Sports · TOD · World Cup 2026 · live football',bouquetIds:'75610',bouquetIdsByRegion:{},prices:{1:5,3:13,6:22,12:38},monthlyPrice:5,exclusive:false,enabled:true}
 ];
 function filterAdminSellPackages(packages){
   const list=Array.isArray(packages)&&packages.length?packages:S8K_DEFAULT_SELL_PACKAGES;
@@ -8817,7 +8812,7 @@ async function testStrong8kTrial(region){
     const details=e.details||{};
     const failLog=(details.attemptLog||[]).map(a=>`${esc(a.pack||'')}: ${esc(a.message||'')}`).join('<br>');
     const creditsNote=details.panelCredits!=null?`<div style="font-size:11px;color:var(--text3);margin-bottom:6px">Panel credits: <b>${details.panelCredits}</b> (need ≥ ${details.trialMinCredits||12})</div>`:'';
-    if(box)box.innerHTML=`${creditsNote}<div style="color:var(--red);margin-bottom:8px;font-weight:600">${esc(e.message||'Trial test failed')}</div>${failLog?`<div style="font-size:11px;line-height:1.65;color:var(--text2);max-height:180px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:8px;margin-top:8px"><b>Panel attempts:</b><br>${failLog}</div>`:''}<div style="font-size:11px;color:var(--text3);margin-top:10px;line-height:1.6">Fix: click <b>Load bouquets</b> (wait up to 60s) → <b>Save settings</b> → retry. Need ≥12 panel credits and demo tickets available (~10/day). You do not need bouquet IDs in the Strong8K panel UI.</div>`;
+    if(box)box.innerHTML=`${creditsNote}<div style="color:var(--red);margin-bottom:8px;font-weight:600">${esc(e.message||'Trial test failed')}</div>${failLog?`<div style="font-size:11px;line-height:1.65;color:var(--text2);max-height:180px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:8px;margin-top:8px"><b>Panel attempts:</b><br>${failLog}</div>`:''}<div style="font-size:11px;color:var(--text3);margin-top:10px;line-height:1.6">Fix: <b>Load bouquets</b> → <b>Save settings</b> → retry. Need ≥12 credits. First attempt uses your regional Full Package bouquet (not pack=all).</div>`;
     showToast('⚠️ '+e.message);
   }
 }
