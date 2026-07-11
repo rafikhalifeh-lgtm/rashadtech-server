@@ -100,6 +100,30 @@ test('reseller can select trial before sub-customer phone is entered', () => {
   assert.equal(ready.eligible, true);
 });
 
+test('normalizeBouquetList parses wrapped and keyed bouquet responses', () => {
+  assert.deepEqual(strong8k.normalizeBouquetList([
+    { id: '1', name: 'Full' }
+  ]).map(b => b.id), ['1']);
+
+  assert.deepEqual(strong8k.normalizeBouquetList({
+    status: 'true',
+    bouquets: [{ id: '2', bouquet_name: 'Sports' }]
+  }).map(b => b.id), ['2']);
+
+  assert.deepEqual(strong8k.normalizeBouquetList({
+    '0': { id: '3', name: 'Arabic' },
+    '1': { id: '4', name: 'Europe' },
+    status: 'true'
+  }).map(b => b.id), ['3', '4']);
+});
+
+test('formatBouquetRows keeps bouquet id and display name', () => {
+  const rows = strong8k.formatBouquetRows([
+    { bouquet_id: '7', bouquet_name: 'World Cup' }
+  ]);
+  assert.equal(rows[0].id, '7');
+  assert.equal(rows[0].name, 'World Cup');
+});
 test('joinBouquetIds builds comma-separated bouquet list for panel API', () => {
   assert.equal(strong8k.joinBouquetIds([
     { id: '12', name: 'Full' },
