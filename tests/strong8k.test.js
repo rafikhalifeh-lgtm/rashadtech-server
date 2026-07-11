@@ -175,6 +175,24 @@ test('extractHostFromUrl parses server host', () => {
   );
 });
 
+test('applyDeliveryHostToCredentials replaces panel host and rewrites m3u url', () => {
+  const creds = strong8k.applyDeliveryHostToCredentials({
+    username: 'user123',
+    password: 'pass456',
+    url: 'http://freeze12.cdnsilver.me/get.php?username=user123&password=pass456',
+    host: 'http://freeze12.cdnsilver.me'
+  }, 'http://rashadtech.xyz');
+  assert.equal(creds.host, 'http://rashadtech.xyz');
+  assert.equal(creds.username, 'user123');
+  assert.equal(creds.password, 'pass456');
+  assert.match(creds.url, /^http:\/\/rashadtech\.xyz\/get\.php/);
+});
+
+test('normalizeDeliveryHost adds http scheme and strips trailing slash', () => {
+  assert.equal(strong8k.normalizeDeliveryHost('rashadtech.xyz'), 'http://rashadtech.xyz');
+  assert.equal(strong8k.normalizeDeliveryHost('http://rashadtech.xyz/'), 'http://rashadtech.xyz');
+});
+
 test('retail trial blocked when email or phone already used', () => {
   const trials = readIptvTrials({
     iptvTrials: {
