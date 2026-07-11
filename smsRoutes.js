@@ -18,15 +18,6 @@ const SMS_STARTER_CATALOG = [
 const activeSmsPurchases = new Set();
 const MAX_SMS_CATALOG_ITEMS = 500;
 
-function readSmsConfig(data) {
-  const raw = (data && data[SMS_CONFIG_KEY]) || grizzlySms.defaultSmsConfig();
-  return {
-    ...grizzlySms.defaultSmsConfig(),
-    ...raw,
-    catalog: Array.isArray(raw.catalog) ? raw.catalog : []
-  };
-}
-
 function findSmsCatalogItem(config, catalogId) {
   return (config.catalog || []).find(item => item.id === catalogId && item.enabled !== false) || null;
 }
