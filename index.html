@@ -1315,7 +1315,7 @@ So your EmailJS template will receive the user email and verification code corre
           <div style="font-size:13px;font-weight:700;margin-bottom:10px">Sell prices (wallet)</div>
           <div id="s8k-plans-editor" style="display:grid;gap:10px;margin-bottom:12px"></div>
           <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text2)">
-            <input type="checkbox" id="s8k-store-enabled" onchange="saveStrong8kStoreEnabled()"> Show Strong8K in customer store
+            <input type="checkbox" id="s8k-store-enabled" onchange="saveStrong8kStoreEnabled()"> Show RashadTech IPTV in customer store
           </label>
         </div>
       </div>
@@ -1833,7 +1833,7 @@ function isOsnPasswordlessOrder(o){
 function isOsnOneUserOrder(o){return isOsnOrder(o)&&/1\s*user/i.test(String(o.plan||''));}
 function isDisneyOneUserOrder(o){return isDisneyOrder(o)&&/1\s*user/i.test(String(o.plan||''));}
 function isAnghamiOrder(o){return Boolean(o&&(o.productId==='anghami'||/anghami/i.test(o.product||'')));}
-function isStrong8kOrder(o){return Boolean(o&&(o.productId==='strong8k'||/strong8k/i.test(o.product||'')));}
+function isStrong8kOrder(o){return Boolean(o&&(o.productId==='strong8k'||/rashadtech iptv|strong8k/i.test(o.product||'')));}
 function isCanvaOrder(o){return Boolean(o&&(o.productId==='canva'||/canva/i.test(o.product||'')));}
 function isCanvaNewOrder(o){
   if(!isCanvaOrder(o))return false;
@@ -2362,7 +2362,7 @@ const PRODUCT_ICONS={
   itunes:'https://www.apple.com/favicon.ico',
   googleplay:'https://play.google.com/favicon.ico',
   watchit:'https://watchit.com/favicon.ico',
-  strong8k:'https://strong8k.org/favicon.ico',
+  strong8k:'https://www.beinsports.com/favicon.ico',
 };
 const SMS_SERVICE_ICONS={
   wa:'https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg',
@@ -2387,6 +2387,8 @@ function prodIcon(p,size=32,radius=8){
   return `<div style="width:${size}px;height:${size}px;border-radius:${radius}px;background:${p.color};color:${p.tc};display:flex;align-items:center;justify-content:center;font-size:${Math.round(size*0.4)}px;font-weight:700">${p.short}</div>`;
 }
 const DEFAULT_PRODUCTS=[
+  {id:'strong8k',name:'RashadTech IPTV',short:'RTV',color:'#5C1F7A',tc:'#fff',cat:'video',badge:'hot',desc:'Live sports · beIN · movies & Arab channels · instant M3U',hasUserTypes:false,apiProvisioned:true,plans:[
+    {name:'1 Month',desc:'M3U · all channels',price:8,durationMonths:1},{name:'3 Months',desc:'M3U · all channels',price:20,durationMonths:3},{name:'6 Months',desc:'M3U · best value',price:35,durationMonths:6},{name:'12 Months',desc:'M3U · annual',price:60,durationMonths:12}]},
   {id:'netflix',name:'Netflix',short:'N',color:'#E50914',tc:'#fff',cat:'video',badge:'hot',desc:'Movies & TV shows',hasUserTypes:true,userTypes:[
     {key:'1user',name:'1 User',desc:'Private profile · 1 screen',durations:DURATIONS_NF_1U,hasCustom:true,customDayRate:0.06},
     {key:'full',name:'Full User',desc:'All profiles · 4 screens',durations:DURATIONS_NF_FULL}]},
@@ -2451,9 +2453,6 @@ const DEFAULT_PRODUCTS=[
   // ── VIDEO (more) ──
   {id:'ytpremium',name:'YouTube Premium',short:'YT+',color:'#FF0000',tc:'#fff',cat:'video',badge:'hot',desc:'Ad-free YouTube & Music',hasUserTypes:false,plans:[
     {name:'1 Month',desc:'Individual',price:4},{name:'3 Months',desc:'Individual',price:10},{name:'1 Year',desc:'Best value',price:35}]},
-
-  {id:'strong8k',name:'Strong8K IPTV',short:'8K',color:'#FF6B00',tc:'#fff',cat:'video',badge:'new',desc:'IPTV · M3U instant delivery · 8K/4K/HD',hasUserTypes:false,apiProvisioned:true,plans:[
-    {name:'1 Month',desc:'M3U line · all channels',price:8,durationMonths:1},{name:'3 Months',desc:'M3U line · all channels',price:20,durationMonths:3},{name:'6 Months',desc:'M3U line · best value',price:35,durationMonths:6},{name:'12 Months',desc:'M3U line · annual',price:60,durationMonths:12}]},
 
   // ── TOOLS ──
   {id:'chatgpt',name:'ChatGPT Plus',short:'GPT',color:'#10A37F',tc:'#fff',cat:'tools',badge:'hot',desc:'GPT-4 · faster responses',hasUserTypes:false,plans:[
@@ -4733,6 +4732,26 @@ function hasUnblockedPlan(p){
   });
   return (p.plans||[]).some((pl,i)=>!isStockBlocked(planStockKey(p.id,pl,i)));
 }
+function productCardHtml(p){
+  let minP=Infinity;
+  if(p.hasUserTypes){
+    p.userTypes.forEach(ut=>{
+      const prices=(ut.durations||[]).map(d=>d.price).filter(n=>Number.isFinite(n));
+      if(prices.length)minP=Math.min(minP,...prices);
+    });
+  }else{
+    const prices=(p.plans||[]).map(pl=>pl.price).filter(n=>Number.isFinite(n));
+    if(prices.length)minP=Math.min(minP,...prices);
+  }
+  if(!Number.isFinite(minP))minP=0;
+  const blocked=!hasUnblockedPlan(p);
+  const cardClick=blocked?'':`onclick="openBuy('${p.id}',null)"`;
+  return `<div class="pcard${blocked?' oos':''}" ${cardClick}>
+    <div class="pcard-top" style="background:${p.color}">${prodIcon(p,44,10)}${p.badge==='hot'?'<div class="hot-badge">Hot</div>':p.badge==='new'?'<div class="new-badge">New</div>':''}
+    </div><div class="pcard-body"><div class="pcard-name">${p.name}</div><div class="pcard-desc">${p.desc}</div>
+    <div class="pcard-footer"><div><div class="pfrom">from</div><div class="pprice">${fmt(minP)}</div></div>
+    <button class="btn-buy" ${blocked?'disabled':''} onclick="event.stopPropagation();openBuy('${p.id}',null)">${blocked?'Unavailable':'Buy'}</button></div></div></div>`;
+}
 function renderProducts(cat){
   const grid=document.getElementById('products-grid');
   if(!grid)return;
@@ -4745,30 +4764,12 @@ function renderProducts(cat){
     grid.innerHTML=smsHub||`<div class="empty-state" style="grid-column:1/-1;padding:48px 16px">${currentLang==='ar'?'أرقام SMS غير متوفرة حالياً':'SMS numbers are not available right now'}</div>`;
     return;
   }
-  const list=cat==='all'?products:products.filter(p=>p.cat===cat);
+  const iptv=products.find(p=>p.id==='strong8k');
+  const list=(cat==='all'?products:products.filter(p=>p.cat===cat)).filter(p=>p.id!=='strong8k');
   let html='';
+  if((cat==='all'||cat==='video')&&iptv)html+=productCardHtml(iptv);
   if(cat==='all'&&smsHub)html+=smsHub;
-  list.forEach(p=>{
-    const tot=getProductAvail(p);
-    let minP=Infinity;
-    if(p.hasUserTypes){
-      p.userTypes.forEach(ut=>{
-        const prices=(ut.durations||[]).map(d=>d.price).filter(n=>Number.isFinite(n));
-        if(prices.length)minP=Math.min(minP,...prices);
-      });
-    }else{
-      const prices=(p.plans||[]).map(pl=>pl.price).filter(n=>Number.isFinite(n));
-      if(prices.length)minP=Math.min(minP,...prices);
-    }
-    if(!Number.isFinite(minP))minP=0;
-    const blocked=!hasUnblockedPlan(p);
-    const cardClick=blocked?'':`onclick="openBuy('${p.id}',null)"`;
-    html+=`<div class="pcard${blocked?' oos':''}" ${cardClick}>
-      <div class="pcard-top" style="background:${p.color}">${prodIcon(p,44,10)}${p.badge==='hot'?'<div class="hot-badge">Hot</div>':p.badge==='new'?'<div class="new-badge">New</div>':''}
-      </div><div class="pcard-body"><div class="pcard-name">${p.name}</div><div class="pcard-desc">${p.desc}</div>
-      <div class="pcard-footer"><div><div class="pfrom">from</div><div class="pprice">${fmt(minP)}</div></div>
-      <button class="btn-buy" ${blocked?'disabled':''} onclick="event.stopPropagation();openBuy('${p.id}',null)">${blocked?'Unavailable':'Buy'}</button></div></div></div>`;
-  });
+  list.forEach(p=>{html+=productCardHtml(p);});
   grid.innerHTML=html;
 }
 function smsDisclaimerHtml(){
@@ -5152,7 +5153,7 @@ async function confirmPurchase(){
       syncPausedUntil=Date.now()+20000;
       closeModal('buy-modal');
       refreshAfterPurchase();
-      showToast('✓ Strong8K line delivered!');
+      showToast('✓ RashadTech IPTV line delivered!');
     }catch(e){showToast('⚠️ '+(e.message||'Purchase failed'));}
     finally{purchaseInFlight=false;setBuyModalLoading(false);}
     return;

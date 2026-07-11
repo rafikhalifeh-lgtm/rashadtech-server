@@ -174,9 +174,9 @@ function registerStrong8kRoutes(app, deps) {
         const order = {
           id: orderId,
           productId: 'strong8k',
-          product: 'Strong8K IPTV',
-          short: '8K',
-          color: '#FF6B00',
+          product: 'RashadTech IPTV',
+          short: 'RTV',
+          color: '#5C1F7A',
           tc: '#fff',
           plan: planLabel || plan.name,
           price,
@@ -194,7 +194,7 @@ function registerStrong8kRoutes(app, deps) {
         user.transactions = Array.isArray(user.transactions) ? user.transactions : [];
         user.transactions.unshift({
           type: 'purchase',
-          label: `Strong8K IPTV · ${order.plan}`,
+          label: `RashadTech IPTV · ${order.plan}`,
           amount: price,
           balance: user.balance,
           date: dateStr,
@@ -228,7 +228,7 @@ function registerStrong8kRoutes(app, deps) {
       }
       sendTG(
         TG_ADMIN,
-        `📺 <b>New Strong8K purchase</b>\n\n${order.plan}\n👤 <code>${panelResult.username}</code>\n🔗 M3U delivered\n💵 ${price.toFixed(2)}\n🛒 ${user.name} (${user.email})`,
+        `📺 <b>New RashadTech IPTV purchase</b>\n\n${order.plan}\n👤 <code>${panelResult.username}</code>\n🔗 M3U delivered\n💵 ${price.toFixed(2)}\n🛒 ${user.name} (${user.email})`,
         'HTML'
       ).catch(() => {});
     } catch (e) {
