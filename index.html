@@ -2774,6 +2774,28 @@ async function loadStorefront(){
   return false;
 }
 function cloneDefaultProducts(){products=JSON.parse(JSON.stringify(DEFAULT_PRODUCTS));}
+function iptvPackageStockKey(packageId,months){return `strong8k__${String(packageId||'').trim().toLowerCase()}__${months}`;}
+function iptvActiveCatalogPrices(){
+  return (_rtPriceCatalog&&_appliedPriceTier===expectedPriceTier())?(_rtPriceCatalog.prices||{}):{};
+}
+function iptvPackageCatalogPrice(packageId,months,pkgMeta){
+  const prices=iptvActiveCatalogPrices();
+  const key=iptvPackageStockKey(packageId,months);
+  const fromCatalog=prices[key];
+  if(fromCatalog!=null)return Number(fromCatalog);
+  const pkg=pkgMeta||(iptvStoreMeta().sellPackages||[]).find(p=>p.id===packageId);
+  if(pkg?.prices?.[months]!=null)return Number(pkg.prices[months]);
+  if(pkg?.monthlyPrice)return Number(pkg.monthlyPrice)*Number(months);
+  const defaults={full:{1:8,3:20,6:35,12:60},lebanese:{1:3,3:8,6:14,12:25},streaming:{1:4,3:10,6:18,12:32},bein:{1:5,3:13,6:22,12:38}};
+  const fb=defaults[String(packageId||'').toLowerCase()];
+  return fb&&fb[months]!=null?Number(fb[months]):0;
+}
+function iptvStorefrontMinPrice(){
+  const pkgs=(iptvStoreMeta().sellPackages||[]).filter(p=>p.enabled!==false);
+  const list=pkgs.length?pkgs:[{id:'full'},{id:'lebanese'},{id:'streaming'},{id:'bein'}];
+  const nums=list.map(pkg=>iptvPackageCatalogPrice(pkg.id,1,pkg)).filter(n=>n>0);
+  return nums.length?Math.min(...nums):iptvPackageCatalogPrice('full',1);
+}
 function applyCatalogToProductList(list,catalog){
   if(!catalog||!list)return;
   const prices=catalog.prices||{};
@@ -2787,6 +2809,14 @@ function applyCatalogToProductList(list,catalog){
           const k=sk(p.id,ut.key,d.key);
           if(prices[k]!=null)d.price=prices[k];
         });
+      });
+    }else if(p.id==='strong8k'){
+      (p.plans||[]).forEach((pl,i)=>{
+        const months=pl.durationMonths||pl.months;
+        const pkgKey=iptvPackageStockKey('full',months);
+        const k=planStockKey(p.id,pl,i);
+        if(prices[pkgKey]!=null)pl.price=prices[pkgKey];
+        else if(prices[k]!=null)pl.price=prices[k];
       });
     }else if(p.id!=='jawaker'){
       (p.plans||[]).forEach((pl,i)=>{
@@ -4782,6 +4812,7 @@ function productCardHtml(p){
     if(prices.length)minP=Math.min(minP,...prices);
   }
   if(!Number.isFinite(minP))minP=0;
+  if(p.id==='strong8k')minP=iptvStorefrontMinPrice();
   const blocked=!hasUnblockedPlan(p);
   const buyFn=p.id==='strong8k'?'openIptvWizard()':`openBuy('${p.id}',null)`;
   const cardClick=blocked?'':`onclick="${buyFn}"`;
@@ -4965,23 +4996,16 @@ function iptvSellPackageMonthlyTotal(){
   if(!selected.length)return 0;
   const exclusive=selected.find(p=>p.exclusive);
   const list=exclusive?[exclusive]:selected;
-  return list.reduce((sum,p)=>sum+Number((p.prices&&p.prices[1])||p.monthlyPrice||0),0);
+  return list.reduce((sum,p)=>sum+iptvPackageCatalogPrice(p.id,1,p),0);
 }
-function iptvPackageStockKey(packageId,months){return `strong8k__${String(packageId||'').trim().toLowerCase()}__${months}`;}
 function iptvPackagePriceForMonths(months){
   const pkgs=iptvStoreMeta().sellPackages||[];
   const selected=pkgs.filter(p=>iptvSelectedPackages.includes(p.id));
   if(!selected.length)return 0;
   const exclusive=selected.find(p=>p.exclusive);
   const list=exclusive?[exclusive]:selected;
-  const catalog=(_rtPriceCatalog&&_appliedPriceTier===expectedPriceTier())?_rtPriceCatalog:null;
   const m=Number(months);
-  return Math.round(list.reduce((sum,p)=>{
-    const key=iptvPackageStockKey(p.id,m);
-    const fromCatalog=catalog?.prices?.[key];
-    if(fromCatalog!=null)return sum+Number(fromCatalog);
-    return sum+Number((p.prices&&p.prices[m])||((p.monthlyPrice||0)*m));
-  },0)*100)/100;
+  return Math.round(list.reduce((sum,p)=>sum+iptvPackageCatalogPrice(p.id,m,p),0)*100)/100;
 }
 function iptvComputedPrice(){
   if(iptvTrialMode)return 0;
@@ -4991,6 +5015,7 @@ function iptvComputedPrice(){
   if(iptvHasSellPackages()&&iptvSelectedPackages.length&&months){
     return iptvPackagePriceForMonths(months);
   }
+  if(months)return iptvPackageCatalogPrice('full',months);
   return Number(plan?.price||0);
 }
 function toggleIptvPackage(id){
@@ -5229,7 +5254,8 @@ function renderIptvWizard(){
     html+=`<div class="plan-section-label">Choose channel packages</div><div style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.55">Pick <b>Full Package</b> or combine add-ons (e.g. Streaming + beIN). Each pack has its own monthly price × duration.</div>`;
     html+=(meta.sellPackages||[]).map(pkg=>{
       const sel=iptvSelectedPackages.includes(pkg.id);
-      return `<div class="plan-row${sel?' sel':''}" style="cursor:pointer;margin-bottom:8px" onclick="toggleIptvPackage('${esc(pkg.id)}')"><div><div class="plan-name">${esc(pkg.name)}${pkg.exclusive?' · All-in-one':''}</div><div class="plan-desc">${esc(pkg.desc||'')}</div></div><div class="plan-price">from ${fmt((pkg.prices&&pkg.prices[1])||pkg.monthlyPrice||0)}</div></div>`;
+      const fromPrice=iptvPackageCatalogPrice(pkg.id,1,pkg);
+      return `<div class="plan-row${sel?' sel':''}" style="cursor:pointer;margin-bottom:8px" onclick="toggleIptvPackage('${esc(pkg.id)}')"><div><div class="plan-name">${esc(pkg.name)}${pkg.exclusive?' · All-in-one':''}</div><div class="plan-desc">${esc(pkg.desc||'')}</div></div><div class="plan-price">from ${fmt(fromPrice)}</div></div>`;
     }).join('');
     if(iptvSelectedPackages.length){
       const names=(meta.sellPackages||[]).filter(p=>iptvSelectedPackages.includes(p.id)).map(p=>p.name).join(' + ');
@@ -5242,7 +5268,7 @@ function renderIptvWizard(){
     }
     const plans=(prod?.plans||[]).map((pl,i)=>({...pl,idx:i,months:pl.durationMonths||pl.months}));
     html+=plans.map(pl=>{
-      const durPrice=iptvHasSellPackages()&&iptvSelectedPackages.length?iptvPackagePriceForMonths(pl.months):pl.price;
+      const durPrice=iptvHasSellPackages()&&iptvSelectedPackages.length?iptvPackagePriceForMonths(pl.months):iptvPackageCatalogPrice('full',pl.months);
       return `<div class="plan-row${iptvPlanIdx===pl.idx?' sel':''}" style="cursor:pointer;margin-bottom:6px" onclick="setIptvPlan(${pl.idx},false)"><div><div class="plan-name">${esc(pl.name)}</div><div class="plan-desc">${esc(pl.desc||'')}${iptvHasSellPackages()&&iptvSelectedPackages.length?` · packages included`:''}</div></div><div class="plan-price">${fmt(durPrice)}</div></div>`;
     }).join('');
   }else if(isPaid&&iptvWizardStep===iptvPaidConfirmStep()){
