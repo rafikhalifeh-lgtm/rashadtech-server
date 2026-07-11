@@ -36,6 +36,15 @@ function normalizePanelUrl(raw) {
   return `${url}/api/api.php`;
 }
 
+function formatPanelUrlForDisplay(raw) {
+  let url = String(raw || '').trim();
+  if (!url) return '';
+  url = url.replace(/\/+$/, '');
+  url = url.replace(/\/api\/api\.php$/i, '');
+  url = url.replace(/\/api\.php$/i, '');
+  return url;
+}
+
 function resolveApiKey(config) {
   return String(process.env.STRONG8K_API_KEY || (config && config.apiKey) || '').trim();
 }
@@ -127,7 +136,7 @@ function sanitizeStrong8kConfigForClient(config, isAdmin) {
     trialEnabled: Boolean(cfg.trialEnabled),
     hasApiKey,
     hasEnvApiKey: Boolean(String(process.env.STRONG8K_API_KEY || '').trim()),
-    panelUrl: cfg.panelUrl,
+    panelUrl: formatPanelUrlForDisplay(cfg.panelUrl),
     packageId: cfg.packageId,
     regions: cfg.regions,
     plans: cfg.plans
@@ -386,6 +395,7 @@ module.exports = {
   TRIAL_SUB_CODE,
   defaultStrong8kConfig,
   normalizePanelUrl,
+  formatPanelUrlForDisplay,
   resolveApiKey,
   sanitizeStrong8kConfig,
   sanitizeStrong8kConfigForClient,
