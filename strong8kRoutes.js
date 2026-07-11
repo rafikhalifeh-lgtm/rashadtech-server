@@ -297,6 +297,9 @@ function registerStrong8kRoutes(app, deps) {
         if (!strong8k.sanitizeRegions(config.regions)[region]) {
           return { error: 'Please select a valid region', status: 400 };
         }
+        if (isTrial && !strong8k.IPTV_TRIAL_REGIONS.has(region)) {
+          return { error: 'Free trial is only available for Middle East or United States', status: 400 };
+        }
 
         const sellPackages = strong8k.getEnabledSellPackages(config);
         const usesSellPackages = sellPackages.length > 0;

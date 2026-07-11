@@ -4969,8 +4969,7 @@ function iptvWizardSteps(){
   return ['Get started'];
 }
 function iptvTrialRegions(){
-  const all=(iptvStoreMeta().regions&&iptvStoreMeta().regions.length)?iptvStoreMeta().regions:[{id:'me',name:'Middle East'},{id:'us',name:'United States'}];
-  return all.filter(r=>r.id==='me'||r.id==='us');
+  return [{id:'me',name:'Middle East'},{id:'us',name:'United States'}];
 }
 function startIptvFreeTrial(){
   iptvWizardMode='trial';
@@ -8616,9 +8615,9 @@ function readStrong8kPlansFromEditor(){
   })).filter(p=>p.months>0&&p.sellPrice>0);
 }
 const S8K_DEFAULT_SELL_PACKAGES=[
-  {id:'full',name:'Full Package',desc:'All channels for your region — sports, movies, Arabic & more',bouquetIds:'',bouquetIdsByRegion:{},prices:{1:8,3:20,6:35,12:60},monthlyPrice:8,exclusive:true,enabled:true},
-  {id:'streaming',name:'Streaming Apps',desc:'Netflix · Shahid · Amazon · Disney+ style channels',bouquetIds:'',bouquetIdsByRegion:{},prices:{1:4,3:10,6:18,12:32},monthlyPrice:4,exclusive:false,enabled:true},
-  {id:'bein',name:'beIN + World Cup',desc:'beIN Sports · World Cup 2026 · live football',bouquetIds:'',bouquetIdsByRegion:{},prices:{1:5,3:13,6:22,12:38},monthlyPrice:5,exclusive:false,enabled:true},
+  {id:'full',name:'Full Package',desc:'All channels for your region — sports, movies, Arabic & more',bouquetIds:'',bouquetIdsByRegion:{me:'75605',eu:'75604',us:'75606'},prices:{1:8,3:20,6:35,12:60},monthlyPrice:8,exclusive:true,enabled:true},
+  {id:'streaming',name:'Streaming Apps',desc:'Netflix · Shahid · Amazon · Disney+ style channels',bouquetIds:'75609',bouquetIdsByRegion:{},prices:{1:4,3:10,6:18,12:32},monthlyPrice:4,exclusive:false,enabled:true},
+  {id:'bein',name:'beIN + World Cup',desc:'beIN Sports · World Cup 2026 · live football',bouquetIds:'75610',bouquetIdsByRegion:{},prices:{1:5,3:13,6:22,12:38},monthlyPrice:5,exclusive:false,enabled:true},
   {id:'lebanese',name:'Lebanese Channels',desc:'MBC · LBC · Tele Liban · local Lebanese TV',bouquetIds:'',bouquetIdsByRegion:{},prices:{1:3,3:8,6:14,12:25},monthlyPrice:3,exclusive:false,enabled:true}
 ];
 function renderStrong8kSellPackagesEditor(packages){

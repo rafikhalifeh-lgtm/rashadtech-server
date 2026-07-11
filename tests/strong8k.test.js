@@ -68,10 +68,37 @@ test('resolvePanelPack uses single region full bouquet for free trial', async ()
   };
   const trialPack = await strong8k.resolvePanelPack(config, { region: 'me', packageIds: [], isTrial: true });
   assert.equal(trialPack, '75605');
+  const trialUs = await strong8k.resolvePanelPack(config, { region: 'us', packageIds: [], isTrial: true });
+  assert.equal(trialUs, '75606');
   const trialWithSelection = await strong8k.resolvePanelPack(config, { region: 'me', packageIds: ['streaming', 'bein'], isTrial: true });
   assert.equal(trialWithSelection, '75605');
   const paidPack = await strong8k.resolvePanelPack(config, { region: 'me', packageIds: ['streaming'], isTrial: false });
   assert.equal(paidPack, '75609');
+  await assert.rejects(
+    () => strong8k.resolvePanelPack(config, { region: 'eu', packageIds: [], isTrial: true }),
+    /only available for Middle East or United States/i
+  );
+});
+
+test('trial bouquet falls back to built-in ME/US defaults when admin bouquets unset', async () => {
+  const config = {
+    panelUrl: 'https://panel.example.com',
+    apiKey: 'secret',
+    packageId: 'all',
+    regions: {
+      me: { id: 'me', name: 'Middle East', packId: 'all' },
+      us: { id: 'us', name: 'United States', packId: 'all' }
+    },
+    sellPackages: [
+      { id: 'full', name: 'Full Package', bouquetIds: '', bouquetIdsByRegion: {}, prices: { 1: 8, 3: 20, 6: 35, 12: 60 }, exclusive: true, enabled: true }
+    ]
+  };
+  const sanitized = strong8k.sanitizeSellPackages(config.sellPackages);
+  assert.equal(sanitized[0].bouquetIdsByRegion.me, '75605');
+  assert.equal(sanitized[0].bouquetIdsByRegion.us, '75606');
+  assert.equal(strong8k.resolveTrialPackBouquetSync(config, 'me'), '75605');
+  assert.equal(strong8k.resolveTrialPackBouquetSync(config, 'us'), '75606');
+  assert.equal(strong8k.resolveTrialPackBouquetSync(config, 'eu'), '');
 });
 
 test('extractHostFromUrl parses server host', () => {

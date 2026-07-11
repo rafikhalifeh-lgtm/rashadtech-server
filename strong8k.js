@@ -22,11 +22,28 @@ const PACKAGE_PRICE_DEFAULTS = {
 };
 
 const DEFAULT_SELL_PACKAGES = [
-  { id: 'full', name: 'Full Package', desc: 'All bouquets — sports, movies, Arabic, streaming & more', bouquetIds: '', prices: { ...PACKAGE_PRICE_DEFAULTS.full }, exclusive: true, enabled: true },
+  {
+    id: 'full',
+    name: 'Full Package',
+    desc: 'All bouquets — sports, movies, Arabic, streaming & more',
+    bouquetIds: '',
+    bouquetIdsByRegion: { me: '75605', eu: '75604', us: '75606' },
+    prices: { ...PACKAGE_PRICE_DEFAULTS.full },
+    exclusive: true,
+    enabled: true
+  },
   { id: 'lebanese', name: 'Lebanese Channels', desc: 'MBC · LBC · Tele Liban · local Lebanese TV', bouquetIds: '', prices: { ...PACKAGE_PRICE_DEFAULTS.lebanese }, exclusive: false, enabled: true },
-  { id: 'streaming', name: 'Streaming Apps', desc: 'Netflix · Shahid · Amazon · Disney+ style channels', bouquetIds: '', prices: { ...PACKAGE_PRICE_DEFAULTS.streaming }, exclusive: false, enabled: true },
-  { id: 'bein', name: 'beIN + World Cup', desc: 'beIN Sports · World Cup 2026 · live football', bouquetIds: '', prices: { ...PACKAGE_PRICE_DEFAULTS.bein }, exclusive: false, enabled: true }
+  { id: 'streaming', name: 'Streaming Apps', desc: 'Netflix · Shahid · Amazon · Disney+ style channels', bouquetIds: '75609', prices: { ...PACKAGE_PRICE_DEFAULTS.streaming }, exclusive: false, enabled: true },
+  { id: 'bein', name: 'beIN + World Cup', desc: 'beIN Sports · World Cup 2026 · live football', bouquetIds: '75610', prices: { ...PACKAGE_PRICE_DEFAULTS.bein }, exclusive: false, enabled: true }
 ];
+
+const FULL_PACKAGE_REGION_BOUQUETS = { me: '75605', eu: '75604', us: '75606' };
+const IPTV_TRIAL_REGIONS = new Set(['me', 'us']);
+
+function defaultBouquetIdsByRegionForPackage(packageId) {
+  if (String(packageId || '').toLowerCase() === 'full') return { ...FULL_PACKAGE_REGION_BOUQUETS };
+  return {};
+}
 
 function defaultStrong8kConfig() {
   return {
@@ -146,12 +163,14 @@ function sanitizeSellPackages(raw) {
     const uniqueId = seen.has(id) ? `${id}-${index + 1}` : id;
     seen.add(uniqueId);
     const prices = sanitizePackagePrices(row, fallback.id, fallback.prices && fallback.prices[1]);
+    const defaultByRegion = defaultBouquetIdsByRegionForPackage(fallback.id);
+    const byRegion = sanitizeBouquetIdsByRegion(row && row.bouquetIdsByRegion);
     return {
       id: uniqueId,
       name: String(row && row.name || fallback.name).trim().slice(0, 48) || fallback.name,
       desc: String(row && row.desc || fallback.desc || '').trim().slice(0, 160),
-      bouquetIds: String(row && row.bouquetIds || '').trim(),
-      bouquetIdsByRegion: sanitizeBouquetIdsByRegion(row && row.bouquetIdsByRegion),
+      bouquetIds: String(row && row.bouquetIds || fallback.bouquetIds || '').trim(),
+      bouquetIdsByRegion: { ...defaultByRegion, ...byRegion },
       prices,
       monthlyPrice: prices[1] || 0,
       exclusive: Boolean(row && row.exclusive),
@@ -248,6 +267,8 @@ function firstBouquetId(raw) {
 
 function resolveTrialPackBouquetSync(config, region) {
   const regionKey = String(region || 'me').toLowerCase();
+  if (!IPTV_TRIAL_REGIONS.has(regionKey)) return '';
+
   const sellPackages = getEnabledSellPackages(config);
   const exclusive = sellPackages.find(pkg => pkg.exclusive) || sellPackages[0];
 
@@ -265,34 +286,47 @@ function resolveTrialPackBouquetSync(config, region) {
     if (fromRegionPack) return fromRegionPack;
   }
 
-  return '';
+  const fallback = FULL_PACKAGE_REGION_BOUQUETS[regionKey];
+  return fallback ? String(fallback).trim() : '';
+}
+
+function assertTrialPanelPack(pack, regionKey) {
+  const single = firstBouquetId(pack);
+  if (!single || isWildcardPack(single)) {
+    const hint = regionKey === 'us' ? 'US bouquet 75606' : 'ME bouquet 75605';
+    throw new Error(
+      `IPTV trial needs one Full Package bouquet ID for ${regionKey === 'us' ? 'United States' : 'Middle East'}. In Admin → Strong8K IPTV, set ${hint} on Full Package (one ID only, not a comma list).`
+    );
+  }
+  return single;
 }
 
 async function resolveTrialPackBouquet(config, region) {
-  const sync = resolveTrialPackBouquetSync(config, region);
+  const regionKey = String(region || 'me').toLowerCase();
+  const sync = resolveTrialPackBouquetSync(config, regionKey);
   if (sync) return sync;
 
-  const regionKey = String(region || 'me').toLowerCase();
   const { bouquets } = await getBouquets(config);
   const regionMatchers = {
     me: /middle|arab|\bme\b/i,
-    eu: /europe|\beu\b/i,
     us: /\bus\b|united states/i
   };
   const regionRe = regionMatchers[regionKey] || null;
   const fullMatch = bouquets.find(b => /full/i.test(b.name || '') && (!regionRe || regionRe.test(b.name || '')))
     || bouquets.find(b => /full/i.test(b.name || ''))
     || bouquets[0];
-  return fullMatch && fullMatch.id ? String(fullMatch.id).trim() : '';
+  return fullMatch && fullMatch.id ? firstBouquetId(fullMatch.id) : '';
 }
 
 async function resolvePanelPack(config, { region, packageIds, isTrial } = {}) {
   const regionKey = String(region || 'me').toLowerCase();
 
   if (isTrial) {
+    if (!IPTV_TRIAL_REGIONS.has(regionKey)) {
+      throw new Error('Free trial is only available for Middle East or United States');
+    }
     const trialPack = await resolveTrialPackBouquet(config, regionKey);
-    if (trialPack) return trialPack;
-    return resolvePackForPanel(config, regionKey);
+    return assertTrialPanelPack(trialPack, regionKey);
   }
 
   const ids = normalizeSellPackageIds(packageIds);
@@ -600,11 +634,14 @@ async function createLine(config, { months, note, region, isTrial, lineType, pac
     packageIds,
     isTrial: Boolean(isTrial)
   });
+  const panelPack = isTrial
+    ? assertTrialPanelPack(resolvedPack, String(region || 'me').toLowerCase())
+    : String(resolvedPack || '').trim();
   const data = await requestPanel(config, {
     action: 'new',
     type: 'm3u',
     sub,
-    pack: resolvedPack,
+    pack: panelPack,
     note: String(note || '').slice(0, 200)
   });
   const row = unwrapApiPayload(data);
@@ -652,7 +689,10 @@ module.exports = {
   resolveSellPackageBouquetIds,
   resolveTrialPackBouquetSync,
   resolveTrialPackBouquet,
+  assertTrialPanelPack,
   firstBouquetId,
+  IPTV_TRIAL_REGIONS,
+  FULL_PACKAGE_REGION_BOUQUETS,
   resolvePanelPack,
   resolveSelectedSellPackages,
   describeSellPackageSelection,
