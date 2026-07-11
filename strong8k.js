@@ -588,6 +588,10 @@ function buildTrialPackAttemptsFromList(bouquets, config, region) {
   const regional = findBouquetForRegion(list, regionKey, config);
   if (regional) push(regional);
 
+  const regionalRow = list.find(b => /full/i.test(b.name || '') && matchBouquetNameForRegion(b.name, regionKey))
+    || list.find(b => matchBouquetNameForRegion(b.name, regionKey));
+  if (regionalRow && regionalRow.name) push(regionalRow.name);
+
   list.filter(b => /full/i.test(b.name || '')).forEach(b => push(firstBouquetId(b.id)));
   list.forEach(b => push(firstBouquetId(b.id)));
   push(OMIT_PANEL_PACK);
@@ -610,7 +614,7 @@ async function buildTrialPackAttempts(config, region) {
       bouquets = [{ id: fromConfig, name: 'Saved bouquet' }];
     } else if (panelError) {
       throw new Error(
-        `Could not load bouquets from Strong8K panel: ${panelError.message}. Set Middle East to one bouquet ID (e.g. 75605), click Save settings, then retry Test ME trial.`
+        `Could not load bouquets from Strong8K panel: ${panelError.message}. In Admin → Strong8K IPTV, click Load bouquets (wait up to 60s), then Save settings and retry Test ME trial.`
       );
     } else {
       throw new Error('No bouquets found on your Strong8K panel. In Admin → Strong8K IPTV, click Test connection then Load bouquets.');
