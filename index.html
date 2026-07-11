@@ -4543,7 +4543,7 @@ async function switchAdminTab(name,el){
   document.getElementById('admin-'+name)?.classList.add('active');
   document.querySelectorAll('#page-admin .snav').forEach(b=>b.classList.remove('active'));
   if(el)el.classList.add('active');
-  const amap={stock:'abn-stock',customers:'abn-customers',wallets:'abn-wallets',topupreqs:'abn-topupreqs',requests:'abn-requests',expiry:'abn-more',dashboard:'abn-dashboard',pending:'abn-more',gameorders:'abn-more',prices:'abn-more',sms:'abn-more',strong8k:'abn-more',reseller-apps:'abn-more'};
+  const amap={stock:'abn-stock',customers:'abn-customers',wallets:'abn-wallets',topupreqs:'abn-topupreqs',requests:'abn-requests',expiry:'abn-more',dashboard:'abn-dashboard',pending:'abn-more',gameorders:'abn-more',prices:'abn-more',sms:'abn-more',strong8k:'abn-more','reseller-apps':'abn-more'};
   if(amap[name])setActiveAdminNav(amap[name]);
   const needsFresh=['topupreqs','gameorders','dashboard','requests','reseller-apps'].includes(name);
   if(!_jbCache||!users.length||needsFresh){
