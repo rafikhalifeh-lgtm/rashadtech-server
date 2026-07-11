@@ -47,11 +47,25 @@ test('isPanelRetryableError treats Something is missing as retryable', () => {
   assert.equal(strong8k.isPanelRetryableError({ status: 'false', message: 'Invalid API key' }), false);
 });
 
-test('buildTrialLineRequestVariants includes POST and country_lock attempts', () => {
-  const variants = strong8k.buildTrialLineRequestVariants('me', '75605', { thorough: true });
+test('buildTrialLineRequestVariants tries regional bouquet with GET and POST', () => {
+  const variants = strong8k.buildTrialLineRequestVariants('me', '75605');
+  assert.ok(variants.some(v => v.httpMethod === 'GET' && v.pack === '75605' && !v.country));
   assert.ok(variants.some(v => v.httpMethod === 'POST' && v.country === 'LB'));
-  assert.ok(variants.some(v => v.countryParam === 'country_lock'));
-  assert.ok(variants.some(v => v.packParam === 'both'));
+  assert.ok(variants.some(v => v.packParam === 'bouquet' && v.country === 'LB'));
+  assert.ok(variants.length <= 8);
+});
+
+test('buildTrialPackAttemptsFromList prefers regional bouquet before pack=all', () => {
+  const bouquets = [
+    { id: '100', name: 'Full Package MIDDLE EAST' },
+    { id: '200', name: 'Full Package US' },
+    { id: '300', name: 'STREAMING' }
+  ];
+  const attempts = strong8k.buildTrialPackAttemptsFromList(bouquets, {}, 'me');
+  assert.equal(attempts[0], '100');
+  assert.ok(attempts.includes('all'));
+  assert.ok(attempts.includes(strong8k.OMIT_PANEL_PACK));
+  assert.ok(!attempts.includes('75605'));
 });
 
 test('resolveRegionalBouquetIds prefers saved ids and fixes ME/US swap', () => {
@@ -82,21 +96,6 @@ test('sanitizeRegions keeps single bouquet id from comma-separated packId', () =
 test('normalizeTrialPackForPanel uses first id from comma-separated bouquet list', () => {
   assert.equal(strong8k.normalizeTrialPackForPanel('75605,75609,75610'), '75605');
   assert.equal(strong8k.normalizeTrialPackForPanel('all'), 'all');
-});
-
-test('buildTrialPackAttemptsFromList uses only live panel bouquet ids', () => {
-  const bouquets = [
-    { id: '100', name: 'Full Middle East' },
-    { id: '200', name: 'Full United States' },
-    { id: '300', name: 'Streaming' }
-  ];
-  const attempts = strong8k.buildTrialPackAttemptsFromList(bouquets, {}, 'me');
-  assert.equal(attempts[0], 'all');
-  assert.equal(attempts[1], '100');
-  assert.ok(attempts.includes('200'));
-  assert.ok(attempts.includes('300'));
-  assert.ok(attempts.includes(strong8k.OMIT_PANEL_PACK));
-  assert.ok(!attempts.includes('75605'));
 });
 
 test('sanitizeSellPackages drops legacy Lebanese package from saved config', () => {

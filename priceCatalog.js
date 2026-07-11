@@ -83,8 +83,8 @@ const IPTV_DURATION_MONTHS = [1, 3, 6, 12];
 
 const IPTV_SELL_PACKAGE_DEFAULTS = [
   { id: 'full', name: 'Full Package', exclusive: true, prices: { 1: 8, 3: 20, 6: 35, 12: 60 } },
-  { id: 'streaming', name: 'Streaming Apps', exclusive: false, prices: { 1: 4, 3: 10, 6: 18, 12: 32 } },
-  { id: 'bein', name: 'beIN + World Cup', exclusive: false, prices: { 1: 5, 3: 13, 6: 22, 12: 38 } }
+  { id: 'streaming', name: 'Streaming', exclusive: false, prices: { 1: 4, 3: 10, 6: 18, 12: 32 } },
+  { id: 'bein', name: 'beIN Sports + World Cup', exclusive: false, prices: { 1: 5, 3: 13, 6: 22, 12: 38 } }
 ];
 
 function iptvPackageStockKey(packageId, months) {

@@ -15,8 +15,8 @@ const TRIAL_SUB_CODE = 99;
 const TRIAL_MIN_PANEL_CREDITS = 12;
 const PANEL_REQUEST_TIMEOUT_MS = 60000;
 const PANEL_REQUEST_RETRIES = 2;
-const MAX_TRIAL_PACK_ATTEMPTS = 5;
-const MAX_TRIAL_PANEL_CALLS = 24;
+const MAX_TRIAL_PACK_ATTEMPTS = 4;
+const MAX_TRIAL_PANEL_CALLS = 16;
 const OMIT_PANEL_PACK = '__OMIT_PACK__';
 const DURATION_MONTHS = [1, 3, 6, 12];
 
@@ -30,38 +30,20 @@ const DEFAULT_SELL_PACKAGES = [
   {
     id: 'full',
     name: 'Full Package',
-    desc: 'All bouquets — sports, movies, Arabic, streaming & more',
+    desc: 'All channels for your region — sports, movies, Arabic & more',
     bouquetIds: '',
     bouquetIdsByRegion: { me: '75605', eu: '75604', us: '75606' },
     prices: { ...PACKAGE_PRICE_DEFAULTS.full },
     exclusive: true,
     enabled: true
   },
-  { id: 'streaming', name: 'Streaming Apps', desc: 'Netflix · Shahid · Amazon · Disney+ style channels', bouquetIds: '75609', prices: { ...PACKAGE_PRICE_DEFAULTS.streaming }, exclusive: false, enabled: true },
-  { id: 'bein', name: 'beIN + World Cup', desc: 'beIN Sports · World Cup 2026 · live football', bouquetIds: '75610', prices: { ...PACKAGE_PRICE_DEFAULTS.bein }, exclusive: false, enabled: true }
+  { id: 'streaming', name: 'Streaming', desc: 'Netflix · Shahid · Amazon · Disney+ style apps', bouquetIds: '75609', prices: { ...PACKAGE_PRICE_DEFAULTS.streaming }, exclusive: false, enabled: true },
+  { id: 'bein', name: 'beIN Sports + World Cup', desc: 'beIN Sports · TOD · World Cup 2026 · live football', bouquetIds: '75610', prices: { ...PACKAGE_PRICE_DEFAULTS.bein }, exclusive: false, enabled: true }
 ];
 
 const FULL_PACKAGE_REGION_BOUQUETS = { me: '75605', eu: '75604', us: '75606' };
 const IPTV_TRIAL_REGIONS = new Set(['me', 'us']);
-const TRIAL_REGION_COUNTRIES = {
-  me: ['LB', 'AE', 'ALL', ''],
-  us: ['US', 'ALL', '']
-};
-const TRIAL_COUNTRY_PARAM_NAMES = ['country', 'country_lock', 'forced_country'];
-const TRIAL_REQUEST_PRESETS_QUICK = [
-  { httpMethod: 'GET', countryParam: 'country', packParam: 'pack' },
-  { httpMethod: 'POST', countryParam: 'country', packParam: 'pack' },
-  { httpMethod: 'GET', countryParam: 'country_lock', packParam: 'pack' },
-  { httpMethod: 'POST', countryParam: 'country_lock', packParam: 'pack' }
-];
-const TRIAL_REQUEST_PRESETS_FULL = [
-  ...TRIAL_REQUEST_PRESETS_QUICK,
-  { httpMethod: 'GET', countryParam: 'forced_country', packParam: 'pack' },
-  { httpMethod: 'POST', countryParam: 'forced_country', packParam: 'pack' },
-  { httpMethod: 'GET', countryParam: 'country', packParam: 'bouquet' },
-  { httpMethod: 'POST', countryParam: 'country', packParam: 'bouquet' },
-  { httpMethod: 'GET', countryParam: 'country', packParam: 'both' }
-];
+const TRIAL_REGION_PRIMARY_COUNTRY = { me: 'LB', us: 'US' };
 const RETIRED_SELL_PACKAGE_IDS = new Set(['lebanese']);
 
 function isRetiredSellPackage(pkg) {
@@ -333,8 +315,8 @@ function firstBouquetId(raw) {
 function matchBouquetNameForRegion(name, regionKey) {
   const n = String(name || '');
   const regionPatterns = {
-    me: [/middle\s*east/i, /\barab/i, /\bmena\b/i, /\blevant/i],
-    eu: [/europe/i, /\beu\b/i, /\buk\b/i],
+    me: [/middle\s*east/i, /\bme\b/i, /\barab/i, /\bmena\b/i, /\blevant/i],
+    eu: [/europe/i, /\beu\b/i, /\beuro/i, /\buk\b/i],
     us: [/united\s*states/i, /\busa\b/i, /\bus\b/i, /america/i]
   };
   return (regionPatterns[regionKey] || []).some(re => re.test(n));
@@ -424,7 +406,7 @@ function applyPanelBouquetsToConfig(config, bouquets) {
   const euId = regional.eu;
   const usId = regional.us;
   const streamingId = findBouquetByNamePattern(list, /stream/i);
-  const beinId = findBouquetByNamePattern(list, /bein|world\s*cup/i);
+  const beinId = findBouquetByNamePattern(list, /bein|world\s*cup|tod/i);
 
   const regions = { ...cfg.regions };
   if (meId) regions.me = { ...regions.me, id: 'me', packId: meId };
@@ -482,10 +464,11 @@ function normalizeTrialPackForPanel(pack) {
 
 function trialCountryOptions(regionKey) {
   const key = String(regionKey || 'me').toLowerCase();
-  return TRIAL_REGION_COUNTRIES[key] || TRIAL_REGION_COUNTRIES.me;
+  const primary = TRIAL_REGION_PRIMARY_COUNTRY[key] || 'LB';
+  return [primary, 'ALL', ''];
 }
 
-function buildTrialLineRequestVariants(regionKey, panelPack, { thorough = false } = {}) {
+function buildTrialLineRequestVariants(regionKey, panelPack) {
   const pack = normalizeTrialPackForPanel(panelPack);
   const variants = [];
   const seen = new Set();
@@ -495,21 +478,24 @@ function buildTrialLineRequestVariants(regionKey, panelPack, { thorough = false 
     seen.add(key);
     variants.push(variant);
   };
-  const presets = thorough ? TRIAL_REQUEST_PRESETS_FULL : TRIAL_REQUEST_PRESETS_QUICK;
-  const packParams = pack === OMIT_PANEL_PACK ? ['pack'] : ['pack', 'bouquet', 'both'];
+  const base = {
+    type: 'm3u',
+    sub: TRIAL_SUB_CODE,
+    pack
+  };
 
-  for (const country of trialCountryOptions(regionKey)) {
-    for (const preset of presets) {
-      if (!packParams.includes(preset.packParam)) continue;
-      push({
-        type: 'm3u',
-        sub: TRIAL_SUB_CODE,
-        pack,
-        country: country || undefined,
-        countryParam: preset.countryParam,
-        packParam: preset.packParam,
-        httpMethod: preset.httpMethod
-      });
+  if (pack === OMIT_PANEL_PACK) {
+    push({ ...base, httpMethod: 'GET', packParam: 'pack' });
+    push({ ...base, httpMethod: 'POST', packParam: 'pack' });
+    return variants;
+  }
+
+  const countries = trialCountryOptions(regionKey);
+  for (const country of countries) {
+    push({ ...base, httpMethod: 'GET', packParam: 'pack', country: country || undefined, countryParam: 'country' });
+    if (country) {
+      push({ ...base, httpMethod: 'GET', packParam: 'bouquet', country, countryParam: 'country' });
+      push({ ...base, httpMethod: 'POST', packParam: 'pack', country, countryParam: 'country' });
     }
   }
   return variants;
@@ -574,26 +560,24 @@ function buildTrialPackAttemptsFromList(bouquets, config, region) {
     attempts.push(id);
   };
 
-  // Panel API: sub=99 demo uses pack=all for full bouquet access.
-  push('all');
+  const regional = findBouquetForRegion(list, regionKey, config);
+  if (regional) push(regional);
 
   const fromConfig = resolveTrialPackBouquetSync(config, regionKey);
-  if (fromConfig && panelListHasBouquetId(list, fromConfig)) push(fromConfig);
+  if (fromConfig && !isWildcardPack(fromConfig)) {
+    if (!list.length || panelListHasBouquetId(list, fromConfig)) push(fromConfig);
+  }
 
   if (!list.length) {
+    if (!attempts.length && fromConfig && !isWildcardPack(fromConfig)) push(fromConfig);
+    push('all');
     push(OMIT_PANEL_PACK);
     return attempts;
   }
 
-  const regional = findBouquetForRegion(list, regionKey, config);
-  if (regional) push(regional);
-
-  const regionalRow = list.find(b => /full/i.test(b.name || '') && matchBouquetNameForRegion(b.name, regionKey))
-    || list.find(b => matchBouquetNameForRegion(b.name, regionKey));
-  if (regionalRow && regionalRow.name) push(regionalRow.name);
-
-  list.filter(b => /full/i.test(b.name || '')).forEach(b => push(firstBouquetId(b.id)));
-  list.forEach(b => push(firstBouquetId(b.id)));
+  list.filter(b => /full/i.test(b.name || '') && matchBouquetNameForRegion(b.name, regionKey))
+    .forEach(b => push(firstBouquetId(b.id)));
+  push('all');
   push(OMIT_PANEL_PACK);
   return attempts;
 }
@@ -719,8 +703,7 @@ async function createTrialLine(config, { note, region, lineType, pack, packAttem
   outer:
   for (let packIndex = 0; packIndex < attemptList.length; packIndex++) {
     const panelPack = attemptList[packIndex];
-    const thorough = packIndex === 0 || panelPack === 'all';
-    const variants = buildTrialLineRequestVariants(regionKey, panelPack, { thorough });
+    const variants = buildTrialLineRequestVariants(regionKey, panelPack);
     for (const variant of variants) {
       if (panelCalls >= MAX_TRIAL_PANEL_CALLS) break outer;
       panelCalls += 1;
@@ -754,8 +737,8 @@ async function createTrialLine(config, { note, region, lineType, pack, packAttem
 
   if (!row || String(row.status || '').toLowerCase() !== 'true') {
     const detail = attemptLog.map(a => `${a.pack}: ${a.message}`).join(' | ');
-    const hint = /something is missing/i.test(detail)
-      ? ' Check panel credits (need ≥12), set ME bouquet to one ID (e.g. 75605), Load bouquets, Save — then retry.'
+    const hint = /something is missing|subscription package not found/i.test(detail)
+      ? ' Click Load bouquets → Save settings → retry. Need ≥12 panel credits.'
       : '';
     const err = new Error((detail || 'Could not create IPTV trial line on Strong8K panel') + hint);
     err.attemptLog = attemptLog;
@@ -781,8 +764,10 @@ async function createTrialLine(config, { note, region, lineType, pack, packAttem
 }
 
 async function resolveTrialPackBouquet(config, region) {
-  const { attempts } = await buildTrialPackAttempts(config, region);
-  return attempts[0] || 'all';
+  const regionKey = String(region || 'me').toLowerCase();
+  const { attempts } = await buildTrialPackAttempts(config, regionKey);
+  const first = attempts.find(p => p !== OMIT_PANEL_PACK && !isWildcardPack(p));
+  return first || attempts[0] || '';
 }
 
 async function resolvePanelPack(config, { region, packageIds, isTrial } = {}) {
@@ -793,7 +778,8 @@ async function resolvePanelPack(config, { region, packageIds, isTrial } = {}) {
       throw new Error('Free trial is only available for Middle East or United States');
     }
     const { attempts } = await buildTrialPackAttempts(config, regionKey);
-    return attempts[0] || 'all';
+    const first = attempts.find(p => p !== OMIT_PANEL_PACK && !isWildcardPack(p));
+    return first || attempts[0] || '';
   }
 
   const ids = normalizeSellPackageIds(packageIds);
@@ -1202,7 +1188,7 @@ module.exports = {
   normalizeTrialPackForPanel,
   isPanelRetryableError,
   isPanelHardError,
-  TRIAL_REGION_COUNTRIES,
+  TRIAL_REGION_PRIMARY_COUNTRY,
   OMIT_PANEL_PACK,
   mergeMissingDefaultSellPackages,
   assertTrialPanelCredits,
