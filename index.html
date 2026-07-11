@@ -4892,6 +4892,7 @@ let iptvTrialInfo=null;
 let iptvPurchaseInFlight=false;
 const IPTV_REGION_LABELS={me:'Middle East',eu:'Europe',us:'United States'};
 function iptvStoreMeta(){return _strong8kStore||{enabled:false,plans:[],regions:[],lineTypes:[],features:{},trialEnabled:false};}
+function iptvTrialReseller(){return Boolean(iptvTrialInfo?.isReseller||userSeesResellerPrices());}
 async function refreshIptvTrialEligibility(subPhone){
   try{
     const q=subPhone?`?subCustomerPhone=${encodeURIComponent(subPhone)}`:'';
@@ -4922,10 +4923,11 @@ function iptvWizardBack(){
 function iptvWizardNext(){
   if(iptvWizardStep===1&&!iptvRegion){showToast('Please choose your region');return;}
   if(iptvWizardStep===3){
+    if(iptvTrialReseller()&&iptvSubPhone.trim()&&!iptvTrialMode&&iptvPlanIdx==null)iptvTrialMode=true;
     if(iptvTrialMode){
       if(iptvTrialInfo?.hardBlocked){showToast(iptvTrialInfo.reason||'Free trial not available');return;}
-      if(iptvTrialInfo?.isReseller&&!iptvSubPhone.trim()){showToast('Enter sub-customer phone number');return;}
-      if(!iptvTrialInfo?.isReseller&&iptvTrialInfo?.needsProfilePhone){showToast('Add your phone in Profile first');return;}
+      if(iptvTrialReseller()&&!iptvSubPhone.trim()){showToast('Enter sub-customer phone number');return;}
+      if(!iptvTrialReseller()&&iptvTrialInfo?.needsProfilePhone){showToast('Add your phone in Profile first');return;}
       if(iptvTrialInfo&&!iptvTrialInfo.eligible){showToast(iptvTrialInfo.reason||'Complete trial requirements');return;}
     }else if(iptvPlanIdx==null){showToast('Select a plan or free trial');return;}
   }
@@ -4938,9 +4940,11 @@ function setIptvPlan(idx,trial){
   iptvTrialMode=Boolean(trial);
   iptvPlanIdx=trial?null:Number(idx);
   renderIptvWizard();
+  if(trial&&iptvTrialReseller())setTimeout(()=>document.getElementById('iptv-sub-phone')?.focus(),0);
 }
 async function onIptvSubPhoneInput(v){
   iptvSubPhone=String(v||'').trim();
+  if(iptvSubPhone){iptvTrialMode=true;iptvPlanIdx=null;}
   await refreshIptvTrialEligibility(iptvSubPhone);
   renderIptvWizard();
 }
@@ -4993,14 +4997,16 @@ function renderIptvWizard(){
   }else if(iptvWizardStep===3){
     html+=`<div class="plan-section-label">Choose plan or free trial</div>`;
     if(meta.trialEnabled){
+      const trialReseller=iptvTrialReseller();
       const trialHardBlocked=Boolean(iptvTrialInfo?.hardBlocked);
       const trialSelectable=!trialHardBlocked;
-      const trialDesc=trialHardBlocked?(iptvTrialInfo?.reason||'Not available'):(iptvTrialInfo?.eligible?'Test the service before you buy':(iptvTrialInfo?.reason||(iptvTrialInfo?.isReseller?'Tap to enter sub-customer phone':'Tap to continue with free trial')));
+      const trialDesc=trialHardBlocked?(iptvTrialInfo?.reason||'Not available'):(iptvTrialInfo?.eligible?'Test the service before you buy':(iptvTrialInfo?.reason||(trialReseller?'Enter sub-customer phone below':'Tap to continue with free trial')));
       html+=`<div class="plan-row${iptvTrialMode?' sel':''}" style="cursor:${trialSelectable?'pointer':'default'};margin-bottom:10px;${trialSelectable?'':'opacity:.55'}" ${trialSelectable?`onclick="setIptvPlan(null,true)"`:''}><div><div class="plan-name">🎁 1-Day Free Trial</div><div class="plan-desc">${esc(trialDesc)}</div></div><div class="plan-price">FREE</div></div>`;
-      if(iptvTrialMode&&iptvTrialInfo?.isReseller){
-        html+=`<div class="field" style="margin-bottom:12px"><label>Sub-customer phone (required for trial)</label><input type="tel" id="iptv-sub-phone" placeholder="+961 79 000 000" value="${esc(iptvSubPhone)}" oninput="onIptvSubPhoneInput(this.value)" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text)"></div>`;
+      if(trialReseller){
+        html+=`<div class="field" style="margin-bottom:12px" onclick="event.stopPropagation()"><label>Sub-customer phone (required for free trial)</label><input type="tel" id="iptv-sub-phone" placeholder="+961 79 000 000" value="${esc(iptvSubPhone)}" oninput="onIptvSubPhoneInput(this.value)" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text)"></div>`;
         if(iptvSubPhone&&iptvTrialInfo?.hardBlocked)html+=`<div style="font-size:11px;color:var(--red);margin-bottom:8px">${esc(iptvTrialInfo?.reason||'')}</div>`;
-      }else if(iptvTrialMode&&!iptvTrialInfo?.isReseller&&iptvTrialInfo?.needsProfilePhone){
+        else if(iptvSubPhone&&!iptvTrialInfo?.eligible&&iptvTrialInfo?.reason)html+=`<div style="font-size:11px;color:var(--orange);margin-bottom:8px">${esc(iptvTrialInfo.reason)}</div>`;
+      }else if(iptvTrialMode&&iptvTrialInfo?.needsProfilePhone){
         html+=`<div style="font-size:11px;color:var(--orange);margin-bottom:8px">Add your phone in Profile before taking a free trial.</div>`;
       }
     }
