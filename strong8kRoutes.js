@@ -215,7 +215,7 @@ function registerStrong8kRoutes(app, deps) {
         ...current,
         enabled: body.enabled !== undefined ? Boolean(body.enabled) : current.enabled,
         storeEnabled: body.storeEnabled !== undefined ? Boolean(body.storeEnabled) : current.storeEnabled,
-        trialEnabled: body.trialEnabled !== undefined ? Boolean(body.trialEnabled) : current.trialEnabled,
+        trialEnabled: false,
         panelUrl: body.panelUrl !== undefined ? body.panelUrl : current.panelUrl,
         packageId: body.packageId !== undefined ? body.packageId : current.packageId,
         regions: body.regions !== undefined ? body.regions : current.regions,
@@ -295,65 +295,7 @@ function registerStrong8kRoutes(app, deps) {
   app.post('/admin/strong8k/test-trial', async (req, res) => {
     const session = requireSession(req, res, ['admin']);
     if (!session) return;
-    try {
-      const data = await readDbFast();
-      const draft = { ...readStrong8kConfig(data) };
-      if (req.body && req.body.panelUrl !== undefined) draft.panelUrl = String(req.body.panelUrl || '').trim();
-      if (req.body && req.body.apiKey) draft.apiKey = String(req.body.apiKey || '').trim();
-      if (!draft.panelUrl || !strong8k.resolveApiKey(draft)) {
-        return res.status(400).json({ error: 'Strong8K panel is not configured' });
-      }
-      try {
-        const bouquetResult = await strong8k.getBouquets(draft);
-        if ((bouquetResult.bouquets || []).length) {
-          draft = strong8k.applyPanelBouquetsToConfig(draft, bouquetResult.bouquets);
-        }
-      } catch {
-        // continue with saved bouquet mapping
-      }
-      const region = String(req.body?.region || 'me').toLowerCase();
-      if (!strong8k.IPTV_TRIAL_REGIONS.has(region)) {
-        return res.status(400).json({ error: 'Test trial supports Middle East (me) or United States (us) only' });
-      }
-      let panelCredits = null;
-      try {
-        const info = await strong8k.getResellerInfo(draft);
-        panelCredits = Number(info.credits || 0);
-      } catch {
-        panelCredits = null;
-      }
-      const built = await strong8k.buildTrialPackAttempts(draft, region);
-      const result = await strong8k.createTrialLine(draft, {
-        note: `rashadtech.tv admin trial test · ${session.email}`,
-        region,
-        lineType: 'stable',
-        packAttempts: built.attempts,
-        bouquetsCache: built.bouquets
-      });
-      res.json({
-        success: true,
-        region,
-        panelCredits,
-        trialMinCredits: strong8k.TRIAL_MIN_PANEL_CREDITS,
-        packAttempts: built.attempts.map(p => strong8k.formatPackAttemptLabel(p)),
-        bouquets: built.bouquets,
-        sellPackageCount: strong8k.getEnabledSellPackages(draft).length,
-        successPack: result.successPack,
-        attemptLog: result.attemptLog,
-        username: result.username,
-        password: result.password,
-        host: result.host,
-        url: result.url,
-        message: result.message || 'Trial line created on panel'
-      });
-    } catch (e) {
-      res.status(400).json({
-        error: e.message || 'Trial test failed',
-        attemptLog: e.attemptLog || [],
-        panelCredits: e.panelCredits ?? null,
-        trialMinCredits: strong8k.TRIAL_MIN_PANEL_CREDITS
-      });
-    }
+    return res.status(403).json({ error: 'Free IPTV trials are disabled — they use panel subscription credits.' });
   });
 
   app.post('/purchase/strong8k', async (req, res) => {
@@ -373,6 +315,11 @@ function registerStrong8kRoutes(app, deps) {
     const isTrial = Boolean(req.body?.trial);
     const subCustomerPhone = String(req.body?.subCustomerPhone || '').trim();
     const selectedPackages = strong8k.normalizeSellPackageIds(req.body?.selectedPackages);
+
+    if (isTrial) {
+      activeStrong8kPurchases.delete(lockKey);
+      return res.status(403).json({ error: 'Free IPTV trials are disabled. Please purchase a paid subscription.' });
+    }
 
     try {
       const outcome = await enqueueDbWrite(async () => {

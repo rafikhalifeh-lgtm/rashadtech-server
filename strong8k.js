@@ -70,7 +70,7 @@ function defaultStrong8kConfig() {
     panelUrl: '',
     apiKey: '',
     packageId: 'all',
-    trialEnabled: true,
+    trialEnabled: false,
     regions: { ...IPTV_REGIONS },
     plans: DEFAULT_PLANS.map(p => ({ ...p })),
     sellPackages: DEFAULT_SELL_PACKAGES.map(p => ({ ...p }))
@@ -804,7 +804,7 @@ function sanitizeStrong8kConfig(raw) {
     packageId: String(input.packageId || base.packageId || 'all').trim() || 'all',
     enabled: Boolean(input.enabled),
     storeEnabled: Boolean(input.storeEnabled),
-    trialEnabled: input.trialEnabled !== undefined ? Boolean(input.trialEnabled) : base.trialEnabled,
+    trialEnabled: false,
     regions: sanitizeRegions(input.regions),
     plans: sanitizePlans(input.plans),
     sellPackages: sanitizeSellPackages(input.sellPackages)
