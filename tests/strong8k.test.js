@@ -42,6 +42,23 @@ test('computeSellPackagePrice sums add-ons and respects exclusive full package',
   assert.equal(strong8k.describeSellPackageSelection(['streaming', 'bein'], config), 'Streaming + beIN');
 });
 
+test('isPanelRetryableError treats Something is missing as retryable', () => {
+  assert.equal(strong8k.isPanelRetryableError({ status: 'false', message: 'Something is missing' }), true);
+  assert.equal(strong8k.isPanelRetryableError({ status: 'false', message: 'Invalid API key' }), false);
+});
+
+test('buildTrialLineRequestVariants includes country and bouquet field attempts', () => {
+  const variants = strong8k.buildTrialLineRequestVariants('me', '75605');
+  assert.ok(variants.some(v => v.country === 'LB' && v.packParam === 'pack'));
+  assert.ok(variants.some(v => v.country === 'LB' && v.packParam === 'bouquet'));
+  assert.ok(variants.some(v => v.country === 'ALL'));
+});
+
+test('normalizeTrialPackForPanel uses first id from comma-separated bouquet list', () => {
+  assert.equal(strong8k.normalizeTrialPackForPanel('75605,75609,75610'), '75605');
+  assert.equal(strong8k.normalizeTrialPackForPanel('all'), 'all');
+});
+
 test('buildTrialPackAttemptsFromList uses only live panel bouquet ids', () => {
   const bouquets = [
     { id: '100', name: 'Full Middle East' },

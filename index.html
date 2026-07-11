@@ -1328,7 +1328,7 @@ So your EmailJS template will receive the user email and verification code corre
           </div>
           <div style="font-size:12px;font-weight:700;margin-bottom:8px">Region bouquet IDs</div>
           <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px">
-            <div class="field" style="margin:0"><label>Middle East</label><input type="text" id="s8k-pack-me" placeholder="all"></div>
+            <div class="field" style="margin:0"><label>Middle East</label><input type="text" id="s8k-pack-me" placeholder="75605"><div style="font-size:10px;color:var(--text3);margin-top:4px">One bouquet ID only (e.g. 75605) — not a comma list</div></div>
             <div class="field" style="margin:0"><label>Europe</label><input type="text" id="s8k-pack-eu" placeholder="all"></div>
             <div class="field" style="margin:0"><label>United States</label><input type="text" id="s8k-pack-us" placeholder="all"></div>
           </div>
@@ -8737,9 +8737,9 @@ async function saveStrong8kConfig(){
   const packageId=document.getElementById('s8k-package-id')?.value?.trim()||'all';
   const plans=readStrong8kPlansFromEditor();
   const regions={
-    me:{packId:document.getElementById('s8k-pack-me')?.value?.trim()||'all'},
-    eu:{packId:document.getElementById('s8k-pack-eu')?.value?.trim()||'all'},
-    us:{packId:document.getElementById('s8k-pack-us')?.value?.trim()||'all'}
+    me:{packId:(document.getElementById('s8k-pack-me')?.value?.trim()||'all').split(',')[0].trim()},
+    eu:{packId:(document.getElementById('s8k-pack-eu')?.value?.trim()||'all').split(',')[0].trim()},
+    us:{packId:(document.getElementById('s8k-pack-us')?.value?.trim()||'all').split(',')[0].trim()}
   };
   try{
     const body={

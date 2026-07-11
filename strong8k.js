@@ -39,6 +39,10 @@ const DEFAULT_SELL_PACKAGES = [
 
 const FULL_PACKAGE_REGION_BOUQUETS = { me: '75605', eu: '75604', us: '75606' };
 const IPTV_TRIAL_REGIONS = new Set(['me', 'us']);
+const TRIAL_REGION_COUNTRIES = {
+  me: ['LB', 'AE', 'ALL', ''],
+  us: ['US', 'ALL', '']
+};
 const RETIRED_SELL_PACKAGE_IDS = new Set(['lebanese']);
 
 function isRetiredSellPackage(pkg) {
@@ -383,9 +387,55 @@ async function syncStrong8kBouquetsFromPanel(config) {
 }
 
 function isPanelPackRejection(payload) {
+  return isPanelRetryableError(payload);
+}
+
+function isPanelHardError(payload) {
   const row = unwrapApiPayload(payload);
   const msg = String(row.message || row.messasge || row.result || row.error || '').trim();
-  return /subscription package not found|bouquet|package.*not found|invalid.*pack/i.test(msg);
+  if (isPanelDemoLimitError(payload)) return true;
+  return /api key|unauthorized|invalid key|reseller.*disabled|not enabled|permission/i.test(msg);
+}
+
+function isPanelRetryableError(payload) {
+  if (isPanelHardError(payload)) return false;
+  const row = unwrapApiPayload(payload);
+  const msg = String(row.message || row.messasge || row.result || row.error || '').trim();
+  if (!msg) return true;
+  return /subscription package not found|bouquet|package.*not found|invalid.*pack|something is missing|missing|required|not found/i.test(msg);
+}
+
+function normalizeTrialPackForPanel(pack) {
+  if (pack === OMIT_PANEL_PACK) return pack;
+  const value = String(pack || '').trim();
+  if (!value || isWildcardPack(value)) return value;
+  if (value.includes(',')) return firstBouquetId(value);
+  return value;
+}
+
+function trialCountryOptions(regionKey) {
+  const key = String(regionKey || 'me').toLowerCase();
+  return TRIAL_REGION_COUNTRIES[key] || TRIAL_REGION_COUNTRIES.me;
+}
+
+function buildTrialLineRequestVariants(regionKey, panelPack) {
+  const pack = normalizeTrialPackForPanel(panelPack);
+  const variants = [];
+  const seen = new Set();
+  const push = (variant) => {
+    const key = JSON.stringify(variant);
+    if (seen.has(key)) return;
+    seen.add(key);
+    variants.push(variant);
+  };
+
+  for (const country of trialCountryOptions(regionKey)) {
+    push({ type: 'm3u', sub: TRIAL_SUB_CODE, pack, country: country || undefined, packParam: 'pack' });
+    if (pack !== OMIT_PANEL_PACK && pack) {
+      push({ type: 'm3u', sub: TRIAL_SUB_CODE, pack, country: country || undefined, packParam: 'bouquet' });
+    }
+  }
+  return variants;
 }
 
 function isPanelDemoLimitError(payload) {
@@ -486,16 +536,39 @@ async function buildTrialPackAttempts(config, region) {
   return { attempts, bouquets: list };
 }
 
-async function requestNewM3uLine(config, { sub, pack, note }) {
-  const params = { action: 'new', type: 'm3u', sub, note: String(note || '').slice(0, 200) };
+async function requestNewPanelLine(config, { sub, pack, note, type = 'm3u', country, packParam = 'pack' }) {
+  const params = {
+    action: 'new',
+    type: String(type || 'm3u').trim() || 'm3u',
+    sub,
+    note: String(note || 'rashadtech.tv trial').slice(0, 200)
+  };
   if (pack !== OMIT_PANEL_PACK && pack != null && String(pack).trim() !== '') {
-    params.pack = String(pack).trim();
+    const packValue = normalizeTrialPackForPanel(String(pack).trim());
+    const field = packParam === 'bouquet' ? 'bouquet' : 'pack';
+    params[field] = packValue;
   }
+  if (country) params.country = String(country).trim();
   return requestPanel(config, params);
+}
+
+async function requestNewM3uLine(config, opts) {
+  return requestNewPanelLine(config, { ...opts, type: 'm3u', packParam: 'pack' });
 }
 
 function formatPackAttemptLabel(pack) {
   return pack === OMIT_PANEL_PACK ? '(no pack param)' : String(pack);
+}
+
+function formatTrialAttemptLabel(variant) {
+  const parts = [
+    `type=${variant.type || 'm3u'}`,
+    `sub=${variant.sub}`,
+    `pack=${formatPackAttemptLabel(variant.pack)}`
+  ];
+  if (variant.country) parts.push(`country=${variant.country}`);
+  if (variant.packParam === 'bouquet') parts.push('field=bouquet');
+  return parts.join(' · ');
 }
 
 async function assertTrialPanelCredits(config) {
@@ -537,32 +610,47 @@ async function createTrialLine(config, { note, region, lineType, pack }) {
 
   let row = null;
   let successPack = null;
+  let successAttempt = null;
+  const noteText = String(note || 'rashadtech.tv trial').slice(0, 200);
+
+  outer:
   for (const panelPack of attemptList) {
-    const data = await requestNewM3uLine(config, { sub, pack: panelPack, note });
-    row = unwrapApiPayload(data);
-    const ok = String(row.status || '').toLowerCase() === 'true';
-    const panelMsg = String(row.message || row.messasge || row.result || row.error || '').trim();
-    attemptLog.push({
-      pack: formatPackAttemptLabel(panelPack),
-      sub,
-      ok,
-      message: panelMsg || (ok ? 'OK' : 'Failed')
-    });
-    if (ok) {
-      successPack = panelPack;
-      break;
-    }
-    if (isPanelDemoLimitError(data)) {
-      throw new Error(panelMsg || 'Strong8K demo/trial limit reached on your panel. Try again tomorrow or add demo credits.');
-    }
-    if (!isPanelPackRejection(data)) {
-      throw new Error(panelErrorMessage(data, 'Could not create IPTV trial line'));
+    const variants = buildTrialLineRequestVariants(regionKey, panelPack);
+    for (const variant of variants) {
+      const data = await requestNewPanelLine(config, { ...variant, note: noteText });
+      row = unwrapApiPayload(data);
+      const ok = String(row.status || '').toLowerCase() === 'true';
+      const panelMsg = String(row.message || row.messasge || row.result || row.error || '').trim();
+      const attemptLabel = formatTrialAttemptLabel(variant);
+      attemptLog.push({
+        pack: attemptLabel,
+        sub: variant.sub,
+        ok,
+        message: panelMsg || (ok ? 'OK' : 'Failed')
+      });
+      if (ok) {
+        successPack = panelPack;
+        successAttempt = attemptLabel;
+        break outer;
+      }
+      if (isPanelDemoLimitError(data)) {
+        throw new Error(panelMsg || 'Strong8K demo/trial limit reached on your panel. Try again tomorrow or add demo credits.');
+      }
+      if (isPanelHardError(data)) {
+        throw new Error(panelMsg || panelErrorMessage(data, 'Could not create IPTV trial line'));
+      }
+      if (!isPanelRetryableError(data)) {
+        throw new Error(panelMsg || panelErrorMessage(data, 'Could not create IPTV trial line'));
+      }
     }
   }
 
   if (!row || String(row.status || '').toLowerCase() !== 'true') {
     const detail = attemptLog.map(a => `${a.pack}: ${a.message}`).join(' | ');
-    throw new Error(detail || 'Could not create IPTV trial line on Strong8K panel');
+    const hint = /something is missing/i.test(detail)
+      ? ' Panel may need country code or valid bouquet — click Load bouquets, set ME bouquet to one ID (e.g. 75605), then Save.'
+      : '';
+    throw new Error((detail || 'Could not create IPTV trial line on Strong8K panel') + hint);
   }
 
   const creds = parseLineCredentials(row, row.url);
@@ -577,7 +665,7 @@ async function createTrialLine(config, { note, region, lineType, pack }) {
     isTrial: true,
     region: regionKey,
     message: String(row.message || '').trim(),
-    successPack: formatPackAttemptLabel(successPack),
+    successPack: successAttempt || formatPackAttemptLabel(successPack),
     attemptLog,
     bouquetCount: bouquets.length
   };
@@ -969,7 +1057,14 @@ module.exports = {
   buildTrialPackAttemptsFromList,
   createTrialLine,
   requestNewM3uLine,
+  requestNewPanelLine,
   formatPackAttemptLabel,
+  formatTrialAttemptLabel,
+  buildTrialLineRequestVariants,
+  normalizeTrialPackForPanel,
+  isPanelRetryableError,
+  isPanelHardError,
+  TRIAL_REGION_COUNTRIES,
   OMIT_PANEL_PACK,
   mergeMissingDefaultSellPackages,
   assertTrialPanelCredits,
