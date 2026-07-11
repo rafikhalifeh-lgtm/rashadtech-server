@@ -16,7 +16,7 @@ test('sanitizeStrong8kConfigForClient exposes regions and line types', () => {
   assert.equal(pub.lineTypes.length, 2);
   assert.equal(pub.trialEnabled, true);
   assert.equal(pub.features.channels, '60,000+');
-  assert.equal(pub.sellPackages.length, 4);
+  assert.equal(pub.sellPackages.length, 3);
 });
 
 test('computeSellPackagePrice sums add-ons and respects exclusive full package', () => {
@@ -28,18 +28,18 @@ test('computeSellPackagePrice sums add-ons and respects exclusive full package',
     },
     sellPackages: [
       { id: 'full', name: 'Full', bouquetIds: '', bouquetIdsByRegion: { me: '75605', eu: '75604', us: '75606' }, prices: { 1: 8, 3: 20, 6: 35, 12: 60 }, monthlyPrice: 8, exclusive: true, enabled: true },
-      { id: 'lebanese', name: 'Lebanese', bouquetIds: '4', bouquetIdsByRegion: {}, prices: { 1: 3, 3: 8, 6: 14, 12: 25 }, monthlyPrice: 3, exclusive: false, enabled: true },
+      { id: 'streaming', name: 'Streaming', bouquetIds: '75609', bouquetIdsByRegion: {}, prices: { 1: 4, 3: 10, 6: 18, 12: 32 }, monthlyPrice: 4, exclusive: false, enabled: true },
       { id: 'bein', name: 'beIN', bouquetIds: '75610', bouquetIdsByRegion: {}, prices: { 1: 5, 3: 13, 6: 22, 12: 38 }, monthlyPrice: 5, exclusive: false, enabled: true }
     ]
   };
-  assert.equal(strong8k.computeSellPackagePrice(['lebanese', 'bein'], 1, config), 8);
-  assert.equal(strong8k.computeSellPackagePrice(['lebanese', 'bein'], 3, config), 21);
+  assert.equal(strong8k.computeSellPackagePrice(['streaming', 'bein'], 1, config), 9);
+  assert.equal(strong8k.computeSellPackagePrice(['streaming', 'bein'], 3, config), 23);
   assert.equal(strong8k.computeSellPackagePrice(['full', 'bein'], 1, config), 8);
   assert.equal(strong8k.computeSellPackagePrice(['full'], 3, config), 20);
-  assert.equal(strong8k.resolvePackFromSellPackages(['lebanese', 'bein'], config, 'me'), '4,75610');
+  assert.equal(strong8k.resolvePackFromSellPackages(['streaming', 'bein'], config, 'me'), '75609,75610');
   assert.equal(strong8k.resolvePackFromSellPackages(['full'], config, 'me'), '75605');
   assert.equal(strong8k.resolveSellPackageBouquetIds(config.sellPackages[0], 'eu', config), '75604');
-  assert.equal(strong8k.describeSellPackageSelection(['lebanese', 'bein'], config), 'Lebanese + beIN');
+  assert.equal(strong8k.describeSellPackageSelection(['streaming', 'bein'], config), 'Streaming + beIN');
 });
 
 test('buildTrialPackAttemptsFromList uses only live panel bouquet ids', () => {
@@ -57,15 +57,16 @@ test('buildTrialPackAttemptsFromList uses only live panel bouquet ids', () => {
   assert.ok(!attempts.includes('75605'));
 });
 
-test('sanitizeSellPackages restores missing default packages like Lebanese', () => {
+test('sanitizeSellPackages drops legacy Lebanese package from saved config', () => {
   const saved = [
     { id: 'full', name: 'Full Package', bouquetIds: '', bouquetIdsByRegion: { me: '100' }, prices: { 1: 8, 3: 20, 6: 35, 12: 60 }, exclusive: true, enabled: true },
+    { id: 'lebanese', name: 'Lebanese', bouquetIds: '99', bouquetIdsByRegion: {}, prices: { 1: 3, 3: 8, 6: 14, 12: 25 }, exclusive: false, enabled: true },
     { id: 'streaming', name: 'Streaming', bouquetIds: '300', bouquetIdsByRegion: {}, prices: { 1: 4, 3: 10, 6: 18, 12: 32 }, exclusive: false, enabled: true },
     { id: 'bein', name: 'beIN', bouquetIds: '400', bouquetIdsByRegion: {}, prices: { 1: 5, 3: 13, 6: 22, 12: 38 }, exclusive: false, enabled: true }
   ];
   const merged = strong8k.sanitizeSellPackages(saved);
-  assert.equal(merged.length, 4);
-  assert.ok(merged.some(pkg => pkg.id === 'lebanese'));
+  assert.equal(merged.length, 3);
+  assert.ok(!merged.some(pkg => pkg.id === 'lebanese'));
 });
 
 test('resolvePanelPack uses single region full bouquet for free trial', async () => {

@@ -18,7 +18,6 @@ const DURATION_MONTHS = [1, 3, 6, 12];
 
 const PACKAGE_PRICE_DEFAULTS = {
   full: { 1: 8, 3: 20, 6: 35, 12: 60 },
-  lebanese: { 1: 3, 3: 8, 6: 14, 12: 25 },
   streaming: { 1: 4, 3: 10, 6: 18, 12: 32 },
   bein: { 1: 5, 3: 13, 6: 22, 12: 38 }
 };
@@ -34,7 +33,6 @@ const DEFAULT_SELL_PACKAGES = [
     exclusive: true,
     enabled: true
   },
-  { id: 'lebanese', name: 'Lebanese Channels', desc: 'MBC · LBC · Tele Liban · local Lebanese TV', bouquetIds: '', prices: { ...PACKAGE_PRICE_DEFAULTS.lebanese }, exclusive: false, enabled: true },
   { id: 'streaming', name: 'Streaming Apps', desc: 'Netflix · Shahid · Amazon · Disney+ style channels', bouquetIds: '75609', prices: { ...PACKAGE_PRICE_DEFAULTS.streaming }, exclusive: false, enabled: true },
   { id: 'bein', name: 'beIN + World Cup', desc: 'beIN Sports · World Cup 2026 · live football', bouquetIds: '75610', prices: { ...PACKAGE_PRICE_DEFAULTS.bein }, exclusive: false, enabled: true }
 ];
@@ -196,7 +194,8 @@ function mergeMissingDefaultSellPackages(packages) {
 }
 
 function sanitizeSellPackages(raw) {
-  const list = Array.isArray(raw) && raw.length ? raw : DEFAULT_SELL_PACKAGES;
+  const input = Array.isArray(raw) && raw.length ? raw : DEFAULT_SELL_PACKAGES;
+  const list = input.filter(row => String(row && row.id || '').toLowerCase() !== 'lebanese');
   const seen = new Set();
   const sanitized = list.map((row, index) => sanitizeSellPackageRow(row, index, seen))
     .filter(pkg => pkg.name);
@@ -343,7 +342,6 @@ function applyPanelBouquetsToConfig(config, bouquets) {
   const usId = findBouquetForRegion(list, 'us', cfg);
   const streamingId = findBouquetByNamePattern(list, /stream/i);
   const beinId = findBouquetByNamePattern(list, /bein|world\s*cup/i);
-  const lebaneseId = findBouquetByNamePattern(list, /lebanese|lebanon|lbc|tele\s*liban|mena\s*local/i);
 
   const regions = { ...cfg.regions };
   if (meId) regions.me = { ...regions.me, id: 'me', packId: meId };
@@ -360,7 +358,6 @@ function applyPanelBouquetsToConfig(config, bouquets) {
     }
     if (/stream/i.test(pkg.name) && streamingId) return { ...pkg, bouquetIds: streamingId };
     if (/bein|world\s*cup/i.test(pkg.name) && beinId) return { ...pkg, bouquetIds: beinId };
-    if (/lebanese|lebanon|lbc/i.test(pkg.name) && lebaneseId) return { ...pkg, bouquetIds: lebaneseId };
     return pkg;
   });
 
