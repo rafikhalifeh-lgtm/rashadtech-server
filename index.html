@@ -1341,8 +1341,8 @@ So your EmailJS template will receive the user email and verification code corre
           <div id="s8k-bouquets-box" style="font-size:12px;color:var(--text2)"></div>
         </div>
         <div class="card" style="padding:16px;margin-bottom:14px">
-          <div style="font-size:13px;font-weight:700;margin-bottom:8px">Channel packages for customers</div>
-          <div style="font-size:12px;color:var(--text2);line-height:1.55;margin-bottom:10px">Create custom bouquets in your Strong8K panel, click <b>Load bouquets</b>, then set each package's <b>monthly price</b> and bouquet IDs. Full Package uses per-region IDs (75605 ME, 75604 EU, etc.). Streaming and beIN use one ID for all regions.</div>
+          <div style="font-size:13px;font-weight:700;margin-bottom:8px">Channel packages for customers <span style="font-size:10px;font-weight:600;color:var(--green);background:var(--green-bg);border:1px solid var(--green-border);padding:2px 6px;border-radius:999px;margin-left:6px">NEW</span></div>
+          <div style="font-size:12px;color:var(--text2);line-height:1.55;margin-bottom:10px">Scroll down past <b>Load bouquets</b> to see this section. Create custom bouquets in your Strong8K panel, click <b>Load bouquets</b>, then set each package's <b>monthly price</b> and bouquet IDs. Full Package uses per-region IDs (75605 ME, 75604 EU, etc.). Streaming and beIN use one ID for all regions.</div>
           <div id="s8k-sell-packages-editor" style="display:grid;gap:10px;margin-bottom:10px"></div>
         </div>
         <div class="card" style="padding:16px;margin-bottom:14px">
@@ -8567,8 +8567,11 @@ async function renderStrong8kAdmin(){
     document.getElementById('s8k-bouquets-box').textContent='';
   }catch(e){
     if(statusEl)statusEl.textContent='Could not load Strong8K settings: '+e.message;
+    renderStrong8kPlansEditor([]);
+    renderStrong8kSellPackagesEditor([]);
   }
 }
+if(document.getElementById('s8k-sell-packages-editor'))renderStrong8kSellPackagesEditor([]);
 async function saveStrong8kConfig(){
   const panelUrl=document.getElementById('s8k-panel-url')?.value?.trim()||'';
   const apiKey=document.getElementById('s8k-api-key')?.value?.trim();
