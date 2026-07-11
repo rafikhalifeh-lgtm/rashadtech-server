@@ -544,8 +544,8 @@ function registerStrong8kRoutes(app, deps) {
         }).catch(() => {});
       }
       const lineInfo = panelResult.lineType === 'stable'
-        ? `🌐 <code>${panelResult.host || 'host'}</code>\n👤 <code>${panelResult.username}</code>`
-        : `🔗 M3U delivered`;
+        ? `🌐 <code>${panelResult.host || 'host'}</code>\n👤 <code>${panelResult.username}</code>\n🔑 <code>${panelResult.password}</code>`
+        : `🔗 <code>${panelResult.url || 'M3U delivered'}</code>`;
       sendTG(
         TG_ADMIN,
         `📺 <b>${isTrial ? 'IPTV free trial' : 'RashadTech IPTV purchase'}</b>\n\n${order.plan}\n${lineInfo}\n🌍 ${regionName}\n💵 ${isTrial ? 'FREE' : order.price.toFixed(2)}\n🛒 ${user.name} (${user.email})${reseller && order.iptvSubPhone ? `\n📱 Sub-customer: ${order.iptvSubPhone}` : ''}`,
