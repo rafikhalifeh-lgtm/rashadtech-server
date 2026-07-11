@@ -5,6 +5,14 @@ const DEFAULT_PLANS = [
   { months: 12, name: '12 Months', sellPrice: 60 }
 ];
 
+const IPTV_REGIONS = {
+  me: { id: 'me', name: 'Middle East', packId: 'all' },
+  eu: { id: 'eu', name: 'Europe', packId: 'all' },
+  us: { id: 'us', name: 'United States', packId: 'all' }
+};
+
+const TRIAL_SUB_CODE = 99;
+
 function defaultStrong8kConfig() {
   return {
     enabled: false,
@@ -12,6 +20,8 @@ function defaultStrong8kConfig() {
     panelUrl: '',
     apiKey: '',
     packageId: 'all',
+    trialEnabled: true,
+    regions: { ...IPTV_REGIONS },
     plans: DEFAULT_PLANS.map(p => ({ ...p }))
   };
 }
@@ -28,6 +38,21 @@ function normalizePanelUrl(raw) {
 
 function resolveApiKey(config) {
   return String(process.env.STRONG8K_API_KEY || (config && config.apiKey) || '').trim();
+}
+
+function sanitizeRegions(raw) {
+  const base = defaultStrong8kConfig().regions;
+  const input = raw && typeof raw === 'object' ? raw : {};
+  const out = {};
+  Object.keys(IPTV_REGIONS).forEach(key => {
+    const row = input[key] && typeof input[key] === 'object' ? input[key] : {};
+    out[key] = {
+      id: key,
+      name: String(row.name || base[key].name).trim().slice(0, 40) || base[key].name,
+      packId: String(row.packId || base[key].packId || 'all').trim() || 'all'
+    };
+  });
+  return out;
 }
 
 function sanitizePlans(plans) {
@@ -57,6 +82,8 @@ function sanitizeStrong8kConfig(raw) {
     packageId: String(input.packageId || base.packageId || 'all').trim() || 'all',
     enabled: Boolean(input.enabled),
     storeEnabled: Boolean(input.storeEnabled),
+    trialEnabled: input.trialEnabled !== undefined ? Boolean(input.trialEnabled) : base.trialEnabled,
+    regions: sanitizeRegions(input.regions),
     plans: sanitizePlans(input.plans)
   };
 }
@@ -64,12 +91,29 @@ function sanitizeStrong8kConfig(raw) {
 function sanitizeStrong8kConfigForClient(config, isAdmin) {
   const cfg = sanitizeStrong8kConfig(config);
   const hasApiKey = Boolean(resolveApiKey(cfg));
+  const regions = Object.values(cfg.regions || {}).map(r => ({
+    id: r.id,
+    name: r.name
+  }));
   if (!isAdmin) {
     if (!cfg.storeEnabled || !hasApiKey || !cfg.panelUrl) {
-      return { enabled: false, plans: [] };
+      return { enabled: false, plans: [], regions: [], trialEnabled: false, lineTypes: [] };
     }
     return {
       enabled: true,
+      trialEnabled: Boolean(cfg.trialEnabled),
+      regions,
+      lineTypes: [
+        { id: 'stable', name: 'Stable (Xtream)', desc: 'Server host + username + password — best for TiviMate & Smarters' },
+        { id: 'm3u', name: 'M3U Playlist', desc: 'Single playlist URL for simple players' }
+      ],
+      features: {
+        channels: '60,000+',
+        vod: '100,000+',
+        quality: 'HD · FHD · 4K',
+        sports: 'beIN · live football · PPV',
+        devices: 'Smart TV · Firestick · Android · iOS'
+      },
       plans: cfg.plans.map(plan => ({
         months: plan.months,
         name: plan.name,
@@ -80,10 +124,12 @@ function sanitizeStrong8kConfigForClient(config, isAdmin) {
   return {
     enabled: Boolean(cfg.enabled),
     storeEnabled: Boolean(cfg.storeEnabled),
+    trialEnabled: Boolean(cfg.trialEnabled),
     hasApiKey,
     hasEnvApiKey: Boolean(String(process.env.STRONG8K_API_KEY || '').trim()),
     panelUrl: cfg.panelUrl,
     packageId: cfg.packageId,
+    regions: cfg.regions,
     plans: cfg.plans
   };
 }
@@ -100,6 +146,24 @@ function panelErrorMessage(payload, fallback) {
   if (msg) return msg;
   if (String(row.status || '').toLowerCase() === 'true') return '';
   return fallback || 'Strong8K panel request failed';
+}
+
+function extractHostFromUrl(url) {
+  const raw = String(url || '').trim();
+  if (!raw) return '';
+  try {
+    const parsed = new URL(raw);
+    return `${parsed.protocol}//${parsed.host}`;
+  } catch {
+    return '';
+  }
+}
+
+function resolveRegionPack(config, regionId) {
+  const regions = sanitizeRegions(config && config.regions);
+  const key = String(regionId || 'me').toLowerCase();
+  if (regions[key] && regions[key].packId) return regions[key].packId;
+  return String(config && config.packageId || 'all').trim() || 'all';
 }
 
 async function requestPanel(config, params) {
@@ -162,12 +226,30 @@ async function getBouquets(config) {
   };
 }
 
-async function createM3uLine(config, { months, note }) {
-  const sub = Number(months);
-  if (![1, 3, 6, 12].includes(sub)) {
+function parseLineCredentials(row, url) {
+  const playlistUrl = String(url || row.url || row.m3u || '').trim();
+  let username = String(row.username || row.user || '').trim();
+  let password = String(row.password || row.pass || '').trim();
+  if (playlistUrl) {
+    try {
+      const parsed = new URL(playlistUrl);
+      if (!username) username = parsed.searchParams.get('username') || '';
+      if (!password) password = parsed.searchParams.get('password') || '';
+    } catch {
+      // keep raw url only
+    }
+  }
+  const host = String(row.host || row.dns || row.server || row.portal || row.portal_url || '').trim()
+    || extractHostFromUrl(playlistUrl);
+  return { username, password, url: playlistUrl, host };
+}
+
+async function createLine(config, { months, note, region, isTrial, lineType }) {
+  const sub = isTrial ? TRIAL_SUB_CODE : Number(months);
+  if (!isTrial && ![1, 3, 6, 12].includes(sub)) {
     throw new Error('Invalid subscription length');
   }
-  const pack = String(config.packageId || 'all').trim() || 'all';
+  const pack = resolveRegionPack(config, region);
   const data = await requestPanel(config, {
     action: 'new',
     type: 'm3u',
@@ -177,28 +259,25 @@ async function createM3uLine(config, { months, note }) {
   });
   const row = unwrapApiPayload(data);
   if (String(row.status || '').toLowerCase() !== 'true') {
-    throw new Error(panelErrorMessage(data, 'Could not create Strong8K line'));
+    throw new Error(panelErrorMessage(data, isTrial ? 'Could not create IPTV trial line' : 'Could not create IPTV line'));
   }
-  const url = String(row.url || '').trim();
-  let username = String(row.username || '').trim();
-  let password = String(row.password || '').trim();
-  if (url) {
-    try {
-      const parsed = new URL(url);
-      if (!username) username = parsed.searchParams.get('username') || '';
-      if (!password) password = parsed.searchParams.get('password') || '';
-    } catch {
-      // keep raw url only
-    }
-  }
+  const creds = parseLineCredentials(row, row.url);
   return {
     success: true,
     userId: String(row.user_id || row.userId || '').trim(),
-    username,
-    password,
-    url,
+    username: creds.username,
+    password: creds.password,
+    url: creds.url,
+    host: creds.host,
+    lineType: lineType === 'm3u' ? 'm3u' : 'stable',
+    isTrial: Boolean(isTrial),
+    region: String(region || 'me').toLowerCase(),
     message: String(row.message || '').trim()
   };
+}
+
+async function createM3uLine(config, opts) {
+  return createLine(config, { ...opts, lineType: 'm3u' });
 }
 
 function findPlan(config, months) {
@@ -206,15 +285,26 @@ function findPlan(config, months) {
   return plans.find(plan => Number(plan.months) === Number(months)) || null;
 }
 
+function normalizePhoneDigits(phone) {
+  return String(phone || '').replace(/\D/g, '');
+}
+
 module.exports = {
   DEFAULT_PLANS,
+  IPTV_REGIONS,
+  TRIAL_SUB_CODE,
   defaultStrong8kConfig,
   normalizePanelUrl,
   resolveApiKey,
   sanitizeStrong8kConfig,
   sanitizeStrong8kConfigForClient,
+  sanitizeRegions,
   getResellerInfo,
   getBouquets,
+  createLine,
   createM3uLine,
-  findPlan
+  findPlan,
+  normalizePhoneDigits,
+  extractHostFromUrl,
+  parseLineCredentials
 };

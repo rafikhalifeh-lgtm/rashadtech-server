@@ -1,10 +1,62 @@
 const strong8k = require('./strong8k');
 
 const STRONG8K_CONFIG_KEY = 'strong8kConfig';
+const IPTV_TRIALS_KEY = 'iptvTrials';
 const activeStrong8kPurchases = new Set();
+
+function defaultIptvTrials() {
+  return { emails: {}, phones: {}, resellerSubPhones: {} };
+}
+
+function readIptvTrials(data) {
+  const raw = data && data[IPTV_TRIALS_KEY];
+  if (!raw || typeof raw !== 'object') return defaultIptvTrials();
+  return {
+    emails: raw.emails && typeof raw.emails === 'object' ? raw.emails : {},
+    phones: raw.phones && typeof raw.phones === 'object' ? raw.phones : {},
+    resellerSubPhones: raw.resellerSubPhones && typeof raw.resellerSubPhones === 'object' ? raw.resellerSubPhones : {}
+  };
+}
 
 function readStrong8kConfig(data) {
   return strong8k.sanitizeStrong8kConfig((data && data[STRONG8K_CONFIG_KEY]) || strong8k.defaultStrong8kConfig());
+}
+
+function trialBlockReason(trials, { email, phone, isReseller, subCustomerPhone }) {
+  const normEmail = String(email || '').trim().toLowerCase();
+  const normPhone = strong8k.normalizePhoneDigits(phone);
+  const normSubPhone = strong8k.normalizePhoneDigits(subCustomerPhone);
+
+  if (isReseller) {
+    if (!normSubPhone || normSubPhone.length < 8) {
+      return 'Enter your sub-customer phone number for the free trial';
+    }
+    if (trials.resellerSubPhones[normSubPhone]) {
+      return 'This sub-customer phone number already used a free trial';
+    }
+    return null;
+  }
+
+  if (!normEmail) return 'Account email is required for a free trial';
+  if (!normPhone || normPhone.length < 8) {
+    return 'Add your phone number in Profile before requesting a free trial';
+  }
+  if (trials.emails[normEmail]) return 'This email already used a free trial';
+  if (trials.phones[normPhone]) return 'This phone number already used a free trial';
+  return null;
+}
+
+function recordTrial(trials, { email, phone, isReseller, subCustomerPhone, orderId, resellerEmail }) {
+  const ts = Date.now();
+  const normEmail = String(email || '').trim().toLowerCase();
+  const normPhone = strong8k.normalizePhoneDigits(phone);
+  const normSubPhone = strong8k.normalizePhoneDigits(subCustomerPhone);
+  if (isReseller) {
+    trials.resellerSubPhones[normSubPhone] = { ts, orderId, resellerEmail: normEmail };
+    return;
+  }
+  trials.emails[normEmail] = { ts, orderId, phone: normPhone };
+  trials.phones[normPhone] = { ts, orderId, email: normEmail };
 }
 
 function registerStrong8kRoutes(app, deps) {
@@ -25,7 +77,8 @@ function registerStrong8kRoutes(app, deps) {
     pricesMatch,
     notifyPurchaseFulfilled,
     sendPurchaseReceiptEmail,
-    formatBeirutTime
+    formatBeirutTime,
+    userIsReseller
   } = deps;
 
   async function readDbFast() {
@@ -53,7 +106,39 @@ function registerStrong8kRoutes(app, deps) {
       res.set('Cache-Control', 'public, max-age=60');
       res.json({ success: true, ...payload });
     } catch (e) {
-      res.status(500).json({ error: 'Could not load Strong8K store' });
+      res.status(500).json({ error: 'Could not load IPTV store' });
+    }
+  });
+
+  app.get('/strong8k/trial-eligibility', async (req, res) => {
+    const session = requireSession(req, res, ['user']);
+    if (!session) return;
+    try {
+      const data = await readDbFast();
+      const config = readStrong8kConfig(data);
+      const trials = readIptvTrials(data);
+      data.users = Array.isArray(data.users) ? data.users : [];
+      const user = data.users.find(u => normalizeEmail(u.email) === session.email);
+      if (!user) return res.status(404).json({ error: 'User not found' });
+      const reseller = userIsReseller(user);
+      const subCustomerPhone = String(req.query.subCustomerPhone || '').trim();
+      const reason = config.trialEnabled
+        ? trialBlockReason(trials, {
+          email: user.email,
+          phone: user.phone,
+          isReseller: reseller,
+          subCustomerPhone: reseller ? subCustomerPhone : ''
+        })
+        : 'Free trials are not available right now';
+      res.json({
+        success: true,
+        eligible: !reason,
+        reason: reason || null,
+        isReseller: reseller,
+        trialEnabled: Boolean(config.trialEnabled)
+      });
+    } catch (e) {
+      res.status(500).json({ error: 'Could not check trial eligibility' });
     }
   });
 
@@ -80,8 +165,10 @@ function registerStrong8kRoutes(app, deps) {
         ...current,
         enabled: body.enabled !== undefined ? Boolean(body.enabled) : current.enabled,
         storeEnabled: body.storeEnabled !== undefined ? Boolean(body.storeEnabled) : current.storeEnabled,
+        trialEnabled: body.trialEnabled !== undefined ? Boolean(body.trialEnabled) : current.trialEnabled,
         panelUrl: body.panelUrl !== undefined ? body.panelUrl : current.panelUrl,
         packageId: body.packageId !== undefined ? body.packageId : current.packageId,
+        regions: body.regions !== undefined ? body.regions : current.regions,
         plans: Array.isArray(body.plans) ? body.plans : current.plans,
         apiKey: body.apiKey !== undefined ? String(body.apiKey || '').trim() : current.apiKey
       }));
@@ -134,43 +221,73 @@ function registerStrong8kRoutes(app, deps) {
     const months = Number(req.body?.months);
     const price = Number(req.body?.price);
     const planLabel = String(req.body?.planLabel || '').trim();
+    const lineType = String(req.body?.lineType || 'stable').toLowerCase() === 'm3u' ? 'm3u' : 'stable';
+    const region = String(req.body?.region || 'me').toLowerCase();
+    const isTrial = Boolean(req.body?.trial);
+    const subCustomerPhone = String(req.body?.subCustomerPhone || '').trim();
 
     try {
       const outcome = await enqueueDbWrite(async () => {
         const data = await readDbForWrite();
         const config = readStrong8kConfig(data);
-        if (!config.storeEnabled) return { error: 'Strong8K is not available right now', status: 403 };
+        if (!config.storeEnabled) return { error: 'IPTV is not available right now', status: 403 };
         if (!config.panelUrl || !strong8k.resolveApiKey(config)) {
-          return { error: 'Strong8K is not configured yet. Contact support.', status: 503 };
+          return { error: 'IPTV is not configured yet. Contact support.', status: 503 };
         }
-
-        const plan = strong8k.findPlan(config, months);
-        if (!plan) return { error: 'Invalid plan selected', status: 400 };
-        if (!pricesMatch(plan.sellPrice, price)) {
-          return { error: 'Price has changed. Refresh the store and try again.', status: 400 };
+        if (!strong8k.sanitizeRegions(config.regions)[region]) {
+          return { error: 'Please select a valid region', status: 400 };
         }
 
         data.users = Array.isArray(data.users) ? data.users : [];
         const user = data.users.find(u => normalizeEmail(u.email) === session.email);
         if (!user) return { error: 'User not found', status: 404 };
         if (user.banned) return { error: 'Your account has been suspended.', status: 403 };
-        if (Number(user.balance || 0) < price) return { error: 'Insufficient balance', status: 400 };
 
-        const catalog = getCatalogForUser(data, user);
-        const skey = `strong8k__${Math.max(0, config.plans.findIndex(p => Number(p.months) === months))}`;
-        const catalogPrice = catalog && catalog.prices ? Number(catalog.prices[skey]) : null;
-        if (catalogPrice != null && !pricesMatch(catalogPrice, price)) {
-          return { error: 'Price has changed. Refresh the store and try again.', status: 400 };
+        const reseller = userIsReseller(user);
+        const trials = readIptvTrials(data);
+        let plan = null;
+
+        if (isTrial) {
+          if (!config.trialEnabled) return { error: 'Free trials are not available right now', status: 403 };
+          const block = trialBlockReason(trials, {
+            email: user.email,
+            phone: user.phone,
+            isReseller: reseller,
+            subCustomerPhone
+          });
+          if (block) return { error: block, status: 403 };
+          if (price !== 0) return { error: 'Invalid trial price', status: 400 };
+        } else {
+          plan = strong8k.findPlan(config, months);
+          if (!plan) return { error: 'Invalid plan selected', status: 400 };
+          if (!pricesMatch(plan.sellPrice, price)) {
+            return { error: 'Price has changed. Refresh the store and try again.', status: 400 };
+          }
+          const catalog = getCatalogForUser(data, user);
+          const skey = `strong8k__${Math.max(0, config.plans.findIndex(p => Number(p.months) === months))}`;
+          const catalogPrice = catalog && catalog.prices ? Number(catalog.prices[skey]) : null;
+          if (catalogPrice != null && !pricesMatch(catalogPrice, price)) {
+            return { error: 'Price has changed. Refresh the store and try again.', status: 400 };
+          }
+          if (Number(user.balance || 0) < price) return { error: 'Insufficient balance', status: 400 };
         }
 
-        const panelResult = await strong8k.createM3uLine(config, {
-          months,
-          note: `rashadtech.tv · ${user.email}`
+        const regionName = strong8k.sanitizeRegions(config.regions)[region]?.name || region;
+        const panelResult = await strong8k.createLine(config, {
+          months: isTrial ? 1 : months,
+          note: `rashadtech.tv · ${user.email}${reseller && subCustomerPhone ? ` · sub ${subCustomerPhone}` : ''} · ${regionName}`,
+          region,
+          isTrial,
+          lineType
         });
 
-        user.balance = Number(user.balance || 0) - price;
+        if (!isTrial) user.balance = Number(user.balance || 0) - price;
+
         const dateStr = formatBeirutTime();
         const orderId = '#' + (Math.floor(Math.random() * 90000) + 10000);
+        const finalPlanLabel = isTrial
+          ? `1-Day Free Trial · ${regionName} · ${lineType === 'm3u' ? 'M3U' : 'Stable'}`
+          : (planLabel || plan.name);
         const order = {
           id: orderId,
           productId: 'strong8k',
@@ -178,38 +295,57 @@ function registerStrong8kRoutes(app, deps) {
           short: 'RTV',
           color: '#5C1F7A',
           tc: '#fff',
-          plan: planLabel || plan.name,
-          price,
+          plan: finalPlanLabel,
+          price: isTrial ? 0 : price,
           date: dateStr,
           email: panelResult.username,
           pass: panelResult.password,
           serviceLink: panelResult.url,
+          iptvHost: panelResult.host,
+          iptvLineType: panelResult.lineType,
+          iptvRegion: region,
+          iptvTrial: isTrial,
+          iptvSubPhone: reseller && subCustomerPhone ? strong8k.normalizePhoneDigits(subCustomerPhone) : '',
           strong8kUserId: panelResult.userId,
-          strong8kMonths: months,
+          strong8kMonths: isTrial ? 0 : months,
           expiryDate: ''
         };
 
         user.orders = Array.isArray(user.orders) ? user.orders : [];
         user.orders.unshift(order);
-        user.transactions = Array.isArray(user.transactions) ? user.transactions : [];
-        user.transactions.unshift({
-          type: 'purchase',
-          label: `RashadTech IPTV · ${order.plan}`,
-          amount: price,
-          balance: user.balance,
-          date: dateStr,
-          orderId
-        });
+        if (!isTrial) {
+          user.transactions = Array.isArray(user.transactions) ? user.transactions : [];
+          user.transactions.unshift({
+            type: 'purchase',
+            label: `RashadTech IPTV · ${order.plan}`,
+            amount: price,
+            balance: user.balance,
+            date: dateStr,
+            orderId
+          });
+        }
+
+        if (isTrial) {
+          recordTrial(trials, {
+            email: user.email,
+            phone: user.phone,
+            isReseller: reseller,
+            subCustomerPhone,
+            orderId,
+            resellerEmail: user.email
+          });
+          data[IPTV_TRIALS_KEY] = trials;
+        }
 
         await writeDbFast(data);
-        return { data, user, order, dateStr, panelResult };
+        return { data, user, order, dateStr, panelResult, isTrial, reseller, regionName };
       });
 
       if (outcome.error) {
         return res.status(outcome.status || 400).json({ error: outcome.error });
       }
 
-      const { data, user, order, dateStr, panelResult } = outcome;
+      const { data, user, order, dateStr, panelResult, isTrial, reseller, regionName } = outcome;
       res.json({
         success: true,
         order,
@@ -217,23 +353,26 @@ function registerStrong8kRoutes(app, deps) {
         data: safeDataForSession(data, session)
       });
 
-      if (typeof notifyPurchaseFulfilled === 'function') {
+      if (!isTrial && typeof notifyPurchaseFulfilled === 'function') {
         notifyPurchaseFulfilled(user, { name: order.product }, order.plan, order.price, order, null, { data }).catch(() => {});
       }
-      if (typeof sendPurchaseReceiptEmail === 'function') {
+      if (!isTrial && typeof sendPurchaseReceiptEmail === 'function') {
         sendPurchaseReceiptEmail(user, { name: order.product }, order.plan, order.price, order, {
           data,
           date: dateStr
         }).catch(() => {});
       }
+      const lineInfo = panelResult.lineType === 'stable'
+        ? `🌐 <code>${panelResult.host || 'host'}</code>\n👤 <code>${panelResult.username}</code>`
+        : `🔗 M3U delivered`;
       sendTG(
         TG_ADMIN,
-        `📺 <b>New RashadTech IPTV purchase</b>\n\n${order.plan}\n👤 <code>${panelResult.username}</code>\n🔗 M3U delivered\n💵 ${price.toFixed(2)}\n🛒 ${user.name} (${user.email})`,
+        `📺 <b>${isTrial ? 'IPTV free trial' : 'RashadTech IPTV purchase'}</b>\n\n${order.plan}\n${lineInfo}\n🌍 ${regionName}\n💵 ${isTrial ? 'FREE' : order.price.toFixed(2)}\n🛒 ${user.name} (${user.email})${reseller && order.iptvSubPhone ? `\n📱 Sub-customer: ${order.iptvSubPhone}` : ''}`,
         'HTML'
       ).catch(() => {});
     } catch (e) {
       console.error('Strong8K purchase error:', e.message);
-      res.status(500).json({ error: e.message || 'Strong8K purchase failed' });
+      res.status(500).json({ error: e.message || 'IPTV purchase failed' });
     } finally {
       activeStrong8kPurchases.delete(lockKey);
     }
@@ -242,7 +381,10 @@ function registerStrong8kRoutes(app, deps) {
 
 module.exports = {
   STRONG8K_CONFIG_KEY,
+  IPTV_TRIALS_KEY,
   strong8k,
   readStrong8kConfig,
+  readIptvTrials,
+  trialBlockReason,
   registerStrong8kRoutes
 };
