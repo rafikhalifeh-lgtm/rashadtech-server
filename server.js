@@ -46,7 +46,7 @@ const {
   initGameOrder
 } = require('./orderHelpers');
 const { SMS_CONFIG_KEY, grizzlySms, registerSmsRoutes } = require('./smsRoutes');
-const { STRONG8K_CONFIG_KEY, registerStrong8kRoutes } = require('./strong8kRoutes');
+const { STRONG8K_CONFIG_KEY, IPTV_TRIALS_KEY, registerStrong8kRoutes } = require('./strong8kRoutes');
 const {
   isValidOsnOtp,
   isLikelyOsnPhoneFragment,
@@ -794,6 +794,7 @@ function emptyDbData() {
     smsorders: [],
     [SMS_CONFIG_KEY]: grizzlySms.defaultSmsConfig(),
     [STRONG8K_CONFIG_KEY]: require('./strong8k').defaultStrong8kConfig(),
+    [IPTV_TRIALS_KEY]: { emails: {}, phones: {}, resellerSubPhones: {} },
     [LINK_TOKENS_KEY]: {},
     [GMAIL_MONITORS_KEY]: {}
   };
@@ -1226,6 +1227,7 @@ function stripPrivateData(data) {
   delete publicData[GMAIL_MONITORS_KEY];
   delete publicData.sessions;
   delete publicData[STRONG8K_CONFIG_KEY];
+  delete publicData[IPTV_TRIALS_KEY];
   if (publicData[SMS_CONFIG_KEY]) {
     publicData[SMS_CONFIG_KEY] = grizzlySms.sanitizeSmsConfigForClient(publicData[SMS_CONFIG_KEY], false);
   }
@@ -5808,7 +5810,8 @@ registerStrong8kRoutes(app, {
   pricesMatch,
   notifyPurchaseFulfilled,
   sendPurchaseReceiptEmail,
-  formatBeirutTime
+  formatBeirutTime,
+  userIsReseller
 });
 
 let rtEnhancements = null;

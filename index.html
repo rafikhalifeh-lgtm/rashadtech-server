@@ -1299,9 +1299,15 @@ So your EmailJS template will receive the user email and verification code corre
             <div style="font-size:11px;color:var(--text3);margin-top:4px" id="s8k-api-key-status">Not connected</div>
           </div>
           <div class="field" style="margin-bottom:10px">
-            <label>Package / bouquet ID</label>
+            <label>Package / bouquet ID (default)</label>
             <input type="text" id="s8k-package-id" placeholder="all or bouquet ID from panel" value="all">
-            <div style="font-size:11px;color:var(--text3);margin-top:4px">Use <b>all</b> for full package, or pick an ID after loading bouquets.</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:4px">Fallback when a region pack is empty. Use <b>all</b> or pick from bouquets.</div>
+          </div>
+          <div style="font-size:12px;font-weight:700;margin-bottom:8px">Region bouquet IDs</div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px">
+            <div class="field" style="margin:0"><label>Middle East</label><input type="text" id="s8k-pack-me" placeholder="all"></div>
+            <div class="field" style="margin:0"><label>Europe</label><input type="text" id="s8k-pack-eu" placeholder="all"></div>
+            <div class="field" style="margin:0"><label>United States</label><input type="text" id="s8k-pack-us" placeholder="all"></div>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
             <button class="inline-btn" onclick="saveStrong8kConfig()">Save settings</button>
@@ -1314,6 +1320,9 @@ So your EmailJS template will receive the user email and verification code corre
         <div class="card" style="padding:16px;margin-bottom:14px">
           <div style="font-size:13px;font-weight:700;margin-bottom:10px">Sell prices (wallet)</div>
           <div id="s8k-plans-editor" style="display:grid;gap:10px;margin-bottom:12px"></div>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text2);margin-bottom:10px">
+            <input type="checkbox" id="s8k-trial-enabled" checked> Allow 1-day free trials in store
+          </label>
           <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text2)">
             <input type="checkbox" id="s8k-store-enabled" onchange="saveStrong8kStoreEnabled()"> Show RashadTech IPTV in customer store
           </label>
@@ -2387,7 +2396,7 @@ function prodIcon(p,size=32,radius=8){
   return `<div style="width:${size}px;height:${size}px;border-radius:${radius}px;background:${p.color};color:${p.tc};display:flex;align-items:center;justify-content:center;font-size:${Math.round(size*0.4)}px;font-weight:700">${p.short}</div>`;
 }
 const DEFAULT_PRODUCTS=[
-  {id:'strong8k',name:'RashadTech IPTV',short:'RTV',color:'#5C1F7A',tc:'#fff',cat:'video',badge:'hot',desc:'Live sports · beIN · movies & Arab channels · instant M3U',hasUserTypes:false,apiProvisioned:true,plans:[
+  {id:'strong8k',name:'RashadTech IPTV',short:'RTV',color:'#5C1F7A',tc:'#fff',cat:'video',badge:'hot',desc:'60,000+ channels · sports · movies · instant delivery',hasUserTypes:false,apiProvisioned:true,plans:[
     {name:'1 Month',desc:'M3U · all channels',price:8,durationMonths:1},{name:'3 Months',desc:'M3U · all channels',price:20,durationMonths:3},{name:'6 Months',desc:'M3U · best value',price:35,durationMonths:6},{name:'12 Months',desc:'M3U · annual',price:60,durationMonths:12}]},
   {id:'netflix',name:'Netflix',short:'N',color:'#E50914',tc:'#fff',cat:'video',badge:'hot',desc:'Movies & TV shows',hasUserTypes:true,userTypes:[
     {key:'1user',name:'1 User',desc:'Private profile · 1 screen',durations:DURATIONS_NF_1U,hasCustom:true,customDayRate:0.06},
@@ -4745,12 +4754,13 @@ function productCardHtml(p){
   }
   if(!Number.isFinite(minP))minP=0;
   const blocked=!hasUnblockedPlan(p);
-  const cardClick=blocked?'':`onclick="openBuy('${p.id}',null)"`;
+  const buyFn=p.id==='strong8k'?'openIptvWizard()':`openBuy('${p.id}',null)`;
+  const cardClick=blocked?'':`onclick="${buyFn}"`;
   return `<div class="pcard${blocked?' oos':''}" ${cardClick}>
     <div class="pcard-top" style="background:${p.color}">${prodIcon(p,44,10)}${p.badge==='hot'?'<div class="hot-badge">Hot</div>':p.badge==='new'?'<div class="new-badge">New</div>':''}
     </div><div class="pcard-body"><div class="pcard-name">${p.name}</div><div class="pcard-desc">${p.desc}</div>
     <div class="pcard-footer"><div><div class="pfrom">from</div><div class="pprice">${fmt(minP)}</div></div>
-    <button class="btn-buy" ${blocked?'disabled':''} onclick="event.stopPropagation();openBuy('${p.id}',null)">${blocked?'Unavailable':'Buy'}</button></div></div></div>`;
+    <button class="btn-buy" ${blocked?'disabled':''} onclick="event.stopPropagation();${buyFn}">${blocked?'Unavailable':'Buy'}</button></div></div></div>`;
 }
 function renderProducts(cat){
   const grid=document.getElementById('products-grid');
@@ -4871,8 +4881,183 @@ function subOptionReceipt(){
   }).catch(e=>showToast('⚠️ '+e.message));
 }
 
+// IPTV WIZARD (RashadTech IPTV)
+let iptvWizardStep=0;
+let iptvRegion='';
+let iptvLineType='stable';
+let iptvPlanIdx=null;
+let iptvTrialMode=false;
+let iptvSubPhone='';
+let iptvTrialInfo=null;
+let iptvPurchaseInFlight=false;
+const IPTV_REGION_LABELS={me:'Middle East',eu:'Europe',us:'United States'};
+function iptvStoreMeta(){return _strong8kStore||{enabled:false,plans:[],regions:[],lineTypes:[],features:{},trialEnabled:false};}
+async function refreshIptvTrialEligibility(subPhone){
+  try{
+    const q=subPhone?`?subCustomerPhone=${encodeURIComponent(subPhone)}`:'';
+    const r=await fetch(RT_SERVER+'/strong8k/trial-eligibility'+q,{headers:authHeaders()});
+    const j=await r.json();
+    if(r.ok&&j.success){iptvTrialInfo=j;return j;}
+  }catch(e){}
+  iptvTrialInfo={eligible:false,reason:'Could not check trial eligibility',isReseller:userSeesResellerPrices(),trialEnabled:false};
+  return iptvTrialInfo;
+}
+async function openIptvWizard(){
+  if(isGuestMode||!currentUser){openGuestPurchaseModal();return;}
+  if(!isStrong8kStoreEnabled()){showToast('IPTV is not available right now');return;}
+  if(!canShowStorePrices()){
+    showToast('Prices are loading — please wait');
+    await loadPriceCatalog();
+  }
+  await refreshStrong8kStore(true);
+  iptvWizardStep=0;iptvRegion='';iptvLineType='stable';iptvPlanIdx=null;iptvTrialMode=false;iptvSubPhone='';
+  await refreshIptvTrialEligibility('');
+  document.getElementById('modal-title').textContent='RashadTech IPTV';
+  renderIptvWizard();
+  openModal('buy-modal');
+}
+function iptvWizardBack(){
+  if(iptvWizardStep>0){iptvWizardStep-=1;renderIptvWizard();}
+}
+function iptvWizardNext(){
+  if(iptvWizardStep===1&&!iptvRegion){showToast('Please choose your region');return;}
+  if(iptvWizardStep===3){
+    if(iptvTrialMode){
+      if(iptvTrialInfo&&!iptvTrialInfo.eligible){showToast(iptvTrialInfo.reason||'Free trial not available');return;}
+      if(iptvTrialInfo?.isReseller&&!iptvSubPhone.trim()){showToast('Enter sub-customer phone number');return;}
+    }else if(iptvPlanIdx==null){showToast('Select a plan or free trial');return;}
+  }
+  if(iptvWizardStep<4)iptvWizardStep+=1;
+  renderIptvWizard();
+}
+function setIptvRegion(id){iptvRegion=id;renderIptvWizard();}
+function setIptvLineType(id){iptvLineType=id==='m3u'?'m3u':'stable';renderIptvWizard();}
+function setIptvPlan(idx,trial){
+  iptvTrialMode=Boolean(trial);
+  iptvPlanIdx=trial?null:Number(idx);
+  renderIptvWizard();
+}
+async function onIptvSubPhoneInput(v){
+  iptvSubPhone=String(v||'').trim();
+  await refreshIptvTrialEligibility(iptvSubPhone);
+  renderIptvWizard();
+}
+function iptvFeatureListHtml(){
+  const f=iptvStoreMeta().features||{};
+  const items=[
+    ['📺',`${f.channels||'60,000+'} live channels`],
+    ['🎬',`${f.vod||'100,000+'} movies & series`],
+    ['⚽','beIN Sports · football · PPV events'],
+    ['🌍','Middle East · Europe · US packages'],
+    ['📱',f.devices||'Smart TV · Firestick · Android · iOS'],
+    ['⚡','Instant activation after purchase']
+  ];
+  return `<div style="display:grid;gap:8px;margin:14px 0">${items.map(([ic,tx])=>`<div style="display:flex;gap:10px;align-items:flex-start;font-size:12px;color:var(--text2);line-height:1.55"><span style="font-size:16px">${ic}</span><span>${tx}</span></div>`).join('')}</div>`;
+}
+function iptvHowToHtml(){
+  return `<div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;font-size:12px;color:var(--text2);line-height:1.65;margin-top:8px">
+    <div style="font-weight:700;color:var(--text);margin-bottom:8px">How to use your line</div>
+    <ol style="margin:0;padding-left:18px">
+      <li>Install <b>IPTV Smarters Pro</b> or <b>TiviMate</b> on your device.</li>
+      <li><b>Stable (recommended):</b> choose <b>Xtream Codes API</b> → enter <b>Host</b>, <b>Username</b>, <b>Password</b>.</li>
+      <li><b>M3U:</b> paste the playlist URL we deliver.</li>
+      <li>Wait for channels to load, then open Sports or Live TV.</li>
+    </ol>
+  </div>`;
+}
+function renderIptvWizard(){
+  const body=document.getElementById('modal-body');
+  if(!body)return;
+  const meta=iptvStoreMeta();
+  const prod=products.find(p=>p.id==='strong8k');
+  const steps=['Welcome','Region','Connection','Plan','Confirm'];
+  let html=`<div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">${steps.map((s,i)=>`<div style="font-size:10px;font-weight:600;padding:4px 8px;border-radius:999px;border:1px solid ${i===iptvWizardStep?'var(--green-border)':'var(--border)'};background:${i===iptvWizardStep?'var(--green-bg)':'var(--bg3)'};color:${i===iptvWizardStep?'var(--green)':'var(--text3)'}">${i+1}. ${s}</div>`).join('')}</div>`;
+  if(iptvWizardStep===0){
+    html+=`<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">${prodIcon(prod,48,10)}<div><div style="font-size:16px;font-weight:700">RashadTech IPTV</div><div style="font-size:12px;color:var(--text2)">Premium IPTV with sports, movies & global channels</div></div></div>`;
+    html+=iptvFeatureListHtml();
+    html+=iptvHowToHtml();
+    html+=`<div style="font-size:11px;color:var(--text3);margin-top:10px;line-height:1.55">You will choose your region and connection type on the next screens. Stable (Xtream) is recommended for the best guide and channel updates.</div>`;
+  }else if(iptvWizardStep===1){
+    html+=`<div class="plan-section-label">Choose your region (required)</div><div style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.55">Pick the package closest to where you watch. This sets channels & sports focus.</div>`;
+    const regions=(meta.regions&&meta.regions.length)?meta.regions:[{id:'me',name:'Middle East'},{id:'eu',name:'Europe'},{id:'us',name:'United States'}];
+    html+=`<div class="user-type-grid">${regions.map(r=>`<div class="utype-btn${iptvRegion===r.id?' sel':''}" onclick="setIptvRegion('${esc(r.id)}')"><div class="utype-name">${esc(r.name)}</div><div class="utype-desc">${r.id==='me'?'Arab channels · beIN · MBC':r.id==='eu'?'UK · EU sports & entertainment':'US networks & sports'}</div></div>`).join('')}</div>`;
+  }else if(iptvWizardStep===2){
+    html+=`<div class="plan-section-label">Connection type</div>`;
+    const types=(meta.lineTypes&&meta.lineTypes.length)?meta.lineTypes:[{id:'stable',name:'Stable (Xtream)',desc:'Host + username + password'},{id:'m3u',name:'M3U Playlist',desc:'Single playlist URL'}];
+    html+=types.map(t=>`<div class="plan-row${iptvLineType===t.id?' sel':''}" style="cursor:pointer;margin-bottom:8px" onclick="setIptvLineType('${esc(t.id)}')"><div><div class="plan-name">${esc(t.name)}${t.id==='stable'?' · Recommended':''}</div><div class="plan-desc">${esc(t.desc||'')}</div></div></div>`).join('');
+    if(iptvLineType==='stable'){
+      html+=`<div style="background:var(--blue-bg);border:1px solid var(--blue-border);border-radius:var(--radius-sm);padding:10px 12px;font-size:12px;color:var(--text2);margin-top:8px;line-height:1.55">Stable gives you a <b>server host</b>, <b>username</b> and <b>password</b> for Xtream login — best for TiviMate & Smarters with full EPG.</div>`;
+    }
+  }else if(iptvWizardStep===3){
+    html+=`<div class="plan-section-label">Choose plan or free trial</div>`;
+    if(meta.trialEnabled){
+      const trialOk=iptvTrialInfo?.eligible;
+      html+=`<div class="plan-row${iptvTrialMode?' sel':''}" style="cursor:pointer;margin-bottom:10px;${trialOk?'':'opacity:.55'}" ${trialOk?`onclick="setIptvPlan(null,true)"`:''}><div><div class="plan-name">🎁 1-Day Free Trial</div><div class="plan-desc">${trialOk?'Test the service before you buy':esc(iptvTrialInfo?.reason||'Not available')}</div></div><div class="plan-price">FREE</div></div>`;
+      if(iptvTrialMode&&iptvTrialInfo?.isReseller){
+        html+=`<div class="field" style="margin-bottom:12px"><label>Sub-customer phone (required for trial)</label><input type="tel" id="iptv-sub-phone" placeholder="+961 79 000 000" value="${esc(iptvSubPhone)}" oninput="onIptvSubPhoneInput(this.value)" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text)"></div>`;
+        if(iptvSubPhone&&!iptvTrialInfo?.eligible)html+=`<div style="font-size:11px;color:var(--red);margin-bottom:8px">${esc(iptvTrialInfo?.reason||'')}</div>`;
+      }else if(iptvTrialMode&&!iptvTrialInfo?.isReseller&&!profilePhoneDigits(currentUser?.phone)){
+        html+=`<div style="font-size:11px;color:var(--orange);margin-bottom:8px">Add your phone in Profile before taking a free trial.</div>`;
+      }
+    }
+    const plans=(prod?.plans||[]).map((pl,i)=>({...pl,idx:i,months:pl.durationMonths||pl.months}));
+    html+=plans.map(pl=>`<div class="plan-row${!iptvTrialMode&&iptvPlanIdx===pl.idx?' sel':''}" style="cursor:pointer;margin-bottom:6px" onclick="setIptvPlan(${pl.idx},false)"><div><div class="plan-name">${esc(pl.name)}</div><div class="plan-desc">${esc(pl.desc||'')}</div></div><div class="plan-price">${fmt(pl.price)}</div></div>`).join('');
+  }else{
+    const regionLabel=IPTV_REGION_LABELS[iptvRegion]||iptvRegion;
+    const lineLabel=iptvLineType==='m3u'?'M3U Playlist':'Stable (Xtream)';
+    const plan=iptvTrialMode?{name:'1-Day Free Trial',price:0,months:0}:(prod?.plans||[])[iptvPlanIdx];
+    const price=iptvTrialMode?0:Number(plan?.price||0);
+    const bal=Number(currentUser?.balance||0);
+    html+=`<div class="confirm-row"><span class="cl">Region</span><span class="cv">${esc(regionLabel)}</span></div>`;
+    html+=`<div class="confirm-row"><span class="cl">Connection</span><span class="cv">${lineLabel}</span></div>`;
+    html+=`<div class="confirm-row"><span class="cl">Plan</span><span class="cv">${esc(plan?.name||'—')}</span></div>`;
+    if(!iptvTrialMode){html+=`<div class="confirm-row"><span class="cl">Balance</span><span class="cv">${fmt(bal)}</span></div>`;}
+    html+=`<div class="confirm-row"><span class="cl">Cost</span><span class="cv">${iptvTrialMode?'FREE':fmt(price)}</span></div>`;
+    if(!iptvTrialMode&&bal<price)html+=`<div class="insuf">Insufficient balance — top up your wallet first</div>`;
+    html+=iptvHowToHtml();
+    const canBuy=iptvTrialMode?(iptvTrialInfo?.eligible):(price>0&&bal>=price);
+    html+=`<button class="modal-buy-btn" id="iptv-confirm-btn" ${canBuy?'':'disabled'} onclick="confirmIptvPurchase()">${iptvTrialMode?'Activate free trial':('Confirm purchase — '+fmt(price))}</button>`;
+  }
+  if(iptvWizardStep<4){
+    html+=`<div style="display:flex;gap:8px;margin-top:14px">${iptvWizardStep>0?`<button class="btn-secondary" type="button" onclick="iptvWizardBack()" style="margin:0;flex:1">Back</button>`:''}<button class="btn-primary" type="button" onclick="iptvWizardNext()" style="margin:0;flex:2">${iptvWizardStep===0?'Get started':'Continue'}</button></div>`;
+  }else{
+    html+=`<button class="btn-secondary" type="button" onclick="iptvWizardBack()" style="margin-top:10px">Back</button>`;
+  }
+  body.innerHTML=html;
+}
+async function confirmIptvPurchase(){
+  if(iptvPurchaseInFlight)return;
+  const prod=products.find(p=>p.id==='strong8k');
+  const plan=iptvTrialMode?null:(prod?.plans||[])[iptvPlanIdx];
+  const months=plan?.durationMonths||plan?.months;
+  const price=iptvTrialMode?0:Number(plan?.price||0);
+  if(!iptvRegion){showToast('Select a region');return;}
+  if(!iptvTrialMode&&(!months||currentUser.balance<price)){showToast('Insufficient balance or invalid plan');return;}
+  iptvPurchaseInFlight=true;
+  setBuyModalLoading(true,iptvTrialMode?'Creating your free trial…':'Creating your IPTV line…');
+  try{
+    const j=await rtApi('/purchase/strong8k',{method:'POST',body:JSON.stringify({
+      months:iptvTrialMode?1:months,
+      price,
+      planLabel:iptvTrialMode?'1-Day Free Trial':plan?.name,
+      lineType:iptvLineType,
+      region:iptvRegion,
+      trial:iptvTrialMode,
+      subCustomerPhone:iptvSubPhone
+    })});
+    if(j.data)applyDataSnapshot(j.data);
+    if(j.user)mergeUserFromResponse(j.user);
+    syncPausedUntil=Date.now()+20000;
+    closeModal('buy-modal');
+    refreshAfterPurchase();
+    showToast(iptvTrialMode?'✓ Free trial activated!':'✓ RashadTech IPTV line delivered!');
+  }catch(e){showToast('⚠️ '+(e.message||'Purchase failed'));}
+  finally{iptvPurchaseInFlight=false;setBuyModalLoading(false);}
+}
+
 // BUY MODAL
 function openBuy(id,forCustId){
+  if(id==='strong8k'){openIptvWizard();return;}
   if(isGuestMode||!currentUser){
     openGuestPurchaseModal();
     return;
@@ -5139,25 +5324,6 @@ async function confirmPurchase(){
   }
   if(!skey){showToast('Please complete your selection');return;}
   if(!currentUser)return;
-  if(p.apiProvisioned&&p.id==='strong8k'){
-    if(purchaseInFlight){showToast('Purchase already processing…');return;}
-    if(currentUser.balance<price){showToast('⚠️ Insufficient balance. Please top up your wallet.');return;}
-    const months=selPlan?.durationMonths||selPlan?.months;
-    if(!months){showToast('Please select a plan');return;}
-    purchaseInFlight=true;
-    setBuyModalLoading(true,currentLang==='ar'?'جاري إنشاء خط IPTV…':'Creating your IPTV line…');
-    try{
-      const j=await rtApi('/purchase/strong8k',{method:'POST',body:JSON.stringify({months,price,planLabel})});
-      if(j.data)applyDataSnapshot(j.data);
-      if(j.user)mergeUserFromResponse(j.user);
-      syncPausedUntil=Date.now()+20000;
-      closeModal('buy-modal');
-      refreshAfterPurchase();
-      showToast('✓ RashadTech IPTV line delivered!');
-    }catch(e){showToast('⚠️ '+(e.message||'Purchase failed'));}
-    finally{purchaseInFlight=false;setBuyModalLoading(false);}
-    return;
-  }
   if(assignCustId!==null){
     const assignedCustomer=currentUser.myCustomers?.find(x=>x.id===assignCustId);
     if(assignedCustomer)extraFields.profileName=assignedCustomer.fname;
@@ -5312,7 +5478,7 @@ function subRow(o,forCustomer){
   const shahidBtns=isShahidOrder(o)?shahidActionButtons(o.id):'';
   const deliveryNote=o.telegramDeliveredAt?`<div class="delivery-proof">✓ Delivered to Telegram · ${esc(formatTs(o.telegramDeliveredAt))}</div>`:(o.emailDeliveredAt?`<div class="delivery-proof">✓ Delivered to email · ${esc(formatTs(o.emailDeliveredAt))}</div>`:(o.deliveredAt?`<div class="delivery-proof">✓ Delivered · ${esc(formatTs(o.deliveredAt))}</div>`:''));
   const credHtml=isStrong8kOrder(o)
-    ?`<div class="sub-cred">${o.serviceLink?`<a class="cust-sub-cred-line" href="${esc(o.serviceLink)}" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:none;font-weight:600">🔗 Open M3U playlist</a>`:''}<span class="cust-sub-cred-line">👤 ${esc(o.email||'—')}</span><span class="cust-sub-cred-line">🔑 ${esc(o.pass||'—')}</span>${o.expiryDate?`<span class="cust-sub-cred-line">⏰ Exp: ${esc(o.expiryDate)}</span>`:''}</div>`
+    ?`<div class="sub-cred">${o.iptvHost?`<span class="cust-sub-cred-line">🌐 Host: <code>${esc(o.iptvHost)}</code></span>`:''}<span class="cust-sub-cred-line">👤 ${esc(o.email||'—')}</span><span class="cust-sub-cred-line">🔑 ${esc(o.pass||'—')}</span>${o.serviceLink&&(o.iptvLineType==='m3u'||!o.iptvHost)?`<a class="cust-sub-cred-line" href="${esc(o.serviceLink)}" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:none;font-weight:600">🔗 M3U playlist</a>`:''}${o.iptvTrial?`<span class="cust-sub-cred-line" style="color:var(--orange)">⏱ 1-day free trial</span>`:''}${o.expiryDate?`<span class="cust-sub-cred-line">⏰ Exp: ${esc(o.expiryDate)}</span>`:''}</div>`
     :isAnghamiOrder(o)
     ?`<div class="sub-cred">${o.serviceLink?`<a class="cust-sub-cred-line" href="${esc(o.serviceLink)}" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:none;font-weight:600">🔗 Open Anghami activation link</a>`:'<span class="cust-sub-cred-line">Link pending</span>'}${o.expiryDate?`<div class="cust-sub-cred-line" style="margin-top:6px;color:var(--orange);font-weight:600">⏰ Expires: ${esc(o.expiryDate)}</div>`:''}<div style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.4">${esc(ANGHAMI_CANCEL_NOTE_EN)}</div></div>`
     :isCanvaNewOrder(o)
@@ -8106,7 +8272,7 @@ async function refreshStrong8kStore(force){
     const r=await fetch(RT_SERVER+'/strong8k/store');
     const j=await r.json();
     if(j.success){
-      _strong8kStore={enabled:Boolean(j.enabled),plans:Array.isArray(j.plans)?j.plans:[],_ts:Date.now()};
+      _strong8kStore={enabled:Boolean(j.enabled),plans:Array.isArray(j.plans)?j.plans:[],regions:Array.isArray(j.regions)?j.regions:[],lineTypes:Array.isArray(j.lineTypes)?j.lineTypes:[],features:j.features||{},trialEnabled:Boolean(j.trialEnabled),_ts:Date.now()};
     }
   }catch(e){}
   if(typeof renderProducts==='function'&&document.getElementById('tab-store')?.classList.contains('active')){
@@ -8152,6 +8318,13 @@ async function renderStrong8kAdmin(){
     if(panel)panel.value=_strong8kConfigCache.panelUrl||'';
     if(pkg)pkg.value=_strong8kConfigCache.packageId||'all';
     if(store)store.checked=Boolean(_strong8kConfigCache.storeEnabled);
+    const trial=document.getElementById('s8k-trial-enabled');
+    if(trial)trial.checked=_strong8kConfigCache.trialEnabled!==false;
+    const regions=_strong8kConfigCache.regions||{};
+    ['me','eu','us'].forEach(k=>{
+      const el=document.getElementById('s8k-pack-'+k);
+      if(el)el.value=(regions[k]&&regions[k].packId)||'all';
+    });
     if(statusEl){
       statusEl.textContent=_strong8kConfigCache.hasApiKey
         ?(_strong8kConfigCache.hasEnvApiKey?'API key set via Render env (secure)':'API key saved on server')
@@ -8169,8 +8342,18 @@ async function saveStrong8kConfig(){
   const apiKey=document.getElementById('s8k-api-key')?.value?.trim();
   const packageId=document.getElementById('s8k-package-id')?.value?.trim()||'all';
   const plans=readStrong8kPlansFromEditor();
+  const regions={
+    me:{packId:document.getElementById('s8k-pack-me')?.value?.trim()||'all'},
+    eu:{packId:document.getElementById('s8k-pack-eu')?.value?.trim()||'all'},
+    us:{packId:document.getElementById('s8k-pack-us')?.value?.trim()||'all'}
+  };
   try{
-    const body={panelUrl,packageId,plans,enabled:true,storeEnabled:Boolean(document.getElementById('s8k-store-enabled')?.checked)};
+    const body={
+      panelUrl,packageId,plans,regions,
+      trialEnabled:Boolean(document.getElementById('s8k-trial-enabled')?.checked),
+      enabled:true,
+      storeEnabled:Boolean(document.getElementById('s8k-store-enabled')?.checked)
+    };
     if(apiKey)body.apiKey=apiKey;
     await strong8kAdminApi('/admin/strong8k/config',{method:'POST',body:JSON.stringify(body)});
     document.getElementById('s8k-api-key').value='';

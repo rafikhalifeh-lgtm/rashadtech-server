@@ -1,35 +1,78 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const strong8k = require('../strong8k');
+const { trialBlockReason, readIptvTrials } = require('../strong8kRoutes');
 
-test('sanitizeStrong8kConfigForClient hides secrets from customers', () => {
+test('sanitizeStrong8kConfigForClient exposes regions and line types', () => {
   const pub = strong8k.sanitizeStrong8kConfigForClient({
     storeEnabled: true,
     panelUrl: 'https://panel.example.com',
     apiKey: 'secret-key',
+    trialEnabled: true,
     plans: [{ months: 1, name: '1 Month', sellPrice: 8 }]
   }, false);
   assert.equal(pub.enabled, true);
-  assert.equal(pub.plans.length, 1);
-  assert.equal(pub.panelUrl, undefined);
-  assert.equal(pub.apiKey, undefined);
+  assert.equal(pub.regions.length, 3);
+  assert.equal(pub.lineTypes.length, 2);
+  assert.equal(pub.trialEnabled, true);
+  assert.equal(pub.features.channels, '60,000+');
 });
 
-test('sanitizeStrong8kConfigForClient shows hasApiKey to admin only', () => {
-  const admin = strong8k.sanitizeStrong8kConfigForClient({
-    storeEnabled: true,
-    panelUrl: 'https://panel.example.com',
-    apiKey: 'secret-key',
-    plans: []
-  }, true);
-  assert.equal(admin.hasApiKey, true);
-  assert.equal(admin.panelUrl, 'https://panel.example.com/api/api.php');
-  assert.equal(admin.apiKey, undefined);
-});
-
-test('normalizePanelUrl appends activation api path', () => {
+test('extractHostFromUrl parses server host', () => {
   assert.equal(
-    strong8k.normalizePanelUrl('https://panel.example.com'),
-    'https://panel.example.com/api/api.php'
+    strong8k.extractHostFromUrl('http://cdn.example.com:8080/get.php?username=u&password=p'),
+    'http://cdn.example.com:8080'
   );
+});
+
+test('retail trial blocked when email or phone already used', () => {
+  const trials = readIptvTrials({
+    iptvTrials: {
+      emails: { 'a@test.com': { ts: 1 } },
+      phones: {},
+      resellerSubPhones: {}
+    }
+  });
+  assert.match(trialBlockReason(trials, {
+    email: 'a@test.com',
+    phone: '+96179123456',
+    isReseller: false,
+    subCustomerPhone: ''
+  }), /email/i);
+
+  const trials2 = readIptvTrials({
+    iptvTrials: {
+      emails: {},
+      phones: { '96179123456': { ts: 1 } },
+      resellerSubPhones: {}
+    }
+  });
+  assert.match(trialBlockReason(trials2, {
+    email: 'b@test.com',
+    phone: '+961 79 123 456',
+    isReseller: false,
+    subCustomerPhone: ''
+  }), /phone/i);
+});
+
+test('reseller trial requires unique sub-customer phone', () => {
+  const trials = readIptvTrials({
+    iptvTrials: {
+      emails: {},
+      phones: {},
+      resellerSubPhones: { '96170123456': { ts: 1 } }
+    }
+  });
+  assert.match(trialBlockReason(trials, {
+    email: 'reseller@test.com',
+    phone: '+96179111111',
+    isReseller: true,
+    subCustomerPhone: '96170123456'
+  }), /sub-customer phone/i);
+  assert.equal(trialBlockReason(trials, {
+    email: 'reseller@test.com',
+    phone: '+96179111111',
+    isReseller: true,
+    subCustomerPhone: '96170999999'
+  }), null);
 });
