@@ -283,6 +283,44 @@ function registerStrong8kRoutes(app, deps) {
     }
   });
 
+  app.post('/admin/strong8k/test-trial', async (req, res) => {
+    const session = requireSession(req, res, ['admin']);
+    if (!session) return;
+    try {
+      const data = await readDbFast();
+      const draft = { ...readStrong8kConfig(data) };
+      if (req.body && req.body.panelUrl !== undefined) draft.panelUrl = String(req.body.panelUrl || '').trim();
+      if (req.body && req.body.apiKey) draft.apiKey = String(req.body.apiKey || '').trim();
+      if (!draft.panelUrl || !strong8k.resolveApiKey(draft)) {
+        return res.status(400).json({ error: 'Strong8K panel is not configured' });
+      }
+      const region = String(req.body?.region || 'me').toLowerCase();
+      if (!strong8k.IPTV_TRIAL_REGIONS.has(region)) {
+        return res.status(400).json({ error: 'Test trial supports Middle East (me) or United States (us) only' });
+      }
+      const attempts = await strong8k.buildTrialPackAttempts(draft, region);
+      const result = await strong8k.createLine(draft, {
+        months: 1,
+        note: `rashadtech.tv admin trial test · ${session.email}`,
+        region,
+        isTrial: true,
+        lineType: 'stable'
+      });
+      res.json({
+        success: true,
+        region,
+        packAttempts: attempts,
+        username: result.username,
+        password: result.password,
+        host: result.host,
+        url: result.url,
+        message: result.message || 'Trial line created on panel'
+      });
+    } catch (e) {
+      res.status(400).json({ error: e.message || 'Trial test failed' });
+    }
+  });
+
   app.post('/purchase/strong8k', async (req, res) => {
     const session = requireSession(req, res, ['user']);
     if (!session) return;

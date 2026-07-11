@@ -1335,6 +1335,8 @@ So your EmailJS template will receive the user email and verification code corre
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
             <button class="inline-btn" onclick="saveStrong8kConfig()">Save settings</button>
             <button class="inline-btn" onclick="testStrong8kConnection()">Test connection</button>
+            <button class="inline-btn" onclick="testStrong8kTrial('me')">Test ME trial</button>
+            <button class="inline-btn" onclick="testStrong8kTrial('us')">Test US trial</button>
             <button class="inline-btn" onclick="loadStrong8kBouquets()">Load bouquets</button>
           </div>
           <div id="s8k-credits-box" style="font-size:12px;color:var(--text2);margin-bottom:8px"></div>
@@ -8760,6 +8762,24 @@ async function testStrong8kConnection(){
     showToast('✓ Strong8K panel connected');
     loadStrong8kBouquets().catch(()=>{});
   }catch(e){showToast('⚠️ '+e.message);}
+}
+async function testStrong8kTrial(region){
+  const panelUrl=document.getElementById('s8k-panel-url')?.value?.trim()||'';
+  const apiKey=document.getElementById('s8k-api-key')?.value?.trim();
+  const box=document.getElementById('s8k-bouquets-box');
+  if(box)box.innerHTML='<span style="color:var(--text3)">Creating test trial line on panel…</span>';
+  try{
+    const body={region:region==='us'?'us':'me'};
+    if(panelUrl)body.panelUrl=panelUrl;
+    if(apiKey)body.apiKey=apiKey;
+    const j=await strong8kAdminApi('/admin/strong8k/test-trial',{method:'POST',body:JSON.stringify(body)});
+    const label=region==='us'?'United States':'Middle East';
+    if(box)box.innerHTML=`<div style="color:var(--green);margin-bottom:8px">✓ Test trial created (${label})</div><div style="font-size:11px;line-height:1.65;color:var(--text2)">Tried packs: <b>${esc((j.packAttempts||[]).join(' → '))}</b><br>👤 <code>${esc(j.username||'')}</code> · 🔑 <code>${esc(j.password||'')}</code>${j.host?`<br>🌐 <code>${esc(j.host)}</code>`:''}</div>`;
+    showToast('✓ Test trial line created on panel');
+  }catch(e){
+    if(box)box.innerHTML=`<span style="color:var(--red)">${esc(e.message||'Trial test failed')}</span>`;
+    showToast('⚠️ '+e.message);
+  }
 }
 async function loadStrong8kBouquets(){
   const panelUrl=document.getElementById('s8k-panel-url')?.value?.trim()||'';

@@ -67,11 +67,12 @@ test('resolvePanelPack uses single region full bouquet for free trial', async ()
     ]
   };
   const trialPack = await strong8k.resolvePanelPack(config, { region: 'me', packageIds: [], isTrial: true });
-  assert.equal(trialPack, '75605');
+  assert.equal(trialPack, 'all');
   const trialUs = await strong8k.resolvePanelPack(config, { region: 'us', packageIds: [], isTrial: true });
-  assert.equal(trialUs, '75606');
-  const trialWithSelection = await strong8k.resolvePanelPack(config, { region: 'me', packageIds: ['streaming', 'bein'], isTrial: true });
-  assert.equal(trialWithSelection, '75605');
+  assert.equal(trialUs, 'all');
+  const attempts = await strong8k.buildTrialPackAttempts(config, 'me');
+  assert.equal(attempts[0], 'all');
+  assert.ok(attempts.includes('75605'));
   const paidPack = await strong8k.resolvePanelPack(config, { region: 'me', packageIds: ['streaming'], isTrial: false });
   assert.equal(paidPack, '75609');
   await assert.rejects(
