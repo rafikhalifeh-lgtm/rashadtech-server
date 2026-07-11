@@ -8585,7 +8585,11 @@ async function refreshStrong8kStore(force){
 async function strong8kAdminApi(path,opts={}){
   const r=await fetch(RT_SERVER+path,{...opts,headers:{...authHeaders(),'Content-Type':'application/json',...(opts.headers||{})}});
   const j=await r.json().catch(()=>({}));
-  if(!r.ok||j.success===false)throw new Error(j.error||'Strong8K request failed');
+  if(!r.ok||j.success===false){
+    const err=new Error(j.error||'Strong8K request failed');
+    err.details=j;
+    throw err;
+  }
   return j;
 }
 let _strong8kConfigCache={};
@@ -8792,10 +8796,13 @@ async function testStrong8kTrial(region){
     const log=(j.attemptLog||[]).map(a=>`${a.pack}: ${a.message}`).join('<br>');
     const creditsNote=j.panelCredits!=null?`<div style="font-size:11px;color:var(--text3);margin-bottom:6px">Panel credits: <b>${j.panelCredits}</b> (need ≥ ${j.trialMinCredits||12} for trials)</div>`:'';
     const pkgNote=j.sellPackageCount?`<div style="font-size:11px;color:var(--text3);margin-bottom:6px">Sell packages in store: <b>${j.sellPackageCount}</b> · bouquets loaded: <b>${(j.bouquets||[]).length}</b></div>`:'';
-    if(box)box.innerHTML=`${creditsNote}${pkgNote}<div style="color:var(--green);margin-bottom:8px">✓ Test trial created (${label}) · pack <b>${esc(j.successPack||'')}</b></div><div style="font-size:11px;line-height:1.65;color:var(--text2)">${log?`Attempts:<br>${log}<br>`:''}👤 <code>${esc(j.username||'')}</code> · 🔑 <code>${esc(j.password||'')}</code>${j.host?`<br>🌐 <code>${esc(j.host)}</code>`:''}</div>`;
-    showToast('✓ Test trial line created on panel');
+    if(box)box.innerHTML=`${creditsNote}${pkgNote}<div style="color:var(--green);margin-bottom:8px">✓ Test trial created (${label}) · pack <b>${esc(j.successPack||'')}</b></div><div style="font-size:11px;line-height:1.65;color:var(--text2)">${log?`Attempts:<br>${log}<br>`:''}👤 <code>${esc(j.username||'')}</code> · 🔑 <code>${esc(j.password||'')}</code>${j.host?`<br>🌐 <code>${esc(j.host)}</code>`:''}</div><div style="font-size:11px;color:var(--green);margin-top:10px">✓ Customer free trials are ready — Middle East customers can activate from the store.</div>`;
+    showToast('✓ Test trial line created — customer trials ready');
   }catch(e){
-    if(box)box.innerHTML=`<span style="color:var(--red)">${esc(e.message||'Trial test failed')}</span>`;
+    const details=e.details||{};
+    const failLog=(details.attemptLog||[]).map(a=>`${esc(a.pack||'')}: ${esc(a.message||'')}`).join('<br>');
+    const creditsNote=details.panelCredits!=null?`<div style="font-size:11px;color:var(--text3);margin-bottom:6px">Panel credits: <b>${details.panelCredits}</b> (need ≥ ${details.trialMinCredits||12})</div>`:'';
+    if(box)box.innerHTML=`${creditsNote}<div style="color:var(--red);margin-bottom:8px;font-weight:600">${esc(e.message||'Trial test failed')}</div>${failLog?`<div style="font-size:11px;line-height:1.65;color:var(--text2);max-height:180px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:8px;margin-top:8px"><b>Panel attempts:</b><br>${failLog}</div>`:''}<div style="font-size:11px;color:var(--text3);margin-top:10px;line-height:1.6">Fix: set <b>Middle East</b> to one bouquet ID (e.g. 75605) → Load bouquets → Save → retry. Need ≥12 panel credits and demo tickets available (~10/day).</div>`;
     showToast('⚠️ '+e.message);
   }
 }

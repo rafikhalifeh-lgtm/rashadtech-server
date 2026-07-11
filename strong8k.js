@@ -43,6 +43,21 @@ const TRIAL_REGION_COUNTRIES = {
   me: ['LB', 'AE', 'ALL', ''],
   us: ['US', 'ALL', '']
 };
+const TRIAL_COUNTRY_PARAM_NAMES = ['country', 'country_lock', 'forced_country'];
+const TRIAL_REQUEST_PRESETS_QUICK = [
+  { httpMethod: 'GET', countryParam: 'country', packParam: 'pack' },
+  { httpMethod: 'POST', countryParam: 'country', packParam: 'pack' },
+  { httpMethod: 'GET', countryParam: 'country_lock', packParam: 'pack' },
+  { httpMethod: 'POST', countryParam: 'country_lock', packParam: 'pack' }
+];
+const TRIAL_REQUEST_PRESETS_FULL = [
+  ...TRIAL_REQUEST_PRESETS_QUICK,
+  { httpMethod: 'GET', countryParam: 'forced_country', packParam: 'pack' },
+  { httpMethod: 'POST', countryParam: 'forced_country', packParam: 'pack' },
+  { httpMethod: 'GET', countryParam: 'country', packParam: 'bouquet' },
+  { httpMethod: 'POST', countryParam: 'country', packParam: 'bouquet' },
+  { httpMethod: 'GET', countryParam: 'country', packParam: 'both' }
+];
 const RETIRED_SELL_PACKAGE_IDS = new Set(['lebanese']);
 
 function isRetiredSellPackage(pkg) {
@@ -98,6 +113,12 @@ function resolveApiKey(config) {
   return String(process.env.STRONG8K_API_KEY || (config && config.apiKey) || '').trim();
 }
 
+function sanitizeRegionPackId(raw, fallback) {
+  const value = String(raw || fallback || 'all').trim() || 'all';
+  if (isWildcardPack(value)) return value;
+  return firstBouquetId(value) || value;
+}
+
 function sanitizeRegions(raw) {
   const base = defaultStrong8kConfig().regions;
   const input = raw && typeof raw === 'object' ? raw : {};
@@ -107,7 +128,7 @@ function sanitizeRegions(raw) {
     out[key] = {
       id: key,
       name: String(row.name || base[key].name).trim().slice(0, 40) || base[key].name,
-      packId: String(row.packId || base[key].packId || 'all').trim() || 'all'
+      packId: sanitizeRegionPackId(row.packId, base[key].packId)
     };
   });
   return out;
@@ -142,7 +163,8 @@ function sanitizeBouquetIdsByRegion(raw) {
   const out = {};
   ['me', 'eu', 'us'].forEach(key => {
     const value = String(input[key] || '').trim();
-    if (value) out[key] = value;
+    if (!value) return;
+    out[key] = isWildcardPack(value) ? value : (firstBouquetId(value) || value);
   });
   return out;
 }
@@ -418,7 +440,7 @@ function trialCountryOptions(regionKey) {
   return TRIAL_REGION_COUNTRIES[key] || TRIAL_REGION_COUNTRIES.me;
 }
 
-function buildTrialLineRequestVariants(regionKey, panelPack) {
+function buildTrialLineRequestVariants(regionKey, panelPack, { thorough = false } = {}) {
   const pack = normalizeTrialPackForPanel(panelPack);
   const variants = [];
   const seen = new Set();
@@ -428,11 +450,21 @@ function buildTrialLineRequestVariants(regionKey, panelPack) {
     seen.add(key);
     variants.push(variant);
   };
+  const presets = thorough ? TRIAL_REQUEST_PRESETS_FULL : TRIAL_REQUEST_PRESETS_QUICK;
+  const packParams = pack === OMIT_PANEL_PACK ? ['pack'] : ['pack', 'bouquet', 'both'];
 
   for (const country of trialCountryOptions(regionKey)) {
-    push({ type: 'm3u', sub: TRIAL_SUB_CODE, pack, country: country || undefined, packParam: 'pack' });
-    if (pack !== OMIT_PANEL_PACK && pack) {
-      push({ type: 'm3u', sub: TRIAL_SUB_CODE, pack, country: country || undefined, packParam: 'bouquet' });
+    for (const preset of presets) {
+      if (!packParams.includes(preset.packParam)) continue;
+      push({
+        type: 'm3u',
+        sub: TRIAL_SUB_CODE,
+        pack,
+        country: country || undefined,
+        countryParam: preset.countryParam,
+        packParam: preset.packParam,
+        httpMethod: preset.httpMethod
+      });
     }
   }
   return variants;
@@ -536,7 +568,7 @@ async function buildTrialPackAttempts(config, region) {
   return { attempts, bouquets: list };
 }
 
-async function requestNewPanelLine(config, { sub, pack, note, type = 'm3u', country, packParam = 'pack' }) {
+async function requestNewPanelLine(config, { sub, pack, note, type = 'm3u', country, countryParam = 'country', packParam = 'pack', httpMethod = 'GET' }) {
   const params = {
     action: 'new',
     type: String(type || 'm3u').trim() || 'm3u',
@@ -545,11 +577,19 @@ async function requestNewPanelLine(config, { sub, pack, note, type = 'm3u', coun
   };
   if (pack !== OMIT_PANEL_PACK && pack != null && String(pack).trim() !== '') {
     const packValue = normalizeTrialPackForPanel(String(pack).trim());
-    const field = packParam === 'bouquet' ? 'bouquet' : 'pack';
-    params[field] = packValue;
+    if (packParam === 'both') {
+      params.pack = packValue;
+      params.bouquet = packValue;
+    } else {
+      const field = packParam === 'bouquet' ? 'bouquet' : 'pack';
+      params[field] = packValue;
+    }
   }
-  if (country) params.country = String(country).trim();
-  return requestPanel(config, params);
+  if (country) {
+    const field = String(countryParam || 'country').trim() || 'country';
+    params[field] = String(country).trim();
+  }
+  return requestPanel(config, params, { method: httpMethod });
 }
 
 async function requestNewM3uLine(config, opts) {
@@ -562,12 +602,13 @@ function formatPackAttemptLabel(pack) {
 
 function formatTrialAttemptLabel(variant) {
   const parts = [
+    String(variant.httpMethod || 'GET').toUpperCase(),
     `type=${variant.type || 'm3u'}`,
     `sub=${variant.sub}`,
     `pack=${formatPackAttemptLabel(variant.pack)}`
   ];
-  if (variant.country) parts.push(`country=${variant.country}`);
-  if (variant.packParam === 'bouquet') parts.push('field=bouquet');
+  if (variant.country) parts.push(`${variant.countryParam || 'country'}=${variant.country}`);
+  if (variant.packParam && variant.packParam !== 'pack') parts.push(`field=${variant.packParam}`);
   return parts.join(' · ');
 }
 
@@ -614,8 +655,10 @@ async function createTrialLine(config, { note, region, lineType, pack }) {
   const noteText = String(note || 'rashadtech.tv trial').slice(0, 200);
 
   outer:
-  for (const panelPack of attemptList) {
-    const variants = buildTrialLineRequestVariants(regionKey, panelPack);
+  for (let packIndex = 0; packIndex < attemptList.length; packIndex++) {
+    const panelPack = attemptList[packIndex];
+    const thorough = packIndex === 0 || panelPack === 'all';
+    const variants = buildTrialLineRequestVariants(regionKey, panelPack, { thorough });
     for (const variant of variants) {
       const data = await requestNewPanelLine(config, { ...variant, note: noteText });
       row = unwrapApiPayload(data);
@@ -648,9 +691,11 @@ async function createTrialLine(config, { note, region, lineType, pack }) {
   if (!row || String(row.status || '').toLowerCase() !== 'true') {
     const detail = attemptLog.map(a => `${a.pack}: ${a.message}`).join(' | ');
     const hint = /something is missing/i.test(detail)
-      ? ' Panel may need country code or valid bouquet — click Load bouquets, set ME bouquet to one ID (e.g. 75605), then Save.'
+      ? ' Check panel credits (need ≥12), set ME bouquet to one ID (e.g. 75605), Load bouquets, Save — then retry.'
       : '';
-    throw new Error((detail || 'Could not create IPTV trial line on Strong8K panel') + hint);
+    const err = new Error((detail || 'Could not create IPTV trial line on Strong8K panel') + hint);
+    err.attemptLog = attemptLog;
+    throw err;
   }
 
   const creds = parseLineCredentials(row, row.url);
@@ -844,23 +889,30 @@ async function resolvePackForPanel(config, regionId) {
   return joined;
 }
 
-async function requestPanel(config, params) {
+async function requestPanel(config, params, { method = 'GET' } = {}) {
   const panelUrl = normalizePanelUrl(config && config.panelUrl);
   const apiKey = resolveApiKey(config);
   if (!panelUrl) throw new Error('Strong8K panel URL is not configured');
   if (!apiKey) throw new Error('Strong8K API key is not configured');
 
   const url = new URL(panelUrl);
-  url.searchParams.set('api_key', apiKey);
+  const bodyParams = new URLSearchParams();
+  bodyParams.set('api_key', apiKey);
   for (const [key, value] of Object.entries(params || {})) {
     if (value !== undefined && value !== null && value !== '') {
-      url.searchParams.set(key, String(value));
+      bodyParams.set(key, String(value));
     }
   }
 
-  const res = await fetch(url.toString(), {
-    method: 'GET',
-    headers: { Accept: 'application/json' },
+  const httpMethod = String(method || 'GET').toUpperCase() === 'POST' ? 'POST' : 'GET';
+  const fetchUrl = httpMethod === 'GET' ? `${url.origin}${url.pathname}?${bodyParams.toString()}` : `${url.origin}${url.pathname}`;
+  const res = await fetch(fetchUrl, {
+    method: httpMethod,
+    headers: {
+      Accept: 'application/json',
+      ...(httpMethod === 'POST' ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {})
+    },
+    body: httpMethod === 'POST' ? bodyParams.toString() : undefined,
     signal: AbortSignal.timeout(45000)
   });
   const text = await res.text();

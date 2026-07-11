@@ -337,7 +337,12 @@ function registerStrong8kRoutes(app, deps) {
         message: result.message || 'Trial line created on panel'
       });
     } catch (e) {
-      res.status(400).json({ error: e.message || 'Trial test failed' });
+      res.status(400).json({
+        error: e.message || 'Trial test failed',
+        attemptLog: e.attemptLog || [],
+        panelCredits: e.panelCredits ?? null,
+        trialMinCredits: strong8k.TRIAL_MIN_PANEL_CREDITS
+      });
     }
   });
 

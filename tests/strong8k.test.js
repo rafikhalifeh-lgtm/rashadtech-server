@@ -47,11 +47,21 @@ test('isPanelRetryableError treats Something is missing as retryable', () => {
   assert.equal(strong8k.isPanelRetryableError({ status: 'false', message: 'Invalid API key' }), false);
 });
 
-test('buildTrialLineRequestVariants includes country and bouquet field attempts', () => {
-  const variants = strong8k.buildTrialLineRequestVariants('me', '75605');
-  assert.ok(variants.some(v => v.country === 'LB' && v.packParam === 'pack'));
-  assert.ok(variants.some(v => v.country === 'LB' && v.packParam === 'bouquet'));
-  assert.ok(variants.some(v => v.country === 'ALL'));
+test('buildTrialLineRequestVariants includes POST and country_lock attempts', () => {
+  const variants = strong8k.buildTrialLineRequestVariants('me', '75605', { thorough: true });
+  assert.ok(variants.some(v => v.httpMethod === 'POST' && v.country === 'LB'));
+  assert.ok(variants.some(v => v.countryParam === 'country_lock'));
+  assert.ok(variants.some(v => v.packParam === 'both'));
+});
+
+test('sanitizeRegions keeps single bouquet id from comma-separated packId', () => {
+  const regions = strong8k.sanitizeRegions({
+    me: { packId: '75605,75609,75610' },
+    eu: { packId: '75604' },
+    us: { packId: 'all' }
+  });
+  assert.equal(regions.me.packId, '75605');
+  assert.equal(regions.us.packId, 'all');
 });
 
 test('normalizeTrialPackForPanel uses first id from comma-separated bouquet list', () => {
