@@ -1860,7 +1860,19 @@ function isOsnOneUserOrder(o){return isOsnOrder(o)&&/1\s*user/i.test(String(o.pl
 function isDisneyOneUserOrder(o){return isDisneyOrder(o)&&/1\s*user/i.test(String(o.plan||''));}
 function isAnghamiOrder(o){return Boolean(o&&(o.productId==='anghami'||/anghami/i.test(o.product||'')));}
 function isStrong8kOrder(o){return Boolean(o&&(o.productId==='strong8k'||/rashadtech iptv|strong8k/i.test(o.product||'')));}
+function isNetflixOrder(o){return Boolean(o&&(o.productId==='netflix'||/netflix/i.test(o.product||'')));}
 function isCanvaOrder(o){return Boolean(o&&(o.productId==='canva'||/canva/i.test(o.product||'')));}
+function sublinkProductKind(o){
+  if(isStrong8kOrder(o))return 'iptv';
+  if(isAnghamiOrder(o))return 'anghami';
+  if(isShahidOrder(o))return 'shahid';
+  if(isDisneyOneUserOrder(o))return 'disney-one';
+  if(isOsnPasswordlessOrder(o))return 'osn-code';
+  if(isCanvaNewOrder(o))return 'canva-new';
+  if(isCanvaOwnOrder(o))return 'canva-own';
+  if(isNetflixOrder(o))return 'netflix';
+  return 'generic';
+}
 function isCanvaNewOrder(o){
   if(!isCanvaOrder(o))return false;
   if(/use my email/i.test(String(o.plan||'')))return false;
@@ -3603,12 +3615,37 @@ function subLinkDataFromOrder(o){
   const codeEmail=o.codeEmail||o.email||inboxEmail;
   return {
     id:o.id,product:o.product,short:o.short,color:o.color,tc:o.tc,
-    productId:o.productId,plan:o.plan,email:o.email,pass:o.pass,phone:o.phone||'',
+    productId:o.productId,plan:o.plan,date:o.date||'',
+    email:o.email,pass:o.pass,phone:o.phone||'',
     expiryDate:o.expiryDate||'',profileName:o.profileName||'',
-    profilePin:o.profilePin||'',serviceLink:o.serviceLink||'',accKey:o.accKey||'',mainEmail:inboxEmail,
+    profilePin:o.profilePin||'',serviceLink:o.serviceLink||'',
+    iptvHost:o.iptvHost||'',iptvLineType:o.iptvLineType||'',
+    accKey:o.accKey||'',mainEmail:inboxEmail,
     codeEmail,inboxEmail,
     linkExpiry:Date.now()+(90*24*60*60*1000)
   };
+}
+function sublinkIptvGuideHtml(found){
+  const isM3u=found.iptvLineType==='m3u';
+  const apps=isM3u
+    ?'<b>M3U playlist:</b> Tap <b>Open M3U playlist</b> above, or paste the link in VLC, IPTV Smarters, or TiviMate.'
+    :'<b>Stable (Xtream):</b> Open <b>IPTV Smarters Pro</b> or <b>TiviMate</b> → Add user → Xtream Codes API → enter Host, Username, and Password above.';
+  return `<div style="font-size:11px;color:var(--text3);margin-bottom:10px;font-weight:600;letter-spacing:0.5px">📺 SET UP IPTV</div>
+    <div style="font-size:12px;color:var(--text2);line-height:1.7;text-align:left">
+      ${apps}
+      <br><br><b>Host, username &amp; password:</b> copy from above
+      <br><br>Need help? Contact us on <a href="https://wa.me/96179306701" target="_blank" rel="noopener" style="color:var(--green);font-weight:600">WhatsApp</a> or Telegram.
+    </div>`;
+}
+function sublinkGenericGuideHtml(found){
+  const name=esc(String(found.product||'this service').trim());
+  return `<div style="font-size:11px;color:var(--text3);margin-bottom:10px;font-weight:600;letter-spacing:0.5px">✅ HOW TO USE</div>
+    <div style="font-size:12px;color:var(--text2);line-height:1.7;text-align:left">
+      1) Open the <b>${name}</b> app or website<br>
+      2) Sign in with the <b>email</b> and <b>password</b> above<br>
+      3) If you have a profile name or PIN above, use them when asked<br>
+      4) Contact support if anything does not work
+    </div>`;
 }
 async function createSubLinkUrl(data){
   try{
@@ -3871,13 +3908,35 @@ async function checkSubLink(){
   // Generate QR code for this link
   const qrUrl=`https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(location.href)}`;
   document.getElementById('sublink-qr').src=qrUrl;
-  const isShahid=isShahidOrder(found);
-  const isDisney=isDisneyOrder(found);
+  const kind=sublinkProductKind(found);
+  const isShahid=kind==='shahid';
+  const showNetflixTv=kind==='netflix';
+  const showSigninCode=(kind==='netflix'&&found.accKey)||kind==='disney-one'||kind==='osn-code'||kind==='canva-new';
   const tvSection=document.getElementById('sublink-tv-section');
-  if(tvSection)tvSection.style.display=(isShahid||disneyOneSub||osnSub||canvaNewSub||canvaOwnSub)?'none':'block';
+  if(tvSection)tvSection.style.display=showNetflixTv?'block':'none';
+  const iptvGuide=document.getElementById('sublink-iptv-guide');
+  if(iptvGuide){
+    if(kind==='iptv'){
+      iptvGuide.style.display='block';
+      iptvGuide.innerHTML=sublinkIptvGuideHtml(found);
+    }else{
+      iptvGuide.style.display='none';
+      iptvGuide.innerHTML='';
+    }
+  }
+  const genericGuide=document.getElementById('sublink-generic-guide');
+  if(genericGuide){
+    if(kind==='generic'&&found.email&&found.pass){
+      genericGuide.style.display='block';
+      genericGuide.innerHTML=sublinkGenericGuideHtml(found);
+    }else{
+      genericGuide.style.display='none';
+      genericGuide.innerHTML='';
+    }
+  }
   const disneyGuide=document.getElementById('sublink-disney-guide');
   if(disneyGuide){
-    if(disneyOneSub){
+    if(kind==='disney-one'){
       disneyGuide.style.display='block';
       disneyGuide.innerHTML=`<div style="font-size:12px;color:var(--text2);line-height:1.7;text-align:left">
         <b>How to sign in to Disney+:</b><br>
@@ -3886,7 +3945,7 @@ async function checkSubLink(){
         3) Tap <b>Request Sign-in Code</b> below, then enter the code you receive<br>
         4) If you have any issue, contact our agents on WhatsApp or Telegram
       </div>`;
-    }else if(osnSub){
+    }else if(kind==='osn-code'){
       disneyGuide.style.display='block';
       disneyGuide.innerHTML=`<div style="font-size:12px;color:var(--text2);line-height:1.7;text-align:left">
         <b>How to sign in to OSN+:</b><br>
@@ -3895,7 +3954,7 @@ async function checkSubLink(){
         3) Tap <b>Request Sign-in Code</b> below, then enter the code you receive<br>
         4) If you have any issue, contact our agents on WhatsApp or Telegram
       </div>`;
-    }else if(canvaNewSub){
+    }else if(kind==='canva-new'){
       disneyGuide.style.display='block';
       disneyGuide.innerHTML=`<div style="font-size:12px;color:var(--text2);line-height:1.7;text-align:left">
         <b>How to sign in to Canva:</b><br>
@@ -3904,7 +3963,7 @@ async function checkSubLink(){
         3) Tap <b>Request Sign-in Code</b> below, then enter the code you receive<br>
         4) If you have any issue, contact our agents on WhatsApp or Telegram
       </div>`;
-    }else if(canvaOwnSub){
+    }else if(kind==='canva-own'){
       disneyGuide.style.display='block';
       disneyGuide.innerHTML=`<div style="font-size:12px;color:var(--text2);line-height:1.7;text-align:left">
         <b>Your Canva Pro is active!</b><br>
@@ -3945,7 +4004,7 @@ async function checkSubLink(){
       shahidActions.innerHTML='';
     }
   }
-  if((found.accKey||disneyOneSub||osnSub||canvaNewSub)&&!isShahid&&!canvaOwnSub){
+  if(showSigninCode&&!isShahid&&kind!=='canva-own'){
     _sublinkAccKey=found.accKey;
     document.getElementById('sublink-code-request').style.display='block';
     document.getElementById('sublink-code-section').style.display='none';
@@ -3953,6 +4012,14 @@ async function checkSubLink(){
   } else {
     document.getElementById('sublink-code-request').style.display='none';
     document.getElementById('sublink-code-section').style.display='none';
+  }
+  const footerHint=document.getElementById('sublink-footer-hint');
+  if(footerHint){
+    footerHint.textContent=kind==='iptv'
+      ?'Tap host, username or password to copy · Powered by rashadtech.tv'
+      :kind==='anghami'
+        ?'Tap the activation link to open · Powered by rashadtech.tv'
+        :'Tap email or password to copy · Powered by rashadtech.tv';
   }
   return true;
 }
@@ -9654,8 +9721,10 @@ if(document.readyState==='loading'){
       </div>
       <div id="sublink-shahid-actions" style="display:none;margin-bottom:16px;text-align:left"></div>
       <div id="sublink-disney-guide" style="display:none;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;margin-bottom:16px"></div>
+      <div id="sublink-iptv-guide" style="display:none;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;margin-bottom:16px"></div>
+      <div id="sublink-generic-guide" style="display:none;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;margin-bottom:16px"></div>
 
-      <!-- Netflix TV Activation -->
+      <!-- Netflix TV Activation (Netflix only) -->
       <div id="sublink-tv-section" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;margin-bottom:16px">
         <div style="font-size:11px;color:var(--text3);margin-bottom:10px;font-weight:600;letter-spacing:0.5px">📺 ACTIVATE ON TV</div>
         <div style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.6">
@@ -9690,7 +9759,7 @@ if(document.readyState==='loading'){
         <div style="font-size:11px;color:var(--text3);margin-bottom:8px;font-weight:600;letter-spacing:0.5px">SCAN TO SHARE</div>
         <img id="sublink-qr" src="" alt="QR Code" style="width:120px;height:120px;border-radius:8px;border:1px solid var(--border)">
       </div>
-      <div style="font-size:11px;color:var(--text3)">Tap email or password to copy · Powered by <strong>rashadtech.tv</strong></div>
+      <div style="font-size:11px;color:var(--text3)" id="sublink-footer-hint">Tap email or password to copy · Powered by <strong>rashadtech.tv</strong></div>
     </div>
     <div id="sublink-error" style="display:none;color:var(--red);font-size:14px">Subscription not found or link is invalid.</div>
   </div>

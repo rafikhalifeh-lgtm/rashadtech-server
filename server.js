@@ -3187,6 +3187,8 @@ function enrichSubscriptionFromLiveOrder(data, subscription, ownerEmail) {
     profilePin: order.profilePin || subscription.profilePin || '',
     phone: order.phone || subscription.phone || '',
     serviceLink: order.serviceLink || subscription.serviceLink || '',
+    iptvHost: order.iptvHost || subscription.iptvHost || '',
+    iptvLineType: order.iptvLineType || subscription.iptvLineType || '',
     expiryDate: order.expiryDate || subscription.expiryDate || '',
     accKey: order.accKey || subscription.accKey || '',
     mainEmail,
