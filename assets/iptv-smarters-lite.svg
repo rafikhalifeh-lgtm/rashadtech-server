@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Smarters Player Lite">
+  <defs>
+    <linearGradient id="sl" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#5B6CFF"/>
+      <stop offset="100%" stop-color="#2F3DB8"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="url(#sl)"/>
+  <rect x="28" y="34" width="72" height="48" rx="10" fill="#fff" opacity=".95"/>
+  <rect x="36" y="42" width="56" height="8" rx="4" fill="#2F3DB8" opacity=".25"/>
+  <rect x="36" y="56" width="40" height="6" rx="3" fill="#2F3DB8" opacity=".18"/>
+  <rect x="36" y="68" width="48" height="6" rx="3" fill="#2F3DB8" opacity=".18"/>
+  <circle cx="88" cy="86" r="14" fill="#00C853"/>
+  <path fill="#fff" d="M82 86l5 5 9-10" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

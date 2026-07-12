@@ -145,6 +145,23 @@ input,button,select,textarea{font-family:var(--font)}
   .iptv-worldcup-promo img{max-height:340px}
   .iptv-worldcup-promo-overlay{padding:18px 22px 20px}
 }
+.iptv-adv-wrap{margin-bottom:4px}
+.iptv-adv-hero{font-size:13px;color:var(--text2);line-height:1.65;margin-bottom:14px;text-align:left}
+.iptv-adv-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:14px}
+.iptv-adv-chip{display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px 6px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);min-height:78px}
+.iptv-adv-chip img{width:32px;height:32px;border-radius:8px;object-fit:contain;background:#fff;padding:2px}
+.iptv-adv-chip span{font-size:10px;font-weight:600;color:var(--text);text-align:center;line-height:1.25}
+.iptv-adv-list{display:grid;gap:8px;margin-bottom:14px;text-align:left}
+.iptv-adv-item{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:12px;color:var(--text2);line-height:1.55}
+.iptv-adv-item b{color:var(--text);display:block;margin-bottom:2px;font-size:12px}
+.iptv-app-cards{display:grid;gap:10px;margin-top:10px}
+.iptv-app-card{display:flex;align-items:center;gap:12px;padding:12px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);text-align:left}
+.iptv-app-card img{width:48px;height:48px;border-radius:12px;object-fit:cover;flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,.15)}
+.iptv-app-card-info{flex:1;min-width:0}
+.iptv-app-card-name{font-size:13px;font-weight:700;color:var(--text);margin-bottom:2px}
+.iptv-app-card-desc{font-size:11px;color:var(--text3);line-height:1.45}
+.iptv-app-card-badge{font-size:10px;font-weight:700;color:var(--green);margin-top:4px}
+@media(max-width:380px){.iptv-adv-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .reseller-apply-tabs{display:flex;gap:8px;margin-bottom:14px}
 .reseller-apply-tab{flex:1;padding:10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text2);font-size:12px;font-weight:600;cursor:pointer;text-align:center}
 .reseller-apply-tab.active{border-color:var(--green-border);background:var(--green-bg);color:var(--green)}
@@ -3627,15 +3644,17 @@ function subLinkDataFromOrder(o){
 }
 function sublinkIptvGuideHtml(found){
   const isM3u=found.iptvLineType==='m3u';
-  const apps=isM3u
-    ?'<b>M3U playlist:</b> Tap <b>Open M3U playlist</b> above, or paste the link in VLC, IPTV Smarters, or TiviMate.'
-    :'<b>Stable (Xtream):</b> Open <b>IPTV Smarters Pro</b> or <b>TiviMate</b> → Add user → Xtream Codes API → enter Host, Username, and Password above.';
+  const appCards=IPTV_PLAYER_APPS.map(app=>`<div class="iptv-app-card" style="margin-bottom:8px">
+    <img src="${app.icon}" alt="${esc(app.name)}" width="48" height="48">
+    <div class="iptv-app-card-info"><div class="iptv-app-card-name">${esc(app.name)}</div><div class="iptv-app-card-desc">${esc(app.desc)}</div></div>
+  </div>`).join('');
+  const steps=isM3u
+    ?'<b>M3U playlist:</b> Open <b>Hot Player</b> or <b>Smarters Player Lite</b> → Add playlist → paste the M3U link above.'
+    :'<b>Stable (Xtream):</b> Open <b>Hot Player</b> or <b>Smarters Player Lite</b> → Xtream Codes API → enter Host, Username, and Password above.';
   return `<div style="font-size:11px;color:var(--text3);margin-bottom:10px;font-weight:600;letter-spacing:0.5px">📺 SET UP IPTV</div>
-    <div style="font-size:12px;color:var(--text2);line-height:1.7;text-align:left">
-      ${apps}
-      <br><br><b>Host, username &amp; password:</b> copy from above
-      <br><br>Need help? Contact us on <a href="https://wa.me/96179306701" target="_blank" rel="noopener" style="color:var(--green);font-weight:600">WhatsApp</a> or Telegram.
-    </div>`;
+    <div style="font-size:12px;color:var(--text2);line-height:1.7;text-align:left;margin-bottom:12px">${steps}</div>
+    ${appCards}
+    <div style="font-size:12px;color:var(--text2);line-height:1.65;text-align:left;margin-top:12px">Need help? <a href="https://wa.me/96179306701" target="_blank" rel="noopener" style="color:var(--green);font-weight:600">WhatsApp</a> support.</div>`;
 }
 function sublinkGenericGuideHtml(found){
   const name=esc(String(found.product||'this service').trim());
@@ -5026,13 +5045,61 @@ let iptvPlanIdx=null;
 let iptvSelectedPackages=[];
 let iptvPurchaseInFlight=false;
 const IPTV_REGION_LABELS={me:'Middle East',eu:'Europe',us:'United States'};
+const IPTV_PLAYER_APPS=[
+  {id:'hotplayer',name:'Hot Player',badge:'Recommended',desc:'Fast, simple IPTV player for Android, Android TV & Fire Stick.',icon:'/assets/iptv-hot-player.svg',playUrl:'https://play.google.com/store/apps/details?id=com.perfectapp.hotplayer'},
+  {id:'smarterslite',name:'Smarters Player Lite',badge:'Free & easy',desc:'Lite Xtream / M3U player — great for phones, tablets & TV boxes.',icon:'/assets/iptv-smarters-lite.svg',playUrl:'https://play.google.com/store/apps/details?id=com.nst.smartersplayer'}
+];
+const IPTV_ADVANTAGE_STREAMS=[
+  {id:'netflix',label:'Netflix'},{id:'shahid',label:'Shahid VIP'},{id:'amazon',label:'Prime Video'},{id:'disney',label:'Disney+'},{id:'watchit',label:'Watchit'},{id:'osn',label:'OSN+'},{id:'bein',label:'beIN Sports'},{id:'hbomax',label:'HBO Max'},{id:'anghami',label:'Anghami'}
+];
+function iptvStreamIconHtml(id,size=32){
+  const url=PRODUCT_ICONS[id];
+  if(!url)return `<div style="width:${size}px;height:${size}px;border-radius:8px;background:var(--bg2);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700">${esc(id.slice(0,2).toUpperCase())}</div>`;
+  return `<img src="${url}" width="${size}" height="${size}" alt="" loading="lazy" onerror="this.style.display='none'">`;
+}
+function iptvAppsRecommendHtml(compact){
+  const cards=IPTV_PLAYER_APPS.map(app=>`<div class="iptv-app-card">
+    <img src="${app.icon}" alt="${esc(app.name)}" width="48" height="48">
+    <div class="iptv-app-card-info">
+      <div class="iptv-app-card-name">${esc(app.name)}</div>
+      <div class="iptv-app-card-desc">${esc(app.desc)}</div>
+      <div class="iptv-app-card-badge">${esc(app.badge)}</div>
+    </div>
+  </div>`).join('');
+  const steps=compact
+    ?'<b>Stable:</b> Xtream Codes API → Host + Username + Password. <b>M3U:</b> paste playlist URL.'
+    :`<ol style="margin:8px 0 0;padding-left:18px;line-height:1.65">
+      <li>Install <b>Hot Player</b> or <b>Smarters Player Lite</b> on your device.</li>
+      <li><b>Stable (recommended):</b> choose <b>Xtream Codes API</b> → enter <b>Host</b>, <b>Username</b>, <b>Password</b>.</li>
+      <li><b>M3U:</b> paste the playlist URL we deliver.</li>
+      <li>Open Live TV, Sports, or Movies and start watching.</li>
+    </ol>`;
+  return `<div style="font-weight:700;color:var(--text);margin-bottom:8px;font-size:12px">Recommended apps</div>
+    <div class="iptv-app-cards">${cards}</div>
+    <div style="font-size:12px;color:var(--text2);line-height:1.65;margin-top:12px;text-align:left">${steps}</div>`;
+}
+function iptvAdvantagesHtml(){
+  const chips=IPTV_ADVANTAGE_STREAMS.map(s=>`<div class="iptv-adv-chip">${iptvStreamIconHtml(s.id)}<span>${esc(s.label)}</span></div>`).join('');
+  return `<div class="iptv-adv-wrap">
+    <div class="iptv-adv-hero"><b style="color:var(--text);font-size:15px">One subscription. Everything in one place.</b><br>RashadTech IPTV brings live TV, sports, movies &amp; series together — including premium apps and 60,000+ channels worldwide.</div>
+    <div class="plan-section-label" style="margin-bottom:8px">Streaming &amp; apps included</div>
+    <div class="iptv-adv-grid">${chips}</div>
+    <div class="iptv-adv-list">
+      <div class="iptv-adv-item"><div>📺</div><div><b>60,000+ live channels</b>Movies, series, kids, news, sports &amp; international channels in one line.</div></div>
+      <div class="iptv-adv-item"><div>⚽</div><div><b>Sports &amp; World Cup</b>beIN Sports, live football, UFC, F1 &amp; major events in HD.</div></div>
+      <div class="iptv-adv-item"><div>🎬</div><div><b>Movies &amp; series on demand</b>Netflix-style catalogues, Arabic content, HBO, Disney &amp; more.</div></div>
+      <div class="iptv-adv-item"><div>⚡</div><div><b>Instant delivery</b>Host, username &amp; password sent immediately after purchase.</div></div>
+      <div class="iptv-adv-item"><div>📱</div><div><b>Watch anywhere</b>Phone, Android TV, Fire Stick, Smart TV — use Hot Player or Smarters Player Lite.</div></div>
+    </div>
+  </div>`;
+}
 function iptvStoreMeta(){return _strong8kStore||{enabled:false,plans:[],regions:[],lineTypes:[],features:{},sellPackages:[]};}
 function iptvHasSellPackages(){return Boolean((iptvStoreMeta().sellPackages||[]).length);}
-function iptvPaidPlanStep(){return iptvHasSellPackages()?4:3;}
-function iptvPaidConfirmStep(){return iptvHasSellPackages()?5:4;}
+function iptvPaidPlanStep(){return iptvHasSellPackages()?5:4;}
+function iptvPaidConfirmStep(){return iptvHasSellPackages()?6:5;}
 function iptvWizardSteps(){
-  if(iptvHasSellPackages())return ['Region','Connection','Packages','Duration','Confirm'];
-  return ['Region','Connection','Duration','Confirm'];
+  if(iptvHasSellPackages())return ['Overview','Region','Connection','Packages','Duration','Confirm'];
+  return ['Overview','Region','Connection','Duration','Confirm'];
 }
 function iptvSellPackageMonthlyTotal(){
   const pkgs=iptvStoreMeta().sellPackages||[];
@@ -5158,13 +5225,13 @@ function iptvWizardBack(){
   renderIptvWizard();
 }
 function iptvWizardNext(){
-  if(iptvWizardStep===1&&!iptvRegion){showToast('Please choose your region');return;}
+  if(iptvWizardStep===2&&!iptvRegion){showToast('Please choose your region');return;}
   if(iptvWizardStep===iptvPaidPlanStep()){
     if(iptvHasSellPackages()&&!iptvSelectedPackages.length){showToast('Select at least one channel package');return;}
     if(iptvPlanIdx==null){showToast('Select a subscription duration');return;}
   }
   let next=iptvWizardStep+1;
-  if(iptvWizardStep===2&&!iptvHasSellPackages())next=iptvPaidPlanStep();
+  if(iptvWizardStep===3&&!iptvHasSellPackages())next=iptvPaidPlanStep();
   if(iptvWizardStep<iptvPaidConfirmStep())iptvWizardStep=next;
   renderIptvWizard();
 }
@@ -5175,15 +5242,7 @@ function setIptvPlan(idx){
   renderIptvWizard();
 }
 function iptvHowToHtml(){
-  return `<div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;font-size:12px;color:var(--text2);line-height:1.65;margin-top:8px">
-    <div style="font-weight:700;color:var(--text);margin-bottom:8px">How to use your line</div>
-    <ol style="margin:0;padding-left:18px">
-      <li>Install <b>IPTV Smarters Pro</b> or <b>TiviMate</b> on your device.</li>
-      <li><b>Stable (recommended):</b> choose <b>Xtream Codes API</b> → enter <b>Host</b>, <b>Username</b>, <b>Password</b>.</li>
-      <li><b>M3U:</b> paste the playlist URL we deliver.</li>
-      <li>Wait for channels to load, then open Sports or Live TV.</li>
-    </ol>
-  </div>`;
+  return `<div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;font-size:12px;color:var(--text2);line-height:1.65;margin-top:8px;text-align:left">${iptvAppsRecommendHtml(false)}</div>`;
 }
 function showIptvDeliveryModal(order){
   if(!order)return;
@@ -5211,17 +5270,22 @@ function renderIptvWizard(){
   const steps=iptvWizardSteps();
   let html=`<div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">${steps.map((s,i)=>`<div style="font-size:10px;font-weight:600;padding:4px 8px;border-radius:999px;border:1px solid ${i+1===iptvWizardStep?'var(--green-border)':'var(--border)'};background:${i+1===iptvWizardStep?'var(--green-bg)':'var(--bg3)'};color:${i+1===iptvWizardStep?'var(--green)':'var(--text3)'}">${i+1}. ${s}</div>`).join('')}</div>`;
   if(iptvWizardStep===1){
+    html+=iptvAdvantagesHtml();
+  }else if(iptvWizardStep===2){
     html+=`<div class="plan-section-label">Choose your region (required)</div><div style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.55">Pick the package closest to where you watch.</div>`;
     const regions=(meta.regions&&meta.regions.length)?meta.regions:[{id:'me',name:'Middle East'},{id:'eu',name:'Europe'},{id:'us',name:'United States'}];
     html+=`<div class="user-type-grid">${regions.map(r=>`<div class="utype-btn${iptvRegion===r.id?' sel':''}" onclick="setIptvRegion('${esc(r.id)}')"><div class="utype-name">${esc(r.name)}</div><div class="utype-desc">${r.id==='me'?'Arab channels · beIN · MBC':r.id==='eu'?'UK · EU sports & entertainment':'US networks & sports'}</div></div>`).join('')}</div>`;
-  }else if(iptvWizardStep===2){
+  }else if(iptvWizardStep===3){
     html+=`<div class="plan-section-label">Connection type</div>`;
     const types=(meta.lineTypes&&meta.lineTypes.length)?meta.lineTypes:[{id:'stable',name:'Stable (Xtream)',desc:'Host + username + password'},{id:'m3u',name:'M3U Playlist',desc:'Single playlist URL'}];
     html+=types.map(t=>`<div class="plan-row${iptvLineType===t.id?' sel':''}" style="cursor:pointer;margin-bottom:8px" onclick="setIptvLineType('${esc(t.id)}')"><div><div class="plan-name">${esc(t.name)}${t.id==='stable'?' · Recommended':''}</div><div class="plan-desc">${esc(t.desc||'')}</div></div></div>`).join('');
     if(iptvLineType==='stable'){
-      html+=`<div style="background:var(--blue-bg);border:1px solid var(--blue-border);border-radius:var(--radius-sm);padding:10px 12px;font-size:12px;color:var(--text2);margin-top:8px;line-height:1.55">Stable gives you a <b>server host</b>, <b>username</b> and <b>password</b> for Xtream login — best for TiviMate & Smarters with full EPG.</div>`;
+      html+=`<div style="background:var(--blue-bg);border:1px solid var(--blue-border);border-radius:var(--radius-sm);padding:10px 12px;font-size:12px;color:var(--text2);margin-top:8px;line-height:1.55">Stable gives you a <b>server host</b>, <b>username</b> and <b>password</b> for Xtream login — best with <b>Hot Player</b> or <b>Smarters Player Lite</b>.</div>`;
+      html+=`<div style="margin-top:12px">${iptvAppsRecommendHtml(true)}</div>`;
+    }else{
+      html+=`<div style="background:var(--blue-bg);border:1px solid var(--blue-border);border-radius:var(--radius-sm);padding:10px 12px;font-size:12px;color:var(--text2);margin-top:8px;line-height:1.55">M3U delivers one playlist URL — open it in <b>Hot Player</b> or <b>Smarters Player Lite</b>.</div>`;
     }
-  }else if(iptvWizardStep===3&&iptvHasSellPackages()){
+  }else if(iptvWizardStep===4&&iptvHasSellPackages()){
     const monthly=iptvSellPackageMonthlyTotal();
     html+=`<div class="plan-section-label">Choose channel packages</div><div style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.55">Pick <b>Full Package</b> or combine add-ons (e.g. Streaming + beIN). Each pack has its own monthly price × duration.</div>`;
     html+=(meta.sellPackages||[]).map(pkg=>{
@@ -5264,6 +5328,8 @@ function renderIptvWizard(){
   const atConfirm=iptvWizardStep===iptvPaidConfirmStep();
   if(atConfirm){
     html+=`<button class="btn-secondary" type="button" onclick="iptvWizardBack()" style="margin-top:10px">Back</button>`;
+  }else if(iptvWizardStep===1){
+    html+=`<button class="btn-primary" type="button" onclick="iptvWizardNext()" style="margin-top:14px;width:100%">Continue to setup →</button>`;
   }else{
     html+=`<div style="display:flex;gap:8px;margin-top:14px"><button class="btn-secondary" type="button" onclick="iptvWizardBack()" style="margin:0;flex:1">Back</button><button class="btn-primary" type="button" onclick="iptvWizardNext()" style="margin:0;flex:2">Continue</button></div>`;
   }
