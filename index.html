@@ -171,7 +171,7 @@ input,button,select,textarea{font-family:var(--font)}
 .field input:focus,.field select:focus{border-color:var(--blue)}
 .field select option{background:var(--bg3)}
 .phone-row{display:flex;gap:8px}
-.phone-row select{width:140px;flex-shrink:0}
+.phone-row select{min-width:148px;max-width:46%;flex-shrink:0}
 .phone-row input{flex:1}
 .btn-primary{width:100%;background:var(--red);color:#fff;border:none;border-radius:var(--radius-sm);padding:11px;font-size:14px;font-weight:600;cursor:pointer;transition:background 0.15s;margin-top:4px}
 .btn-primary:hover{background:var(--red2)}
@@ -713,13 +713,7 @@ So your EmailJS template will receive the user email and verification code corre
       </div>
       <div class="field"><label>Password</label><input type="password" id="su-pass" placeholder="Min. 6 characters" autocomplete="new-password"></div>
       <div class="field"><label>Phone number</label><div class="phone-row">
-        <select id="su-phone-code">
-          <option value="+961">🇱🇧 +961</option><option value="+1">🇺🇸 +1</option><option value="+44">🇬🇧 +44</option>
-          <option value="+971">🇦🇪 +971</option><option value="+966">🇸🇦 +966</option><option value="+974">🇶🇦 +974</option>
-          <option value="+965">🇰🇼 +965</option><option value="+962">🇯🇴 +962</option><option value="+20">🇪🇬 +20</option>
-          <option value="+212">🇲🇦 +212</option><option value="+216">🇹🇳 +216</option><option value="+213">🇩🇿 +213</option>
-          <option value="+90">🇹🇷 +90</option><option value="+33">🇫🇷 +33</option><option value="+49">🇩🇪 +49</option>
-        </select>
+        <select id="su-phone-code" aria-label="Country code"></select>
         <input type="tel" id="su-phone" placeholder="79 000 000" autocomplete="tel">
       </div></div>
       <div style="font-size:11px;color:var(--text3);margin-bottom:14px;line-height:1.5">Telegram Chat ID is optional — add it later in Profile to receive purchases on Telegram.</div>
@@ -1491,13 +1485,7 @@ So your EmailJS template will receive the user email and verification code corre
   <div class="modal-body">
     <div class="err-msg" id="addmycust-err">Please fill all fields.</div>
     <div class="field"><label>Phone</label><div class="phone-row">
-      <select id="mc-code">
-        <option value="+961">🇱🇧 +961</option><option value="+1">🇺🇸 +1</option><option value="+44">🇬🇧 +44</option>
-        <option value="+971">🇦🇪 +971</option><option value="+966">🇸🇦 +966</option><option value="+974">🇶🇦 +974</option>
-        <option value="+965">🇰🇼 +965</option><option value="+962">🇯🇴 +962</option><option value="+20">🇪🇬 +20</option>
-        <option value="+212">🇲🇦 +212</option><option value="+216">🇹🇳 +216</option><option value="+213">🇩🇿 +213</option>
-        <option value="+90">🇹🇷 +90</option><option value="+33">🇫🇷 +33</option><option value="+49">🇩🇪 +49</option>
-      </select>
+      <select id="mc-code" aria-label="Country code"></select>
       <input type="tel" id="mc-phone" placeholder="79 000 000">
     </div></div>
     <div class="field"><label>First name</label><input type="text" id="mc-fname" placeholder="First name"></div>
@@ -1518,6 +1506,7 @@ So your EmailJS template will receive the user email and verification code corre
 </div></div>
 
 <div class="toast" id="toast"></div>
+<script src="phoneCountries.js"></script>
 <script>
 // ── JSONBIN.IO STORAGE ──
 // JB_BIN moved to server
@@ -1637,6 +1626,7 @@ async function ensureServerAwake(options={}){
   return serverWakePromise;
 }
 function profilePhoneDigits(phone){
+  if(typeof matchPhoneDialCode==='function')return matchPhoneDialCode(phone);
   const raw=String(phone||'').trim();
   if(!raw)return {code:'+961',local:''};
   if(raw.startsWith('+961'))return {code:'+961',local:raw.slice(4).replace(/\D/g,'')};
@@ -3510,6 +3500,7 @@ function showProfilePage(){
   if(!currentUser)return;
   document.getElementById('profile-name-input').value=currentUser.name||'';
   const ph=profilePhoneDigits(currentUser.phone);
+  if(typeof fillPhoneCountrySelect==='function')fillPhoneCountrySelect('profile-phone-code',ph.code);
   const codeEl=document.getElementById('profile-phone-code');
   const localEl=document.getElementById('profile-phone-local');
   if(codeEl)codeEl.value=ph.code;
@@ -6573,7 +6564,7 @@ function openAddMyCust(){
   document.getElementById('mc-fname').value='';
   document.getElementById('mc-lname').value='';
   document.getElementById('mc-email').value='';
-  document.getElementById('mc-code').value='+961';
+  if(typeof fillPhoneCountrySelect==='function')fillPhoneCountrySelect('mc-code','+961');
   document.getElementById('addmycust-err').style.display='none';
   document.getElementById('addmycust-title').textContent=currentLang==='ar'?'إضافة عميل':'Add customer';
   document.getElementById('addmycust-submit-btn').textContent=currentLang==='ar'?'إضافة عميل':'Add customer';
@@ -6583,7 +6574,7 @@ function openEditMyCust(custId){
   const c=currentUser?.myCustomers?.find(x=>x.id===custId);
   if(!c)return;
   editingCustId=custId;
-  document.getElementById('mc-code').value=c.code||'+961';
+  if(typeof fillPhoneCountrySelect==='function')fillPhoneCountrySelect('mc-code',c.code||'+961');
   document.getElementById('mc-phone').value=c.phone||'';
   document.getElementById('mc-fname').value=c.fname||'';
   document.getElementById('mc-lname').value=c.lname||'';
@@ -9283,6 +9274,7 @@ async function quickValidateAuthToken(){
 }
 async function init(){
   try{
+    if(typeof initPhoneCountrySelects==='function')initPhoneCountrySelects();
     initFirebase();
     initTheme();
     initLang();
@@ -9566,14 +9558,7 @@ if(document.readyState==='loading'){
       <div class="field">
         <label data-t="phoneNumber">Phone number</label>
         <div class="phone-row">
-          <select id="profile-phone-code">
-            <option value="+961">🇱🇧 +961</option>
-            <option value="+966">🇸🇦 +966</option>
-            <option value="+971">🇦🇪 +971</option>
-            <option value="+962">🇯🇴 +962</option>
-            <option value="+20">🇪🇬 +20</option>
-            <option value="+1">🇺🇸 +1</option>
-          </select>
+          <select id="profile-phone-code" aria-label="Country code"></select>
           <input type="tel" id="profile-phone-local" placeholder="79 000 000">
         </div>
       </div>
