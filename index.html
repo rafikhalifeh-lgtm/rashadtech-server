@@ -3642,17 +3642,18 @@ function openCustomerChat(custId){
   window.open(url,'_blank');
 }
 function subLinkDataFromOrder(o){
+  const disneyOne=isDisneyOneUserOrder(o);
   const inboxEmail=o.mainEmail||o.inboxEmail||'';
-  const codeEmail=o.codeEmail||o.email||inboxEmail;
+  const codeEmail=o.codeEmail||o.email||'';
   return {
     id:o.id,product:o.product,short:o.short,color:o.color,tc:o.tc,
     productId:o.productId,plan:o.plan,date:o.date||'',
-    email:o.email,pass:o.pass,phone:o.phone||'',
+    email:disneyOne?codeEmail:o.email,pass:o.pass,phone:o.phone||'',
     expiryDate:o.expiryDate||'',profileName:o.profileName||'',
     profilePin:o.profilePin||'',serviceLink:o.serviceLink||'',
     iptvHost:o.iptvHost||'',iptvLineType:o.iptvLineType||'',
     accKey:o.accKey||'',mainEmail:inboxEmail,
-    codeEmail,inboxEmail,
+    codeEmail,inboxEmail:disneyOne?inboxEmail:(inboxEmail||codeEmail),
     linkExpiry:Date.now()+(90*24*60*60*1000)
   };
 }
@@ -3883,9 +3884,15 @@ async function checkSubLink(){
   _sublinkIsCanva=canvaNewSub;
   _sublinkIsOsn=osnSub;
   _sublinkProfileName=found.profileName||found.product||'Customer';
-  _sublinkMainEmail=found.mainEmail||found.inboxEmail||null;
-  _sublinkCodeEmail=found.codeEmail||found.email||found.mainEmail||null;
-  _sublinkInboxEmail=found.inboxEmail||found.mainEmail||found.codeEmail||null;
+  if(disneyOneSub){
+    _sublinkMainEmail=found.mainEmail||found.inboxEmail||null;
+    _sublinkCodeEmail=found.codeEmail||found.email||null;
+    _sublinkInboxEmail=found.mainEmail||found.inboxEmail||null;
+  }else{
+    _sublinkMainEmail=found.mainEmail||found.inboxEmail||null;
+    _sublinkCodeEmail=found.codeEmail||found.email||found.mainEmail||null;
+    _sublinkInboxEmail=found.inboxEmail||found.mainEmail||found.codeEmail||null;
+  }
   const extraRow=document.getElementById('sublink-extra-row');
   const profileRow=document.getElementById('sublink-profile-row');
   const serviceLinkRow=document.getElementById('sublink-service-link-row');

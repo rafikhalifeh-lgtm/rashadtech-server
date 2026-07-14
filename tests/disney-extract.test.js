@@ -46,4 +46,15 @@ test('extracts Disney code from HTML-heavy email', () => {
   assert.deepStrictEqual(result, { code: '998877', customerSafe: true });
 });
 
+test('extracts Disney code when OTP is only in HTML body', () => {
+  const parsed = {
+    from: 'Disney+ <DisneyPlus@email.disneyplus.com>',
+    subject: 'Your one-time passcode for Disney+',
+    text: 'Use this passcode to continue signing in to Disney+.',
+    html: '<html><body><p>Your one-time passcode</p><div style="font-size:32px">4 8 2 9 1 7</div></body></html>'
+  };
+  const result = extractDisneyCode(parsed);
+  assert.deepStrictEqual(result, { code: '482917', customerSafe: true });
+});
+
 console.log('All Disney extract tests passed');

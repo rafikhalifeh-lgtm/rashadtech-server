@@ -1373,6 +1373,47 @@ function resolveMonitoredInboxKey(data, lookupKeys, inboxKey, stockAcc) {
   return null;
 }
 
+function buildDisneyCustomerKeys(meta, stockAcc, codeKey, inboxKey, monitoredInbox) {
+  return uniqueNormalizedEmails([
+    codeKey,
+    inboxKey,
+    monitoredInbox,
+    meta && meta.codeEmail,
+    meta && meta.email,
+    meta && meta.subEmail,
+    meta && meta.mainEmail,
+    meta && meta.inboxEmail,
+    stockAcc && stockAcc.email,
+    stockAcc && stockAcc.mainEmail
+  ]);
+}
+
+function storeDisneySignInCode(monitoredInbox, customerKeys, code, receivedAt) {
+  const keys = uniqueNormalizedEmails([monitoredInbox, ...(customerKeys || [])]);
+  if (!keys.length) return false;
+  return storeSignInCode(keys, code, 'disney', null, receivedAt, null);
+}
+
+function lookupDisneySignInCode(customerKeys, monitoredInbox) {
+  return lookupSignInCode(
+    uniqueNormalizedEmails([...(customerKeys || []), monitoredInbox]),
+    null,
+    'disney'
+  );
+}
+
+async function fetchDisneySignInCodeFromInbox(monitoredInbox, customerKeys, rescanMinutes) {
+  if (!monitoredInbox || !monitoredEmails[monitoredInbox]) return null;
+  const fetchOpts = { onlyService: 'disney', waitStartedAt: 0, rescanMinutes };
+  let entry = lookupDisneySignInCode(customerKeys, monitoredInbox);
+  if (entry) return entry;
+  await fetchSignInCodeInbox(monitoredInbox, fetchOpts, { rescanIfMissing: rescanMinutes });
+  entry = lookupDisneySignInCode(customerKeys, monitoredInbox);
+  if (entry) return entry;
+  await fetchMonitoredInboxes(monitoredInbox, fetchOpts);
+  return lookupDisneySignInCode(customerKeys, monitoredInbox);
+}
+
 async function fetchSignInCodeInbox(inboxKey, fetchOpts, options = {}) {
   if (!inboxKey || !monitoredEmails[inboxKey]) return false;
   await fetchMonitoredInboxes(inboxKey, fetchOpts);
@@ -3141,8 +3182,9 @@ app.post('/links/create', async (req, res) => {
 
 function publicSubscriptionFromOrder(order) {
   if (!order) return null;
+  const disneyOne = isDisneyOneUserOrder(order);
   const inboxEmail = String(order.mainEmail || order.inboxEmail || '').trim();
-  const codeEmail = String(order.codeEmail || order.email || inboxEmail).trim();
+  const codeEmail = String(order.codeEmail || order.email || '').trim();
   return {
     id: order.id,
     product: order.product,
@@ -3151,7 +3193,7 @@ function publicSubscriptionFromOrder(order) {
     tc: order.tc,
     productId: order.productId,
     plan: order.plan,
-    email: order.email,
+    email: disneyOne ? codeEmail : order.email,
     pass: order.pass,
     phone: order.phone || '',
     expiryDate: order.expiryDate || '',
@@ -3163,7 +3205,7 @@ function publicSubscriptionFromOrder(order) {
     accKey: order.accKey || '',
     mainEmail: inboxEmail,
     codeEmail,
-    inboxEmail: inboxEmail || codeEmail,
+    inboxEmail: disneyOne ? inboxEmail : (inboxEmail || codeEmail),
     date: order.date || ''
   };
 }
@@ -5513,28 +5555,27 @@ app.post('/get-code', async (req, res) => {
     await loadGmailMonitors();
     mergeLatestCodesFromData(dbCache || data);
     await repairAllGmailMonitorsFromStock(data);
-    const fetchOpts = {
-      onlyRecipients: lookupKeys,
-      onlyService: codeType,
-      waitStartedAt: 0
-    };
     const rescanMinutes = codeType === 'disney' ? 45 : 30;
-    let entry = lookupSignInCode(lookupKeys, profileName, codeType);
     const monitoredInbox = resolveMonitoredInboxKey(data, lookupKeys, inboxKey, stockAcc);
-    if (!entry && monitoredInbox) {
-      await fetchSignInCodeInbox(monitoredInbox, fetchOpts, { rescanIfMissing: rescanMinutes });
+    let entry = null;
+
+    if (codeType === 'disney') {
+      const disneyKeys = buildDisneyCustomerKeys(meta, stockAcc, codeKey, inboxKey, monitoredInbox);
+      entry = lookupDisneySignInCode(disneyKeys, monitoredInbox);
+      if (!entry && monitoredInbox) {
+        entry = await fetchDisneySignInCodeFromInbox(monitoredInbox, disneyKeys, rescanMinutes);
+      }
+    } else {
+      const fetchOpts = {
+        onlyRecipients: lookupKeys,
+        onlyService: codeType,
+        waitStartedAt: 0
+      };
       entry = lookupSignInCode(lookupKeys, profileName, codeType);
-    }
-    if (!entry && codeType === 'disney') {
-      entry = await scanMonitoredInboxesForCode(lookupKeys, profileName, codeType, fetchOpts, { rescanIfMissing: rescanMinutes });
-    }
-    if (!entry && codeType === 'disney' && monitoredInbox) {
-      await fetchMonitoredInboxes(monitoredInbox, {
-        onlyService: 'disney',
-        waitStartedAt: 0,
-        rescanMinutes
-      });
-      entry = lookupSignInCode(lookupKeys, profileName, codeType);
+      if (!entry && monitoredInbox) {
+        await fetchSignInCodeInbox(monitoredInbox, fetchOpts, { rescanIfMissing: rescanMinutes });
+        entry = lookupSignInCode(lookupKeys, profileName, codeType);
+      }
     }
 
     if (!entry) {
@@ -5603,7 +5644,6 @@ function createGmailClient(email, password) {
 function emailPlainBody(parsedEmail) {
   const subject = String(parsedEmail.subject || '').trim();
   const text = String(parsedEmail.text || '').trim();
-  if (text.length > 24) return `${subject}\n${text}`;
   const html = String(parsedEmail.html || '');
   const stripped = html
     .replace(/<style[\s\S]*?<\/style>/gi, ' ')
@@ -5612,9 +5652,14 @@ function emailPlainBody(parsedEmail) {
     .replace(/<[^>]+>/g, ' ')
     .replace(/&nbsp;|&#160;/gi, ' ')
     .replace(/&amp;/g, '&')
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
     .replace(/\s+/g, ' ')
     .trim();
-  return `${subject}\n${stripped || text}`;
+  const parts = [];
+  if (subject) parts.push(subject);
+  if (text) parts.push(text);
+  if (stripped && (!text || !text.includes(stripped.slice(0, 24)))) parts.push(stripped);
+  return parts.join('\n') || text || subject;
 }
 
 function extractSixDigitOtp(body, options = {}) {
@@ -5875,14 +5920,15 @@ async function fetchMonitoredInboxes(targetEmail, options = {}) {
           console.log(`🔐 Admin-only Netflix security code ${netflixResult.code} captured for ${email} recipients: ${recipientKeys.join(', ')}`);
         } else if (disneyResult && disneyResult.customerSafe) {
           const customerWaiting = hasActiveCodeWait(recipientKeys, 'disney');
-          const matchedRecipients = filterRecipientKeys(recipientKeys, allowedRecipients);
-          const storeRecipients = matchedRecipients.length
-            ? matchedRecipients
-            : (Array.isArray(allowedRecipients) && allowedRecipients.length ? allowedRecipients : recipientKeys);
-          if (storeSignInCode(storeRecipients, disneyResult.code, 'disney', null, receivedAt, allowedRecipients)) {
-            console.log(`📧 Disney+ sign-in code ${disneyResult.code} captured for ${email} recipients: ${storeRecipients.join(', ')}`);
-            maybeNotifyCapturedCode({ service: 'disney', inboxEmail: email, recipientKeys: storeRecipients, code: disneyResult.code, customerWaiting });
-            storeRecipients.forEach((key) => delete notifiedCustomers[scopedSignInCodeKey(key, 'disney')]);
+          const customerKeys = uniqueNormalizedEmails([
+            ...(options.onlyRecipients || []),
+            ...recipientKeys,
+            email
+          ]);
+          if (storeDisneySignInCode(email, customerKeys, disneyResult.code, receivedAt)) {
+            console.log(`📧 Disney+ sign-in code ${disneyResult.code} captured for inbox ${email} keys: ${customerKeys.join(', ')}`);
+            maybeNotifyCapturedCode({ service: 'disney', inboxEmail: email, recipientKeys: customerKeys, code: disneyResult.code, customerWaiting });
+            customerKeys.forEach((key) => delete notifiedCustomers[scopedSignInCodeKey(key, 'disney')]);
           }
         } else if (canvaResult && canvaResult.customerSafe) {
           const customerWaiting = hasActiveCodeWait(recipientKeys, 'canva');
