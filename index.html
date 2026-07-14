@@ -3205,6 +3205,12 @@ function clearSigninCodeDisplay(message){
   }
 }
 
+function sublinkCodeErrorMessage(j,r){
+  if(r&&!r.ok&&r.status===401)return 'Session expired — reopen your subscription link and try again';
+  if(j&&j.reason==='no_gmail_monitor')return 'Gmail not set up for this account — contact support on WhatsApp';
+  return j&&j.message?j.message:'No fresh code yet — request a new code on the app, then tap Refresh';
+}
+
 async function requestSigninCode(){
   const btn=document.getElementById('request-code-btn');
   const status=document.getElementById('request-code-status');
@@ -3237,7 +3243,7 @@ async function requestSigninCode(){
     } else {
       document.getElementById('sublink-code-request').style.display='none';
       document.getElementById('sublink-code-section').style.display='block';
-      clearSigninCodeDisplay('⏳ Waiting for email — request a new code on the app, then tap Refresh');
+      clearSigninCodeDisplay(sublinkCodeErrorMessage(j,r));
       btn.disabled=false;
       btn.textContent='📲 Request Sign-in Code';
       if(_codeRefreshInterval)clearInterval(_codeRefreshInterval);
@@ -3282,7 +3288,7 @@ async function refreshSigninCode(){
     if(j.success&&j.code&&(!j.receivedAt||Date.now()-j.receivedAt<=SIGNIN_CODE_TTL_MS)){
       showSigninCode(j.code,j.receivedAt);
     } else {
-      clearSigninCodeDisplay(j.message||'No fresh code yet — request a new code on the app, then tap Refresh');
+      clearSigninCodeDisplay(sublinkCodeErrorMessage(j,r));
     }
   }catch(e){
     status.textContent='Error: '+e.message;

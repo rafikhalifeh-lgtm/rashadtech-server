@@ -1317,13 +1317,29 @@ function resolveShahidInboxEmail(data, order) {
   return { inboxEmail, accountEmail: normalizeEmail(order.email) };
 }
 
+function findDisneyStockByPhone(data, phone) {
+  const normalized = String(phone || '').replace(/\D/g, '');
+  if (!normalized) return null;
+  for (const [skey, accounts] of Object.entries((data && data.stock) || {})) {
+    if (!isDisneyOneUserStockKey(skey)) continue;
+    for (const acc of accounts || []) {
+      if (!acc) continue;
+      if (String(acc.phone || '').replace(/\D/g, '') === normalized) return acc;
+    }
+  }
+  return null;
+}
+
 function resolveSignInCodeEmails(data, meta) {
   const orderLike = {
     email: meta.codeEmail || meta.email || meta.subEmail || '',
     mainEmail: meta.mainEmail || meta.inboxEmail || '',
     accKey: meta.accKey || ''
   };
-  const stockAcc = findStockAccountForOrder(data, orderLike);
+  let stockAcc = findStockAccountForOrder(data, orderLike);
+  if (!stockAcc && normalizeCodeService(meta.codeType) === 'disney') {
+    stockAcc = findDisneyStockByPhone(data, meta.subPhone || meta.phone);
+  }
   const codeKey = normalizeEmail(
     meta.codeEmail || meta.email || meta.subEmail || (stockAcc && stockAcc.email) || ''
   );
@@ -3257,7 +3273,8 @@ function enrichSubscriptionFromLiveOrder(data, subscription, ownerEmail) {
   const { order } = findUserOrderRecord(user, subscription.id);
   if (!order) return subscription;
   const profileName = orderProfileName(order);
-  const stockAcc = findStockAccountForOrder(data, order);
+  const stockAcc = findStockAccountForOrder(data, order)
+    || (isDisneyOneUserOrder(order) ? findDisneyStockByPhone(data, order.phone) : null);
   const mainEmail = String(order.mainEmail || (stockAcc && stockAcc.mainEmail) || subscription.mainEmail || '').trim();
   const codeEmail = String(order.email || subscription.codeEmail || subscription.email || '').trim();
   const inboxEmail = mainEmail || String(subscription.inboxEmail || '').trim() || codeEmail;
@@ -5250,12 +5267,17 @@ function subscriptionPassMatches(order, subPass) {
 
 function authorizeCodeRequest(req, body, data = {}) {
   const session = getSession(req);
-  const codeKey = normalizeEmail(body.codeEmail || body.mainEmail);
-  const inboxKey = normalizeEmail(body.inboxEmail || body.mainEmail || body.codeEmail);
-  const requested = [codeKey, inboxKey].filter(Boolean);
+  const codeType = String(body.codeType || '').toLowerCase();
   const subEmail = normalizeEmail(body.subEmail);
   const subPass = String(body.subPass || '').trim();
-  const codeType = String(body.codeType || '').toLowerCase();
+  const subPhone = String(body.subPhone || '').trim();
+  const requested = uniqueNormalizedEmails([
+    body.codeEmail,
+    body.mainEmail,
+    body.inboxEmail,
+    body.subEmail,
+    body.email
+  ]);
 
   if (session) {
     if (session.role === 'admin') return true;
@@ -5270,9 +5292,11 @@ function authorizeCodeRequest(req, body, data = {}) {
       const subEmails = [sub.email, sub.codeEmail, sub.mainEmail, sub.inboxEmail]
         .map(normalizeEmail).filter(Boolean);
       if (requested.some((email) => subEmails.includes(email))) return true;
-      if (isDisneyOneUserSubscription(sub) && String(sub.phone || body.subPhone || '').trim()) return true;
+      if (subEmails.length && subEmail && subEmails.includes(subEmail)) return true;
+      if (isDisneyOneUserSubscription(sub) && String(sub.phone || subPhone).trim()) return true;
       if (isOsnPasswordlessSubscription(sub) && normalizeEmail(sub.email)) return true;
       if (isCanvaNewSubscription(sub) && normalizeEmail(sub.email)) return true;
+      if (sub.id && (isDisneyOneUserSubscription(sub) || codeType === 'disney')) return true;
     } catch (e) {}
   }
   if (subEmail && subPass) {
@@ -5282,7 +5306,8 @@ function authorizeCodeRequest(req, body, data = {}) {
       if (!requested.length || requested.includes(orderEmail) || requested.includes(subEmail)) return true;
     }
   }
-  if (subEmail && !subPass && requested.includes(subEmail) && String(body.subPhone || '').trim()) return true;
+  if (subEmail && !subPass && subPhone && codeType === 'disney') return true;
+  if (subEmail && !subPass && requested.includes(subEmail) && subPhone) return true;
   if (subEmail && !subPass && requested.includes(subEmail) && codeType === 'canva') return true;
   if (subEmail && !subPass && requested.includes(subEmail) && codeType === 'osn') return true;
   return false;
@@ -5447,6 +5472,9 @@ app.post('/get-code', async (req, res) => {
       try {
         const payload = decodeLinkToken(meta.linkToken);
         const enriched = enrichSubscriptionFromLiveOrder(data, payload.subscription, payload.owner);
+        if (isDisneyOneUserSubscription(enriched) || isDisneyOneUserSubscription(payload.subscription)) {
+          meta.codeType = 'disney';
+        }
         meta = {
           ...meta,
           email: meta.subEmail || enriched.email || enriched.codeEmail,
@@ -5468,7 +5496,13 @@ app.post('/get-code', async (req, res) => {
       meta.subEmail,
       meta.email
     ]);
-    const codeType = normalizeCodeService(meta.codeType);
+    let codeType = normalizeCodeService(meta.codeType);
+    if (!lookupKeys.length && codeType === 'disney' && String(meta.subPhone || '').trim()) {
+      const phoneStock = findDisneyStockByPhone(data, meta.subPhone);
+      if (phoneStock) {
+        lookupKeys.push(...uniqueNormalizedEmails([phoneStock.email, phoneStock.mainEmail]));
+      }
+    }
     const name = profileName || 'Unknown';
     const notifyKey = scopedSignInCodeKey(codeKey || lookupKeys[0] || name, codeType) || name;
     let shouldNotifyWaiting = false;
@@ -5494,8 +5528,23 @@ app.post('/get-code', async (req, res) => {
     if (!entry && codeType === 'disney') {
       entry = await scanMonitoredInboxesForCode(lookupKeys, profileName, codeType, fetchOpts, { rescanIfMissing: rescanMinutes });
     }
+    if (!entry && codeType === 'disney' && monitoredInbox) {
+      await fetchMonitoredInboxes(monitoredInbox, {
+        onlyService: 'disney',
+        waitStartedAt: 0,
+        rescanMinutes
+      });
+      entry = lookupSignInCode(lookupKeys, profileName, codeType);
+    }
 
     if (!entry) {
+      if (!monitoredInbox && Object.keys(monitoredEmails).length === 0) {
+        return res.json({
+          success: false,
+          reason: 'no_gmail_monitor',
+          message: 'Gmail is not configured for Disney+ codes. Contact support on WhatsApp.'
+        });
+      }
       if (isRequest && shouldNotifyWaiting) {
         const monitorHint = !monitoredInbox
           ? `\n⚠️ Gmail monitoring is not configured for inbox <code>${inboxKey || codeKey || 'unknown'}</code>. Add the main Gmail in Admin stock with an app password.`
@@ -5731,6 +5780,33 @@ function collectEmailRecipients(parsedEmail, fallbackEmail) {
   return recipients.length ? recipients : uniqueNormalizedEmails([fallbackEmail]);
 }
 
+const GMAIL_EXTRA_MAILBOXES = ['[Gmail]/Spam', '[Gmail]/All Mail'];
+
+async function fetchMailboxDisneyEmails(client, mailboxName, creds, email, options, rescanMs) {
+  const emails = [];
+  let maxUid = Number(creds.lastUid || 0);
+  const useRescan = Number(rescanMs || 0) > 0;
+  const lock = await client.getMailboxLock(mailboxName);
+  try {
+    const since = new Date(Date.now() - (rescanMs || EMAIL_LOOKBACK_MS));
+    const seenUid = useRescan || mailboxName !== 'INBOX' ? 0 : Number(creds.lastUid || 0);
+    const messages = (await client.search({ since }, { uid: true }) || [])
+      .filter(uid => Number(uid) > seenUid)
+      .sort((a, b) => Number(a) - Number(b));
+    for await (const message of client.fetch(messages, { uid: true, source: true }, { uid: true })) {
+      if (mailboxName === 'INBOX') {
+        maxUid = Math.max(maxUid, Number(message.uid || 0));
+      }
+      if (!message.source) continue;
+      const parsed = await simpleParser(message.source);
+      emails.push(parsed);
+    }
+  } finally {
+    lock.release();
+  }
+  return { emails, maxUid };
+}
+
 async function fetchMonitoredInboxes(targetEmail, options = {}) {
   await loadGmailMonitors();
   const targetKey = targetEmail ? normalizeEmail(targetEmail) : null;
@@ -5747,25 +5823,18 @@ async function fetchMonitoredInboxes(targetEmail, options = {}) {
 
       await client.connect();
 
-      const lock = await client.getMailboxLock('INBOX');
+      const mailboxes = rescanMs ? ['INBOX', ...GMAIL_EXTRA_MAILBOXES] : ['INBOX'];
       const emails = [];
       let maxUid = Number(creds.lastUid || 0);
-      try {
-        const since = new Date(Date.now() - (rescanMs || EMAIL_LOOKBACK_MS));
-        const seenUid = rescanMs ? 0 : Number(creds.lastUid || 0);
-        const messages = (await client.search({ since }, { uid: true }) || [])
-          .filter(uid => Number(uid) > seenUid)
-          .sort((a, b) => Number(a) - Number(b));
-        if (messages.length) {
-          for await (const message of client.fetch(messages, { uid: true, source: true }, { uid: true })) {
-            maxUid = Math.max(maxUid, Number(message.uid || 0));
-            if (!message.source) continue;
-            const parsed = await simpleParser(message.source);
-            emails.push(parsed);
-          }
+      for (const mailboxName of mailboxes) {
+        try {
+          const result = await fetchMailboxDisneyEmails(client, mailboxName, creds, email, options, rescanMs);
+          emails.push(...result.emails);
+          if (mailboxName === 'INBOX') maxUid = Math.max(maxUid, result.maxUid);
+        } catch (mailboxErr) {
+          if (mailboxName !== 'INBOX') continue;
+          throw mailboxErr;
         }
-      } finally {
-        lock.release();
       }
 
       for (const e of emails) {
