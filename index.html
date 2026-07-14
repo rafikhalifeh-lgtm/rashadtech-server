@@ -3885,9 +3885,12 @@ async function checkSubLink(){
   _sublinkIsOsn=osnSub;
   _sublinkProfileName=found.profileName||found.product||'Customer';
   if(disneyOneSub){
-    _sublinkMainEmail=found.mainEmail||found.inboxEmail||null;
-    _sublinkCodeEmail=found.codeEmail||found.email||null;
-    _sublinkInboxEmail=found.mainEmail||found.inboxEmail||null;
+    const disneyCodeEmail=found.codeEmail||found.email||'';
+    const disneyInbox=found.mainEmail||found.inboxEmail||'';
+    const disneyGmailInbox=disneyInbox||(/@(gmail|googlemail)\.com$/i.test(disneyCodeEmail)?disneyCodeEmail:'');
+    _sublinkMainEmail=disneyGmailInbox||null;
+    _sublinkCodeEmail=disneyCodeEmail||null;
+    _sublinkInboxEmail=disneyGmailInbox||null;
   }else{
     _sublinkMainEmail=found.mainEmail||found.inboxEmail||null;
     _sublinkCodeEmail=found.codeEmail||found.email||found.mainEmail||null;
