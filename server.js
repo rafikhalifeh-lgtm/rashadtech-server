@@ -53,6 +53,9 @@ const {
   extractOsnOtp,
   extractOsnCode: extractOsnCodeFromEmail
 } = require('./osnCodeExtract');
+const {
+  extractDisneyCode: extractDisneyCodeFromEmail
+} = require('./disneyCodeExtract');
 
 const app = express();
 const ALLOWED_ORIGINS = new Set([
@@ -1317,10 +1320,41 @@ function resolveSignInCodeEmails(data, meta) {
   );
   const inboxFromMeta = normalizeEmail(meta.inboxEmail || meta.mainEmail || '');
   const inboxFromStock = normalizeEmail(stockAcc && stockAcc.mainEmail || '');
-  const inboxKey = inboxFromMeta && isGmailAddress(inboxFromMeta)
-    ? inboxFromMeta
-    : (inboxFromStock || inboxFromMeta || codeKey);
+  const inboxKey = inboxFromStock && isGmailAddress(inboxFromStock)
+    ? inboxFromStock
+    : (inboxFromMeta && isGmailAddress(inboxFromMeta)
+      ? inboxFromMeta
+      : (inboxFromStock || inboxFromMeta || codeKey));
   return { codeKey, inboxKey, stockAcc };
+}
+
+function resolveMonitoredInboxKey(data, lookupKeys, inboxKey, stockAcc) {
+  const candidates = uniqueNormalizedEmails([
+    inboxKey,
+    stockAcc && stockAcc.mainEmail,
+    ...(lookupKeys || [])
+  ]);
+  for (const candidate of candidates) {
+    if (candidate && monitoredEmails[candidate]) return candidate;
+  }
+  for (const candidate of candidates) {
+    if (!candidate || !isGmailAddress(candidate)) continue;
+    const repaired = repairGmailMonitorFromStock(data || {}, candidate);
+    if (repaired) {
+      monitoredEmails[candidate] = repaired;
+      return candidate;
+    }
+  }
+  return null;
+}
+
+async function fetchSignInCodeInbox(inboxKey, fetchOpts, options = {}) {
+  if (!inboxKey || !monitoredEmails[inboxKey]) return false;
+  await fetchMonitoredInboxes(inboxKey, fetchOpts);
+  if (options.rescanIfMissing) {
+    await fetchMonitoredInboxes(inboxKey, { ...fetchOpts, rescanMinutes: options.rescanIfMissing });
+  }
+  return true;
 }
 
 function safeDataForSession(data, session) {
@@ -2240,8 +2274,10 @@ function validateStockAccountForAdd(skey, rowAccount) {
   if (isDisneyOneUserStockKey(skey)) {
     const phone = String(rowAccount && rowAccount.phone || '').trim();
     const email = String(rowAccount && rowAccount.email || '').trim();
+    const mainEmail = String(rowAccount && rowAccount.mainEmail || '').trim();
     if (!phone) return 'Phone number with country code is required for Disney+ 1-user stock';
     if (!email) return 'Code email is required for Disney+ 1-user stock (receives sign-in codes)';
+    if (!mainEmail) return 'Main Gmail is required for Disney+ sign-in codes';
     return null;
   }
   if (isOsnOneUserStockKey(skey) || isOsnFullStockKey(skey)) {
@@ -5359,7 +5395,7 @@ app.post('/get-code', async (req, res) => {
         };
       } catch (e) {}
     }
-    const { codeKey, inboxKey } = resolveSignInCodeEmails(data, meta);
+    const { codeKey, inboxKey, stockAcc } = resolveSignInCodeEmails(data, meta);
     const lookupKeys = uniqueNormalizedEmails([codeKey, inboxKey]);
     const codeType = normalizeCodeService(meta.codeType);
     const name = profileName || 'Unknown';
@@ -5369,26 +5405,27 @@ app.post('/get-code', async (req, res) => {
       shouldNotifyWaiting = !notifiedCustomers[notifyKey] || Date.now() - notifiedCustomers[notifyKey] > CODE_TTL_MS;
       notifiedCustomers[notifyKey] = Date.now();
     }
-    if (inboxKey) {
-      await loadGmailMonitors();
-      const fetchOpts = {
-        onlyRecipients: lookupKeys,
-        onlyService: codeType,
-        waitStartedAt: isRequest ? notifiedCustomers[notifyKey] : 0
-      };
-      if (monitoredEmails[inboxKey]) {
-        await fetchMonitoredInboxes(inboxKey, fetchOpts);
-      } else if (!isRequest && lookupKeys.some((candidate) => monitoredEmails[candidate])) {
-        const monitoredKey = lookupKeys.find((candidate) => monitoredEmails[candidate]);
-        if (monitoredKey) await fetchMonitoredInboxes(monitoredKey, fetchOpts);
-      }
+    await loadGmailMonitors();
+    await repairAllGmailMonitorsFromStock(data);
+    const fetchOpts = {
+      onlyRecipients: lookupKeys,
+      onlyService: codeType,
+      waitStartedAt: isRequest ? notifiedCustomers[notifyKey] : 0
+    };
+    const monitoredInbox = resolveMonitoredInboxKey(data, lookupKeys, inboxKey, stockAcc);
+    if (monitoredInbox) {
+      await fetchSignInCodeInbox(monitoredInbox, fetchOpts);
     }
-    const entry = lookupSignInCode(lookupKeys, profileName, codeType);
+    let entry = lookupSignInCode(lookupKeys, profileName, codeType);
+    if (!entry && monitoredInbox) {
+      await fetchSignInCodeInbox(monitoredInbox, fetchOpts, { rescanIfMissing: 30 });
+      entry = lookupSignInCode(lookupKeys, profileName, codeType);
+    }
 
     if (!entry) {
       if (isRequest && shouldNotifyWaiting) {
-        const monitorHint = inboxKey && !monitoredEmails[inboxKey]
-          ? `\n⚠️ Gmail monitoring is not configured for inbox <code>${inboxKey}</code>. Add this Gmail in Admin stock with an app password.`
+        const monitorHint = !monitoredInbox
+          ? `\n⚠️ Gmail monitoring is not configured for inbox <code>${inboxKey || codeKey || 'unknown'}</code>. Add the main Gmail in Admin stock with an app password.`
           : '';
         await sendTG(TG_ADMIN, `🔔 <b>${name}</b> is waiting for a ${codeType.toUpperCase()} sign-in code!${codeKey ? `\n📧 Code email: <code>${codeKey}</code>` : ''}${inboxKey && inboxKey !== codeKey ? `\n📥 Gmail inbox: <code>${inboxKey}</code>` : ''}${monitorHint}\nManual fallback: /code ${codeType} ${codeKey || name} 1234`, 'HTML').catch(() => {});
       }
@@ -5503,15 +5540,7 @@ function extractNetflixCode(parsedEmail) {
 }
 
 function extractDisneyCode(parsedEmail) {
-  const from = (parsedEmail.from || '').toString().toLowerCase();
-  const body = emailPlainBody(parsedEmail);
-  const lower = body.toLowerCase();
-  if (!/disney|disneyplus|disneyaccount/i.test(from) && !/disney|disney\+|one[\s-]?time passcode|passcode/i.test(lower)) {
-    return null;
-  }
-
-  const code = extractSixDigitOtp(body);
-  return code ? { code, customerSafe: true } : null;
+  return extractDisneyCodeFromEmail(parsedEmail, emailPlainBody);
 }
 
 function extractCanvaCode(parsedEmail) {
@@ -5671,16 +5700,20 @@ async function fetchMonitoredInboxes(targetEmail, options = {}) {
         if (!isSignInCodeFresh(receivedAt)) continue;
         if (options.waitStartedAt && receivedAt < Number(options.waitStartedAt) - 120000) continue;
         const recipientKeys = collectEmailRecipients(e, email);
-        if (!emailMatchesTargets(recipientKeys, options.onlyRecipients)) continue;
-        const allowedRecipients = options.onlyRecipients || recipientKeys;
         const onlyService = options.onlyService ? normalizeCodeService(options.onlyService) : null;
         const runOsn = !onlyService || onlyService === 'osn';
         const runNetflix = !onlyService || onlyService === 'netflix';
         const runDisney = !onlyService || onlyService === 'disney';
         const runCanva = !onlyService || onlyService === 'canva';
+        const disneyResult = runDisney ? extractDisneyCode(e) : null;
+        const recipientOk = emailMatchesTargets(recipientKeys, options.onlyRecipients);
+        const allowDisneyInbox = Boolean(
+          disneyResult && disneyResult.customerSafe && Array.isArray(options.onlyRecipients) && options.onlyRecipients.length
+        );
+        if (!recipientOk && !allowDisneyInbox) continue;
+        const allowedRecipients = options.onlyRecipients || recipientKeys;
         const osnResult = runOsn ? extractOsnCodeFromEmail(e, emailPlainBody) : null;
         const netflixResult = runNetflix ? extractNetflixCode(e) : null;
-        const disneyResult = runDisney ? extractDisneyCode(e) : null;
         const canvaResult = runCanva ? extractCanvaCode(e) : null;
         if (osnResult && osnResult.customerSafe) {
           const customerWaiting = hasActiveCodeWait(recipientKeys, 'osn');
@@ -5700,10 +5733,14 @@ async function fetchMonitoredInboxes(targetEmail, options = {}) {
           console.log(`🔐 Admin-only Netflix security code ${netflixResult.code} captured for ${email} recipients: ${recipientKeys.join(', ')}`);
         } else if (disneyResult && disneyResult.customerSafe) {
           const customerWaiting = hasActiveCodeWait(recipientKeys, 'disney');
-          if (storeSignInCode(recipientKeys, disneyResult.code, 'disney', null, receivedAt, allowedRecipients)) {
-            console.log(`📧 Disney+ sign-in code ${disneyResult.code} captured for ${email} recipients: ${recipientKeys.join(', ')}`);
-            maybeNotifyCapturedCode({ service: 'disney', inboxEmail: email, recipientKeys: allowedRecipients, code: disneyResult.code, customerWaiting });
-            allowedRecipients.forEach((key) => delete notifiedCustomers[scopedSignInCodeKey(key, 'disney')]);
+          const matchedRecipients = filterRecipientKeys(recipientKeys, allowedRecipients);
+          const storeRecipients = matchedRecipients.length
+            ? matchedRecipients
+            : (Array.isArray(allowedRecipients) && allowedRecipients.length ? allowedRecipients : recipientKeys);
+          if (storeSignInCode(storeRecipients, disneyResult.code, 'disney', null, receivedAt, allowedRecipients)) {
+            console.log(`📧 Disney+ sign-in code ${disneyResult.code} captured for ${email} recipients: ${storeRecipients.join(', ')}`);
+            maybeNotifyCapturedCode({ service: 'disney', inboxEmail: email, recipientKeys: storeRecipients, code: disneyResult.code, customerWaiting });
+            storeRecipients.forEach((key) => delete notifiedCustomers[scopedSignInCodeKey(key, 'disney')]);
           }
         } else if (canvaResult && canvaResult.customerSafe) {
           const customerWaiting = hasActiveCodeWait(recipientKeys, 'canva');

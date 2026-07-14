@@ -4,9 +4,9 @@
   "description": "RashadTech TV streaming store backend",
   "main": "server.js",
   "scripts": {
-    "build": "node --check server.js && node --check smsRoutes.js && node --check strong8kRoutes.js && node --check strong8k.js && node --check phoneCountries.js",
+    "build": "node --check server.js && node --check smsRoutes.js && node --check strong8kRoutes.js && node --check strong8k.js && node --check phoneCountries.js && node --check disneyCodeExtract.js",
     "start": "node server.js",
-    "test": "node tests/osn-extract.test.js && node tests/signin-code-store.test.js && node tests/price-catalog.test.js && node tests/sms-catalog.test.js && node tests/strong8k.test.js && node tests/phoneCountries.test.js && node tests/index-html-syntax.test.js && node tests/smoke-api.test.js"
+    "test": "node tests/osn-extract.test.js && node tests/disney-extract.test.js && node tests/signin-code-store.test.js && node tests/price-catalog.test.js && node tests/sms-catalog.test.js && node tests/strong8k.test.js && node tests/phoneCountries.test.js && node tests/index-html-syntax.test.js && node tests/smoke-api.test.js"
   },
   "dependencies": {
     "@netlify/blobs": "^10.7.9",

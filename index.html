@@ -7932,6 +7932,7 @@ async function addDisneyBulkAccounts(){
   const mainEmail=document.getElementById('ds-bulk-main-email')?.value.trim()||'';
   const mainPass=(document.getElementById('ds-bulk-main-pass')?.value||'').replace(/\s+/g,'');
   if(!phone||!email){showToast('Phone and code email are required');return;}
+  if(!mainEmail){showToast('Main Gmail is required for Disney+ sign-in codes');return;}
   const profiles=[];
   for(let n=1;n<=DISNEY_MAX_ONE_USER_SLOTS;n++){
     const name=document.getElementById('ds-bulk-name-'+n)?.value.trim()||'';
