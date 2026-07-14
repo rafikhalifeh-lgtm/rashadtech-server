@@ -179,6 +179,7 @@ process.on('uncaughtException', (err) => {
 });
 
 let latestCodes = {};
+const lastImapErrors = {};
 let latestShahidResetLinks = {};
 let notifiedCustomers = {};
 let notifiedShahidReset = {};
@@ -403,11 +404,12 @@ function repairGmailMonitorFromStock(data, email) {
     for (const acc of accounts || []) {
       if (!acc) continue;
       const mainEmail = normalizeEmail(acc.mainEmail);
-      if (mainEmail !== key) continue;
+      const accountEmail = normalizeEmail(acc.email);
+      if (mainEmail !== key && accountEmail !== key) continue;
       const pass = normalizeGmailPassword(acc.mainPass || acc.mainPassword);
       if (pass.length >= 16) {
         return {
-          user: mainEmail,
+          user: key,
           pass,
           lastUid: Number(acc.gmailLastUid || 0),
           lastCheckedAt: Number(acc.gmailLastCheckedAt || 0)
@@ -418,24 +420,63 @@ function repairGmailMonitorFromStock(data, email) {
   return null;
 }
 
+async function ensureGmailMonitorForDisney(data, customerKeys, stockAcc) {
+  const candidates = uniqueNormalizedEmails([
+    stockAcc && stockAcc.mainEmail,
+    stockAcc && stockAcc.email,
+    ...(customerKeys || [])
+  ]).filter(isGmailAddress);
+  let changed = false;
+  let found = null;
+  for (const candidate of candidates) {
+    const repaired = repairGmailMonitorFromStock(data, candidate);
+    const existing = monitoredEmails[candidate];
+    if (existing) {
+      if (repaired && repaired.pass && repaired.pass !== existing.pass) {
+        existing.pass = repaired.pass;
+        changed = true;
+      }
+      found = candidate;
+      break;
+    }
+    if (repaired) {
+      monitoredEmails[candidate] = {
+        ...repaired,
+        lastUid: 0,
+        lastCheckedAt: Number(repaired.lastCheckedAt || 0)
+      };
+      changed = true;
+      found = candidate;
+      break;
+    }
+  }
+  if (changed) {
+    try { await persistGmailMonitors(); } catch (e) {
+      console.error('Persist repaired Gmail monitor error:', e.message);
+    }
+  }
+  return found;
+}
+
 async function repairAllGmailMonitorsFromStock(data) {
   const repaired = {};
   const seen = new Set();
   for (const accounts of Object.values((data && data.stock) || {})) {
     for (const acc of accounts || []) {
       if (!acc) continue;
-      const mainEmail = normalizeEmail(acc.mainEmail);
-      if (!mainEmail || !isGmailAddress(mainEmail) || seen.has(mainEmail)) continue;
       const pass = normalizeGmailPassword(acc.mainPass || acc.mainPassword);
       if (pass.length < 16) continue;
-      seen.add(mainEmail);
-      if (!monitoredEmails[mainEmail]) {
-        repaired[mainEmail] = {
-          user: mainEmail,
-          pass,
-          lastUid: 0,
-          lastCheckedAt: 0
-        };
+      for (const candidate of uniqueNormalizedEmails([acc.mainEmail, acc.email])) {
+        if (!candidate || !isGmailAddress(candidate) || seen.has(candidate)) continue;
+        seen.add(candidate);
+        if (!monitoredEmails[candidate]) {
+          repaired[candidate] = {
+            user: candidate,
+            pass,
+            lastUid: 0,
+            lastCheckedAt: 0
+          };
+        }
       }
     }
   }
@@ -1344,7 +1385,10 @@ function resolveSignInCodeEmails(data, meta) {
     meta.codeEmail || meta.email || meta.subEmail || (stockAcc && stockAcc.email) || ''
   );
   const inboxFromMeta = normalizeEmail(meta.inboxEmail || meta.mainEmail || '');
-  const inboxFromStock = normalizeEmail(stockAcc && stockAcc.mainEmail || '');
+  const inboxFromStock = normalizeEmail(
+    (stockAcc && stockAcc.mainEmail) ||
+    (stockAcc && isGmailAddress(stockAcc.email) ? stockAcc.email : '')
+  );
   const inboxKey = inboxFromStock && isGmailAddress(inboxFromStock)
     ? inboxFromStock
     : (inboxFromMeta && isGmailAddress(inboxFromMeta)
@@ -1407,11 +1451,15 @@ async function fetchDisneySignInCodeFromInbox(monitoredInbox, customerKeys, resc
   const fetchOpts = { onlyService: 'disney', waitStartedAt: 0, rescanMinutes };
   let entry = lookupDisneySignInCode(customerKeys, monitoredInbox);
   if (entry) return entry;
-  await fetchSignInCodeInbox(monitoredInbox, fetchOpts, { rescanIfMissing: rescanMinutes });
+  delete lastImapErrors[monitoredInbox];
+  await fetchMonitoredInboxes(monitoredInbox, fetchOpts);
   entry = lookupDisneySignInCode(customerKeys, monitoredInbox);
   if (entry) return entry;
-  await fetchMonitoredInboxes(monitoredInbox, fetchOpts);
-  return lookupDisneySignInCode(customerKeys, monitoredInbox);
+  if (!lastImapErrors[monitoredInbox]) {
+    await fetchMonitoredInboxes(monitoredInbox, { ...fetchOpts, rescanMinutes: Math.max(rescanMinutes, 60) });
+    entry = lookupDisneySignInCode(customerKeys, monitoredInbox);
+  }
+  return entry;
 }
 
 async function fetchSignInCodeInbox(inboxKey, fetchOpts, options = {}) {
@@ -5556,14 +5604,17 @@ app.post('/get-code', async (req, res) => {
     mergeLatestCodesFromData(dbCache || data);
     await repairAllGmailMonitorsFromStock(data);
     const rescanMinutes = codeType === 'disney' ? 45 : 30;
-    const monitoredInbox = resolveMonitoredInboxKey(data, lookupKeys, inboxKey, stockAcc);
+    let monitoredInbox = resolveMonitoredInboxKey(data, lookupKeys, inboxKey, stockAcc);
     let entry = null;
 
     if (codeType === 'disney') {
       const disneyKeys = buildDisneyCustomerKeys(meta, stockAcc, codeKey, inboxKey, monitoredInbox);
-      entry = lookupDisneySignInCode(disneyKeys, monitoredInbox);
+      monitoredInbox = await ensureGmailMonitorForDisney(data, disneyKeys, stockAcc) || monitoredInbox;
+      if (monitoredInbox) disneyKeys.push(monitoredInbox);
+      const disneyLookup = uniqueNormalizedEmails(disneyKeys);
+      entry = lookupDisneySignInCode(disneyLookup, monitoredInbox);
       if (!entry && monitoredInbox) {
-        entry = await fetchDisneySignInCodeFromInbox(monitoredInbox, disneyKeys, rescanMinutes);
+        entry = await fetchDisneySignInCodeFromInbox(monitoredInbox, disneyLookup, rescanMinutes);
       }
     } else {
       const fetchOpts = {
@@ -5587,10 +5638,13 @@ app.post('/get-code', async (req, res) => {
         });
       }
       if (isRequest && shouldNotifyWaiting) {
-        const monitorHint = !monitoredInbox
-          ? `\n⚠️ Gmail monitoring is not configured for inbox <code>${inboxKey || codeKey || 'unknown'}</code>. Add the main Gmail in Admin stock with an app password.`
+        const imapErr = monitoredInbox && lastImapErrors[monitoredInbox]
+          ? `\n⚠️ IMAP: ${lastImapErrors[monitoredInbox]}`
           : '';
-        await sendTG(TG_ADMIN, `🔔 <b>${name}</b> is waiting for a ${codeType.toUpperCase()} sign-in code!${codeKey ? `\n📧 Code email: <code>${codeKey}</code>` : ''}${inboxKey && inboxKey !== codeKey ? `\n📥 Gmail inbox: <code>${inboxKey}</code>` : ''}${monitorHint}\nManual fallback: /code ${codeType} ${codeKey || name} 1234`, 'HTML').catch(() => {});
+        const monitorHint = !monitoredInbox
+          ? `\n⚠️ Gmail monitoring is not configured for <code>${codeKey || 'unknown'}</code>. Open Admin → Stock → Disney+, re-enter Gmail app password, save.`
+          : `\n📥 Polled inbox: <code>${monitoredInbox}</code>${imapErr}`;
+        await sendTG(TG_ADMIN, `🔔 <b>${name}</b> is waiting for a ${codeType.toUpperCase()} sign-in code!${codeKey ? `\n📧 Code email: <code>${codeKey}</code>` : ''}${monitorHint}\nManual fallback: /code ${codeType} ${codeKey || name} 123456`, 'HTML').catch(() => {});
       }
       return res.json({ success: false, message: 'No code found yet — request a new code on the app, then tap Refresh' });
     }
@@ -5958,8 +6012,11 @@ async function fetchMonitoredInboxes(targetEmail, options = {}) {
         changed = true;
       }
       creds.lastCheckedAt = Date.now();
+      delete lastImapErrors[email];
     } catch(e) {
-      console.log('IMAP error for', email, e.message);
+      const errMsg = e && (e.message || String(e));
+      lastImapErrors[email] = errMsg;
+      console.log('IMAP error for', email, errMsg);
     } finally {
       if (client && client.usable) {
         try { await client.logout(); } catch(e) {}
@@ -6010,8 +6067,7 @@ app.post('/setup-gmail', async (req, res) => {
   try {
     await loadGmailMonitors();
     const previous = monitoredEmails[key];
-    const currentMaxUid = await getInboxMaxUid(key, appPassword);
-    const lastUid = previous ? Number(previous.lastUid || 0) : currentMaxUid;
+    const lastUid = previous ? Number(previous.lastUid || 0) : 0;
     monitoredEmails[key] = { user: key, pass: appPassword, lastUid, lastCheckedAt: Date.now() };
     await persistGmailMonitors();
     await sendTG(TG_ADMIN, `📧 Added Gmail monitoring: <code>${key}</code>\nWill capture Netflix, Disney+, Canva, OSN+ sign-in codes and Shahid reset links automatically.`, 'HTML').catch(() => {});
