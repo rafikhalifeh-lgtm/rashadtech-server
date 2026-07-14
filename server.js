@@ -2370,10 +2370,10 @@ function iptvCustomerCredentialsBlock(order, { html = true } = {}) {
   const m3u = String(order && order.serviceLink || '').trim();
   if (html) {
     if (host) {
-      return `🌐 <b>Host:</b> <code>${host}</code>\n👤 <b>Username:</b> <code>${username}</code>\n🔑 <b>Password:</b> <code>${password}</code>`;
+      return `🌐 <b>Host:</b> <code>${escHtml(host)}</code>\n👤 <b>Username:</b> <code>${escHtml(username)}</code>\n🔑 <b>Password:</b> <code>${escHtml(password)}</code>`;
     }
-    if (m3u) return `🔗 <b>M3U playlist:</b>\n<code>${m3u}</code>`;
-    return `👤 <b>Username:</b> <code>${username}</code>\n🔑 <b>Password:</b> <code>${password}</code>`;
+    if (m3u) return `🔗 <b>M3U playlist:</b>\n<code>${escHtml(m3u)}</code>`;
+    return `👤 <b>Username:</b> <code>${escHtml(username)}</code>\n🔑 <b>Password:</b> <code>${escHtml(password)}</code>`;
   }
   if (host) {
     return `Host: ${host}\nUsername: ${username}\nPassword: ${password}`;
@@ -3478,7 +3478,7 @@ async function notifyPurchaseFulfilled(user, product, planLabel, price, order, a
   const isCanvaNew = isCanvaNewOrder(order);
   const isCanvaOwn = isCanvaOwnOrder(order);
   const isIptv = isStrong8kIptvOrder(order);
-  let adminMsg = `🎉 <b>New Purchase</b>\n\n📦 <b>Product:</b> ${product.name}\n📋 <b>Plan:</b> ${planLabel}\n💵 <b>Price:</b> $${Number(price).toFixed(2)}\n👤 <b>Buyer:</b> ${user.name} (${user.email})`;
+  let adminMsg = `🎉 <b>New Purchase</b>\n\n📦 <b>Product:</b> ${escHtml(product.name)}\n📋 <b>Plan:</b> ${escHtml(planLabel)}\n💵 <b>Price:</b> $${Number(price).toFixed(2)}\n👤 <b>Buyer:</b> ${escHtml(user.name)} (${escHtml(user.email)})`;
   if (assignedCustomer) {
     adminMsg += `\n👥 <b>Assigned to:</b> ${assignedCustomer.fname} ${assignedCustomer.lname} (${assignedCustomer.code}${assignedCustomer.phone})`;
   }
@@ -3495,6 +3495,8 @@ async function notifyPurchaseFulfilled(user, product, planLabel, price, order, a
     adminMsg += `\n\n📧 <b>Canva email:</b> <code>${order.email || '—'}</code>`;
   } else if (isIptv) {
     adminMsg += `\n\n📺 <b>IPTV line:</b>\n${iptvCustomerCredentialsBlock(order)}`;
+    if (options.iptvRegion) adminMsg += `\n🌍 <b>Region:</b> ${escHtml(options.iptvRegion)}`;
+    if (order.iptvSubPhone) adminMsg += `\n📱 <b>Sub-customer:</b> <code>${escHtml(order.iptvSubPhone)}</code>`;
   } else {
     adminMsg += `\n\n🔐 <b>Credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`;
     if (profileLabel) adminMsg += `\n👤 Profile: <code>${profileLabel}</code>`;
@@ -5227,6 +5229,14 @@ async function sendTG(chatId, text, parse_mode) {
   });
   const j = await r.json().catch(() => ({}));
   if (!j.ok) {
+    if (parse_mode === 'HTML') {
+      const plain = String(text || '')
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/p>/gi, '\n')
+        .replace(/<[^>]+>/g, '');
+      console.warn('sendTG HTML failed, retrying plain text:', id, j.description || r.status);
+      return sendTG(id, plain);
+    }
     const err = new Error(j.description || `Telegram error HTTP ${r.status}`);
     err.telegram = j;
     console.error('sendTG failed:', id, j.description || r.status);
@@ -6133,7 +6143,8 @@ registerStrong8kRoutes(app, {
   notifyPurchaseFulfilled,
   sendPurchaseReceiptEmail,
   formatBeirutTime,
-  userIsReseller
+  userIsReseller,
+  runAfterResponse
 });
 
 let rtEnhancements = null;
