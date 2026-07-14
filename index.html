@@ -3233,12 +3233,20 @@ async function requestSigninCode(){
     const j=await r.json();
     if(j.success&&j.code){
       showSigninCode(j.code,j.receivedAt);
+      if(_codeRefreshInterval)clearInterval(_codeRefreshInterval);
     } else {
       document.getElementById('sublink-code-request').style.display='none';
       document.getElementById('sublink-code-section').style.display='block';
       clearSigninCodeDisplay('⏳ Waiting for email — request a new code on the app, then tap Refresh');
       btn.disabled=false;
       btn.textContent='📲 Request Sign-in Code';
+      if(_codeRefreshInterval)clearInterval(_codeRefreshInterval);
+      let polls=0;
+      _codeRefreshInterval=setInterval(()=>{
+        polls+=1;
+        refreshSigninCode().catch(()=>{});
+        if(polls>=24)clearInterval(_codeRefreshInterval);
+      },5000);
     }
   }catch(e){
     btn.disabled=false;

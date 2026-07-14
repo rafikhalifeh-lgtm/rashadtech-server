@@ -147,6 +147,7 @@ const JSONBIN_ALLOW_PUBLIC_READ = normalizeEnvSecret(process.env.JSONBIN_ALLOW_P
 let FALLBACK_DB_FILE = process.env.FALLBACK_DB_FILE || (fs.existsSync('/var/data') ? '/var/data/rashadtech-db.json' : path.join(process.cwd(), '.data', 'emergency-db.json'));
 const JSONBIN_SYNC_INTERVAL_MS = Number(process.env.JSONBIN_SYNC_INTERVAL_MS || 10 * 60 * 1000);
 const GMAIL_MONITORS_KEY = 'gmailMonitors';
+const LATEST_CODES_KEY = 'latestSignInCodes';
 const BACKUPS_KEY = 'backups';
 const LINK_TOKENS_KEY = 'linkTokens';
 const CODE_TTL_MS = 15 * 60 * 1000;
@@ -1228,6 +1229,7 @@ async function writeJsonBinRaw(data, options = {}) {
 function stripPrivateData(data) {
   const publicData = { ...(data || {}) };
   delete publicData[GMAIL_MONITORS_KEY];
+  delete publicData[LATEST_CODES_KEY];
   delete publicData.sessions;
   delete publicData[STRONG8K_CONFIG_KEY];
   delete publicData[IPTV_TRIALS_KEY];
@@ -1284,9 +1286,16 @@ function isShahidOrder(order) {
 }
 
 function findStockAccountForOrder(data, order) {
-  if (!order || !order.email) return null;
-  const targetEmail = normalizeEmail(order.email);
-  const targetKey = String(order.accKey || '');
+  if (!order) return null;
+  const targetEmail = normalizeEmail(order.email || order.codeEmail);
+  const targetKey = String(order.accKey || '').trim();
+  for (const accounts of Object.values((data && data.stock) || {})) {
+    for (const acc of accounts || []) {
+      if (!acc) continue;
+      if (targetKey && acc.accKey && acc.accKey === targetKey) return acc;
+    }
+  }
+  if (!targetEmail) return null;
   for (const accounts of Object.values((data && data.stock) || {})) {
     for (const acc of accounts || []) {
       if (!acc || normalizeEmail(acc.email) !== targetEmail) continue;
@@ -1310,13 +1319,13 @@ function resolveShahidInboxEmail(data, order) {
 
 function resolveSignInCodeEmails(data, meta) {
   const orderLike = {
-    email: meta.codeEmail || meta.email || '',
+    email: meta.codeEmail || meta.email || meta.subEmail || '',
     mainEmail: meta.mainEmail || meta.inboxEmail || '',
     accKey: meta.accKey || ''
   };
   const stockAcc = findStockAccountForOrder(data, orderLike);
   const codeKey = normalizeEmail(
-    meta.codeEmail || meta.email || (stockAcc && stockAcc.email) || ''
+    meta.codeEmail || meta.email || meta.subEmail || (stockAcc && stockAcc.email) || ''
   );
   const inboxFromMeta = normalizeEmail(meta.inboxEmail || meta.mainEmail || '');
   const inboxFromStock = normalizeEmail(stockAcc && stockAcc.mainEmail || '');
@@ -1352,9 +1361,45 @@ async function fetchSignInCodeInbox(inboxKey, fetchOpts, options = {}) {
   if (!inboxKey || !monitoredEmails[inboxKey]) return false;
   await fetchMonitoredInboxes(inboxKey, fetchOpts);
   if (options.rescanIfMissing) {
-    await fetchMonitoredInboxes(inboxKey, { ...fetchOpts, rescanMinutes: options.rescanIfMissing });
+    await fetchMonitoredInboxes(inboxKey, {
+      ...fetchOpts,
+      waitStartedAt: 0,
+      rescanMinutes: options.rescanIfMissing
+    });
   }
   return true;
+}
+
+function mergeLatestCodesFromData(data) {
+  const stored = data && data[LATEST_CODES_KEY];
+  if (!stored || typeof stored !== 'object') return;
+  Object.entries(stored).forEach(([key, entry]) => {
+    if (!entry || typeof entry !== 'object' || !entry.code) return;
+    const ts = Number(entry.timestamp || 0);
+    if (!isSignInCodeFresh(ts)) return;
+    const prev = latestCodes[key];
+    if (!prev || ts >= Number(prev.timestamp || 0)) {
+      latestCodes[key] = { code: String(entry.code), timestamp: ts, service: entry.service || 'netflix' };
+    }
+  });
+}
+
+let latestCodesPersistTimer = null;
+function schedulePersistLatestCodes() {
+  if (latestCodesPersistTimer) return;
+  latestCodesPersistTimer = setTimeout(() => {
+    latestCodesPersistTimer = null;
+    enqueueDbWrite(async () => {
+      const data = await readDbForWrite();
+      const fresh = {};
+      Object.entries(latestCodes).forEach(([key, entry]) => {
+        if (!entry || !isSignInCodeFresh(entry.timestamp)) return;
+        fresh[key] = entry;
+      });
+      data[LATEST_CODES_KEY] = fresh;
+      await writeDbFast(data);
+    }).catch((e) => console.error('Persist latest codes error:', e.message));
+  }, 1500);
 }
 
 function safeDataForSession(data, session) {
@@ -5102,6 +5147,7 @@ async function loadGmailMonitors(force = false) {
     }
     monitoredEmails = loaded;
     gmailMonitorsLoaded = true;
+    mergeLatestCodesFromData(data);
     console.log(`Loaded ${Object.keys(monitoredEmails).length} Gmail monitor(s)`);
   } catch(e) {
     console.log('Gmail monitor load error:', e.message);
@@ -5324,7 +5370,10 @@ function storeSignInCode(recipientKeys, code, service, profileName, receivedAt, 
   }
   const ts = Number(receivedAt || Date.now());
   if (!isSignInCodeFresh(ts)) return false;
-  const keys = filterRecipientKeys(recipientKeys, allowedRecipients);
+  let keys = filterRecipientKeys(recipientKeys, allowedRecipients);
+  if (!keys.length && svc === 'disney' && (recipientKeys || []).length) {
+    keys = recipientKeys;
+  }
   if (!keys.length) return false;
   const entry = { code: normalizedCode, timestamp: ts, service: svc };
   let stored = false;
@@ -5340,6 +5389,7 @@ function storeSignInCode(recipientKeys, code, service, profileName, receivedAt, 
   if (svc === 'netflix' && profileName) {
     writeEntry(scopedSignInCodeKey(String(profileName).toLowerCase(), 'netflix'));
   }
+  if (stored) schedulePersistLatestCodes();
   return stored;
 }
 
@@ -5369,10 +5419,23 @@ function lookupSignInCode(lookupKeys, profileName, codeType) {
   return null;
 }
 
+async function scanMonitoredInboxesForCode(lookupKeys, profileName, codeType, fetchOpts, options = {}) {
+  const inboxKeys = options.inboxKeys || Object.keys(monitoredEmails);
+  const rescanMinutes = options.rescanIfMissing || 0;
+  for (const inboxKey of inboxKeys) {
+    if (!monitoredEmails[inboxKey]) continue;
+    await fetchSignInCodeInbox(inboxKey, { ...fetchOpts, waitStartedAt: 0 }, { rescanIfMissing: rescanMinutes });
+    const entry = lookupSignInCode(lookupKeys, profileName, codeType);
+    if (entry) return entry;
+  }
+  return null;
+}
+
 // ── CODE ENDPOINTS ─────────────────────────────────────────────────────
 app.post('/get-code', async (req, res) => {
   try {
     const data = await readJsonBinRaw().catch(() => ({}));
+    mergeLatestCodesFromData(data);
     if (!authorizeCodeRequest(req, req.body || {}, data)) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
@@ -5396,7 +5459,15 @@ app.post('/get-code', async (req, res) => {
       } catch (e) {}
     }
     const { codeKey, inboxKey, stockAcc } = resolveSignInCodeEmails(data, meta);
-    const lookupKeys = uniqueNormalizedEmails([codeKey, inboxKey]);
+    const lookupKeys = uniqueNormalizedEmails([
+      codeKey,
+      inboxKey,
+      stockAcc && stockAcc.email,
+      stockAcc && stockAcc.mainEmail,
+      meta.codeEmail,
+      meta.subEmail,
+      meta.email
+    ]);
     const codeType = normalizeCodeService(meta.codeType);
     const name = profileName || 'Unknown';
     const notifyKey = scopedSignInCodeKey(codeKey || lookupKeys[0] || name, codeType) || name;
@@ -5406,20 +5477,22 @@ app.post('/get-code', async (req, res) => {
       notifiedCustomers[notifyKey] = Date.now();
     }
     await loadGmailMonitors();
+    mergeLatestCodesFromData(dbCache || data);
     await repairAllGmailMonitorsFromStock(data);
     const fetchOpts = {
       onlyRecipients: lookupKeys,
       onlyService: codeType,
-      waitStartedAt: isRequest ? notifiedCustomers[notifyKey] : 0
+      waitStartedAt: 0
     };
-    const monitoredInbox = resolveMonitoredInboxKey(data, lookupKeys, inboxKey, stockAcc);
-    if (monitoredInbox) {
-      await fetchSignInCodeInbox(monitoredInbox, fetchOpts);
-    }
+    const rescanMinutes = codeType === 'disney' ? 45 : 30;
     let entry = lookupSignInCode(lookupKeys, profileName, codeType);
+    const monitoredInbox = resolveMonitoredInboxKey(data, lookupKeys, inboxKey, stockAcc);
     if (!entry && monitoredInbox) {
-      await fetchSignInCodeInbox(monitoredInbox, fetchOpts, { rescanIfMissing: 30 });
+      await fetchSignInCodeInbox(monitoredInbox, fetchOpts, { rescanIfMissing: rescanMinutes });
       entry = lookupSignInCode(lookupKeys, profileName, codeType);
+    }
+    if (!entry && codeType === 'disney') {
+      entry = await scanMonitoredInboxesForCode(lookupKeys, profileName, codeType, fetchOpts, { rescanIfMissing: rescanMinutes });
     }
 
     if (!entry) {
@@ -5960,6 +6033,9 @@ app.listen(PORT, '0.0.0.0', () => {
         .catch(e => console.error('DB warm error:', e.message));
       if (rtEnhancements && rtEnhancements.loadPersistedSessions) await rtEnhancements.loadPersistedSessions();
       await loadGmailMonitors();
+      readJsonBinRaw({ fast: true, skipRecoverWrite: true, noClone: true })
+        .then((data) => mergeLatestCodesFromData(data))
+        .catch(() => {});
       syncDbToJsonBin(false).catch(e => console.error('Initial JSONBin sync error:', e.message));
       if (process.env.RENDER_EXTERNAL_URL && TG_TOKEN) {
         const webhookUrl = process.env.RENDER_EXTERNAL_URL + '/telegram';
