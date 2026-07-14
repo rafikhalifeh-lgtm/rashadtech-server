@@ -110,7 +110,8 @@ function registerStrong8kRoutes(app, deps) {
     notifyPurchaseFulfilled,
     sendPurchaseReceiptEmail,
     formatBeirutTime,
-    userIsReseller
+    userIsReseller,
+    runAfterResponse
   } = deps;
 
   async function readDbFast() {
@@ -474,7 +475,7 @@ function registerStrong8kRoutes(app, deps) {
         return res.status(outcome.status || 400).json({ error: outcome.error });
       }
 
-      const { data, user, order, dateStr, panelResult, reseller, regionName } = outcome;
+      const { data, user, order, dateStr, panelResult, isTrial, reseller, regionName } = outcome;
       res.json({
         success: true,
         order,
@@ -482,29 +483,30 @@ function registerStrong8kRoutes(app, deps) {
         data: safeDataForSession(data, session)
       });
 
-      if (!isTrial && typeof notifyPurchaseFulfilled === 'function') {
-        notifyPurchaseFulfilled(user, {
-          id: 'strong8k',
-          name: order.product,
-          short: order.short,
-          color: order.color,
-          tc: order.tc
-        }, order.plan, order.price, order, null, { data }).catch(() => {});
+      const notifyIptvPurchase = async () => {
+        if (isTrial) return;
+        if (typeof notifyPurchaseFulfilled === 'function') {
+          await notifyPurchaseFulfilled(user, {
+            id: 'strong8k',
+            name: order.product,
+            short: order.short,
+            color: order.color,
+            tc: order.tc
+          }, order.plan, order.price, order, null, { data, iptvRegion: regionName })
+            .catch((e) => console.error('IPTV purchase admin notify error:', e.message));
+        }
+        if (typeof sendPurchaseReceiptEmail === 'function') {
+          await sendPurchaseReceiptEmail(user, { name: order.product }, order.plan, order.price, order, {
+            data,
+            date: dateStr
+          }).catch((e) => console.error('IPTV purchase receipt email error:', e.message));
+        }
+      };
+      if (typeof runAfterResponse === 'function') {
+        runAfterResponse(notifyIptvPurchase);
+      } else {
+        notifyIptvPurchase().catch((e) => console.error('IPTV purchase notify error:', e.message));
       }
-      if (!isTrial && typeof sendPurchaseReceiptEmail === 'function') {
-        sendPurchaseReceiptEmail(user, { name: order.product }, order.plan, order.price, order, {
-          data,
-          date: dateStr
-        }).catch(() => {});
-      }
-      const lineInfo = panelResult.lineType === 'stable'
-        ? `🌐 <code>${panelResult.host || 'host'}</code>\n👤 <code>${panelResult.username}</code>\n🔑 <code>${panelResult.password}</code>`
-        : `🔗 <code>${panelResult.url || 'M3U delivered'}</code>`;
-      sendTG(
-        TG_ADMIN,
-        `📺 <b>${isTrial ? 'IPTV free trial' : 'RashadTech IPTV purchase'}</b>\n\n${order.plan}\n${lineInfo}\n🌍 ${regionName}\n💵 ${isTrial ? 'FREE' : order.price.toFixed(2)}\n🛒 ${user.name} (${user.email})${reseller && order.iptvSubPhone ? `\n📱 Sub-customer: ${order.iptvSubPhone}` : ''}`,
-        'HTML'
-      ).catch(() => {});
     } catch (e) {
       console.error('Strong8K purchase error:', e.message);
       res.status(500).json({ error: e.message || 'IPTV purchase failed' });
