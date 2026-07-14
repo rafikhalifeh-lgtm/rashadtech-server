@@ -1,26 +1,51 @@
 function isValidDisneyOtp(code) {
-  return /^\d{6}$/.test(String(code || ''));
+  return /^(?:\d{4}|\d{6})$/.test(String(code || ''));
+}
+
+function isLikelyDisneyFalsePositive(code, context) {
+  const ctx = String(context || '');
+  if (!/^\d{4}$/.test(String(code || ''))) return false;
+  if (/^20\d{2}$/.test(code) || /^19\d{2}$/.test(code)) return true;
+  if (/call|tel:|phone|whatsapp|mobile|customer service|support line|hotline/i.test(ctx)) return true;
+  if (/\+\d|00\d{2,}/.test(ctx)) return true;
+  return false;
+}
+
+function normalizeSpacedDigits(value, lengths) {
+  const digits = String(value || '').replace(/\D/g, '');
+  const allowed = Array.isArray(lengths) ? lengths : [lengths];
+  return allowed.includes(digits.length) ? digits : null;
 }
 
 function extractDisneyOtp(body) {
   const text = String(body || '');
   if (!text) return null;
+  const lengths = [6, 4];
   const labeledPatterns = [
-    /(?:verification|one[- ]?time|sign[- ]?in|login|otp|passcode|security)\s*(?:code|password)?\s*(?:is)?\s*[:#\-]?\s*((?:\d[\s\-]*){6})\b/gi,
-    /(?:code|password)\s*(?:is)?\s*[:#\-]?\s*((?:\d[\s\-]*){6})\b/gi,
-    /\b((?:\d[\s\-]*){6})\b\s*(?:is your|is the|verification|one[- ]?time|sign[- ]?in)/gi,
-    /(?:verification|one[- ]?time|sign[- ]?in|login|otp|passcode|security)\s*(?:code|password)?\s*[:#\-]?\s*(\d{6})\b/gi,
-    /\b(\d{6})\b\s*(?:is your|is the|verification|one[- ]?time|sign[- ]?in)/gi,
-    /passcode[^\d]{0,40}((?:\d[\s\-]){6,11})/gi
+    /(?:verification|one[- ]?time|sign[- ]?in|login|otp|passcode|security)\s*(?:code|password)?\s*(?:is)?\s*[:#\-]?\s*((?:\d[\s\-]*){4,6})\b/gi,
+    /(?:code|password)\s*(?:is)?\s*[:#\-]?\s*((?:\d[\s\-]*){4,6})\b/gi,
+    /\b((?:\d[\s\-]*){4,6})\b\s*(?:is your|is the|verification|one[- ]?time|sign[- ]?in)/gi,
+    /(?:verification|one[- ]?time|sign[- ]?in|login|otp|passcode|security)\s*(?:code|password)?\s*[:#\-]?\s*(\d{4,6})\b/gi,
+    /\b(\d{4,6})\b\s*(?:is your|is the|verification|one[- ]?time|sign[- ]?in)/gi,
+    /passcode[^\d]{0,40}((?:\d[\s\-]){4,11})/gi
   ];
   for (const re of labeledPatterns) {
     for (const m of text.matchAll(re)) {
-      const digits = String(m[1] || '').replace(/\D/g, '');
-      if (digits.length === 6 && isValidDisneyOtp(digits)) return digits;
+      const digits = normalizeSpacedDigits(m[1], lengths);
+      if (digits && isValidDisneyOtp(digits)) return digits;
     }
   }
-  const candidates = [...text.matchAll(/\b(\d{6})\b/g)].map((m) => m[1]);
-  return candidates.length ? candidates[candidates.length - 1] : null;
+  for (const len of lengths) {
+    const re = new RegExp(`\\b(\\d{${len}})\\b`, 'g');
+    const candidates = [...text.matchAll(re)]
+      .map((m) => ({
+        code: m[1],
+        context: text.slice(Math.max(0, (m.index || 0) - 48), (m.index || 0) + 48)
+      }))
+      .filter((x) => isValidDisneyOtp(x.code) && !isLikelyDisneyFalsePositive(x.code, x.context));
+    if (candidates.length) return candidates[candidates.length - 1].code;
+  }
+  return null;
 }
 
 function isDisneySender(from) {
@@ -65,6 +90,7 @@ function extractDisneyCode(parsedEmail, plainBodyFn) {
 
 module.exports = {
   isValidDisneyOtp,
+  isLikelyDisneyFalsePositive,
   extractDisneyOtp,
   isDisneySender,
   isDisneyEmailContent,
