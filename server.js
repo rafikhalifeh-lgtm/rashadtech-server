@@ -5644,7 +5644,7 @@ app.post('/get-code', async (req, res) => {
         const monitorHint = !monitoredInbox
           ? `\n⚠️ Gmail monitoring is not configured for <code>${codeKey || 'unknown'}</code>. Open Admin → Stock → Disney+, re-enter Gmail app password, save.`
           : `\n📥 Polled inbox: <code>${monitoredInbox}</code>${imapErr}`;
-        await sendTG(TG_ADMIN, `🔔 <b>${name}</b> is waiting for a ${codeType.toUpperCase()} sign-in code!${codeKey ? `\n📧 Code email: <code>${codeKey}</code>` : ''}${monitorHint}\nManual fallback: /code ${codeType} ${codeKey || name} 123456`, 'HTML').catch(() => {});
+        await sendTG(TG_ADMIN, `🔔 <b>${name}</b> is waiting for a ${codeType.toUpperCase()} sign-in code!${codeKey ? `\n📧 Code email: <code>${codeKey}</code>` : ''}${monitorHint}\nManual fallback: /code ${codeType} ${codeKey || name} 1234`, 'HTML').catch(() => {});
       }
       return res.json({ success: false, message: 'No code found yet — request a new code on the app, then tap Refresh' });
     }

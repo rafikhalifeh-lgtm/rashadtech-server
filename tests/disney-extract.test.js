@@ -15,14 +15,31 @@ function test(name, fn) {
   }
 }
 
-test('accepts valid 6-digit Disney OTP', () => {
+test('accepts valid 4- and 6-digit Disney OTP', () => {
   assert.strictEqual(isValidDisneyOtp('123456'), true);
+  assert.strictEqual(isValidDisneyOtp('1234'), true);
   assert.strictEqual(isValidDisneyOtp('12345'), false);
+  assert.strictEqual(isValidDisneyOtp('1234567'), false);
 });
 
-test('extracts spaced Disney passcode', () => {
+test('extracts spaced 6-digit Disney passcode', () => {
   const body = 'Your one-time passcode for Disney+\n\n1 2 3 4 5 6\n\nDo not share.';
   assert.strictEqual(extractDisneyOtp(body), '123456');
+});
+
+test('extracts 4-digit Disney passcode', () => {
+  const parsed = {
+    from: 'MyDisney Account <noreply@account.mydisney.com>',
+    subject: 'Your one-time passcode for Disney+',
+    text: 'Enter this verification code: 8472'
+  };
+  const result = extractDisneyCode(parsed);
+  assert.deepStrictEqual(result, { code: '8472', customerSafe: true });
+});
+
+test('extracts spaced 4-digit Disney passcode', () => {
+  const body = 'Your one-time passcode for Disney+\n\n1 2 3 4\n\nDo not share.';
+  assert.strictEqual(extractDisneyOtp(body), '1234');
 });
 
 test('extracts Disney code from MyDisney sender', () => {
