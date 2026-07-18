@@ -140,6 +140,9 @@ const ADMIN_USING_BUILTIN_DEFAULTS = !ADMIN_PASSWORD_FROM_ENV || !ADMIN_TOTP_FRO
 const ADMIN_TOTP_ISSUER = 'rashadtech.tv';
 const ADMIN_TOTP_LABEL = 'Admin';
 const ADMIN_TOTP_SETUP_ALLOWED = process.env.ADMIN_TOTP_SETUP_ALLOWED === 'true';
+const ADMIN2_BUILTIN_EMAIL = 'admin2@rashadtech.tv';
+const ADMIN2_BUILTIN_PASSWORD = 'rashadtech2';
+const ADMIN2_PASSWORD = normalizeEnvSecret(process.env.ADMIN2_PASSWORD) || ADMIN2_BUILTIN_PASSWORD;
 const adminLoginFailures = new Map();
 const ADMIN_LOGIN_MAX_FAILURES = 5;
 const ADMIN_LOGIN_LOCK_MS = 30 * 60 * 1000;
@@ -3024,6 +3027,30 @@ app.post('/auth/admin-login', async (req, res) => {
   } catch(e) {
     console.error('Admin login error:', e.message);
     res.json({ success: true, token, data: { users: [], stock: {}, stockBlocks: {}, [RETAIL_STOCK_BLOCKS_KEY]: {}, requests: [], topupreqs: [], pending: [], gameorders: [] }, warning: 'Logged in, but data could not be loaded. Try refreshing.' });
+  }
+});
+
+app.post('/auth/admin2-login', async (req, res) => {
+  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+  if (adminLoginBlocked(res, ip)) return;
+  const { password } = req.body || {};
+  if (String(password || '') !== ADMIN2_PASSWORD) {
+    recordAdminLoginFailure(ip);
+    return res.status(401).json({ error: 'Wrong password' });
+  }
+  clearAdminLoginFailures(ip);
+  const token = createSession('admin', ADMIN2_BUILTIN_EMAIL);
+  try {
+    const data = await readJsonBinRaw({ fast: true });
+    res.json({ success: true, token, data: safeDataForSession(data, { role: 'admin' }) });
+  } catch (e) {
+    console.error('Admin2 login error:', e.message);
+    res.json({
+      success: true,
+      token,
+      data: { users: [], stock: {}, stockBlocks: {}, [RETAIL_STOCK_BLOCKS_KEY]: {}, requests: [], topupreqs: [], pending: [], gameorders: [] },
+      warning: 'Logged in, but data could not be loaded. Try refreshing.'
+    });
   }
 });
 
