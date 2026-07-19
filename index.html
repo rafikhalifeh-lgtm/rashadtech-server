@@ -782,11 +782,6 @@ So your EmailJS template will receive the user email and verification code corre
       <div class="field"><label>Password</label><input type="password" id="admin-pass" placeholder="••••••••" autocomplete="current-password"></div>
       <div class="field"><label>Authenticator code</label><input type="text" id="admin-totp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6-digit code" onkeydown="if(event.key==='Enter')doAdminLogin()"></div>
       <button class="btn-primary" onclick="doAdminLogin()">Enter</button>
-      <div style="margin:16px 0 8px;border-top:1px solid var(--border);padding-top:14px">
-        <div style="font-size:11px;color:var(--text3);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.4px">Backup admin (no 2FA)</div>
-        <div class="field" style="margin-bottom:8px"><label>Backup password only</label><input type="password" id="admin2-pass" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doAdmin2Login()"></div>
-        <button class="btn-secondary" type="button" onclick="doAdmin2Login()" style="width:100%">Enter as backup admin</button>
-      </div>
       <div class="auth-switch" id="admin-2fa-setup-link" style="margin-top:10px;display:none"><a href="#" onclick="showAdmin2FASetup();return false" style="font-size:12px">Add to Google Authenticator</a></div>
       <div id="admin-2fa-setup" style="display:none;margin-top:12px;padding:12px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:12px;text-align:left;line-height:1.6"></div>
       <div class="auth-switch"><a onclick="showView('login')">← Back</a></div>
@@ -4539,48 +4534,21 @@ async function doAdminLogin(){
   try{
     const p=document.getElementById('admin-pass').value;
     const totp=document.getElementById('admin-totp')?.value?.trim()||'';
-    if(!totp||!/^\d{6}$/.test(totp)){
-      document.getElementById('admin-err').textContent='Enter the 6-digit code from your authenticator app.';
+    if(!p){
+      document.getElementById('admin-err').textContent='Enter your admin password.';
       document.getElementById('admin-err').style.display='block';
       return;
     }
-    const j=await postJson('/auth/admin-login',{password:p,totp});
+    if(totp&&!/^\d{6}$/.test(totp)){
+      document.getElementById('admin-err').textContent='Enter a valid 6-digit authenticator code.';
+      document.getElementById('admin-err').style.display='block';
+      return;
+    }
+    const j=await postJson('/auth/admin-login',{password:p,...(totp?{totp}:{})});
     persistAuthToken(j.token,'admin');isAdmin=true;
     try{localStorage.setItem('rt_admin_session',JSON.stringify({ts:Date.now()}));}catch(e){}
     applyDataSnapshot(j.data||{});
     document.getElementById('admin-err').style.display='none';logActivity('Admin login');
-    document.getElementById('page-auth').classList.remove('active');
-    document.getElementById('page-admin').classList.add('active');
-    await loadAdminPriceCatalogs();
-    renderAdminPanels();
-    refreshAdminBackupStatus();
-    if(!window._adminBackupPoll)window._adminBackupPoll=setInterval(refreshAdminBackupStatus,5*60*1000);
-    startRealtimeSync();
-    if(typeof rtSyncChatUI==='function')rtSyncChatUI();
-  }catch(ex){
-    document.getElementById('admin-err').textContent=ex.message;document.getElementById('admin-err').style.display='block';
-  }finally{
-    adminLoginInFlight=false;
-    if(btn)btn.disabled=false;
-  }
-}
-async function doAdmin2Login(){
-  if(adminLoginInFlight)return;
-  adminLoginInFlight=true;
-  const btn=document.querySelector('#view-admin .btn-secondary');
-  if(btn)btn.disabled=true;
-  try{
-    const p=document.getElementById('admin2-pass')?.value||'';
-    if(!p){
-      document.getElementById('admin-err').textContent='Enter the backup admin password.';
-      document.getElementById('admin-err').style.display='block';
-      return;
-    }
-    const j=await postJson('/auth/admin2-login',{password:p});
-    persistAuthToken(j.token,'admin');isAdmin=true;
-    try{localStorage.setItem('rt_admin_session',JSON.stringify({ts:Date.now()}));}catch(e){}
-    applyDataSnapshot(j.data||{});
-    document.getElementById('admin-err').style.display='none';logActivity('Backup admin login');
     document.getElementById('page-auth').classList.remove('active');
     document.getElementById('page-admin').classList.add('active');
     await loadAdminPriceCatalogs();
