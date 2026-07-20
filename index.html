@@ -8567,6 +8567,7 @@ function renderAdminPendingHtml(pending){
     ${po.userTgChatId?`<div class="aw-email" style="color:var(--blue)">💬 TG: ${esc(po.userTgChatId)}</div>`:''}
     ${po.customerCanvaEmail?`<div class="aw-email" style="color:var(--blue)">📧 Canva email: <b>${esc(po.customerCanvaEmail)}</b></div>`:''}</div>
     <button class="aabtn" ${jsOnClick('manualFulfillPending',po.id)}>✓ Fulfill</button>
+    <button class="aabtn" style="background:var(--blue-bg);color:var(--blue);border-color:var(--blue-border)" ${jsOnClick('openActivateExternalModal',po.id)}>✓ Outside web</button>
     <button class="aabtn" style="background:var(--red-bg);color:var(--red);border-color:var(--red-border)" ${jsOnClick('cancelPendingOrder',po.id)}>✕ Cancel & Refund</button>
   </div>`;
   }).join('');
@@ -8608,6 +8609,54 @@ async function manualFulfillPending(orderId){
     renderAdminPending();renderStockPanels();renderSubs();renderMyCustomers();
     showToast(j.alreadyFulfilled?'Already fulfilled':'✓ Order fulfilled');
   }catch(e){showToast('⚠️ '+(e.message||'Fulfill failed'));}
+}
+
+let _externalActivateOrderId=null;
+function openActivateExternalModal(orderId){
+  const pending=Array.isArray(_jbCache?.pending)?_jbCache.pending:[];
+  const po=pending.find(p=>String(p.id)===String(orderId));
+  if(!po){showToast('Order not found — refresh pending list');return;}
+  _externalActivateOrderId=orderId;
+  const title=document.getElementById('external-activate-title');
+  const sub=document.getElementById('external-activate-sub');
+  if(title)title.textContent=`${po.product} · ${po.plan}`;
+  if(sub)sub.textContent=`${po.userName} · ${po.userEmail}`;
+  const emailEl=document.getElementById('external-activate-email');
+  const passEl=document.getElementById('external-activate-pass');
+  const linkEl=document.getElementById('external-activate-link');
+  const expiryEl=document.getElementById('external-activate-expiry');
+  const noteEl=document.getElementById('external-activate-note');
+  const notifyEl=document.getElementById('external-activate-notify');
+  if(emailEl)emailEl.value=po.customerCanvaEmail||po.email||'';
+  if(passEl)passEl.value='';
+  if(linkEl)linkEl.value=po.serviceLink||'';
+  if(expiryEl)expiryEl.value=po.expiryDate||'';
+  if(noteEl)noteEl.value='';
+  if(notifyEl)notifyEl.checked=false;
+  openModal('external-activate-modal');
+}
+async function confirmActivateExternal(){
+  if(!_externalActivateOrderId)return;
+  const orderId=_externalActivateOrderId;
+  const email=document.getElementById('external-activate-email')?.value.trim()||'';
+  const pass=document.getElementById('external-activate-pass')?.value.trim()||'';
+  const serviceLink=document.getElementById('external-activate-link')?.value.trim()||'';
+  const expiryDate=document.getElementById('external-activate-expiry')?.value.trim()||'';
+  const note=document.getElementById('external-activate-note')?.value.trim()||'';
+  const sendNotification=Boolean(document.getElementById('external-activate-notify')?.checked);
+  if(!confirm('Close this pending order without using stock?\n\nUse this when you already delivered outside rashadtech.tv.'))return;
+  try{
+    const j=await rtApi('/admin/activate-pending-external',{
+      method:'POST',
+      body:JSON.stringify({orderId,email,pass,serviceLink,expiryDate,note,sendNotification})
+    });
+    if(j.data)applyDataSnapshot(j.data);
+    closeModal('external-activate-modal');
+    _externalActivateOrderId=null;
+    renderAdminPending();renderAdminCustomers();renderSubs();renderMyCustomers();
+    showToast(j.alreadyFulfilled?'Already on customer account':'✓ Order activated (delivered outside web)');
+    logActivity('Pending activated externally',orderId);
+  }catch(e){showToast('⚠️ '+(e.message||'Activate failed'));}
 }
 
 let _smsConfigCache=null;
@@ -9620,6 +9669,29 @@ if(document.readyState==='loading'){
   <div class="modal" onclick="event.stopPropagation()" style="width:min(720px,100%)">
     <div class="modal-head"><h3 id="admin-cust-detail-title">Customer details</h3><button class="mclose" onclick="closeModal('admin-cust-detail-modal')">✕</button></div>
     <div class="modal-body" id="admin-cust-detail-body"></div>
+  </div>
+</div>
+
+<!-- ACTIVATE PENDING ORDER (DELIVERED OUTSIDE WEB) -->
+<div class="modal-wrap" id="external-activate-modal" aria-hidden="true" onclick="closeModal('external-activate-modal')">
+  <div class="modal" onclick="event.stopPropagation()" style="max-width:440px">
+    <div class="modal-head"><h3>Activate (delivered outside)</h3><button class="mclose" onclick="closeModal('external-activate-modal')">✕</button></div>
+    <div class="modal-body" style="padding:20px 24px">
+      <p style="font-size:12px;color:var(--text2);line-height:1.55;margin:0 0 14px">Close pending without using stock — for orders you already delivered on WhatsApp or elsewhere.</p>
+      <div id="external-activate-title" style="font-size:14px;font-weight:700;margin-bottom:4px"></div>
+      <div id="external-activate-sub" style="font-size:12px;color:var(--text3);margin-bottom:14px"></div>
+      <div class="field"><label>Email / username (optional)</label><input type="text" id="external-activate-email" placeholder="What the customer uses to sign in"></div>
+      <div class="field"><label>Password (optional)</label><input type="text" id="external-activate-pass" placeholder="If applicable"></div>
+      <div class="field"><label>Link (optional)</label><input type="url" id="external-activate-link" placeholder="Activation or M3U link"></div>
+      <div class="field"><label>Expiry dd/mm/yyyy (optional)</label><input type="text" id="external-activate-expiry" placeholder="e.g. 15/08/2026"></div>
+      <div class="field"><label>Admin note (optional)</label><input type="text" id="external-activate-note" placeholder="e.g. Delivered on WhatsApp 20/07"></div>
+      <label style="display:flex;align-items:flex-start;gap:8px;font-size:12px;color:var(--text2);margin:12px 0 16px;cursor:pointer">
+        <input type="checkbox" id="external-activate-notify" style="margin-top:2px">
+        <span>Send short Telegram: order is active on rashadtech.tv (no credentials)</span>
+      </label>
+      <button class="btn-primary" style="width:100%;margin-bottom:8px" onclick="confirmActivateExternal()">✓ Activate without stock</button>
+      <button class="btn-secondary" style="width:100%" onclick="closeModal('external-activate-modal')">Cancel</button>
+    </div>
   </div>
 </div>
 

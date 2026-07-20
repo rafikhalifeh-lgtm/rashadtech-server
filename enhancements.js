@@ -190,6 +190,46 @@ function registerEnhancements(app, deps) {
     return alerts.sort((a, b) => a.days - b.days);
   }
 
+  function placeExternalFulfilledOrder(user, pendingOrder, details = {}) {
+    const assignedCustomer = pendingOrder.assignCustId !== null && pendingOrder.assignCustId !== undefined
+      ? (user.myCustomers || []).find(c => c.id === pendingOrder.assignCustId)
+      : null;
+    const email = String(details.email || pendingOrder.customerCanvaEmail || '').trim();
+    const pass = String(details.pass || '').trim();
+    const serviceLink = String(details.serviceLink || pendingOrder.serviceLink || '').trim();
+    const expiryDate = String(details.expiryDate || pendingOrder.expiryDate || '').trim() || null;
+    const order = {
+      id: pendingOrder.id,
+      product: pendingOrder.product,
+      short: pendingOrder.short,
+      color: pendingOrder.color,
+      tc: pendingOrder.tc,
+      productId: pendingOrder.productId,
+      plan: pendingOrder.plan,
+      price: pendingOrder.price,
+      email,
+      pass,
+      date: pendingOrder.date,
+      expiryDate,
+      profileName: pendingOrder.profileName || '',
+      profilePin: '',
+      serviceLink,
+      accKey: '',
+      mainEmail: '',
+      fulfilledExternally: true,
+      externalNote: String(details.note || '').trim() || undefined
+    };
+    if (assignedCustomer) {
+      order.profileName = order.profileName || assignedCustomer.fname;
+      assignedCustomer.subs = Array.isArray(assignedCustomer.subs) ? assignedCustomer.subs : [];
+      assignedCustomer.subs.unshift(order);
+      return order;
+    }
+    user.orders = Array.isArray(user.orders) ? user.orders : [];
+    user.orders.unshift(order);
+    return order;
+  }
+
   function placeFulfilledOrder(user, pendingOrder, account, stock) {
     const assignedCustomer = pendingOrder.assignCustId !== null && pendingOrder.assignCustId !== undefined
       ? (user.myCustomers || []).find(c => c.id === pendingOrder.assignCustId)
@@ -1117,6 +1157,112 @@ function registerEnhancements(app, deps) {
         if (order && deliveryChannel) stampOrderDelivery(order, deliveryChannel);
         if (deliveryChannel) await persistOrderDeliveryStamp(user, order.id, deliveryChannel);
         await appendActivity('Pending order fulfilled', orderId, session.email);
+      });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    } finally {
+      activeFulfillOrders.delete(orderId);
+    }
+  });
+
+  app.post('/admin/activate-pending-external', async (req, res) => {
+    const session = requireSession(req, res, ['admin']);
+    if (!session) return;
+    const { orderId, email, pass, serviceLink, expiryDate, note, sendNotification } = req.body || {};
+    if (!orderId) return res.status(400).json({ error: 'Order ID required' });
+    if (activeFulfillOrders.has(orderId)) {
+      return res.status(409).json({ error: 'This order is already being processed' });
+    }
+    activeFulfillOrders.add(orderId);
+    try {
+      const outcome = await enqueueDbWrite(async () => {
+        const data = await readDbForWrite();
+        data.pending = Array.isArray(data.pending) ? data.pending : [];
+        data.users = Array.isArray(data.users) ? data.users : [];
+        const idx = data.pending.findIndex(o => o.id === orderId);
+        if (idx < 0) return { error: 'Pending order not found', status: 404 };
+        const po = data.pending[idx];
+        const user = data.users.find(u => normalizeEmail(u.email) === normalizeEmail(po.userEmail));
+        const existing = user ? findUserOrderRecord(user, po.id).order : null;
+        if (existing && existing.email && !existing.pending) {
+          data.pending.splice(idx, 1);
+          await writeDbFast(data);
+          return { alreadyFulfilled: true, data, user, order: existing };
+        }
+        const hasCharge = user && Array.isArray(user.transactions) && user.transactions.some(t => t.orderId === po.id);
+        if (!hasCharge) {
+          data.pending.splice(idx, 1);
+          await writeDbFast(data);
+          return { removedOrphan: true, data, user };
+        }
+        const resolvedEmail = String(email || po.customerCanvaEmail || '').trim();
+        if (/^canva__own__/.test(String(po.skey || '')) && !resolvedEmail) {
+          return { error: 'Canva email is required for this order', status: 400 };
+        }
+        const order = user ? placeExternalFulfilledOrder(user, po, {
+          email: resolvedEmail,
+          pass,
+          serviceLink,
+          expiryDate,
+          note
+        }) : null;
+        pushStatusHistory(po, 'fulfilled_externally', { note: String(note || '').trim() || undefined });
+        data.pending.splice(idx, 1);
+        if (user && Array.isArray(user.transactions)) {
+          user.transactions.forEach(t => {
+            if (t.orderId === po.id) t.pending = false;
+          });
+        }
+        await writeDbFast(data);
+        return { data, user, order, po, sendNotification: Boolean(sendNotification) };
+      });
+      if (outcome.error) return res.status(outcome.status || 400).json({ error: outcome.error });
+      if (outcome.alreadyFulfilled) {
+        return res.json({
+          success: true,
+          order: outcome.order,
+          alreadyFulfilled: true,
+          user: sanitizeUser(outcome.user),
+          data: slimMutationData(session, outcome.data, { pending: true, stock: true })
+        });
+      }
+      if (outcome.removedOrphan) {
+        await appendActivity('Removed orphan pending order', orderId, session.email);
+        return res.json({
+          success: true,
+          removedOrphan: true,
+          alreadyFulfilled: true,
+          user: sanitizeUser(outcome.user),
+          data: slimMutationData(session, outcome.data, { pending: true })
+        });
+      }
+      const { data, user, order, po, sendNotification: notify } = outcome;
+      const externalNote = String((req.body && req.body.note) || '').trim();
+      res.json({
+        success: true,
+        order,
+        user: sanitizeUser(user),
+        data: slimMutationData(session, data, { pending: true, stock: true })
+      });
+      setImmediate(async () => {
+        if (user && order && notify) {
+          const tgId = String(user.tgChatId || po.userTgChatId || '').trim();
+          if (tgId) {
+            await sendTG(
+              tgId,
+              `✅ <b>Your ${po.product} is active!</b>\n\n📋 ${po.plan}\n\nOpen rashadtech.tv → <b>My Subscriptions</b> to view your subscription.`,
+              'HTML'
+            ).catch(() => {});
+            stampOrderDelivery(order, 'telegram');
+            await persistOrderDeliveryStamp(user, order.id, 'telegram');
+          }
+        }
+        await appendActivity('Pending order activated externally', `${orderId}${externalNote ? ` · ${externalNote.slice(0, 80)}` : ''}`, session.email);
+        await sendTG(
+          TG_ADMIN,
+          `✅ <b>Pending order closed (external delivery)</b>\n📦 ${po.product} · ${po.plan}\n👤 ${po.userName} (${po.userEmail})\n🆔 ${orderId}`,
+          'HTML'
+        ).catch(() => {});
       });
     } catch (e) {
       res.status(500).json({ error: e.message });
