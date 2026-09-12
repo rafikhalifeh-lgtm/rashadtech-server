@@ -2767,6 +2767,29 @@ app.get('/health', (req, res) => {
 app.get('/ping', (req, res) => {
   res.status(200).json({ ok: true, ts: Date.now(), ready: true });
 });
+
+app.get('/health/db', async (req, res) => {
+  try {
+    dbCache = null;
+    readJsonBinInFlight = null;
+    let netlifyData = null;
+    try { netlifyData = await readNetlifyDb(); } catch (e) { /* ignore */ }
+    const data = await readJsonBinRaw({ forceRefresh: true, skipRecoverWrite: true });
+    const stats = databaseExportStats(data);
+    res.json({
+      ok: true,
+      ts: Date.now(),
+      stats,
+      netlifyConfigured: Boolean(NETLIFY_SITE_ID && NETLIFY_BLOBS_TOKEN),
+      netlifyDirect: netlifyData ? databaseExportStats(netlifyData) : null,
+      loaded: stats,
+      storage: data?.emergencyDb?.reason || 'primary'
+    });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 app.get('/', (req, res) => {
   res.json({ status: 'rashadtech server running', ok: true });
 });
