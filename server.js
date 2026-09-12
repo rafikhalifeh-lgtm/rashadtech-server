@@ -4712,8 +4712,8 @@ app.post('/admin/recovery-restore', async (req, res) => {
       label = entry.id || entry.key;
     } else {
       const sources = await scanRecoverySources();
-      const best = sources.find(s => s.score > 0);
-      if (!best) return res.status(404).json({ error: 'No backup with customer data found' });
+      const best = sources.find(s => s.score > 0) || sources[0];
+      if (!best) return res.status(404).json({ error: 'No backup sources found' });
       if (best.id) {
         const snap = await readBackupSnapshot(best.id);
         restored = snap.data;
@@ -4729,6 +4729,11 @@ app.post('/admin/recovery-restore', async (req, res) => {
       } else if (best.source === 'server-disk') {
         restored = readFallbackDb();
         label = 'server-disk';
+      } else if (best.source === 'netlify-primary') {
+        restored = await readNetlifyDb();
+        label = 'netlify-primary';
+      } else {
+        return res.status(404).json({ error: 'Could not load backup data from scan result' });
       }
     }
     if (!restored) return res.status(404).json({ error: 'Backup data not found' });
