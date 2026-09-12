@@ -70,6 +70,9 @@ function registerEnhancements(app, deps) {
     createGmailClient,
     readBackupManifest,
     createBackupSnapshot,
+    readBackupSnapshot,
+    readDatabaseForExport,
+    databaseExportStats,
     countStockStats,
     sessions,
     SESSION_TTL_MS,
@@ -966,6 +969,35 @@ function registerEnhancements(app, deps) {
       res.send(csv);
     } catch (e) {
       res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get('/admin/export-database', async (req, res) => {
+    const session = requireSession(req, res, ['admin']);
+    if (!session) return;
+    try {
+      const { data, meta } = await readDatabaseForExport();
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="rashadtech-database-${stamp}.json"`);
+      res.setHeader('X-Export-Source', meta.source || 'unknown');
+      res.setHeader('X-Export-Stats', JSON.stringify(meta.stats || {}));
+      res.send(JSON.stringify({ ...data, exportMeta: meta }, null, 2));
+      await appendActivity('Database export', `${meta.stats?.users || 0} users · ${meta.stats?.stockAccounts || 0} stock · source ${meta.source}`, session.email || 'admin');
+    } catch (e) {
+      console.error('Export database error:', e.message);
+      res.status(500).json({ error: e.message || 'Could not export database' });
+    }
+  });
+
+  app.get('/admin/export-database/summary', async (req, res) => {
+    const session = requireSession(req, res, ['admin']);
+    if (!session) return;
+    try {
+      const { meta } = await readDatabaseForExport();
+      res.json({ success: true, meta });
+    } catch (e) {
+      res.status(500).json({ error: e.message || 'Could not summarize database' });
     }
   });
 

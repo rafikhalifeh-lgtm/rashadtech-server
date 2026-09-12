@@ -1031,6 +1031,110 @@ async function readBackupSnapshot(keyOrId) {
   return { entry, data };
 }
 
+function databaseRichnessScore(data) {
+  if (!data || typeof data !== 'object') return 0;
+  const users = Array.isArray(data.users) ? data.users.length : 0;
+  const stock = Object.values(data.stock || {}).reduce((sum, accounts) => sum + (Array.isArray(accounts) ? accounts.length : 0), 0);
+  const pending = Array.isArray(data.pending) ? data.pending.length : 0;
+  const orders = (data.users || []).reduce((sum, user) => sum + (Array.isArray(user.orders) ? user.orders.length : 0), 0);
+  return users * 1000 + stock * 10 + orders * 5 + pending;
+}
+
+function databaseExportStats(data) {
+  const stockStats = countStockStats(data && data.stock);
+  return {
+    users: Array.isArray(data && data.users) ? data.users.length : 0,
+    stockAccounts: stockStats.total,
+    stockAvailable: stockStats.available,
+    pending: Array.isArray(data && data.pending) ? data.pending.length : 0,
+    topupreqs: Array.isArray(data && data.topupreqs) ? data.topupreqs.length : 0,
+    gameorders: Array.isArray(data && data.gameorders) ? data.gameorders.length : 0
+  };
+}
+
+async function readDatabaseForExport() {
+  const candidates = [];
+
+  const addCandidate = (source, data) => {
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return;
+    candidates.push({ source, data: cloneData(data), score: databaseRichnessScore(data) });
+  };
+
+  try {
+    const netlify = await readNetlifyDb();
+    addCandidate('netlify-blobs', netlify);
+  } catch (e) {
+    console.warn('Export read Netlify error:', e.message);
+  }
+
+  try {
+    addCandidate('server-disk', readFallbackDb());
+  } catch (e) {
+    console.warn('Export read fallback error:', e.message);
+  }
+
+  try {
+    if (JB_KEY && JB_BIN) {
+      addCandidate('jsonbin', await fetchJsonBinRaw());
+    }
+  } catch (e) {
+    console.warn('Export read JSONBin error:', e.message);
+  }
+
+  try {
+    const primary = await readJsonBinRaw({ forceRefresh: true, skipRecoverWrite: true });
+    addCandidate('primary', primary);
+    const embedded = Array.isArray(primary && primary[BACKUPS_KEY]) ? primary[BACKUPS_KEY] : [];
+    embedded.forEach((backup, index) => {
+      if (backup && backup.data) addCandidate(`embedded-backup-${index + 1}`, backup.data);
+    });
+  } catch (e) {
+    console.warn('Export read primary error:', e.message);
+  }
+
+  try {
+    const manifest = await readBackupManifest();
+    for (const entry of manifest.slice(0, 20)) {
+      if (!entry || !entry.id) continue;
+      try {
+        const { data } = await readBackupSnapshot(entry.id);
+        addCandidate(`snapshot-${entry.id}`, data);
+      } catch (e) {
+        console.warn('Export read snapshot skipped:', entry.id, e.message);
+      }
+    }
+  } catch (e) {
+    console.warn('Export read manifest error:', e.message);
+  }
+
+  const deduped = [];
+  const seenScores = new Set();
+  candidates
+    .sort((a, b) => b.score - a.score)
+    .forEach((item) => {
+      const key = `${item.score}:${item.source}`;
+      if (seenScores.has(key)) return;
+      seenScores.add(key);
+      deduped.push(item);
+    });
+
+  const best = deduped[0] || { source: 'empty', data: emptyDbData(), score: 0 };
+  return {
+    data: best.data,
+    meta: {
+      source: best.source,
+      score: best.score,
+      stats: databaseExportStats(best.data),
+      candidates: deduped.slice(0, 10).map(item => ({
+        source: item.source,
+        score: item.score,
+        stats: databaseExportStats(item.data)
+      })),
+      exportedAt: new Date().toISOString()
+    }
+  };
+}
+
 function markEmergencyDb(data, reason = 'JSONBin quota exhausted', active = true) {
   const next = { ...(data || emptyDbData()) };
   next.emergencyDb = {
@@ -6153,7 +6257,10 @@ rtEnhancements = registerEnhancements(app, {
   describeGmailError,
   createGmailClient,
   readBackupManifest,
+  readBackupSnapshot,
   createBackupSnapshot,
+  readDatabaseForExport,
+  databaseExportStats,
   countStockStats,
   sessions,
   SESSION_TTL_MS,

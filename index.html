@@ -1147,6 +1147,7 @@ So your EmailJS template will receive the user email and verification code corre
             <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px">
               <div style="font-size:13px;font-weight:600">🛡️ Backups & Restore</div>
               <button class="inline-btn" style="padding:6px 9px;font-size:11px" onclick="createManualBackup()">Backup now</button>
+              <button class="inline-btn" style="padding:6px 9px;font-size:11px" onclick="downloadFullDatabase()">Download DB</button>
               <button class="inline-btn" style="padding:6px 9px;font-size:11px" onclick="recoverAllSubCustomers()">Restore sub-customers</button>
             </div>
             <div id="dashboard-last-backup" style="font-size:12px;margin-bottom:10px;padding:10px 12px;border-radius:8px;background:var(--bg3);border:1px solid var(--border);line-height:1.5">
@@ -6420,6 +6421,27 @@ async function createManualBackup(){
     showToast('✓ Backup created');
     await renderBackups();
   }catch(e){showToast('⚠️ '+e.message);}
+}
+async function downloadFullDatabase(){
+  try{
+    rtShowLoading('Preparing database export...');
+    const r=await fetch(RT_SERVER+'/admin/export-database',{headers:authHeaders()});
+    if(!r.ok){
+      const j=await r.json().catch(()=>({}));
+      throw new Error(j.error||'Export failed');
+    }
+    const blob=await r.blob();
+    const source=r.headers.get('X-Export-Source')||'database';
+    const stamp=new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download=`rashadtech-database-${source}-${stamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},1000);
+    showToast('✓ Database downloaded');
+  }catch(e){showToast('⚠️ '+e.message);}
+  finally{rtHideLoading();}
 }
 async function recoverAllSubCustomers(){
   if(!confirm('Scan all backups and restore missing reseller sub-customers for every account?'))return;
