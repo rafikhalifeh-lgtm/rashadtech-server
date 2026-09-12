@@ -6549,7 +6549,15 @@ app.listen(PORT, '0.0.0.0', () => {
   setImmediate(async () => {
     try {
       readJsonBinRaw({ fast: true, skipRecoverWrite: true, noClone: true })
-        .then(() => console.log('Database cache warmed'))
+        .then((data) => {
+          const users = Array.isArray(data?.users) ? data.users.length : 0;
+          const stock = Object.values(data?.stock || {}).reduce((s, a) => s + (Array.isArray(a) ? a.length : 0), 0);
+          const netlifyOk = Boolean(NETLIFY_SITE_ID && NETLIFY_BLOBS_TOKEN);
+          console.log(`Database cache warmed: ${users} users, ${stock} stock · Netlify configured: ${netlifyOk}`);
+          if (netlifyOk && users === 0) {
+            console.warn('⚠️ Netlify is configured but database loaded empty — check NETLIFY_BLOBS_TOKEN on Render');
+          }
+        })
         .catch(e => console.error('DB warm error:', e.message));
       if (rtEnhancements && rtEnhancements.loadPersistedSessions) await rtEnhancements.loadPersistedSessions();
       await loadGmailMonitors();
