@@ -6,3 +6,5 @@ database/
 rashadtech-database.json
 rashadtech-database.sql
 rashadtech-database-handoff.zip
+!handoff/rashadtech-database-handoff.zip
+# handoff/ zip is password-protected and safe to commit
