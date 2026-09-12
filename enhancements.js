@@ -28,6 +28,7 @@ const {
   resolveSupportInbox
 } = require('./emailDelivery');
 const { getPublicSmsCatalogFromData } = require('./smsCatalogPublic');
+const { convertJsonToSql } = require('./scripts/json-to-sql');
 
 const PRICE_CHANGE_LOG_KEY = 'priceChangeLog';
 const LOW_STOCK_THRESHOLD = 2;
@@ -998,6 +999,25 @@ function registerEnhancements(app, deps) {
       res.json({ success: true, meta });
     } catch (e) {
       res.status(500).json({ error: e.message || 'Could not summarize database' });
+    }
+  });
+
+  app.get('/admin/export-database.sql', async (req, res) => {
+    const session = requireSession(req, res, ['admin']);
+    if (!session) return;
+    try {
+      const { data, meta } = await readDatabaseForExport();
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const sql = convertJsonToSql({ ...data, exportMeta: meta });
+      res.setHeader('Content-Type', 'application/sql; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="rashadtech-database-${stamp}.sql"`);
+      res.setHeader('X-Export-Source', meta.source || 'unknown');
+      res.setHeader('X-Export-Stats', JSON.stringify(meta.stats || {}));
+      res.send(sql);
+      await appendActivity('Database SQL export', `${meta.stats?.users || 0} users · source ${meta.source}`, session.email || 'admin');
+    } catch (e) {
+      console.error('Export database SQL error:', e.message);
+      res.status(500).json({ error: e.message || 'Could not export SQL database' });
     }
   });
 

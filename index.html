@@ -1148,6 +1148,7 @@ So your EmailJS template will receive the user email and verification code corre
               <div style="font-size:13px;font-weight:600">🛡️ Backups & Restore</div>
               <button class="inline-btn" style="padding:6px 9px;font-size:11px" onclick="createManualBackup()">Backup now</button>
               <button class="inline-btn" style="padding:6px 9px;font-size:11px" onclick="downloadFullDatabase()">Download DB</button>
+              <button class="inline-btn" style="padding:6px 9px;font-size:11px" onclick="downloadSqlDatabase()">Download SQL</button>
               <button class="inline-btn" style="padding:6px 9px;font-size:11px" onclick="recoverAllSubCustomers()">Restore sub-customers</button>
             </div>
             <div id="dashboard-last-backup" style="font-size:12px;margin-bottom:10px;padding:10px 12px;border-radius:8px;background:var(--bg3);border:1px solid var(--border);line-height:1.5">
@@ -6440,6 +6441,27 @@ async function downloadFullDatabase(){
     a.click();
     setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},1000);
     showToast('✓ Database downloaded');
+  }catch(e){showToast('⚠️ '+e.message);}
+  finally{rtHideLoading();}
+}
+async function downloadSqlDatabase(){
+  try{
+    rtShowLoading('Preparing SQL export...');
+    const r=await fetch(RT_SERVER+'/admin/export-database.sql',{headers:authHeaders()});
+    if(!r.ok){
+      const j=await r.json().catch(()=>({}));
+      throw new Error(j.error||'SQL export failed');
+    }
+    const blob=await r.blob();
+    const source=r.headers.get('X-Export-Source')||'database';
+    const stamp=new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download=`rashadtech-database-${source}-${stamp}.sql`;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},1000);
+    showToast('✓ SQL database downloaded');
   }catch(e){showToast('⚠️ '+e.message);}
   finally{rtHideLoading();}
 }
