@@ -1150,11 +1150,14 @@ So your EmailJS template will receive the user email and verification code corre
               <button class="inline-btn" style="padding:6px 9px;font-size:11px" onclick="downloadFullDatabase()">Download DB</button>
               <button class="inline-btn" style="padding:6px 9px;font-size:11px" onclick="downloadSqlDatabase()">Download SQL</button>
               <button class="inline-btn" style="padding:6px 9px;font-size:11px" onclick="recoverAllSubCustomers()">Restore sub-customers</button>
+              <button class="inline-btn" style="padding:6px 9px;font-size:11px" onclick="scanRecoveryBackups()">Scan recovery</button>
+              <button class="inline-btn" style="padding:6px 9px;font-size:11px;color:var(--orange)" onclick="restoreBestBackup()">Restore best backup</button>
             </div>
             <div id="dashboard-last-backup" style="font-size:12px;margin-bottom:10px;padding:10px 12px;border-radius:8px;background:var(--bg3);border:1px solid var(--border);line-height:1.5">
               <div style="font-weight:600;margin-bottom:2px">Last backup</div>
               <div id="dashboard-last-backup-detail" style="color:var(--text3)">Loading...</div>
             </div>
+            <div id="dashboard-recovery-scan" style="font-size:12px;margin-bottom:10px;color:var(--text3)"></div>
             <div id="dashboard-backups"><div style="color:var(--text3)">Loading...</div></div>
           </div>
         </div>
@@ -6476,6 +6479,41 @@ async function recoverAllSubCustomers(){
     else showToast('No additional sub-customers found in backups');
   }catch(e){showToast('⚠️ '+e.message);}
 }
+async function scanRecoveryBackups(){
+  const el=document.getElementById('dashboard-recovery-scan');
+  if(el)el.textContent='Scanning Netlify, disk, JSONBin, and all backup blobs...';
+  try{
+    const r=await fetch(RT_SERVER+'/admin/recovery-scan',{headers:authHeaders()});
+    const j=await r.json();
+    if(!r.ok||!j.success)throw new Error(j.error||'Scan failed');
+    window._recoverySources=j.sources||[];
+    const lines=(j.sources||[]).slice(0,8).map(s=>{
+      if(s.error)return `${s.source}: error — ${s.error}`;
+      const st=s.stats||{};
+      return `${s.source}: ${st.users||0} users · ${st.stockAccounts||0} stock · score ${s.score||0}${s.iso?' · '+s.iso:''}`;
+    });
+    if(el)el.innerHTML=`<div style="font-weight:600;margin-bottom:4px">Recovery scan</div>${lines.length?lines.map(l=>'<div>'+esc(l)+'</div>').join(''):'<div>No sources found</div>'}`;
+    showToast(j.best&&j.best.score>0?'Found backup with data':'No backup with customer data found yet');
+  }catch(e){
+    if(el)el.innerHTML=`<span style="color:var(--red)">${esc(e.message)}</span>`;
+    showToast('⚠️ '+e.message);
+  }
+}
+async function restoreBestBackup(){
+  if(!confirm('Restore the best backup found?\n\nThis replaces the live database. Current data is backed up first.'))return;
+  const confirmText=prompt('Type RESTORE to confirm full database restore:');
+  if(confirmText!=='RESTORE'){showToast('Restore canceled');return;}
+  try{
+    rtShowLoading('Restoring database...');
+    const r=await fetch(RT_SERVER+'/admin/recovery-restore',{method:'POST',headers:authHeaders(),body:JSON.stringify({confirm:'RESTORE'})});
+    const j=await r.json();
+    if(!r.ok||!j.success)throw new Error(j.error||'Restore failed');
+    if(j.data)applyDataSnapshot(j.data);
+    renderStockPanels();renderAdminCustomers();renderWallets();renderAdminRequests();renderAdminExpiry();renderTopupRequests();renderGameOrders();renderAdminPending();renderDashboard();
+    showToast(`✓ Restored from ${j.source||'backup'} (${j.stats?.users||0} users)`);
+  }catch(e){showToast('⚠️ '+e.message);}
+  finally{rtHideLoading();}
+}
 async function restoreBackup(id){
   if(!confirm('Restore this backup? Current data will be backed up first, then replaced by the selected snapshot.'))return;
   const confirmText=prompt('Type RESTORE to confirm:');
@@ -8444,18 +8482,17 @@ function renderAdminCustomers(){
 // WALLETS
 async function toggleBanUser(i){
   if(!users[i])return;
-  users[i].banned=!users[i].banned;
-  const action=users[i].banned?'banned':'unbanned';
-  await saveData();
-  renderAdminCustomers();
-  showToast(`✅ User ${action}`);
-  logActivity(`Customer ${action}`,users[i].email);
-  if(users[i].tgChatId){
-    const msg=users[i].banned?
-      `🚫 Your account has been suspended. Please contact support.`:
-      `✅ Your account has been reactivated. Welcome back!`;
-    await sendTelegramToUser(users[i].tgChatId,msg);
-  }
+  const u=users[i];
+  try{
+    const r=await fetch(RT_SERVER+'/admin/toggle-ban-user',{method:'POST',headers:authHeaders(),body:JSON.stringify({email:u.email})});
+    const j=await r.json();
+    if(!r.ok||!j.success)throw new Error(j.error||'Ban update failed');
+    if(j.data)applyDataSnapshot(j.data);
+    else u.banned=j.banned;
+    renderAdminCustomers();
+    showToast(j.banned?'🚫 User banned':'✅ User unbanned');
+    logActivity(`Customer ${j.banned?'banned':'unbanned'}`,u.email);
+  }catch(e){showToast('⚠️ '+e.message);}
 }
 async function toggleResellerUser(i){
   const u=users[i];
@@ -8493,15 +8530,16 @@ async function deleteUser(i){
   const u=users[i];
   if(!u)return;
   if(!confirm('Delete account for '+u.name+' ('+u.email+')?\n\nThis also removes their top-up requests, pending orders, and game orders.'))return;
-  const email=u.email;
-  const idx=users.findIndex(x=>x.email===email);
-  if(idx===-1)return;
-  users.splice(idx,1);
-  purgeUserData(email);
-  await saveData();
-  renderAdminCustomers();renderWallets();renderTopupRequests();renderAdminPending();renderGameOrders();renderAdminRequests();
-  showToast('✓ User and related requests removed');
-  logActivity('Customer deleted',email);
+  try{
+    const r=await fetch(RT_SERVER+'/admin/delete-user',{method:'POST',headers:authHeaders(),body:JSON.stringify({email:u.email})});
+    const j=await r.json();
+    if(!r.ok||!j.success)throw new Error(j.error||'Delete failed');
+    if(j.data)applyDataSnapshot(j.data);
+    else purgeUserData(u.email);
+    renderAdminCustomers();renderWallets();renderTopupRequests();renderAdminPending();renderGameOrders();renderAdminRequests();
+    showToast('✓ User and related requests removed');
+    logActivity('Customer deleted',u.email);
+  }catch(e){showToast('⚠️ '+e.message);}
 }
 
 async function deleteTopupReq(requestId){

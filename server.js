@@ -143,6 +143,7 @@ const ADMIN_TOTP_SETUP_ALLOWED = process.env.ADMIN_TOTP_SETUP_ALLOWED === 'true'
 const ADMIN2_BUILTIN_EMAIL = 'admin2@rashadtech.tv';
 const ADMIN2_BUILTIN_PASSWORD = 'rashadtech2';
 const ADMIN2_PASSWORD = normalizeEnvSecret(process.env.ADMIN2_PASSWORD) || ADMIN2_BUILTIN_PASSWORD;
+const ADMIN2_ENABLED = process.env.ADMIN2_ENABLED === 'true' || (!IS_PRODUCTION && ADMIN2_PASSWORD === ADMIN2_BUILTIN_PASSWORD);
 const adminLoginFailures = new Map();
 const ADMIN_LOGIN_MAX_FAILURES = 5;
 const ADMIN_LOGIN_LOCK_MS = 30 * 60 * 1000;
@@ -230,6 +231,7 @@ function stripLegacyPlaintextPasswords(data) {
 }
 
 async function writeDbFast(data, options = {}) {
+  if (options.backupSource) assertSafeDatabaseWrite(options.backupSource, data, options);
   stripLegacyPlaintextPasswords(data);
   return writeJsonBinRaw(data, { ...options, lightWrite: true });
 }
@@ -1031,6 +1033,90 @@ async function readBackupSnapshot(keyOrId) {
   return { entry, data };
 }
 
+async function listAllNetlifyBlobKeys(prefix = '') {
+  const store = await getNetlifyStore();
+  if (!store || typeof store.list !== 'function') return [];
+  const keys = [];
+  try {
+    for await (const entry of store.list({ prefix })) {
+      if (entry && entry.key) keys.push(entry.key);
+    }
+  } catch (e) {
+    console.warn('Netlify blob list error:', e.message);
+  }
+  return keys;
+}
+
+async function scanRecoverySources() {
+  const results = [];
+  const add = (source, data, extra = {}) => {
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return;
+    results.push({
+      source,
+      score: databaseRichnessScore(data),
+      stats: databaseExportStats(data),
+      ...extra
+    });
+  };
+
+  try { add('netlify-primary', await readNetlifyDb()); } catch (e) { console.warn('Recovery scan netlify primary:', e.message); }
+  try { add('server-disk', readFallbackDb()); } catch (e) { console.warn('Recovery scan fallback:', e.message); }
+  try {
+    if (JB_KEY && JB_BIN) add('jsonbin', await fetchJsonBinRaw());
+  } catch (e) { console.warn('Recovery scan jsonbin:', e.message); }
+
+  try {
+    const manifest = await readBackupManifest();
+    for (const entry of manifest) {
+      if (!entry || !entry.id) continue;
+      try {
+        const { entry: meta, data } = await readBackupSnapshot(entry.id);
+        add(`manifest-${entry.id}`, data, { id: entry.id, key: meta.key, ts: entry.ts, iso: entry.iso, reason: entry.reason });
+      } catch (e) {
+        results.push({ source: `manifest-${entry.id}`, error: e.message, id: entry.id, ts: entry.ts, reason: entry.reason });
+      }
+    }
+  } catch (e) { console.warn('Recovery scan manifest:', e.message); }
+
+  try {
+    const keys = await listAllNetlifyBlobKeys(NETLIFY_BACKUP_PREFIX);
+    for (const key of keys.slice(0, 100)) {
+      if (results.some(r => r.key === key)) continue;
+      try {
+        const store = await getNetlifyStore();
+        const raw = await store.get(key, { type: 'text', consistency: 'strong' });
+        if (!raw) continue;
+        add(`blob-${key.replace(NETLIFY_BACKUP_PREFIX, '')}`, JSON.parse(raw), { key });
+      } catch (e) {
+        results.push({ source: `blob-${key}`, key, error: e.message });
+      }
+    }
+  } catch (e) { console.warn('Recovery scan blob list:', e.message); }
+
+  return results.sort((a, b) => (b.score || 0) - (a.score || 0));
+}
+
+function pickRichestDatabase(candidates) {
+  const valid = (candidates || []).filter(c => c && c.data && typeof c.data === 'object');
+  if (!valid.length) return null;
+  valid.sort((a, b) => databaseRichnessScore(b.data) - databaseRichnessScore(a.data));
+  return valid[0].data;
+}
+
+function assertSafeDatabaseWrite(existing, next, options = {}) {
+  if (options.allowEmpty || options.forceUnsafe) return;
+  const prevUsers = Array.isArray(existing && existing.users) ? existing.users.length : 0;
+  const nextUsers = Array.isArray(next && next.users) ? next.users.length : 0;
+  const prevStock = Object.values((existing && existing.stock) || {}).reduce((s, a) => s + (Array.isArray(a) ? a.length : 0), 0);
+  const nextStock = Object.values((next && next.stock) || {}).reduce((s, a) => s + (Array.isArray(a) ? a.length : 0), 0);
+  if (prevUsers >= 3 && nextUsers === 0) {
+    throw new Error('Blocked save: refusing to wipe all users (possible data loss). Use Admin → Recovery to restore a backup.');
+  }
+  if (prevStock >= 5 && nextStock === 0) {
+    throw new Error('Blocked save: refusing to wipe all stock (possible data loss). Use Admin → Recovery to restore a backup.');
+  }
+}
+
 function databaseRichnessScore(data) {
   if (!data || typeof data !== 'object') return 0;
   const users = Array.isArray(data.users) ? data.users.length : 0;
@@ -1289,13 +1375,25 @@ async function readJsonBinRaw(options = {}) {
     return options.noClone ? data : cloneData(data);
   }
   const run = async () => {
-    let data = null;
+    let netlifyData = null;
+    let fallbackData = null;
     try {
-      data = await readNetlifyDb();
+      netlifyData = await readNetlifyDb();
     } catch(e) {
       console.error('Netlify database read error:', e.message);
     }
-    if (!data) data = readFallbackDb();
+    try {
+      fallbackData = readFallbackDb();
+    } catch (e) {
+      console.error('Fallback database read error:', e.message);
+    }
+    let data = pickRichestDatabase([
+      { data: netlifyData },
+      { data: fallbackData }
+    ]) || fallbackData || netlifyData || emptyDbData();
+    if (netlifyData && fallbackData && databaseRichnessScore(fallbackData) > databaseRichnessScore(netlifyData) + 10) {
+      console.warn(`Using richer fallback DB (${databaseRichnessScore(fallbackData)} vs Netlify ${databaseRichnessScore(netlifyData)})`);
+    }
     data = markEmergencyDb(data, NETLIFY_SITE_ID && NETLIFY_BLOBS_TOKEN ? 'Netlify Blobs primary database' : 'Primary server file database', !(NETLIFY_SITE_ID && NETLIFY_BLOBS_TOKEN));
     const loaded = data;
     if (!options.fast) {
@@ -1332,6 +1430,7 @@ async function writeJsonBinRaw(data, options = {}) {
   let backupSource = options.backupSource;
   if (!lightWrite) {
     if (backupSource === undefined) backupSource = await readJsonBinRaw({ fast: true }).catch(() => null);
+    assertSafeDatabaseWrite(backupSource, nextData, options);
     if (backupSource) {
       backupSource = { ...backupSource };
       delete backupSource[BACKUPS_KEY];
@@ -2109,9 +2208,12 @@ function mergeGameOrders(existingOrders, incomingOrders) {
   return Array.from(byId.values());
 }
 
-function mergeUsersPreservingWallet(existingUsers, incomingUsers) {
+function mergeUsersPreservingWallet(existingUsers, incomingUsers, options = {}) {
   const existing = Array.isArray(existingUsers) ? existingUsers : [];
   if (!Array.isArray(incomingUsers)) return existing;
+  if (options.replaceUsers) {
+    return incomingUsers.filter(Boolean).map(u => ({ ...u }));
+  }
   const byEmail = new Map(existing.map(u => [normalizeEmail(u.email), { ...u }]));
   const merged = incomingUsers.map((inc) => {
     if (!inc || !inc.email) return inc;
@@ -2148,7 +2250,7 @@ function preserveSensitiveFields(existing, incoming) {
   const next = { ...(incoming || {}) };
   const existingUsers = Array.isArray(existing && existing.users) ? existing.users : [];
   if (Array.isArray(next.users)) {
-    next.users = mergeUsersPreservingWallet(existingUsers, next.users);
+    next.users = mergeUsersPreservingWallet(existingUsers, next.users, { replaceUsers: Boolean(incoming && incoming._replaceUsers) });
   }
   const preserveKeys = [
     GMAIL_MONITORS_KEY,
@@ -3074,6 +3176,10 @@ app.post('/auth/admin-login', async (req, res) => {
   const pwd = String(password || '');
 
   if (pwd === ADMIN2_PASSWORD) {
+    if (!ADMIN2_ENABLED) {
+      recordAdminLoginFailure(ip);
+      return res.status(403).json({ error: 'Backup admin login is disabled in production. Use main admin with authenticator.' });
+    }
     clearAdminLoginFailures(ip);
     return respondAdminLoginSuccess(res, ADMIN2_BUILTIN_EMAIL);
   }
@@ -3098,6 +3204,9 @@ app.post('/auth/admin-login', async (req, res) => {
 app.post('/auth/admin2-login', async (req, res) => {
   const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
   if (adminLoginBlocked(res, ip)) return;
+  if (!ADMIN2_ENABLED) {
+    return res.status(403).json({ error: 'Backup admin login is disabled in production. Use main admin with authenticator.' });
+  }
   const { password } = req.body || {};
   if (String(password || '') !== ADMIN2_PASSWORD) {
     recordAdminLoginFailure(ip);
@@ -4496,6 +4605,147 @@ app.post('/admin/wallet-adjust', async (req, res) => {
   } catch (e) {
     console.error('Wallet adjust error:', e.message);
     res.status(500).json({ error: 'Could not adjust wallet' });
+  }
+});
+
+app.post('/admin/toggle-ban-user', async (req, res) => {
+  const session = requireSession(req, res, ['admin']);
+  if (!session) return;
+  const { email, banned } = req.body || {};
+  const targetEmail = normalizeEmail(email);
+  if (!targetEmail) return res.status(400).json({ error: 'Email required' });
+  const wantBanned = banned !== undefined ? Boolean(banned) : null;
+  try {
+    const outcome = await enqueueDbWrite(async () => {
+      const data = await readDbForWrite();
+      const before = cloneData(data);
+      data.users = Array.isArray(data.users) ? data.users : [];
+      const user = data.users.find(u => normalizeEmail(u.email) === targetEmail);
+      if (!user) return { error: 'User not found', status: 404 };
+      user.banned = wantBanned === null ? !Boolean(user.banned) : wantBanned;
+      await writeDbFast(data, { backupSource: before });
+      return { data, user, banned: user.banned };
+    });
+    if (outcome.error) return res.status(outcome.status || 400).json({ error: outcome.error });
+    const { user, data, banned: isBanned } = outcome;
+    if (user.tgChatId) {
+      const msg = isBanned
+        ? '🚫 Your account has been suspended. Please contact support.'
+        : '✅ Your account has been reactivated. Welcome back!';
+      await sendTG(user.tgChatId, msg, 'HTML').catch(() => {});
+    }
+    await sendTG(TG_ADMIN, `${isBanned ? '🚫 Banned' : '✅ Unbanned'} <b>${user.name || user.email}</b> (${user.email}) by ${session.email || 'admin'}`, 'HTML').catch(() => {});
+    res.json({ success: true, user: sanitizeUser(user), banned: isBanned, data: safeDataForSession(data, { role: 'admin' }) });
+  } catch (e) {
+    console.error('Toggle ban error:', e.message);
+    res.status(500).json({ error: 'Could not update ban status' });
+  }
+});
+
+app.post('/admin/delete-user', async (req, res) => {
+  const session = requireSession(req, res, ['admin']);
+  if (!session) return;
+  const { email } = req.body || {};
+  const targetEmail = normalizeEmail(email);
+  if (!targetEmail) return res.status(400).json({ error: 'Email required' });
+  try {
+    const outcome = await enqueueDbWrite(async () => {
+      const data = await readDbForWrite();
+      const before = cloneData(data);
+      data.users = Array.isArray(data.users) ? data.users : [];
+      const prevCount = data.users.length;
+      data.users = data.users.filter(u => normalizeEmail(u.email) !== targetEmail);
+      if (data.users.length === prevCount) return { error: 'User not found', status: 404 };
+      if (Array.isArray(data.pending)) {
+        data.pending = data.pending.filter(po => normalizeEmail(po.userEmail) !== targetEmail);
+      }
+      if (Array.isArray(data.topupreqs)) {
+        data.topupreqs = data.topupreqs.filter(r => normalizeEmail(r.email) !== targetEmail);
+      }
+      if (Array.isArray(data.gameorders)) {
+        data.gameorders = data.gameorders.filter(o => normalizeEmail(o.userEmail) !== targetEmail);
+      }
+      if (Array.isArray(data.requests)) {
+        data.requests.forEach(gr => {
+          if (Array.isArray(gr.requesters)) {
+            gr.requesters = gr.requesters.filter(x => normalizeEmail(x) !== targetEmail);
+          }
+        });
+        data.requests = data.requests.filter(gr => (gr.requesters || []).length > 0);
+      }
+      await writeDbFast(data, { backupSource: before });
+      return { data };
+    });
+    if (outcome.error) return res.status(outcome.status || 400).json({ error: outcome.error });
+    await sendTG(TG_ADMIN, `🗑 Deleted customer account <code>${targetEmail}</code> by ${session.email || 'admin'}`, 'HTML').catch(() => {});
+    res.json({ success: true, email: targetEmail, data: safeDataForSession(outcome.data, { role: 'admin' }) });
+  } catch (e) {
+    console.error('Delete user error:', e.message);
+    res.status(500).json({ error: 'Could not delete user' });
+  }
+});
+
+app.get('/admin/recovery-scan', async (req, res) => {
+  const session = requireSession(req, res, ['admin']);
+  if (!session) return;
+  try {
+    const sources = await scanRecoverySources();
+    res.json({ success: true, sources, best: sources.find(s => s.score > 0) || sources[0] || null });
+  } catch (e) {
+    console.error('Recovery scan error:', e.message);
+    res.status(500).json({ error: e.message || 'Could not scan recovery sources' });
+  }
+});
+
+app.post('/admin/recovery-restore', async (req, res) => {
+  const session = requireSession(req, res, ['admin']);
+  if (!session) return;
+  const { id, key, source } = req.body || {};
+  const confirm = String(req.body?.confirm || '').trim();
+  if (confirm !== 'RESTORE') return res.status(400).json({ error: 'Type RESTORE to confirm full database restore' });
+  try {
+    let restored = null;
+    let label = source || id || key;
+    if (id || key) {
+      const { entry, data } = await readBackupSnapshot(id || key);
+      restored = data;
+      label = entry.id || entry.key;
+    } else {
+      const sources = await scanRecoverySources();
+      const best = sources.find(s => s.score > 0);
+      if (!best) return res.status(404).json({ error: 'No backup with customer data found' });
+      if (best.id) {
+        const snap = await readBackupSnapshot(best.id);
+        restored = snap.data;
+        label = best.id;
+      } else if (best.key) {
+        const store = await getNetlifyStore();
+        const raw = await store.get(best.key, { type: 'text', consistency: 'strong' });
+        restored = JSON.parse(raw);
+        label = best.key;
+      } else if (best.source === 'jsonbin' && JB_KEY && JB_BIN) {
+        restored = await fetchJsonBinRaw();
+        label = 'jsonbin';
+      } else if (best.source === 'server-disk') {
+        restored = readFallbackDb();
+        label = 'server-disk';
+      }
+    }
+    if (!restored) return res.status(404).json({ error: 'Backup data not found' });
+    const current = await readJsonBinRaw({ forceRefresh: true, skipRecoverWrite: true }).catch(() => null);
+    if (current) await createBackupSnapshot(current, 'before-recovery-restore').catch(() => null);
+    await writeJsonBinRaw(restored, { backupReason: 'recovery-restore', backupSource: current, allowEmpty: true, forceUnsafe: true });
+    setDbCache(restored, false);
+    await sendTG(TG_ADMIN, `🛡️ <b>Database restored</b>\nSource: ${label}\nUsers: ${(restored.users || []).length}\nStock: ${Object.values(restored.stock || {}).reduce((s, a) => s + (Array.isArray(a) ? a.length : 0), 0)}`, 'HTML').catch(() => {});
+    res.json({
+      success: true,
+      source: label,
+      stats: databaseExportStats(restored),
+      data: safeDataForSession(restored, { role: 'admin' })
+    });
+  } catch (e) {
+    console.error('Recovery restore error:', e.message);
+    res.status(500).json({ error: e.message || 'Could not restore backup' });
   }
 });
 
