@@ -236,8 +236,8 @@ function convertJsonToSql(data, options = {}) {
   delete data.exportMeta;
 
   addSchema(out);
-  out.push('-- Export source:', sqlEscape(meta.source || 'unknown'));
-  out.push('-- Exported at:', sqlEscape(meta.exportedAt || new Date().toISOString()));
+  out.push(`-- Export source: ${meta.source || 'unknown'}`);
+  out.push(`-- Exported at: ${meta.exportedAt || new Date().toISOString()}`);
   out.push('');
 
   const users = Array.isArray(data.users) ? data.users : [];
