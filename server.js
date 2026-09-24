@@ -3229,7 +3229,7 @@ app.post('/auth/admin2-login', async (req, res) => {
   const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
   if (adminLoginBlocked(res, ip)) return;
   if (!ADMIN2_ENABLED) {
-    return res.status(403).json({ error: 'Backup admin login is disabled in production. Use main admin with authenticator.' });
+    return res.status(403).json({ error: 'Backup admin login is disabled. Set ADMIN2_ENABLED=true on the server or use main admin with authenticator.' });
   }
   const { password } = req.body || {};
   if (String(password || '') !== ADMIN2_PASSWORD) {
