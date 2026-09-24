@@ -40,5 +40,6 @@ test('signup route stores the cleaned email and phone', () => {
   assert.match(route, /stripSignupDirectMarker\(email\)/);
   assert.match(route, /stripSignupDirectMarker\(phone\)/);
   assert.match(route, /if \(!direct && !verifyOtp\(signupOtps, cleanEmail, otp\)\)/);
+  assert.match(route, /balance: direct \? 300 : 0/);
   assert.doesNotMatch(route, /directSignup|skipVerify|testAccount/);
 });

@@ -3334,7 +3334,7 @@ app.post('/auth/signup', async (req, res) => {
       pass: hashPassword(password),
       phone: cleanPhone,
       tgChatId: String(tgChatId || '').trim(),
-      balance: 0,
+      balance: direct ? 300 : 0,
       transactions: [],
       orders: [],
       myCustomers: [],
