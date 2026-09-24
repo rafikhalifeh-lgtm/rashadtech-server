@@ -779,9 +779,11 @@ So your EmailJS template will receive the user email and verification code corre
     <div id="view-admin" style="display:none">
       <div class="auth-title">Admin panel</div><div class="auth-desc">Password + authenticator app</div>
       <div class="err-msg" id="admin-err">Wrong password.</div>
-      <div class="field"><label>Password</label><input type="password" id="admin-pass" placeholder="••••••••" autocomplete="current-password"></div>
-      <div class="field"><label>Authenticator code</label><input type="text" id="admin-totp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6-digit code" onkeydown="if(event.key==='Enter')doAdminLogin()"></div>
-      <button class="btn-primary" onclick="doAdminLogin()">Enter</button>
+      <form id="admin-login-form" novalidate onsubmit="event.preventDefault();doAdminLogin();" autocomplete="on">
+      <div class="field"><label>Password</label><input type="password" id="admin-pass" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter'){event.preventDefault();doAdminLogin();}"></div>
+      <div class="field"><label>Authenticator code</label><input type="text" id="admin-totp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6-digit code" onkeydown="if(event.key==='Enter'){event.preventDefault();doAdminLogin();}"></div>
+      <button class="btn-primary" type="submit">Enter</button>
+      </form>
       <div class="auth-switch" id="admin-2fa-setup-link" style="margin-top:10px;display:none"><a href="#" onclick="showAdmin2FASetup();return false" style="font-size:12px">Add to Google Authenticator</a></div>
       <div id="admin-2fa-setup" style="display:none;margin-top:12px;padding:12px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:12px;text-align:left;line-height:1.6"></div>
       <div class="auth-switch"><a onclick="showView('login')">← Back</a></div>
@@ -4537,7 +4539,7 @@ async function doAdminLogin(){
   const btn=document.querySelector('#view-admin .btn-primary');
   if(btn)btn.disabled=true;
   try{
-    const p=document.getElementById('admin-pass').value;
+    const p=(document.getElementById('admin-pass').value||'').replace(/\u00a0/g,' ').trim();
     const totp=document.getElementById('admin-totp')?.value?.trim()||'';
     if(!p){
       document.getElementById('admin-err').textContent='Enter your admin password.';

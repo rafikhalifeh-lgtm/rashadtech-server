@@ -3197,7 +3197,7 @@ app.post('/auth/admin-login', async (req, res) => {
   if (adminLoginBlocked(res, ip)) return;
   const { password, totp, pin } = req.body || {};
   const code = String(totp || pin || '').trim();
-  const pwd = String(password || '');
+  const pwd = normalizeLoginPassword(password);
 
   if (pwd === ADMIN2_PASSWORD) {
     if (!ADMIN2_ENABLED) {
@@ -3232,7 +3232,7 @@ app.post('/auth/admin2-login', async (req, res) => {
     return res.status(403).json({ error: 'Backup admin login is disabled. Set ADMIN2_ENABLED=true on the server or use main admin with authenticator.' });
   }
   const { password } = req.body || {};
-  if (String(password || '') !== ADMIN2_PASSWORD) {
+  if (normalizeLoginPassword(password) !== ADMIN2_PASSWORD) {
     recordAdminLoginFailure(ip);
     return res.status(401).json({ error: 'Wrong password' });
   }

@@ -14,6 +14,15 @@ function extractInlineScript(html) {
   return match[1];
 }
 
+test('staff login is a single form and submits from the password field', () => {
+  const html = fs.readFileSync(indexPath, 'utf8');
+  assert.equal(html.includes('Backup admin'), false);
+  assert.equal(html.includes('id="admin2-pass"'), false);
+  assert.equal(html.includes('doAdmin2Login'), false);
+  assert.match(html, /id="admin-login-form"/);
+  assert.match(html, /id="admin-pass"[^>]*onkeydown="if\(event\.key==='Enter'\)\{event\.preventDefault\(\);doAdminLogin\(\);\}"/);
+});
+
 test('index.html inline JavaScript parses without syntax errors', () => {
   const html = fs.readFileSync(indexPath, 'utf8');
   const js = extractInlineScript(html);
