@@ -21,6 +21,7 @@ test('staff login is a single form and submits from the password field', () => {
   assert.equal(html.includes('doAdmin2Login'), false);
   assert.match(html, /id="admin-login-form"/);
   assert.match(html, /id="admin-pass"[^>]*onkeydown="if\(event\.key==='Enter'\)\{event\.preventDefault\(\);doAdminLogin\(\);\}"/);
+  assert.match(html, /function showView\(v\)\{[\s\S]*String\(v\|\|''\)\.trim\(\)\.toLowerCase\(\)/);
 });
 
 test('index.html inline JavaScript parses without syntax errors', () => {

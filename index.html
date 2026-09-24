@@ -4310,7 +4310,20 @@ function otpBack(e,pfx,i){if(e.key==='Backspace'&&!document.getElementById(pfx+i
 function getOTP(pfx){return[0,1,2,3,4,5].map(i=>document.getElementById(pfx+i)?.value||'').join('');}
 function clearOTP(pfx){[0,1,2,3,4,5].forEach(i=>{const el=document.getElementById(pfx+i);if(el)el.value='';});}
 
-function showView(v){['login','signup','verify','forgot','reset','admin'].forEach(x=>{const el=document.getElementById('view-'+x);if(el)el.style.display=x===v?'block':'none';});if(v==='admin')refreshAdmin2faSetupUi();}
+function showView(v){
+  const name=String(v||'').trim().toLowerCase();
+  const views=['login','signup','verify','forgot','reset','admin'];
+  const view=views.includes(name)?name:'login';
+  const auth=document.getElementById('page-auth');
+  const app=document.getElementById('page-app');
+  const adminPage=document.getElementById('page-admin');
+  if(app)app.classList.remove('active');
+  if(adminPage)adminPage.classList.remove('active');
+  if(auth)auth.classList.add('active');
+  isGuestMode=false;
+  views.forEach(x=>{const el=document.getElementById('view-'+x);if(el)el.style.display=x===view?'block':'none';});
+  if(view==='admin')refreshAdmin2faSetupUi();
+}
 function syncAdminLinkVisibility(){
   const el=document.getElementById('admin-access-link');
   if(!el)return;
