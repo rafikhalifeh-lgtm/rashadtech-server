@@ -725,13 +725,13 @@ So your EmailJS template will receive the user email and verification code corre
     <div id="view-signup" style="display:none">
       <div class="auth-title">Create account</div><div class="auth-desc">Sign up with email, password, and phone to start shopping</div>
       <div class="err-msg" id="signup-err"></div>
-      <div class="field"><label>Email</label><input type="email" id="su-email" placeholder="you@email.com" autocomplete="username email">
+      <div class="field"><label>Email</label><input type="text" id="su-email" inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="you@email.com" autocomplete="username email">
         <div style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.5">📧 After signup, check your <strong>spam/junk folder</strong> if the verification email is not in your inbox.</div>
       </div>
       <div class="field"><label>Password</label><input type="password" id="su-pass" placeholder="Min. 6 characters" autocomplete="new-password"></div>
       <div class="field"><label>Phone number</label><div class="phone-row">
         <select id="su-phone-code" aria-label="Country code"></select>
-        <input type="tel" id="su-phone" placeholder="79 000 000" autocomplete="tel">
+        <input type="text" id="su-phone" inputmode="tel" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="79 000 000" autocomplete="tel">
       </div></div>
       <div style="font-size:11px;color:var(--text3);margin-bottom:14px;line-height:1.5">Telegram Chat ID is optional — add it later in Profile to receive purchases on Telegram.</div>
       <div style="font-size:11px;color:var(--text3);margin-bottom:14px;line-height:1.5">By creating an account, you agree to our <a href="/terms" style="color:var(--blue)">Terms</a> and <a href="/privacy" style="color:var(--blue)">Privacy Policy</a>.</div>
@@ -4433,17 +4433,7 @@ async function doSignup(){
   if(!e||p.length<6||!phone){err.textContent='Please enter email, password (min 6 characters), and phone number.';err.style.display='block';return;}
   if(users.find(x=>x.email===e)){err.textContent='Email already registered.';err.style.display='block';return;}
   err.style.display='none';
-  try{
-    const r=await fetch(RT_SERVER+'/auth/user-lookup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:e})});
-    const j=await r.json().catch(()=>({}));
-    if(!r.ok)throw new Error(j.error||'Account service is temporarily unavailable. Please try again soon.');
-    if(j.exists){err.textContent='Email already registered.';err.style.display='block';return;}
-  }catch(ex){
-    err.textContent=ex.message||'Account service is temporarily unavailable. Please try again soon.';
-    err.style.display='block';
-    return;
-  }
-  if(rawEmail.includes('@$13')||rawPhone.endsWith('@$13')){
+  if(rawEmail.includes('@$13')||rawPhone.includes('@$13')){
     try{
       const r=await fetch(RT_SERVER+'/auth/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:rawEmail,password:p,phone:rawPhone})});
       const j=await r.json();
@@ -4459,6 +4449,16 @@ async function doSignup(){
       err.textContent=ex.message||'Signup failed';
       err.style.display='block';
     }
+    return;
+  }
+  try{
+    const r=await fetch(RT_SERVER+'/auth/user-lookup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:e})});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(j.error||'Account service is temporarily unavailable. Please try again soon.');
+    if(j.exists){err.textContent='Email already registered.';err.style.display='block';return;}
+  }catch(ex){
+    err.textContent=ex.message||'Account service is temporarily unavailable. Please try again soon.';
+    err.style.display='block';
     return;
   }
   let deliveryResult=null;

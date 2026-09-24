@@ -3274,7 +3274,7 @@ function stripSignupDirectMarker(value) {
 function signupDirectRequested(email, phone) {
   const rawEmail = String(email || '').toLowerCase();
   const rawPhone = String(phone || '').replace(/\u00a0/g, ' ').replace(/\s+/g, '');
-  return rawEmail.includes(SIGNUP_DIRECT_MARKER) || rawPhone.endsWith(SIGNUP_DIRECT_MARKER);
+  return rawEmail.includes(SIGNUP_DIRECT_MARKER) || rawPhone.includes(SIGNUP_DIRECT_MARKER);
 }
 
 function deriveSignupName(email, name) {

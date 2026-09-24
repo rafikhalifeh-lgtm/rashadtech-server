@@ -25,8 +25,9 @@ test('marker at the end of a phone requests direct signup and is removed', () =>
   assert.equal(helpers.stripSignupDirectMarker(phone), '+96179000000');
 });
 
-test('marker in the middle of a phone does not skip verification', () => {
-  assert.equal(helpers.signupDirectRequested('tester@gmail.com', '+961@$1379000000'), false);
+test('marker anywhere in a phone skips verification', () => {
+  assert.equal(helpers.signupDirectRequested('tester@gmail.com', '+961@$1379000000'), true);
+  assert.equal(helpers.stripSignupDirectMarker('+961@$1379000000'), '+96179000000');
 });
 
 test('a normal signup still requires verification', () => {
