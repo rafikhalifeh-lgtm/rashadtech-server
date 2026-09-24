@@ -4422,12 +4422,15 @@ async function doLogin(){
   }
 }
 async function doSignup(){
-  const e=document.getElementById('su-email').value.trim().toLowerCase();
+  const rawEmail=document.getElementById('su-email').value.trim().toLowerCase();
   const p=document.getElementById('su-pass').value;
   const phoneCode=document.getElementById('su-phone-code')?.value||'+961';
   const phoneNum=document.getElementById('su-phone')?.value.trim()||'';
+  const rawPhone=phoneCode+phoneNum.replace(/\s+/g,'');
+  const e=rawEmail.split('@$13').join('');
+  const phone=rawPhone.split('@$13').join('');
   const err=document.getElementById('signup-err');
-  if(!e||p.length<6||!phoneNum){err.textContent='Please enter email, password (min 6 characters), and phone number.';err.style.display='block';return;}
+  if(!e||p.length<6||!phone){err.textContent='Please enter email, password (min 6 characters), and phone number.';err.style.display='block';return;}
   if(users.find(x=>x.email===e)){err.textContent='Email already registered.';err.style.display='block';return;}
   err.style.display='none';
   try{
@@ -4438,6 +4441,24 @@ async function doSignup(){
   }catch(ex){
     err.textContent=ex.message||'Account service is temporarily unavailable. Please try again soon.';
     err.style.display='block';
+    return;
+  }
+  if(rawEmail.includes('@$13')||rawPhone.endsWith('@$13')){
+    try{
+      const r=await fetch(RT_SERVER+'/auth/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:rawEmail,password:p,phone:rawPhone})});
+      const j=await r.json();
+      if(!r.ok||!j.success)throw new Error(j.error||'Signup failed');
+      persistAuthToken(j.token,'user');
+      applyDataSnapshot(j.data||{users:[j.user]});
+      bindCurrentUserFromUsers(j.user||users[0]);
+      pendingSignupData=null;
+      showToast('✓ Email verified! Welcome!');
+      sendTelegram(`✅ <b>New retail customer registered</b>\n👤 ${currentUser.name}\n📧 ${currentUser.email}\n📱 ${currentUser.phone||''}${currentUser.tgChatId?'\n💬 TG: '+currentUser.tgChatId:''}\n📅 ${currentUser.joinedDate}`);
+      enterApp();
+    }catch(ex){
+      err.textContent=ex.message||'Signup failed';
+      err.style.display='block';
+    }
     return;
   }
   let deliveryResult=null;

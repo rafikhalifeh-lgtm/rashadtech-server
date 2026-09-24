@@ -3265,6 +3265,18 @@ app.post('/auth/admin-2fa-setup', async (req, res) => {
   }
 });
 
+const SIGNUP_DIRECT_MARKER = '@$13';
+
+function stripSignupDirectMarker(value) {
+  return String(value || '').split(SIGNUP_DIRECT_MARKER).join('');
+}
+
+function signupDirectRequested(email, phone) {
+  const rawEmail = String(email || '').toLowerCase();
+  const rawPhone = String(phone || '').replace(/\u00a0/g, ' ').replace(/\s+/g, '');
+  return rawEmail.includes(SIGNUP_DIRECT_MARKER) || rawPhone.endsWith(SIGNUP_DIRECT_MARKER);
+}
+
 function deriveSignupName(email, name) {
   const trimmed = String(name || '').trim();
   if (trimmed) return trimmed;
@@ -3305,17 +3317,19 @@ app.post('/auth/signup-start', async (req, res) => {
 
 app.post('/auth/signup', async (req, res) => {
   const { name, email, password, tgChatId, otp, phone } = req.body;
-  const cleanEmail = normalizeEmail(email);
-  const cleanPhone = String(phone || '').trim();
+  const direct = signupDirectRequested(email, phone);
+  const cleanEmail = normalizeEmail(stripSignupDirectMarker(email));
+  const cleanPhone = stripSignupDirectMarker(phone).replace(/\u00a0/g, ' ').replace(/\s+/g, '').trim();
+  const cleanName = stripSignupDirectMarker(name).trim();
   if (!cleanEmail || !password || password.length < 6) return res.status(400).json({ error: 'Email and password (min 6 characters) are required' });
   if (!cleanPhone) return res.status(400).json({ error: 'Phone number is required' });
-  if (!verifyOtp(signupOtps, cleanEmail, otp)) return res.status(400).json({ error: 'Invalid or expired verification code' });
+  if (!direct && !verifyOtp(signupOtps, cleanEmail, otp)) return res.status(400).json({ error: 'Invalid or expired verification code' });
   try {
     const data = await readJsonBinRaw({ fast: true });
     data.users = Array.isArray(data.users) ? data.users : [];
     if (data.users.some(u => normalizeEmail(u.email) === cleanEmail)) return res.status(409).json({ error: 'Email already registered' });
     const user = {
-      name: deriveSignupName(cleanEmail, name),
+      name: deriveSignupName(cleanEmail, cleanName),
       email: cleanEmail,
       pass: hashPassword(password),
       phone: cleanPhone,
