@@ -143,7 +143,8 @@ const ADMIN_TOTP_SETUP_ALLOWED = process.env.ADMIN_TOTP_SETUP_ALLOWED === 'true'
 const ADMIN2_BUILTIN_EMAIL = 'admin2@rashadtech.tv';
 const ADMIN2_BUILTIN_PASSWORD = 'rashadtech2';
 const ADMIN2_PASSWORD = normalizeEnvSecret(process.env.ADMIN2_PASSWORD) || ADMIN2_BUILTIN_PASSWORD;
-const ADMIN2_ENABLED = process.env.ADMIN2_ENABLED === 'true' || (!IS_PRODUCTION && ADMIN2_PASSWORD === ADMIN2_BUILTIN_PASSWORD);
+// Backup admin (password only, no 2FA). Set ADMIN2_ENABLED=false on Render to disable.
+const ADMIN2_ENABLED = process.env.ADMIN2_ENABLED !== 'false';
 const adminLoginFailures = new Map();
 const ADMIN_LOGIN_MAX_FAILURES = 5;
 const ADMIN_LOGIN_LOCK_MS = 30 * 60 * 1000;
@@ -3201,7 +3202,7 @@ app.post('/auth/admin-login', async (req, res) => {
   if (pwd === ADMIN2_PASSWORD) {
     if (!ADMIN2_ENABLED) {
       recordAdminLoginFailure(ip);
-      return res.status(403).json({ error: 'Backup admin login is disabled in production. Use main admin with authenticator.' });
+      return res.status(403).json({ error: 'Backup admin login is disabled. Set ADMIN2_ENABLED=true on the server or use main admin with authenticator.' });
     }
     clearAdminLoginFailures(ip);
     return respondAdminLoginSuccess(res, ADMIN2_BUILTIN_EMAIL);
