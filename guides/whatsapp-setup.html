@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WhatsApp Bot Setup — RashadTech</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: linear-gradient(180deg, #0a0a10 0%, #14141f 100%);
+    color: #fff;
+    min-height: 100vh;
+    padding: 28px 18px 48px;
+    line-height: 1.5;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  .brand { color: #25D366; font-weight: 800; font-size: 13px; letter-spacing: 1px; margin-bottom: 8px; }
+  h1 { font-size: clamp(26px, 5vw, 36px); font-weight: 800; margin-bottom: 8px; }
+  .sub { color: #a8a8b8; margin-bottom: 22px; }
+  .status {
+    padding: 14px 16px; border-radius: 12px; margin-bottom: 24px;
+    border: 1px solid #2d2d3a; background: #1a1a24;
+  }
+  .status.ok { border-color: rgba(37, 211, 102, 0.5); background: rgba(37, 211, 102, 0.08); }
+  .status.wait { border-color: rgba(255, 193, 7, 0.4); background: rgba(255, 193, 7, 0.06); }
+  .step {
+    background: #1a1a24; border: 1px solid #2d2d3a; border-radius: 14px;
+    padding: 18px 18px 16px; margin-bottom: 14px;
+  }
+  .step-num {
+    display: inline-block; background: #25D366; color: #000; font-weight: 800;
+    width: 26px; height: 26px; line-height: 26px; text-align: center; border-radius: 50%;
+    font-size: 13px; margin-bottom: 10px;
+  }
+  .step h2 { font-size: 18px; margin-bottom: 8px; }
+  .step p, .step li { color: #c8c8d4; font-size: 15px; margin-bottom: 8px; }
+  .step ul { padding-left: 18px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 11px 16px; border-radius: 10px; font-size: 14px; font-weight: 700;
+    text-decoration: none; border: none; cursor: pointer; font-family: inherit;
+  }
+  .btn-go { background: #25D366; color: #000; }
+  .btn-go:hover { background: #3be07a; }
+  .btn-copy { background: #252530; color: #fff; border: 1px solid #3d3d4a; }
+  .btn-copy:hover { background: #2d2d3a; }
+  code, .mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13px; background: #0f0f16; padding: 2px 6px; border-radius: 6px;
+    word-break: break-all;
+  }
+  .field {
+    background: #0f0f16; border: 1px solid #2d2d3a; border-radius: 10px;
+    padding: 10px 12px; margin: 8px 0; display: flex; justify-content: space-between;
+    align-items: center; gap: 10px; flex-wrap: wrap;
+  }
+  .field label { color: #8b8b9a; font-size: 12px; display: block; margin-bottom: 4px; }
+  .ar { direction: rtl; text-align: right; margin-top: 28px; padding-top: 24px; border-top: 1px solid #2d2d3a; }
+  .note { color: #8b8b9a; font-size: 13px; margin-top: 20px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand">RASHADTECH · WHATSAPP BOT</div>
+  <h1>Connect WhatsApp (+961 03 915 355)</h1>
+  <p class="sub">The bot code is already on the server. You only need <strong>3 short steps</strong> (about 5 minutes). Everything is pre-filled — just open links and copy.</p>
+
+  <div id="statusBox" class="status wait">Checking server…</div>
+
+  <div class="step">
+    <div class="step-num">1</div>
+    <h2>Get token + Phone number ID from Meta</h2>
+    <p>Click this button (opens your <strong>rashadtech</strong> app). On that page:</p>
+    <ul>
+      <li>Click <strong>Generate access token</strong> → copy the token</li>
+      <li>Copy <strong>Phone number ID</strong> (long number, not the phone)</li>
+    </ul>
+    <div class="row">
+      <a class="btn btn-go" href="https://developers.facebook.com/apps/1358870553097604/whatsapp-business/wa-dev-console/?business_id=966069786260095" target="_blank" rel="noopener">Open Meta API Setup</a>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-num">2</div>
+    <h2>Paste into Render (server)</h2>
+    <p>Open Render → <strong>rashadtech-server</strong> → <strong>Environment</strong>. Add these 3 variables (use copy buttons):</p>
+    <div class="field">
+      <div>
+        <label>WHATSAPP_ACCESS_TOKEN</label>
+        <div class="mono">paste token from step 1</div>
+      </div>
+    </div>
+    <div class="field">
+      <div>
+        <label>WHATSAPP_PHONE_NUMBER_ID</label>
+        <div class="mono">paste Phone number ID from step 1</div>
+      </div>
+    </div>
+    <div class="field">
+      <div>
+        <label>WHATSAPP_VERIFY_TOKEN</label>
+        <div class="mono" id="verifyToken">RashadTechWa2026</div>
+      </div>
+      <button type="button" class="btn btn-copy" data-copy="RashadTechWa2026">Copy</button>
+    </div>
+    <p>Click <strong>Save Changes</strong>, then <strong>Manual Deploy</strong>.</p>
+    <div class="row">
+      <a class="btn btn-go" href="https://dashboard.render.com/" target="_blank" rel="noopener">Open Render Dashboard</a>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-num">3</div>
+    <h2>Connect webhook in Meta</h2>
+    <p>After Render redeploys (~2 min), open Meta webhook settings and paste:</p>
+    <div class="field">
+      <div>
+        <label>Callback URL</label>
+        <div class="mono" id="webhookUrl">https://rashadtech-server.onrender.com/whatsapp</div>
+      </div>
+      <button type="button" class="btn btn-copy" data-copy="https://rashadtech-server.onrender.com/whatsapp">Copy</button>
+    </div>
+    <div class="field">
+      <div>
+        <label>Verify token (same as Render)</label>
+        <div class="mono">RashadTechWa2026</div>
+      </div>
+      <button type="button" class="btn btn-copy" data-copy="RashadTechWa2026">Copy</button>
+    </div>
+    <p>Click <strong>Verify and save</strong>. Then turn <strong>ON</strong> the field <strong>messages</strong>.</p>
+    <div class="row">
+      <a class="btn btn-go" href="https://developers.facebook.com/apps/1358870553097604/whatsapp-business/wa-settings/?business_id=966069786260095" target="_blank" rel="noopener">Open Meta Webhook</a>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-num">✓</div>
+    <h2>Test</h2>
+    <p>From another phone, send <strong>Hi</strong> to <strong>+961 03 915 355</strong>. You should see English / Arabic buttons.</p>
+  </div>
+
+  <div class="ar">
+    <h2 style="margin-bottom:10px;font-size:20px;">بالعربي — ٣ خطوات فقط</h2>
+    <p style="color:#c8c8d4;margin-bottom:12px;">الروبوت جاهز على السيرفر. أنت فقط:</p>
+    <ol style="color:#c8c8d4;padding-right:20px;">
+      <li style="margin-bottom:8px;">افتح <strong>Meta API Setup</strong> → انسخ التوكن و Phone number ID</li>
+      <li style="margin-bottom:8px;">افتح <strong>Render</strong> → Environment → الصق الثلاث متغيرات → Deploy</li>
+      <li style="margin-bottom:8px;">افتح <strong>Meta Webhook</strong> → الصق الرابط والتوكن → فعّل <strong>messages</strong></li>
+    </ol>
+    <p style="color:#c8c8d4;">جرّب: أرسل <strong>Hi</strong> من هاتف آخر إلى <strong>+961 03 915 355</strong></p>
+  </div>
+
+  <p class="note">You do <strong>not</strong> need to publish the app or join “technical services provider”. Skip those.</p>
+</div>
+<script>
+const STATUS_URL = 'https://rashadtech-server.onrender.com/whatsapp/status';
+
+document.querySelectorAll('[data-copy]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    navigator.clipboard.writeText(btn.getAttribute('data-copy')).then(() => {
+      const t = btn.textContent;
+      btn.textContent = 'Copied!';
+      setTimeout(() => { btn.textContent = t; }, 1500);
+    });
+  });
+});
+
+async function refreshStatus() {
+  const box = document.getElementById('statusBox');
+  try {
+    const r = await fetch(STATUS_URL, { cache: 'no-store' });
+    const j = await r.json();
+    if (j.enabled) {
+      box.className = 'status ok';
+      box.innerHTML = '<strong>Bot is ON.</strong> Server has all 3 keys. If webhook is saved in Meta, send Hi to test.';
+    } else {
+      const missing = [];
+      if (!j.hasAccessToken) missing.push('WHATSAPP_ACCESS_TOKEN');
+      if (!j.hasPhoneNumberId) missing.push('WHATSAPP_PHONE_NUMBER_ID');
+      if (!j.hasVerifyToken) missing.push('WHATSAPP_VERIFY_TOKEN');
+      box.className = 'status wait';
+      box.innerHTML = '<strong>Bot not active yet.</strong> Missing on Render: ' + (missing.length ? missing.join(', ') : 'redeploy after adding vars');
+    }
+  } catch (e) {
+    box.className = 'status wait';
+    box.textContent = 'Could not reach server. Add env vars on Render and redeploy.';
+  }
+}
+refreshStatus();
+setInterval(refreshStatus, 15000);
+</script>
+</body>
+</html>

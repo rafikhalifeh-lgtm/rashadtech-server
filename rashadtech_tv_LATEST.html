@@ -2,8 +2,43 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>rashadtech.tv — Streaming Store</title>
+<meta http-equiv="refresh" content="0;url=/">
+<script>location.replace('/');</script>
+<title>Redirecting to rashadtech.tv…</title>
+<meta name="description" content="rashadtech.tv — Buy Netflix, Shahid VIP, Disney+, OSN+, Spotify, Anghami and more streaming subscriptions. Instant delivery to your Telegram. Sign up and top up your wallet.">
+<meta name="keywords" content="rashadtech, rashadtech.tv, Netflix subscription, Shahid VIP, Disney Plus, OSN Plus, Spotify, streaming Lebanon, buy subscriptions">
+<meta name="author" content="rashadtech.tv">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://rashadtech.tv/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="rashadtech.tv">
+<meta property="og:title" content="rashadtech.tv — Streaming Subscriptions Store">
+<meta property="og:description" content="Buy Netflix, Shahid, Disney+, OSN+ and more. Instant delivery via Telegram.">
+<meta property="og:url" content="https://rashadtech.tv/">
+<meta property="og:locale" content="en_US">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="rashadtech.tv — Streaming Subscriptions">
+<meta name="twitter:description" content="Buy Netflix, Shahid, Disney+, OSN+ and more. Instant delivery via Telegram.">
+<meta name="theme-color" content="#e50914">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  "name": "rashadtech.tv",
+  "alternateName": "RashadTech TV",
+  "url": "https://rashadtech.tv/",
+  "description": "Streaming subscription store for Netflix, Shahid VIP, Disney+, OSN+, Spotify, Anghami and more with instant Telegram delivery."
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  "name": "rashadtech.tv",
+  "url": "https://rashadtech.tv/",
+  "description": "Online store for streaming and music subscriptions with wallet top-up and instant delivery."
+}
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
@@ -46,7 +81,12 @@
 body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden}
 .page{display:none}.page.active{display:block}
 input,button,select,textarea{font-family:var(--font)}
-.auth-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:40px 16px}
+.auth-wrap{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 16px;gap:24px}
+.auth-seo{max-width:520px;text-align:center;color:var(--text3);font-size:12px;line-height:1.7;padding:0 8px}
+.auth-seo h1{font-size:15px;font-weight:600;color:var(--text2);margin-bottom:8px}
+.auth-seo p{margin-bottom:8px}
+.auth-seo ul{list-style:none;padding:0;margin:8px 0 0;display:flex;flex-wrap:wrap;justify-content:center;gap:6px 12px}
+.auth-seo li{font-size:11px;color:var(--text3)}
 .auth-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:32px;width:100%;max-width:390px}
 .auth-logo{font-size:21px;font-weight:600;text-align:center;margin-bottom:4px;letter-spacing:-0.3px}
 .auth-logo span{color:var(--red)}
@@ -265,6 +305,13 @@ input,button,select,textarea{font-family:var(--font)}
 .del-btn:hover{color:var(--red);background:var(--red-bg)}
 .add-acc-form{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px}
 .add-acc-form-title{font-size:12px;font-weight:600;color:var(--text2);margin-bottom:12px;text-transform:uppercase;letter-spacing:0.5px}
+.acc-add-mode-row{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.acc-add-mode-btn{flex:1;min-width:120px;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg2);color:var(--text2);font-size:11px;font-weight:600;cursor:pointer}
+.acc-add-mode-btn.active{background:var(--blue-bg);border-color:var(--blue-border);color:var(--blue)}
+.nf-bulk-shared{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;margin-bottom:12px}
+.nf-bulk-profiles{display:grid;gap:8px;margin-bottom:12px}
+.nf-bulk-row{display:grid;grid-template-columns:28px 1fr 92px;gap:8px;align-items:center}
+.nf-bulk-row-num{font-size:11px;font-weight:700;color:var(--text3);text-align:center}
 .inline-btn{background:var(--green-bg);color:var(--green);border:1px solid var(--green-border);border-radius:var(--radius-sm);padding:8px 16px;font-size:12px;font-weight:600;cursor:pointer;width:100%}
 .inline-btn:hover{background:var(--green);color:#fff}
 /* EXPIRY TRACKER */
@@ -279,6 +326,14 @@ input,button,select,textarea{font-family:var(--font)}
 .expiry-plan{font-size:12px;color:var(--text2)}
 .expiry-cred{font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:3px}
 .expiry-right{text-align:right;flex-shrink:0}
+.order-timeline{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.order-step{font-size:10px;padding:4px 8px;border-radius:999px;border:1px solid var(--border);color:var(--text3);background:var(--bg3)}
+.order-step.done{border-color:var(--green-border);color:var(--green);background:var(--green-bg)}
+.order-step.current{border-color:var(--orange-border);color:var(--orange);background:var(--orange-bg)}
+.game-track{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.game-step{font-size:10px;padding:4px 8px;border-radius:999px;border:1px solid var(--border);color:var(--text3)}
+.game-step.on{border-color:var(--blue-border);color:var(--blue);background:var(--blue-bg);font-weight:700}
+.delivery-proof{font-size:10px;color:var(--green);margin-top:6px}
 .days-left{font-size:22px;font-weight:700;line-height:1}
 .days-label{font-size:11px;color:var(--text2);margin-top:2px}
 .exp-date{font-size:11px;color:var(--text3);margin-top:4px}
@@ -312,6 +367,18 @@ input,button,select,textarea{font-family:var(--font)}
 .toast.show{display:block}
 .sub-option-btn{width:100%;background:none;border:none;border-radius:var(--radius-sm);padding:12px 14px;font-size:14px;color:var(--text);cursor:pointer;text-align:left;font-family:var(--font)}
 .sub-option-btn:hover{background:var(--bg3)}
+.shahid-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;width:100%}
+.shahid-act-btn{flex:1 1 calc(33% - 6px);min-width:88px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:7px 6px;font-size:10px;font-weight:600;color:var(--text2);cursor:pointer;font-family:var(--font)}
+.shahid-act-btn:hover{border-color:var(--blue-border);color:var(--blue)}
+.shahid-act-primary{background:var(--blue-bg);border-color:var(--blue-border);color:var(--blue)}
+.shahid-fix-warn{background:var(--orange-bg);border:1px solid var(--orange-border);border-radius:var(--radius-sm);padding:12px;margin-bottom:14px}
+.shahid-fix-step{font-size:13px;color:var(--text2);line-height:1.7;margin-bottom:14px}
+.shahid-copy-row{display:flex;align-items:center;gap:8px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin:8px 0 12px}
+.shahid-copy-row span{flex:1;font-family:var(--mono);font-size:12px;word-break:break-all}
+.shahid-copy-btn{background:none;border:none;color:var(--blue);cursor:pointer;font-size:16px;padding:0}
+.shahid-ext-btn{display:inline-flex;align-items:center;gap:6px;background:#fff;color:var(--blue);border:1px solid var(--blue-border);border-radius:8px;padding:10px 14px;font-size:12px;font-weight:600;text-decoration:none;cursor:pointer}
+.shahid-reset-btn{width:100%;background:var(--blue);color:#fff;border:none;border-radius:8px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;margin-top:8px}
+.shahid-reset-link{display:block;margin-top:10px;padding:12px;background:var(--green-bg);border:1px solid var(--green-border);border-radius:8px;font-size:12px;word-break:break-all;color:var(--green);text-decoration:none}
 #page-sublink{display:none}
 
 /* ── MOBILE BOTTOM NAV ── */
@@ -535,9 +602,9 @@ So your EmailJS template will receive the user email and verification code corre
     <div id="view-login">
       <div class="auth-title">Welcome back</div><div class="auth-desc">Sign in to your account</div>
       <div class="err-msg" id="login-err">Invalid email or password.</div>
-      <form onsubmit="doLogin();return false;" autocomplete="on">
-      <div class="field"><label>Email</label><input type="email" id="login-email" placeholder="you@email.com" autocomplete="email"></div>
-      <div class="field"><label>Password</label><input type="password" id="login-pass" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+      <form id="login-form" novalidate onsubmit="event.preventDefault();doLogin();" autocomplete="on">
+      <div class="field"><label for="login-email">Email</label><input type="text" inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false" name="email" id="login-email" placeholder="you@email.com" autocomplete="username email"></div>
+      <div class="field"><label for="login-pass">Password</label><input type="password" name="password" id="login-pass" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter'){event.preventDefault();doLogin();}">
       <a class="forgot-link" onclick="showView('forgot')">Forgot password?</a></div>
       <button type="submit" class="btn-primary">Sign in</button>
       </form>
@@ -613,7 +680,15 @@ So your EmailJS template will receive the user email and verification code corre
       <button class="btn-primary" onclick="doAdminLogin()">Enter</button>
       <div class="auth-switch"><a onclick="showView('login')">← Back</a></div>
     </div>
-  </div></div>
+  </div>
+  <footer class="auth-seo">
+    <h1>rashadtech.tv — Streaming Subscriptions Store</h1>
+    <p>Buy Netflix, Shahid VIP, Disney+, OSN+, Amazon Prime, Spotify, Anghami, Apple TV+, HBO Max and more. Create an account, top up your wallet, and get credentials delivered instantly on Telegram.</p>
+    <ul aria-label="Available services">
+      <li>Netflix</li><li>Shahid VIP</li><li>Disney+</li><li>OSN+</li><li>Spotify</li><li>Anghami</li><li>Amazon Prime</li><li>Apple TV+</li><li>HBO Max</li>
+    </ul>
+  </footer>
+  </div>
 </div>
 
 <!-- CUSTOMER APP -->
@@ -689,6 +764,8 @@ So your EmailJS template will receive the user email and verification code corre
           <div class="ftab" onclick="filterProd('music',this)" data-cat="music">Music</div>
           <div class="ftab" onclick="filterProd('arab',this)" data-cat="arab">Arab</div>
           <div class="ftab" onclick="filterProd('games',this)" data-cat="games">🎮 Games</div>
+          <div class="ftab" onclick="filterProd('tools',this)" data-cat="tools">Tools</div>
+          <div class="ftab" onclick="filterProd('giftcards',this)" data-cat="giftcards">Gift Cards</div>
         </div>
         <div class="products-grid" id="products-grid"></div>
       </div>
@@ -699,6 +776,11 @@ So your EmailJS template will receive the user email and verification code corre
           <input type="text" id="subs-search" placeholder="🔍 Search subscriptions..." oninput="filterSubs()" style="width:100%;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg2);color:var(--text);font-size:14px;box-sizing:border-box">
         </div>
         <div class="subs-list" id="subs-list"><div class="empty-state"><i class="ti ti-device-tv"></i>No subscriptions yet.<br><br><button onclick="switchTab('store',null)" style="background:var(--red);color:#fff;border:none;border-radius:var(--radius-sm);padding:8px 18px;font-size:12px;font-weight:600;cursor:pointer;margin-top:8px">Go to store</button></div></div>
+        <div style="margin-top:18px">
+          <div class="pg-title" style="font-size:16px;margin-bottom:4px">🎮 Game orders</div>
+          <div class="pg-sub" style="margin-bottom:8px">Track Jawaker / PUBG order status</div>
+          <div id="game-orders-list"><div class="empty-state" style="padding:20px"><i class="ti ti-device-gamepad"></i>No game orders yet.</div></div>
+        </div>
       </div>
       <div id="tab-netflix" class="tab-pane">
         <div class="pg-title" data-t="netflix">Netflix</div>
@@ -809,6 +891,7 @@ So your EmailJS template will receive the user email and verification code corre
       <button onclick="switchAdminTab('requests',null);setActiveAdminNav('abn-more');toggleAdminMore()" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 8px;cursor:pointer;color:var(--text);font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">💡</span><span data-t="requests">Requests</span></button>
       <button onclick="switchAdminTab('expiry',null);setActiveAdminNav('abn-more');toggleAdminMore()" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 8px;cursor:pointer;color:var(--text);font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">⏰</span><span data-t="expiry">Expiry</span></button>
       <button onclick="switchAdminTab('dashboard',null);setActiveAdminNav('abn-more');toggleAdminMore()" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 8px;cursor:pointer;color:var(--text);font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">📊</span><span data-t="dashboard">Dashboard</span></button>
+      <button onclick="switchAdminTab('prices',null);setActiveAdminNav('abn-more');toggleAdminMore()" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 8px;cursor:pointer;color:var(--text);font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">💲</span><span>Prices</span></button>
       <button onclick="toggleAdminMore();openAnnounce()" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 8px;cursor:pointer;color:var(--text);font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">📢</span><span data-t="announce">Announce</span></button>
       <button onclick="doLogout();toggleAdminMore()" style="background:var(--red-bg);border:1px solid var(--red-border);border-radius:var(--radius-sm);padding:12px 8px;cursor:pointer;color:var(--red);font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">🚪</span><span data-t="logout">Logout</span></button>
     </div>
@@ -818,6 +901,7 @@ So your EmailJS template will receive the user email and verification code corre
       <div class="snav-section" data-t="admin">Admin</div>
       <button class="snav" onclick="switchAdminTab('dashboard',this)"><i class="ti ti-chart-bar"></i><span data-t="dashboard">Dashboard</span></button>
             <button class="snav active" onclick="switchAdminTab('stock',this)"><i class="ti ti-package"></i><span data-t="stock">Stock</span></button>
+      <button class="snav" onclick="switchAdminTab('prices',this)"><i class="ti ti-currency-dollar"></i><span>Prices</span></button>
       <button class="snav" onclick="switchAdminTab('customers',this)"><i class="ti ti-users"></i><span data-t="customers">All Customers</span></button>
       <button class="snav" onclick="switchAdminTab('wallets',this)"><i class="ti ti-wallet"></i><span data-t="wallets">Wallets</span></button>
       <button class="snav" onclick="switchAdminTab('requests',this)"><i class="ti ti-bulb"></i><span data-t="requests">Requests</span></button>
@@ -831,6 +915,7 @@ So your EmailJS template will receive the user email and verification code corre
         <div class="pg-title">📊 Dashboard</div>
         <div class="pg-sub">Business overview</div>
         <div id="dashboard-stats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:12px"></div>
+        <div id="dashboard-pending-sla" class="card" style="padding:14px;margin-bottom:12px;display:none"></div>
         <div class="card" style="padding:16px;margin-bottom:12px">
           <div style="font-size:13px;font-weight:600;margin-bottom:10px">📈 Revenue (Last 6 Months)</div>
           <canvas id="revenue-chart" height="120" style="width:100%;display:block"></canvas>
@@ -871,6 +956,11 @@ So your EmailJS template will receive the user email and verification code corre
         </div>
         <div class="pg-sub">Add credentials per plan. Expiry date triggers automatic alerts.</div>
         <div id="stock-panels"></div>
+      </div>
+      <div id="admin-prices" class="tab-pane">
+        <div class="pg-title">Prices</div>
+        <div class="pg-sub">Update store prices for new purchases. Past orders and transactions keep the price paid at checkout.</div>
+        <div id="admin-prices-body"></div>
       </div>
       <div id="admin-customers" class="tab-pane">
         <div class="pg-title">All Customers</div>
@@ -984,7 +1074,7 @@ So your EmailJS template will receive the user email and verification code corre
 </div></div>
 
 <div class="modal-wrap" id="addmycust-modal"><div class="modal">
-  <div class="modal-head"><h3>Add customer</h3><button class="mclose" onclick="closeModal('addmycust-modal')">✕</button></div>
+  <div class="modal-head"><h3 id="addmycust-title">Add customer</h3><button class="mclose" onclick="closeModal('addmycust-modal')">✕</button></div>
   <div class="modal-body">
     <div class="err-msg" id="addmycust-err">Please fill all fields.</div>
     <div class="field"><label>Phone</label><div class="phone-row">
@@ -999,7 +1089,7 @@ So your EmailJS template will receive the user email and verification code corre
     </div></div>
     <div class="field"><label>First name</label><input type="text" id="mc-fname" placeholder="First name"></div>
     <div class="field"><label>Last name</label><input type="text" id="mc-lname" placeholder="Last name"></div>
-    <button class="btn-primary" onclick="addMyCustomer()">Add customer</button>
+    <button class="btn-primary" id="addmycust-submit-btn" onclick="saveMyCustomer()">Add customer</button>
   </div>
 </div></div>
 
@@ -1099,6 +1189,13 @@ async function rtApi(path,opts={}){
 }
 
 function normEmail(e){return String(e||'').trim().toLowerCase();}
+function accountProfileName(acc){return String(acc?.profileName||acc?.extra||'').trim();}
+function orderProfileName(o){return String(o?.profileName||o?.extra||'').trim();}
+function isShahidOrder(o){return Boolean(o&&(o.productId==='shahid'||/shahid/i.test(o.product||'')));}
+const SHAHID_FORGET_URL='https://shahid.mbc.net/en/hub/forget-password';
+let _shahidFixOrderId=null;
+let _shahidFixOrder=null;
+let editingCustId=null;
 
 function collectAssignedSubs(user){
   const out=[];
@@ -1111,15 +1208,94 @@ function userPurchaseSummary(u){
   const chipOrders=[...own,...assigned.map(x=>x.order)];
   return {own,assigned,total:own.length+assigned.length,chipOrders};
 }
+function orderIdsMatch(a,b){
+  const x=String(a||'').trim(),y=String(b||'').trim();
+  if(x===y)return true;
+  const nx=x.replace(/^#/,''),ny=y.replace(/^#/,'');
+  return Boolean(nx&&nx===ny);
+}
+function formatTs(ts){
+  if(!ts)return '';
+  try{return new Date(ts).toLocaleString('en-GB',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});}catch(e){return '';}
+}
+function pendingAgeLabel(o){
+  const ms=o?.createdAt?Date.now()-Number(o.createdAt):0;
+  if(!ms)return '';
+  const hrs=Math.floor(ms/3600000);
+  if(hrs<1)return `${Math.max(1,Math.floor(ms/60000))}m waiting`;
+  if(hrs<24)return `${hrs}h waiting`;
+  return `${Math.floor(hrs/24)}d waiting`;
+}
+function pendingTimelineHtml(o){
+  const cur=o?.status||'awaiting_stock';
+  const steps=[
+    {k:'placed',l:typeof currentLang!=='undefined'&&currentLang==='ar'?'تم الدفع':'Paid'},
+    {k:'awaiting_stock',l:typeof currentLang!=='undefined'&&currentLang==='ar'?'بانتظار المخزون':'Waiting for stock'},
+    {k:'fulfilled',l:typeof currentLang!=='undefined'&&currentLang==='ar'?'تم التسليم':'Delivered'}
+  ];
+  const order=['placed','awaiting_stock','fulfilled'];
+  const idx=Math.max(0,order.indexOf(cur));
+  return `<div class="order-timeline">${steps.map((s,i)=>`<span class="order-step ${i<idx?'done':s.k===cur?'current':''}">${s.l}</span>`).join('')}</div>`;
+}
+function gameStatusTrack(status){
+  const cur=status||'pending';
+  const steps=[{k:'pending',l:'Pending'},{k:'processing',l:'Processing'},{k:'done',l:'Done'}];
+  return `<div class="game-track">${steps.map(s=>`<span class="game-step ${s.k===cur?'on':''}">${s.l}</span>`).join('')}</div>`;
+}
+function findStockOwnerClient(acc){
+  if(acc?.soldTo?.userEmail)return acc.soldTo;
+  const targetEmail=String(acc?.email||'').trim().toLowerCase();
+  const targetKey=String(acc?.accKey||'');
+  for(const u of users){
+    for(const o of u.orders||[]){
+      if(targetKey&&o.accKey===targetKey)return{userEmail:u.email,userName:u.name,orderId:o.id,assignCustId:null};
+      if(!targetKey&&String(o.email||'').trim().toLowerCase()===targetEmail)return{userEmail:u.email,userName:u.name,orderId:o.id,assignCustId:null};
+    }
+    for(const c of u.myCustomers||[]){
+      for(const o of c.subs||[]){
+        if(targetKey&&o.accKey===targetKey)return{userEmail:u.email,userName:u.name,orderId:o.id,assignCustId:c.id,assignCustName:`${c.fname||''} ${c.lname||''}`.trim()};
+        if(!targetKey&&String(o.email||'').trim().toLowerCase()===targetEmail)return{userEmail:u.email,userName:u.name,orderId:o.id,assignCustId:c.id,assignCustName:`${c.fname||''} ${c.lname||''}`.trim()};
+      }
+    }
+  }
+  return null;
+}
+function jumpToCustomer(userEmail){
+  switchAdminTab('customers',null);
+  setTimeout(()=>{const inp=document.getElementById('admin-cust-search');if(inp){inp.value=userEmail||'';renderAdminCustomers();}},250);
+}
 function findUserOrder(orderId){
   if(!currentUser||!orderId)return null;
-  const direct=(currentUser.orders||[]).find(x=>x.id===orderId);
+  const direct=(currentUser.orders||[]).find(x=>orderIdsMatch(x.id,orderId));
   if(direct)return {order:direct,customer:null};
   for(const c of (currentUser.myCustomers||[])){
-    const sub=(c.subs||[]).find(x=>x.id===orderId);
+    const sub=(c.subs||[]).find(x=>orderIdsMatch(x.id,orderId));
     if(sub)return {order:sub,customer:c};
   }
   return null;
+}
+async function updateSubscription(orderId,fields){
+  const j=await rtApi('/customer/subscription/update',{method:'POST',body:JSON.stringify({orderId,...fields})});
+  if(j.data)applyDataSnapshot(j.data);
+  else if(j.user)currentUser=j.user;
+  return j.order;
+}
+async function deliverPurchaseTelegram(order,p,planLabel,price,forCustomer){
+  if(!currentUser?.tgChatId||!order)return false;
+  const data2={id:order.id,product:p.name,short:p.short,color:p.color,tc:p.tc,productId:p.id,plan:planLabel,email:order.email,pass:order.pass,expiryDate:order.expiryDate||'',profileName:order.profileName||'',profilePin:order.profilePin||'',accKey:order.accKey||'',mainEmail:order.mainEmail||'',codeEmail:order.email,inboxEmail:order.mainEmail||order.email};
+  const subLink=await createSubLinkUrl(data2);
+  const who=forCustomer?`${forCustomer.fname} ${forCustomer.lname}`:null;
+  let custCred=forCustomer
+    ?`✅ <b>${p.name} subscription for ${who}</b>\n\n📋 ${planLabel}\n👥 <b>For:</b> ${who}\n\n🔐 <b>Credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`
+    :`✅ <b>Your ${p.name} is ready!</b>\n\n📋 ${planLabel}\n\n🔐 <b>Your credentials:</b>\n📧 <code>${order.email}</code>\n🔑 <code>${order.pass}</code>`;
+  const prof=orderProfileName(order);
+  if(prof)custCred+=`\n👤 Profile: <code>${prof}</code>`;
+  if(order.expiryDate)custCred+=`\n⏰ Expires: ${order.expiryDate}`;
+  if(order.profilePin)custCred+=`\n🔢 PIN: <code>${order.profilePin}</code>`;
+  custCred+=`\n\n🔗 <b>Subscription link:</b>\n${subLink}\n\nEnjoy! 🌟`;
+  const ok=await sendTelegramToUser(currentUser.tgChatId,custCred);
+  if(ok){const now=Date.now();order.deliveredAt=now;order.telegramDeliveredAt=now;}
+  return ok;
 }
 
 function applyDataSnapshot(data){
@@ -1219,6 +1395,20 @@ const DURATIONS_NF_1U=[{key:'1m',label:'1 Month',price:1.5},{key:'3m',label:'3 M
 const DURATIONS_NF_FULL=Array.from({length:12},(_,i)=>({key:`${i+1}m`,label:`${i+1} Month${i>0?'s':''}`,price:(i+1)*7}));
 const DURATIONS_SH_1U=[{key:'1m',label:'1 Month',price:1.5},{key:'3m',label:'3 Months',price:2.4},{key:'1y',label:'1 Year',price:10}];
 const DURATIONS_SH_FULL=[{key:'1m',label:'1 Month',price:5},{key:'3m',label:'3 Months',price:11.5},{key:'1y',label:'1 Year',price:33}];
+const GIFT_CARD_US=[{key:'10',label:'$10',price:10.5},{key:'25',label:'$25',price:26},{key:'50',label:'$50',price:52},{key:'100',label:'$100',price:104}];
+const GIFT_CARD_UAE=[{key:'50',label:'50 AED',price:14},{key:'100',label:'100 AED',price:28},{key:'200',label:'200 AED',price:55},{key:'500',label:'500 AED',price:135}];
+const GIFT_CARD_KSA=[{key:'50',label:'50 SAR',price:14},{key:'100',label:'100 SAR',price:27},{key:'200',label:'200 SAR',price:54},{key:'500',label:'500 SAR',price:133}];
+const GIFT_CARD_EG=[{key:'200',label:'200 EGP',price:4},{key:'500',label:'500 EGP',price:10},{key:'1000',label:'1000 EGP',price:20}];
+const GIFT_CARD_UK=[{key:'10',label:'£10',price:13},{key:'25',label:'£25',price:32},{key:'50',label:'£50',price:63}];
+const GIFT_CARD_EU=[{key:'10',label:'€10',price:11},{key:'25',label:'€25',price:27},{key:'50',label:'€50',price:54}];
+const GIFT_CARD_REGIONS=[
+  {key:'us',name:'🇺🇸 United States',desc:'USD cards',durations:GIFT_CARD_US},
+  {key:'uae',name:'🇦🇪 UAE',desc:'AED cards',durations:GIFT_CARD_UAE},
+  {key:'ksa',name:'🇸🇦 Saudi Arabia',desc:'SAR cards',durations:GIFT_CARD_KSA},
+  {key:'eg',name:'🇪🇬 Egypt',desc:'EGP cards',durations:GIFT_CARD_EG},
+  {key:'uk',name:'🇬🇧 United Kingdom',desc:'GBP cards',durations:GIFT_CARD_UK},
+  {key:'eu',name:'🇪🇺 Europe',desc:'EUR cards',durations:GIFT_CARD_EU}
+];
 const PRODUCT_ICONS={
   netflix:'https://www.netflix.com/favicon.ico',
   shahid:'https://shahid.mbc.net/favicon.ico',
@@ -1243,6 +1433,15 @@ const PRODUCT_ICONS={
   pubg:'https://www.pubg.com/favicon.ico',
   xbox:'https://www.xbox.com/favicon.ico',
   psplus:'https://www.playstation.com/favicon.ico',
+  ytpremium:'https://www.youtube.com/favicon.ico',
+  chatgpt:'https://chat.openai.com/favicon.ico',
+  canva:'https://www.canva.com/favicon.ico',
+  linkedin:'https://www.linkedin.com/favicon.ico',
+  roblox:'https://www.roblox.com/favicon.ico',
+  freefire:'https://ff.garena.com/favicon.ico',
+  itunes:'https://www.apple.com/favicon.ico',
+  googleplay:'https://play.google.com/favicon.ico',
+  watchit:'https://watchit.com/favicon.ico',
 };
 
 function prodIcon(p,size=32,radius=8){
@@ -1250,7 +1449,7 @@ function prodIcon(p,size=32,radius=8){
   if(ico)return `<img src="${ico}" width="${size}" height="${size}" style="border-radius:${radius}px;object-fit:contain;background:#fff;padding:2px" onerror="this.style.display='none';this.nextSibling.style.display='flex'"><div style="display:none;width:${size}px;height:${size}px;border-radius:${radius}px;background:${p.color};color:${p.tc};align-items:center;justify-content:center;font-size:${Math.round(size*0.4)}px;font-weight:700">${p.short}</div>`;
   return `<div style="width:${size}px;height:${size}px;border-radius:${radius}px;background:${p.color};color:${p.tc};display:flex;align-items:center;justify-content:center;font-size:${Math.round(size*0.4)}px;font-weight:700">${p.short}</div>`;
 }
-const products=[
+const DEFAULT_PRODUCTS=[
   {id:'netflix',name:'Netflix',short:'N',color:'#E50914',tc:'#fff',cat:'video',badge:'hot',desc:'Movies & TV shows',hasUserTypes:true,userTypes:[
     {key:'1user',name:'1 User',desc:'Private profile · 1 screen',durations:DURATIONS_NF_1U,hasCustom:true,customDayRate:0.06},
     {key:'full',name:'Full User',desc:'All profiles · 4 screens',durations:DURATIONS_NF_FULL}]},
@@ -1305,41 +1504,118 @@ const products=[
     {name:'1 Month',desc:'Ultimate',price:5},{name:'3 Months',desc:'Ultimate',price:13},{name:'6 Months',desc:'Ultimate',price:24}]},
   {id:'psplus',name:'PlayStation Plus',short:'PS+',color:'#003087',tc:'#fff',cat:'games',badge:'new',desc:'PS4 & PS5 games',hasUserTypes:false,plans:[
     {name:'1 Month',desc:'Essential',price:4},{name:'3 Months',desc:'Essential',price:11},{name:'1 Year',desc:'Best value',price:35}]},
+  {id:'roblox',name:'Roblox',short:'RBL',color:'#E2231A',tc:'#fff',cat:'games',badge:'hot',desc:'Robux top-up',hasUserTypes:false,hasCustomOrder:true,customOrderType:'roblox',customOrderLabel:'Roblox Username',customOrderPlaceholder:'Enter your Roblox username',customOrderNeedsPassword:true,customOrderPasswordLabel:'Roblox Password',customOrderPasswordPlaceholder:'Enter your Roblox password',plans:[
+    {name:'400 Robux',desc:'Starter',price:5},{name:'800 Robux',desc:'Popular',price:10},{name:'1700 Robux',desc:'Value',price:20},{name:'4500 Robux',desc:'Best value',price:50},{name:'10000 Robux',desc:'Mega',price:100}]},
+  {id:'freefire',name:'Free Fire',short:'FF',color:'#FF6B00',tc:'#fff',cat:'games',badge:'hot',desc:'Diamonds top-up',hasUserTypes:false,hasCustomOrder:true,customOrderType:'freefire',customOrderLabel:'Free Fire Player ID',customOrderPlaceholder:'Enter your Free Fire Player ID',plans:[
+    {name:'100 Diamonds',desc:'Starter',price:1},{name:'310 Diamonds',desc:'Popular',price:3},{name:'520 Diamonds',desc:'Value',price:5},{name:'1060 Diamonds',desc:'Best value',price:10},{name:'2180 Diamonds',desc:'Pro',price:20},{name:'5600 Diamonds',desc:'Mega',price:50}]},
+
+  // ── VIDEO (more) ──
+  {id:'ytpremium',name:'YouTube Premium',short:'YT+',color:'#FF0000',tc:'#fff',cat:'video',badge:'hot',desc:'Ad-free YouTube & Music',hasUserTypes:false,plans:[
+    {name:'1 Month',desc:'Individual',price:4},{name:'3 Months',desc:'Individual',price:10},{name:'1 Year',desc:'Best value',price:35}]},
+
+  // ── TOOLS ──
+  {id:'chatgpt',name:'ChatGPT Plus',short:'GPT',color:'#10A37F',tc:'#fff',cat:'tools',badge:'hot',desc:'GPT-4 · faster responses',hasUserTypes:false,plans:[
+    {name:'1 Month',desc:'Plus account',price:5},{name:'3 Months',desc:'Plus account',price:13},{name:'1 Year',desc:'Best value',price:45}]},
+  {id:'canva',name:'Canva Pro',short:'CV',color:'#00C4CC',tc:'#fff',cat:'tools',badge:'new',desc:'Design & templates',hasUserTypes:false,plans:[
+    {name:'1 Month',desc:'Pro access',price:3},{name:'3 Months',desc:'Pro access',price:8},{name:'1 Year',desc:'Best value',price:25}]},
+  {id:'linkedin',name:'LinkedIn Premium',short:'in',color:'#0A66C2',tc:'#fff',cat:'tools',badge:'',desc:'Career & networking',hasUserTypes:false,plans:[
+    {name:'1 Month',desc:'Premium',price:6},{name:'3 Months',desc:'Premium',price:16},{name:'1 Year',desc:'Best value',price:55}]},
+
+  // ── ARAB (more) ──
+  {id:'watchit',name:'Watchit',short:'W+',color:'#6C2BD9',tc:'#fff',cat:'arab',badge:'new',desc:'Arabic movies & series',hasUserTypes:false,plans:[
+    {name:'1 Month',desc:'Full access',price:3},{name:'3 Months',desc:'Full access',price:8},{name:'1 Year',desc:'Best value',price:25}]},
+
+  // ── GIFT CARDS ──
+  {id:'itunes',name:'iTunes / App Store',short:'',color:'#555',tc:'#fff',cat:'giftcards',badge:'hot',desc:'App Store & iTunes codes by region',hasUserTypes:true,hasRegions:true,userTypes:JSON.parse(JSON.stringify(GIFT_CARD_REGIONS))},
+  {id:'googleplay',name:'Google Play',short:'GP',color:'#34A853',tc:'#fff',cat:'giftcards',badge:'hot',desc:'Google Play gift cards by region',hasUserTypes:true,hasRegions:true,userTypes:JSON.parse(JSON.stringify(GIFT_CARD_REGIONS))},
 ];
+let products=JSON.parse(JSON.stringify(DEFAULT_PRODUCTS));
+let _rtPriceCatalog=null;
+
+function cloneDefaultProducts(){products=JSON.parse(JSON.stringify(DEFAULT_PRODUCTS));}
+function applyPriceCatalog(catalog){
+  cloneDefaultProducts();
+  if(!catalog)return;
+  _rtPriceCatalog=catalog;
+  const prices=catalog.prices||{};
+  const rates=catalog.customDayRates||{};
+  products.forEach(p=>{
+    if(p.hasUserTypes){
+      (p.userTypes||[]).forEach(ut=>{
+        const rateKey=p.id+'__'+ut.key;
+        if(rates[rateKey]!=null)ut.customDayRate=rates[rateKey];
+        (ut.durations||[]).forEach(d=>{
+          const k=sk(p.id,ut.key,d.key);
+          if(prices[k]!=null)d.price=prices[k];
+        });
+      });
+    }else if(p.id!=='jawaker'){
+      (p.plans||[]).forEach((pl,i)=>{
+        const k=sk(p.id,null,i);
+        if(prices[k]!=null)pl.price=prices[k];
+      });
+    }
+  });
+}
+async function loadPriceCatalog(){
+  try{
+    const r=await fetch(RT_SERVER+'/catalog/prices');
+    const j=await r.json();
+    if(j.success&&j.catalog)applyPriceCatalog(j.catalog);
+  }catch(e){console.warn('price catalog load',e);}
+}
 
 // Requestable services not yet in store
 const requestableServices=[
-  {name:'Shahid (Egypt)',icon:'🎬',color:'#555'},
-  {name:'Crunchyroll',icon:'🎌',color:'#F47521'},
-  {name:'HBO Max',icon:'🎬',color:'#5822A5'},
-  {name:'Paramount+',icon:'⭐',color:'#0064FF'},
-  {name:'YouTube Premium',icon:'▶️',color:'#FF0000'},
-  {name:'Deezer',icon:'🎵',color:'#A238FF'},
-  {name:'Tidal',icon:'🌊',color:'#000'},
-  {name:'beIN Sports',icon:'⚽',color:'#CC0000'},
-  {name:'StarzPlay',icon:'🌟',color:'#000'},
-  {name:'Jawwy TV',icon:'📡',color:'#E4007C'},
+  {name:'Shahid VIP Egypt',icon:'🎬',color:'#1B75BC'},
+  {name:'Microsoft 365',icon:'💼',color:'#D83B01'},
+  {name:'Adobe Creative Cloud',icon:'🎨',color:'#FF0000'},
+  {name:'Coursera Plus',icon:'🎓',color:'#0056D2'},
+  {name:'Duolingo Super',icon:'🦉',color:'#58CC02'},
+  {name:'Zoom Pro',icon:'📹',color:'#2D8CFF'},
+  {name:'Grammarly Premium',icon:'✍️',color:'#15C39A'},
 ];
 
 let accountStock={};
 const sk=(p,u,d)=>u?`${p}__${u}__${d}`:`${p}__${d}`;
 const getAccounts=k=>accountStock[k]||[];
 const isStockBlocked=k=>Boolean(_jbCache?.stockBlocks?.[k]);
+function customDayBlockKey(productId,userTypeKey){return sk(productId,userTypeKey,'custom');}
+function isCustomDaysBlocked(p,ut){return Boolean(p&&ut&&ut.hasCustom&&isStockBlocked(customDayBlockKey(p.id,ut.key)));}
 const availableCount=k=>getAccounts(k).filter(a=>!a.used).length;
 const totalCount=k=>getAccounts(k).length;
 const getNextAcc=k=>getAccounts(k).find(a=>!a.used)||null;
-function markUsed(k,i){if(accountStock[k]&&accountStock[k][i])accountStock[k][i].used=true;}
+function markLinkedStockSoldClient(acc,soldTo){
+  if(!acc)return;
+  const apply=a=>{a.used=true;if(soldTo)a.soldTo=soldTo;};
+  const linkedKey=String(acc.accKey||'');
+  if(linkedKey.startsWith('nfprof__')){
+    netflixOneUserPlanKeys().forEach(skey=>{
+      (accountStock[skey]||[]).forEach(a=>{if(a&&a.accKey===linkedKey)apply(a);});
+    });
+    return;
+  }
+  apply(acc);
+}
+function markUsed(k,i){
+  const acc=accountStock[k]&&accountStock[k][i];
+  if(acc)markLinkedStockSoldClient(acc);
+}
 function stockLabel(n){if(n===0)return['Out of stock','sout'];if(n<=3)return[`${n} left`,'slow'];return[`${n} in stock`,'sok'];}
 
 const topupAmts=[{v:5,l:'$5'},{v:10,l:'$10'},{v:20,l:'$20'},{v:30,l:'$30'},{v:50,l:'$50'},{v:100,l:'$100'}];
 let users=[],currentUser=null,isAdmin=false;
 // HTML sanitizer to prevent XSS
+function jsOnClick(fn,...args){
+  return `onclick='${fn}(${args.map(a=>JSON.stringify(a)).join(',')})'`;
+}
 function esc(str){
   if(!str)return '';
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#x27;');
 }
 let selectedTopup=null,curProd=null,selUT=null,selDur=null,selPlan=null;
-let customDays=0,anghamiProfile='',assignCustId=null,curAccModalKey=null;
+let customDays=0,anghamiProfile='',assignCustId=null,curAccModalKey=null,accAddMode='manual';
+const NETFLIX_BULK_DEFAULTS_KEY='rt_netflix_bulk_defaults';
 let pendingOTPs={},pendingResetOTPs={},pendingSignupData=null;
 const OTP_EXPIRY_MS=10*60*1000; // 10 minutes
 
@@ -1368,13 +1644,16 @@ async function sendTelegramMessage(message){
 let selectedReqService=null;
 
 async function sendTelegramToUser(chatId,msg){
-  if(!chatId)return;
+  if(!chatId)return false;
   try{
-    await fetch(RT_SERVER+'/notify',{
+    const r=await fetch(RT_SERVER+'/notify',{
       method:'POST',headers:authHeaders(),
       body:JSON.stringify({message:msg,chatId,parse_mode:'HTML'})
     });
-  }catch(e){console.error('TG user fetch error:',e);}
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok||!j.success){console.error('TG user notify failed:',j.error||r.status);return false;}
+    return true;
+  }catch(e){console.error('TG user fetch error:',e);return false;}
 }
 async function sendTelegram(msg){
   try{
@@ -1500,12 +1779,12 @@ let _currentSubId=null;
 
 function openSubOptions(orderId){
   _currentSubId=orderId;
-  const found=findUserOrder(orderId);
-  const o=found?.order;
-  if(!o)return;
-  document.getElementById('sub-options-product').textContent=o.product+' · '+o.plan;
+  const o=findUserOrder(orderId)?.order;
+  if(!o){showToast(currentLang==='ar'?'لم يتم العثور على الاشتراك':'Subscription not found');return;}
+  const productEl=document.getElementById('sub-options-product');
+  if(productEl)productEl.textContent=o.product+' · '+o.plan;
   const btn=document.getElementById('sub-option-autorenew-btn');
-  btn.textContent=o.autoRenew?'🔁 Disable Auto-Renewal':'🔁 Enable Auto-Renewal';
+  if(btn)btn.textContent=o.autoRenew?'🔁 Disable Auto-Renewal':'🔁 Enable Auto-Renewal';
   openModal('sub-options-modal');
 }
 
@@ -1514,16 +1793,39 @@ function subOptionGenLink(){
   copySubLink(_currentSubId);
 }
 
+async function subOptionResendTelegram(){
+  closeModal('sub-options-modal');
+  if(!_currentSubId||!currentUser)return;
+  if(!currentUser.tgChatId){
+    showToast(currentLang==='ar'?'أضف Chat ID في الملف الشخصي أولاً':'Add Chat ID in Profile first, then Save');
+    switchTab('profile',null);
+    return;
+  }
+  try{
+    const r=await fetch(RT_SERVER+'/customer/resend-subscription',{
+      method:'POST',headers:authHeaders(),
+      body:JSON.stringify({orderId:_currentSubId,tgChatId:currentUser.tgChatId})
+    });
+    const j=await r.json();
+    if(!r.ok||!j.success)throw new Error(j.error||'Resend failed');
+    if(j.user)currentUser=j.user;
+    showToast(j.telegramSent
+      ?(currentLang==='ar'?'✓ تم الإرسال على تيليغرام':'✓ Sent to Telegram')
+      :(currentLang==='ar'?'⚠️ فشل الإرسال — تأكد من /start للبوت':'⚠️ Telegram failed — start @Rashadtech_bot'));
+  }catch(e){showToast('⚠️ '+e.message);}
+}
+
 async function subOptionAddNote(){
   closeModal('sub-options-modal');
   const o=findUserOrder(_currentSubId)?.order;
   if(!o)return;
   const note=prompt('Add a note to this subscription:'+(o.note?' Current: '+o.note:''));
   if(note===null)return;
-  o.note=note.trim();
-  await saveData();
-  renderSubs();
-  showToast('✅ Note saved');
+  try{
+    await updateSubscription(_currentSubId,{note:note.trim()});
+    renderSubs();
+    showToast('✅ Note saved');
+  }catch(e){showToast('⚠️ '+e.message);}
 }
 
 async function subOptionRenew(){
@@ -1575,12 +1877,13 @@ async function subOptionChangeProfile(){
   closeModal('sub-options-modal');
   const o=findUserOrder(_currentSubId)?.order;
   if(!o)return;
-  const name=prompt('Enter new profile name:'+(o.profileName?' Current: '+o.profileName:''));
+  const name=prompt('Enter new profile name:'+(orderProfileName(o)?' Current: '+orderProfileName(o):''));
   if(!name||!name.trim())return;
-  o.profileName=name.trim();
-  await saveData();
-  renderSubs();
-  showToast('✅ Profile name updated');
+  try{
+    await updateSubscription(_currentSubId,{profileName:name.trim()});
+    renderSubs();
+    showToast('✅ Profile name updated — use Generate Link for a fresh link with the new profile');
+  }catch(e){showToast('⚠️ '+e.message);}
 }
 
 async function subOptionChangePin(){
@@ -1589,10 +1892,11 @@ async function subOptionChangePin(){
   if(!o)return;
   const pin=prompt('Enter new PIN code:'+(o.profilePin?' Current: '+o.profilePin:''));
   if(!pin||!pin.trim())return;
-  o.profilePin=pin.trim();
-  await saveData();
-  renderSubs();
-  showToast('✅ PIN updated');
+  try{
+    await updateSubscription(_currentSubId,{profilePin:pin.trim()});
+    renderSubs();
+    showToast('✅ PIN updated');
+  }catch(e){showToast('⚠️ '+e.message);}
 }
 
 async function subOptionRemovePin(){
@@ -1600,20 +1904,23 @@ async function subOptionRemovePin(){
   const o=findUserOrder(_currentSubId)?.order;
   if(!o)return;
   if(!confirm('Remove PIN code for this subscription?'))return;
-  delete o.profilePin;
-  await saveData();
-  renderSubs();
-  showToast('✅ PIN removed');
+  try{
+    await updateSubscription(_currentSubId,{removeProfilePin:true});
+    renderSubs();
+    showToast('✅ PIN removed');
+  }catch(e){showToast('⚠️ '+e.message);}
 }
 
 async function subOptionAutoRenew(){
   closeModal('sub-options-modal');
   const o=findUserOrder(_currentSubId)?.order;
   if(!o)return;
-  o.autoRenew=!o.autoRenew;
-  await saveData();
-  renderSubs();
-  showToast(o.autoRenew?'✅ Auto-renewal enabled':'✅ Auto-renewal disabled');
+  try{
+    await updateSubscription(_currentSubId,{autoRenew:!o.autoRenew});
+    renderSubs();
+    const updated=findUserOrder(_currentSubId)?.order;
+    showToast(updated?.autoRenew?'✅ Auto-renewal enabled':'✅ Auto-renewal disabled');
+  }catch(e){showToast('⚠️ '+e.message);}
 }
 
 function filterSubs(){
@@ -1640,14 +1947,25 @@ function showProfilePage(){
 async function saveProfile(){
   if(!currentUser)return;
   const name=document.getElementById('profile-name-input').value.trim();
-  const tgid=document.getElementById('profile-tgid-input').value.trim();
+  const tgid=String(document.getElementById('profile-tgid-input').value||'').trim().replace(/[^\d-]/g,'').replace(/(?!^)-/g,'');
   if(!name){showToast(currentLang==='ar'?'الاسم مطلوب':'Name cannot be empty');return;}
-  currentUser.name=name;
-  currentUser.tgChatId=tgid;
-  // Update in users array
-  const u=users.find(x=>x.email===currentUser.email);
-  if(u){u.name=name;u.tgChatId=tgid;}
-  await saveData();
+  try{
+    const r=await fetch(RT_SERVER+'/customer/profile',{
+      method:'POST',headers:authHeaders(),
+      body:JSON.stringify({name,tgChatId:tgid})
+    });
+    const j=await r.json();
+    if(!r.ok||!j.success)throw new Error(j.error||'Save failed');
+    applyDataSnapshot(j.data||{users:[j.user]});
+    currentUser=j.user||users.find(x=>normEmail(x.email)===normEmail(currentUser.email))||currentUser;
+  }catch(e){
+    currentUser.name=name;
+    currentUser.tgChatId=tgid;
+    const u=users.find(x=>normEmail(x.email)===normEmail(currentUser.email));
+    if(u){u.name=name;u.tgChatId=tgid;}
+    await saveData();
+    if(!e.message.includes('Save failed'))console.warn('profile API fallback:',e.message);
+  }
   document.getElementById('profile-name-display').textContent=name;
   document.getElementById('profile-avatar').textContent=name[0].toUpperCase();
   showToast(currentLang==='ar'?'✓ تم تحديث الملف':'✓ Profile updated');
@@ -1736,33 +2054,33 @@ function toggleCustomerSubs(custId){
 async function setSubCustProfileName(orderId, custId){
   const c=currentUser?.myCustomers.find(x=>x.id===custId);
   if(!c)return;
-  const s=c.subs?.find(x=>x.id===orderId);
+  const s=c.subs?.find(x=>orderIdsMatch(x.id,orderId));
   if(!s)return;
-  const current=s.profileName?`Current: "${s.profileName}"
+  const current=orderProfileName(s)?`Current: "${orderProfileName(s)}"
 
 `:'';
   const name=prompt(`${current}Enter Netflix profile name for ${c.fname}:`);
   if(!name||!name.trim())return;
-  s.profileName=name.trim();
-  await saveData();
-  renderMyCustomers();
-  showToast('✓ Profile name saved');
+  try{
+    await updateSubscription(s.id,{profileName:name.trim()});
+    renderMyCustomers();
+    renderSubs();
+    showToast('✓ Profile name saved');
+  }catch(e){showToast('⚠️ '+e.message);}
 }
 
 async function setProfileName(orderId){
   const name=prompt('Enter the Netflix profile name exactly as created:');
   if(!name||!name.trim())return;
   if(!currentUser)return;
-  // Find and update the order
-  const o=findUserOrder(orderId)?.order;
-  if(o){
-    o.profileName=name.trim();
-    await saveData();
+  try{
+    await updateSubscription(orderId,{profileName:name.trim()});
     renderSubs();
     showToast('✓ Profile name saved');
-  }
+  }catch(e){showToast('⚠️ '+e.message);}
 }
 async function copySubLink(orderId){
+  // Find the order
   const o=findUserOrder(orderId)?.order;
   if(!o){showToast('Order not found');return;}
   // Encode subscription data directly in URL — no server call needed to view
@@ -1850,18 +2168,40 @@ async function checkSubLink(){
   _sublinkMainEmail=found.mainEmail||found.inboxEmail||null;
   _sublinkCodeEmail=found.codeEmail||found.email||found.mainEmail||null;
   _sublinkInboxEmail=found.inboxEmail||found.mainEmail||found.codeEmail||null;
-  if(found.extra){document.getElementById('sublink-extra-row').style.display='flex';document.getElementById('sublink-extra').textContent=found.extra;}
+  const subProf=orderProfileName(found);
+  const extraRow=document.getElementById('sublink-extra-row');
+  const profileRow=document.getElementById('sublink-profile-row');
+  if(subProf){
+    if(extraRow){extraRow.style.display='flex';document.getElementById('sublink-extra').textContent=subProf;}
+    if(profileRow)profileRow.style.display='none';
+  }else{
+    if(extraRow)extraRow.style.display='none';
+    if(profileRow)profileRow.style.display='none';
+  }
   if(found.expiryDate){document.getElementById('sublink-expiry-row').style.display='flex';document.getElementById('sublink-expiry').textContent=found.expiryDate;}
-  if(found.profileName){document.getElementById('sublink-profile-row').style.display='flex';document.getElementById('sublink-profile-name').textContent=found.profileName;}
   if(found.profilePin){document.getElementById('sublink-pin-row').style.display='flex';document.getElementById('sublink-profile-pin').textContent=found.profilePin;}
   document.getElementById('sublink-loading').style.display='none';
   document.getElementById('sublink-content').style.display='block';
   // Generate QR code for this link
   const qrUrl=`https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(location.href)}`;
   document.getElementById('sublink-qr').src=qrUrl;
-  if(found.accKey){
+  const isShahid=isShahidOrder(found);
+  document.getElementById('sublink-tv-section').style.display=isShahid?'none':'block';
+  const shahidActions=document.getElementById('sublink-shahid-actions');
+  if(shahidActions){
+    if(isShahid){
+      shahidActions.style.display='block';
+      const linkOrderId=found.id||'link';
+      shahidActions.innerHTML=shahidActionButtons(linkOrderId);
+      _shahidFixOrderId=found.id||null;
+      _shahidFixOrder=found;
+    }else{
+      shahidActions.style.display='none';
+      shahidActions.innerHTML='';
+    }
+  }
+  if(found.accKey&&!isShahid){
     _sublinkAccKey=found.accKey;
-    // Show request button instead of code section directly
     document.getElementById('sublink-code-request').style.display='block';
     if(_codeRefreshInterval)clearInterval(_codeRefreshInterval);
   } else {
@@ -1876,56 +2216,69 @@ function generateOTP(){return String(Math.floor(100000+Math.random()*900000));}
 const EMAILJS_SERVICE_ID  = 'service_g05xq5o';
 const EMAILJS_TEMPLATE_ID = 'template_e0h7eia';
 const EMAILJS_PUBLIC_KEY  = 'LyKu6ZB_y6qoFh7Ef';
+if(typeof emailjs!=='undefined'&&EMAILJS_PUBLIC_KEY&&EMAILJS_PUBLIC_KEY!=='YOUR_PUBLIC_KEY'){
+  emailjs.init({ publicKey: EMAILJS_PUBLIC_KEY });
+}
 
 async function sendOTPEmail(toEmail, otpCode, userName){
-  // If EmailJS not configured yet, fall back to demo mode
   if(EMAILJS_SERVICE_ID==='YOUR_SERVICE_ID'){
-    showToast(`⚠️ EmailJS not set up — Demo OTP: ${otpCode}`);
+    showToast(`⚠️ EmailJS not set up — contact support`);
     sendTelegram(`📧 <b>OTP (demo mode)</b>\nEmail: ${toEmail}\nCode: <code>${otpCode}</code>`);
     return false;
   }
   try{
-    const res = await emailjs.send(
-      EMAILJS_SERVICE_ID,
-      EMAILJS_TEMPLATE_ID,
-      {
-        // Multiple field aliases for maximum EmailJS compatibility
-        to_email: toEmail,
-        email: toEmail,
-        user_email: toEmail,
-        recipient: toEmail,
-        to_name: userName || toEmail,
-        user_name: userName || toEmail,
-        from_name: 'rashadtech.tv',
-        otp_code: otpCode,
-        verification_code: otpCode,
-        passcode: otpCode,
-        code: otpCode,
-        otp: otpCode,
-        reset_code: otpCode,
-        message: `Your rashadtech.tv verification code is ${otpCode}. It expires in 10 minutes.`,
-        reply_to: toEmail,
-      },
-      EMAILJS_PUBLIC_KEY
-    );
-    if(res.status===200){
+    const params={
+      to_email: toEmail,
+      email: toEmail,
+      user_email: toEmail,
+      recipient: toEmail,
+      to_name: userName || toEmail,
+      user_name: userName || toEmail,
+      from_name: 'rashadtech.tv',
+      otp_code: otpCode,
+      verification_code: otpCode,
+      passcode: otpCode,
+      code: otpCode,
+      otp: otpCode,
+      reset_code: otpCode,
+      message: `Your rashadtech.tv verification code is ${otpCode}. It expires in 10 minutes.`,
+      reply_to: toEmail,
+    };
+    const res=typeof emailjs.send==='function'
+      ? await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, params)
+      : null;
+    if(res&&(res.status===200||res.text==='OK')){
       showToast(`✓ Verification code sent to ${toEmail}`);
       return true;
     }
-    throw new Error('EmailJS status: '+res.status);
-  } catch(e){
+    throw new Error(res?'EmailJS status: '+res.status:'EmailJS unavailable');
+  }catch(e){
     console.error('EmailJS error:',e);
-    // Fallback to Telegram notification so admin can manually share code
     sendTelegram(`📧 <b>OTP (email failed)</b>\nEmail: ${toEmail}\nCode: <code>${otpCode}</code>\n⚠️ Email failed: ${e.message||e}`);
-    showToast(`Email failed — check Telegram if you added your Chat ID`);
     return false;
   }
 }
 
 async function deliverClientOtpEmail(payload){
-  if(!payload?.clientEmailRequired||!payload?.otp||!payload?.email)return payload;
-  await sendOTPEmail(payload.email,payload.otp,payload.name||payload.email);
-  return payload;
+  if(!payload?.otp||!payload?.email)return { ...(payload||{}), emailDelivered:false };
+  if(payload.emailSent)return { ...payload, emailDelivered:true };
+  if(!payload.clientEmailRequired)return { ...payload, emailDelivered:false };
+  const emailDelivered=await sendOTPEmail(payload.email,payload.otp,payload.name||payload.email);
+  return { ...payload, emailDelivered:Boolean(emailDelivered) };
+}
+
+function signupCodeDelivered(payload){
+  return Boolean(payload?.emailSent||payload?.emailDelivered||payload?.telegramSent);
+}
+
+function signupVerifyMessage(payload,email){
+  if(payload?.telegramSent&&!payload?.emailSent&&!payload?.emailDelivered){
+    return 'We sent a 6-digit code to your Telegram. Enter it below.';
+  }
+  if(payload?.emailSent||payload?.emailDelivered){
+    return `We sent a 6-digit code to ${email}. Check your inbox and spam folder.`;
+  }
+  return `Enter the 6-digit verification code for ${email}.`;
 }
 
 async function simulateSendOTP(email, code, name){
@@ -1952,9 +2305,24 @@ function clearOTP(pfx){[0,1,2,3,4,5].forEach(i=>{const el=document.getElementByI
 
 function showView(v){['login','signup','verify','forgot','reset','admin'].forEach(x=>{const el=document.getElementById('view-'+x);if(el)el.style.display=x===v?'block':'none';});}
 async function doLogin(){
-  const e=document.getElementById('login-email').value.trim();
-  const p=document.getElementById('login-pass').value;
+  const emailEl=document.getElementById('login-email');
+  const passEl=document.getElementById('login-pass');
+  const e=(emailEl?.value||'').trim().toLowerCase();
+  const p=passEl?.value||'';
   const err=document.getElementById('login-err');
+  if(!e||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)){
+    err.textContent='Please enter a valid email address.';
+    err.style.display='block';
+    emailEl?.focus();
+    return;
+  }
+  if(!p){
+    err.textContent='Please enter your password.';
+    err.style.display='block';
+    passEl?.focus();
+    return;
+  }
+  err.style.display='none';
   try{
     const r=await fetch(RT_SERVER+'/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:e,password:p})});
     const j=await r.json();
@@ -1987,17 +2355,21 @@ async function doSignup(){
     return;
   }
   const tgid=document.getElementById('su-tgid')?.value.trim()||'';
+  let deliveryResult=null;
   try{
     const r=await fetch(RT_SERVER+'/auth/signup-start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:n,email:e,tgChatId:tgid})});
-    const j=await deliverClientOtpEmail(await r.json().catch(()=>({})));
-    if(!r.ok||!j.success)throw new Error(j.error||'Could not send verification code.');
+    deliveryResult=await deliverClientOtpEmail(await r.json().catch(()=>({})));
+    if(!r.ok||!deliveryResult.success)throw new Error(deliveryResult.error||'Could not send verification code.');
+    if(!signupCodeDelivered(deliveryResult)){
+      throw new Error('Could not send verification code. Add your Telegram Chat ID on signup, or contact support on WhatsApp +96179306701.');
+    }
   }catch(ex){
     err.textContent=ex.message||'Could not send verification code.';
     err.style.display='block';
     return;
   }
   pendingSignupData={name:n,email:e,pass:p,tgChatId:tgid};
-  document.getElementById('verify-desc').textContent=`We sent a 6-digit code to ${e}.`;
+  document.getElementById('verify-desc').textContent=signupVerifyMessage(deliveryResult,e);
   clearOTP('otp');document.getElementById('verify-err').style.display='none';document.getElementById('verify-ok').style.display='none';
   showView('verify');
 }
@@ -2023,9 +2395,13 @@ async function verifyOTP(){
 function resendOTP(){
   if(!pendingSignupData)return;
   fetch(RT_SERVER+'/auth/signup-start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:pendingSignupData.name,email:pendingSignupData.email,tgChatId:pendingSignupData.tgChatId||''})})
-    .then(r=>r.json().then(j=>deliverClientOtpEmail(j).then(()=>{if(!r.ok||!j.success)throw new Error(j.error||'Could not resend code');})))
-    .then(()=>{document.getElementById('verify-ok').style.display='block';})
-    .catch(()=>{document.getElementById('verify-err').textContent='Could not resend code';document.getElementById('verify-err').style.display='block';});
+    .then(r=>r.json().then(j=>deliverClientOtpEmail(j).then(delivered=>{
+      if(!r.ok||!delivered.success)throw new Error(delivered.error||'Could not resend code');
+      if(!signupCodeDelivered(delivered))throw new Error('Could not resend code. Add Telegram Chat ID or contact support.');
+      document.getElementById('verify-desc').textContent=signupVerifyMessage(delivered,pendingSignupData.email);
+    })))
+    .then(()=>{document.getElementById('verify-ok').style.display='block';document.getElementById('verify-err').style.display='none';})
+    .catch(ex=>{document.getElementById('verify-err').textContent=ex.message||'Could not resend code';document.getElementById('verify-err').style.display='block';});
 }
 async function sendResetCode(){
   const e=document.getElementById('forgot-email').value.trim();
@@ -2074,6 +2450,7 @@ async function doAdminLogin(){
     refreshAdminBackupStatus();
     if(!window._adminBackupPoll)window._adminBackupPoll=setInterval(refreshAdminBackupStatus,5*60*1000);
     startRealtimeSync();
+    if(typeof rtSyncChatUI==='function')rtSyncChatUI();
   }catch(ex){
     document.getElementById('admin-err').textContent=ex.message;document.getElementById('admin-err').style.display='block';
   }
@@ -2086,7 +2463,7 @@ function enterApp(){
   // Save session — expires in 8 hours
   const session={email:currentUser.email,ts:Date.now()};
   try{localStorage.setItem('rt_session',JSON.stringify(session));}catch(e){}
-  updateBal();renderProducts('all');renderAmounts();renderSubs();renderTx();renderMyCustomers();renderReqChips();renderMyRequests();renderExpiryTracker();
+  updateBal();renderProducts('all');renderAmounts();renderSubs();renderTx();renderMyCustomers();renderReqChips();renderMyRequests();renderExpiryTracker();renderMyGameOrders();
 }
 function doLogout(){
   currentUser=null;isAdmin=false;
@@ -2095,6 +2472,7 @@ function doLogout(){
   try{localStorage.removeItem('rt_session');localStorage.removeItem('rt_admin_session');localStorage.removeItem('rt_auth_token');localStorage.removeItem('rt_auth_role');}catch(e){}
   ['page-app','page-admin'].forEach(id=>document.getElementById(id).classList.remove('active'));
   document.getElementById('page-auth').classList.add('active');showView('login');
+  if(typeof rtSyncChatUI==='function')rtSyncChatUI();
 }
 async function logoutAllDevices(){
   if(!confirm('Log out all sessions for this account?'))return;
@@ -2174,6 +2552,7 @@ async function switchAdminTab(name,el){
   await loadData();
   if(name==='wallets')renderWallets();
   if(name==='stock')renderStockPanels();
+  if(name==='prices')renderAdminPrices();
   if(name==='customers')renderAdminCustomers();
   if(name==='requests')renderAdminRequests();
   if(name==='expiry'){renderAdminExpiry();renderNetflixRenewalAlerts();}
@@ -2198,7 +2577,11 @@ function getProductAvail(p){
 }
 function hasUnblockedPlan(p){
   if(p.hasCustomOrder)return true;
-  if(p.hasUserTypes)return p.userTypes.some(ut=>ut.durations.some(d=>!isStockBlocked(sk(p.id,ut.key,d.key))));
+  if(p.hasUserTypes)return p.userTypes.some(ut=>{
+    if(ut.durations.some(d=>!isStockBlocked(sk(p.id,ut.key,d.key))))return true;
+    if(ut.hasCustom&&!isCustomDaysBlocked(p,ut)&&!isStockBlocked(sk(p.id,ut.key,'1m'))&&availableCount(sk(p.id,ut.key,'1m'))>0)return true;
+    return false;
+  });
   return (p.plans||[]).some((_,i)=>!isStockBlocked(sk(p.id,null,i)));
 }
 function renderProducts(cat){
@@ -2218,7 +2601,7 @@ function renderProducts(cat){
 
 // BUY MODAL
 function openBuy(id,forCustId){
-  curProd=products.find(x=>x.id===id);selUT=null;selDur=null;selPlan=null;customDays=0;anghamiProfile='';
+  curProd=products.find(x=>x.id===id);selUT=null;selDur=null;selPlan=null;customDays=0;anghamiProfile='';customOrderId='';customOrderPassword='';customOrderAmt=0;
   assignCustId=forCustId!==undefined?forCustId:null;
   document.getElementById('modal-title').textContent='Buy '+curProd.name;
   renderBuyBody();openModal('buy-modal');
@@ -2236,13 +2619,15 @@ function renderBuyBody(){
     return;
   }
   if(p.hasUserTypes){
-    html+=`<div class="plan-section-label">Step 1 — User type</div><div class="user-type-grid">
+    const step1=p.hasRegions?'Region':'User type';
+    const step2=p.hasRegions?'Amount':'Duration';
+    html+=`<div class="plan-section-label">Step 1 — ${step1}</div><div class="user-type-grid">
       ${p.userTypes.map((ut,i)=>{
         return `<div class="utype-btn${selUT&&selUT.key===ut.key?' sel':''}" onclick="selUserType(${i})">
           <div class="utype-name">${ut.name}</div><div class="utype-desc">${ut.desc}</div>
         </div>`;}).join('')}</div>`;
     if(selUT){
-      html+=`<div class="plan-section-label" style="margin-top:2px">Step 2 — Duration</div>`;
+      html+=`<div class="plan-section-label" style="margin-top:2px">Step 2 — ${step2}</div>`;
       if(selUT.durations.length<=4){
         html+=`<div class="dur-grid" style="grid-template-columns:repeat(${selUT.durations.length},1fr)">
           ${selUT.durations.map((d,i)=>{
@@ -2258,15 +2643,19 @@ function renderBuyBody(){
               <div><div class="plan-price">${blocked?'Blocked':fmt(d.price)}</div></div>
             </div>`;}).join('')}</div>`;
       }
-      if(selUT.hasCustom){html+=`<div class="plan-section-label">Or — Custom ($${selUT.customDayRate}/day)</div>
-        <div class="custom-dur-row"><i class="ti ti-calendar" style="font-size:15px;color:var(--text2)"></i>
-        <input type="number" id="custom-days-inp" min="1" max="365" placeholder="Days" value="${customDays||''}" oninput="setCustomDays(this.value)">
+      if(selUT.hasCustom){
+        const customBlocked=isCustomDaysBlocked(p,selUT);
+        html+=`<div class="plan-section-label">Or — Custom ($${selUT.customDayRate}/day)</div>
+        <div class="custom-dur-row" style="${customBlocked?'opacity:.45':''}"><i class="ti ti-calendar" style="font-size:15px;color:var(--text2)"></i>
+        <input type="number" id="custom-days-inp" min="1" max="365" placeholder="${customBlocked?'Blocked':'Days'}" value="${customDays||''}" oninput="setCustomDays(this.value)" ${customBlocked?'disabled':''}>
         <span style="font-size:13px;color:var(--text2)">days</span>
-        <span style="font-size:14px;font-weight:700;margin-left:auto">${customDays>0?fmt(customDays*selUT.customDayRate):''}</span></div>`;}
+        <span style="font-size:14px;font-weight:700;margin-left:auto">${customBlocked?'Blocked':(customDays>0?fmt(customDays*selUT.customDayRate):'')}</span></div>`;
+        if(customBlocked)html+=`<div style="font-size:11px;color:var(--red);margin-bottom:10px">Custom days are temporarily unavailable.</div>`;
+      }
     }
     const rD=selUT&&selDur;const rC=selUT&&selUT.hasCustom&&customDays>0;
     if(rD||rC)renderConfirm(html,p);
-    else{html+=`<button class="modal-buy-btn" disabled>Select user type and duration</button>`;document.getElementById('modal-body').innerHTML=html;}
+    else{html+=`<button class="modal-buy-btn" disabled>Select ${step1.toLowerCase()} and ${step2.toLowerCase()}</button>`;document.getElementById('modal-body').innerHTML=html;}
   } else {
     if(p.hasProfileName){
       html+=`<div class="plan-section-label">Step 1 — Your Anghami Profile Name</div>
@@ -2298,7 +2687,7 @@ function renderConfirm(html,p){
   else if(selPlan){price=selPlan.price;label=selPlan.name;}
   const bal=currentUser?currentUser.balance:0;const after=bal-price;const ok=after>=0;
   const selectedKey=p.hasUserTypes&&selUT&&selDur?sk(p.id,selUT.key,selDur.key):(!p.hasUserTypes&&selPlan?sk(p.id,null,selPlan.idx):null);
-  const blocked=selectedKey&&isStockBlocked(selectedKey);
+  const blocked=(p.hasUserTypes&&selUT&&selUT.hasCustom&&customDays>0)?isCustomDaysBlocked(p,selUT):(selectedKey&&isStockBlocked(selectedKey));
   html+=`<div class="divider"></div>
   <div class="confirm-row"><span class="cl">Plan</span><span class="cv">${label}</span></div>
   <div class="confirm-row"><span class="cl">Your balance</span><span class="cv">${fmt(bal)}</span></div>
@@ -2312,17 +2701,17 @@ function renderConfirm(html,p){
 function selUserType(i){selUT=curProd.userTypes[i];selDur=null;customDays=0;renderBuyBody();}
 function selDuration(i){const d=selUT.durations[i];if(isStockBlocked(sk(curProd.id,selUT.key,d.key)))return;selDur=d;customDays=0;renderBuyBody();}
 function selPlanFn(i){if(isStockBlocked(sk(curProd.id,null,i)))return;selPlan={idx:i,...curProd.plans[i]};renderBuyBody();}
-function setCustomDays(v){customDays=parseInt(v)||0;selDur=null;renderBuyBody();}
+function setCustomDays(v){const n=parseInt(v)||0;if(n>0&&curProd&&selUT&&isCustomDaysBlocked(curProd,selUT))return;customDays=n;selDur=null;renderBuyBody();}
 
-// ── CUSTOM ORDER (Jawaker / PUBG) ──
-let customOrderId='', customOrderAmt=0;
+// ── CUSTOM ORDER (Jawaker / PUBG / Roblox) ──
+let customOrderId='', customOrderPassword='', customOrderAmt=0;
 
 function jawPrice(tokens){
-  const base=1.5/12000;
+  const jaw=_rtPriceCatalog?.jawaker;
+  const base=jaw?.basePerToken??(1.5/12000);
   let price=tokens*base;
-  if(tokens>=500000)price*=0.90;
-  else if(tokens>=100000)price*=0.93;
-  else if(tokens>=50000)price*=0.96;
+  const tiers=jaw?.tiers||[{min:500000,mult:0.9},{min:100000,mult:0.93},{min:50000,mult:0.96}];
+  for(const tier of tiers){if(tokens>=tier.min){price*=tier.mult;break;}}
   return Math.round(price*100)/100;
 }
 
@@ -2332,7 +2721,17 @@ function renderCustomOrderBody(p,html){
   <div style="margin-bottom:14px">
     <input type="text" id="custom-order-id" style="width:100%;padding:9px 12px;border:1px solid ${customOrderId?'var(--blue)':'var(--border)'};border-radius:var(--radius-sm);background:var(--bg3);color:var(--text);font-size:14px;outline:none" placeholder="${p.customOrderPlaceholder}" value="${customOrderId}" oninput="customOrderId=this.value;renderBuyBody()">
   </div>`;
-  if(!customOrderId){html+=`<button class="modal-buy-btn" disabled>Enter your ${p.customOrderLabel} first</button>`;document.getElementById('modal-body').innerHTML=html;return;}
+  if(p.customOrderNeedsPassword){
+    html+=`<div class="plan-section-label">${p.customOrderPasswordLabel||'Password'}</div>
+    <div style="margin-bottom:14px">
+      <input type="password" id="custom-order-pass" style="width:100%;padding:9px 12px;border:1px solid ${customOrderPassword?'var(--blue)':'var(--border)'};border-radius:var(--radius-sm);background:var(--bg3);color:var(--text);font-size:14px;outline:none" placeholder="${p.customOrderPasswordPlaceholder||'Enter password'}" value="${customOrderPassword}" oninput="customOrderPassword=this.value;renderBuyBody()">
+    </div>`;
+  }
+  if(!customOrderId||(p.customOrderNeedsPassword&&!customOrderPassword)){
+    const missing=!customOrderId?p.customOrderLabel:(p.customOrderPasswordLabel||'password');
+    html+=`<button class="modal-buy-btn" disabled>Enter your ${missing} first</button>`;
+    document.getElementById('modal-body').innerHTML=html;return;
+  }
   if(isJawaker){
     html+=`<div class="plan-section-label">Tokens Amount (min 12,000)</div>
     <div style="margin-bottom:8px;display:flex;gap:8px;align-items:center">
@@ -2357,7 +2756,7 @@ function renderCustomOrderBody(p,html){
       html+=`<button class="modal-buy-btn" disabled>Enter token amount</button>`;
     }
   } else {
-    html+=`<div class="plan-section-label">Choose UC Amount</div>${(p.plans||[]).map((pl,i)=>`<div class="plan-row${selPlan&&selPlan.idx===i?' sel':''}" onclick="selPlanFn(${i})"><div><div class="plan-name">${pl.name}</div><div class="plan-desc">${pl.desc}</div></div><div style="text-align:right"><div class="plan-price">${fmt(pl.price)}</div></div></div>`).join('')}`;
+    html+=`<div class="plan-section-label">Choose ${p.customOrderType==='pubg'?'UC amount':'package'}</div>${(p.plans||[]).map((pl,i)=>`<div class="plan-row${selPlan&&selPlan.idx===i?' sel':''}" onclick="selPlanFn(${i})"><div><div class="plan-name">${pl.name}</div><div class="plan-desc">${pl.desc}</div></div><div style="text-align:right"><div class="plan-price">${fmt(pl.price)}</div></div></div>`).join('')}`;
     if(selPlan){
       const bal=currentUser.balance;const after=bal-selPlan.price;const ok=after>=0;
       html+=`<div style="height:1px;background:var(--border);margin:12px 0"></div>
@@ -2379,12 +2778,14 @@ async function submitCustomOrder(){
   const price=isJawaker?jawPrice(customOrderAmt):selPlan?.price;
   const planLabel=isJawaker?`${customOrderAmt.toLocaleString()} Tokens`:selPlan?.name;
   if(!currentUser||!customOrderId||!price)return;
+  if(p.customOrderNeedsPassword&&!customOrderPassword){showToast('Enter your password');return;}
   if(isJawaker&&customOrderAmt<12000){showToast('Minimum 12,000 tokens');return;}
   if(currentUser.balance<price){showToast('Insufficient balance');return;}
   currentUser.balance-=price;
   const dateStr=new Date().toLocaleString('en-GB',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
   const orderId='#'+(Math.floor(Math.random()*90000+10000));
-  currentUser.transactions.unshift({type:'purchase',label:`${p.name} · ${planLabel} · ID: ${customOrderId}`,amount:price,balance:currentUser.balance,date:dateStr,pending:true,orderId});
+  const credLabel=p.customOrderNeedsPassword?` · ${customOrderId}`:` · ID: ${customOrderId}`;
+  currentUser.transactions.unshift({type:'purchase',label:`${p.name} · ${planLabel}${credLabel}`,amount:price,balance:currentUser.balance,date:dateStr,pending:true,orderId});
   // Save game order
   let go=[];
   try{
@@ -2392,12 +2793,16 @@ async function submitCustomOrder(){
     if(Array.isArray(_jbCache.gameorders))go=_jbCache.gameorders;
   }catch(e){}
   if(!_jbCache)_jbCache={};
-  go.unshift({id:orderId,type:p.customOrderType,product:p.name,short:p.short,color:p.color,playerId:customOrderId,plan:planLabel,price,userEmail:currentUser.email,userName:currentUser.name,userTgChatId:currentUser.tgChatId||'',date:dateStr,status:'pending'});
+  const orderPayload={id:orderId,type:p.customOrderType,product:p.name,short:p.short,color:p.color,playerId:customOrderId,plan:planLabel,price,userEmail:currentUser.email,userName:currentUser.name,userTgChatId:currentUser.tgChatId||'',date:dateStr,status:'pending',createdAt:Date.now(),statusHistory:[{stage:'pending',at:Date.now()}]};
+  if(p.customOrderNeedsPassword&&customOrderPassword)orderPayload.playerPassword=customOrderPassword;
+  go.unshift(orderPayload);
   try{_jbCache.gameorders=go;await jbWrite(_jbCache);}catch(e){console.warn('game order save error:',e);}
-  await saveData();updateBal();renderTx();closeModal('buy-modal');showToast('✓ Order placed!');
-  if(currentUser.tgChatId)await sendTelegramToUser(currentUser.tgChatId,`⏳ <b>Order Received!</b>\n\n🎮 <b>${p.name}</b>\n📋 ${planLabel}\n🆔 Player ID: <code>${customOrderId}</code>\n💵 ${fmt(price)}\n\nYour order is being processed. We will notify you here once it's done! 🙏`);
-  await sendTelegram(`🎮 <b>New Game Order ${orderId}</b>\n\n📦 ${p.name}\n📋 ${planLabel}\n🆔 Player ID: <code>${customOrderId}</code>\n💵 ${fmt(price)}\n👤 ${currentUser.name} (${currentUser.email})\n📅 ${dateStr}\n\nGo to Admin → Game Orders to fulfill.`);
-  customOrderId='';customOrderAmt=0;selPlan=null;
+  await saveData();updateBal();renderTx();renderMyGameOrders();closeModal('buy-modal');showToast('✓ Order placed!');
+  const passLine=p.customOrderNeedsPassword?`\n🔑 Password: <code>${customOrderPassword}</code>`:'';
+  const idLabel=p.customOrderNeedsPassword?'Username':'Player ID';
+  if(currentUser.tgChatId)await sendTelegramToUser(currentUser.tgChatId,`⏳ <b>Order Received!</b>\n\n🎮 <b>${p.name}</b>\n📋 ${planLabel}\n👤 ${idLabel}: <code>${customOrderId}</code>${passLine}\n💵 ${fmt(price)}\n\nYour order is being processed. We will notify you here once it's done! 🙏`);
+  await sendTelegram(`🎮 <b>New Game Order ${orderId}</b>\n\n📦 ${p.name}\n📋 ${planLabel}\n👤 ${idLabel}: <code>${customOrderId}</code>${passLine}\n💵 ${fmt(price)}\n👤 ${currentUser.name} (${currentUser.email})\n📅 ${dateStr}\n\nGo to Admin → Game Orders to fulfill.`);
+  customOrderId='';customOrderPassword='';customOrderAmt=0;selPlan=null;
 }
 
 
@@ -2406,7 +2811,10 @@ async function confirmPurchase(){
   const p=curProd;let price,planLabel,skey,extraFields={};
   if(p.hasUserTypes){
     if(selDur){price=selDur.price;planLabel=`${selUT.name} · ${selDur.label}`;skey=sk(p.id,selUT.key,selDur.key);}
-    else if(selUT.hasCustom&&customDays>0){price=customDays*selUT.customDayRate;planLabel=`${selUT.name} · ${customDays} days`;skey=sk(p.id,selUT.key,'1m');}
+    else if(selUT.hasCustom&&customDays>0){
+      if(isCustomDaysBlocked(p,selUT)){showToast('Custom days are temporarily unavailable');return;}
+      price=customDays*selUT.customDayRate;planLabel=`${selUT.name} · ${customDays} days`;skey=sk(p.id,selUT.key,'1m');
+    }
     else{showToast('Please select a duration');return;}
   } else {
     if(!selPlan){showToast('Please select a plan');return;}
@@ -2425,9 +2833,15 @@ async function confirmPurchase(){
   if(freshUser?.banned){showToast('⚠️ Your account has been suspended. Contact support.');return;}
   if(!isAdmin){
     try{
+      const assignedCustomer=assignCustId!=null?currentUser.myCustomers?.find(x=>x.id===assignCustId):null;
       const r=await fetch(RT_SERVER+'/purchase',{
         method:'POST',headers:authHeaders(),
-        body:JSON.stringify({product:{id:p.id,name:p.name,short:p.short,color:p.color,tc:p.tc},planLabel,price,skey,extraFields,assignCustId})
+        body:JSON.stringify({
+          product:{id:p.id,name:p.name,short:p.short,color:p.color,tc:p.tc},
+          planLabel,price,skey,extraFields,assignCustId,
+          customDays:(p.hasUserTypes&&selUT?.hasCustom&&customDays>0)?customDays:0,
+          tgChatId:String(currentUser.tgChatId||'').trim().replace(/[^\d-]/g,'').replace(/(?!^)-/g,'')
+        })
       });
       const j=await r.json();
       if(!r.ok||!j.success)throw new Error(j.error||'Purchase failed');
@@ -2436,11 +2850,9 @@ async function confirmPurchase(){
       if(_jbCache)_jbCache.users=users;
       closeModal('buy-modal');closeModal('assign-modal');updateBal();renderSubs();renderTx();renderMyCustomers();renderExpiryTracker();renderProducts('all');
       showToast('✓ Purchase successful!');
-      if(j.pending){
-        const assigned=assignCustId!=null?currentUser.myCustomers?.find(x=>x.id===assignCustId):null;
-        const assignNote=assigned?`\n👥 For: ${assigned.fname} ${assigned.lname}`:'';
-        if(currentUser.tgChatId)await sendTelegramToUser(currentUser.tgChatId,`✅ <b>Purchase Confirmed!</b>\n\n📦 ${p.name} · ${planLabel}\n💵 ${fmt(price)}\n💰 New balance: ${fmt(currentUser.balance)}${assignNote}\n\n⏳ Your account credentials will be delivered to you here shortly. Thank you for your patience!`);
-        await sendTelegram(`⏳ <b>Pending Order</b>\n👤 ${currentUser.name} (${currentUser.email})\n📦 ${p.name} · ${planLabel}\n💵 ${fmt(price)}${assignNote}\n⚠️ No stock — add accounts in Stock tab to fulfill.`);
+      if(j.pending&&!j.telegramSent&&currentUser.tgChatId){
+        const assignNote=assignedCustomer?`\n👥 For: ${assignedCustomer.fname} ${assignedCustomer.lname}`:'';
+        await sendTelegramToUser(currentUser.tgChatId,`✅ <b>Purchase Confirmed!</b>\n\n📦 ${p.name} · ${planLabel}\n💵 ${fmt(price)}\n💰 New balance: ${fmt(currentUser.balance)}${assignNote}\n\n⏳ Your account credentials will be delivered to you here shortly. Thank you for your patience!`);
       }
     }catch(e){showToast('⚠️ '+e.message);}
     return;
@@ -2457,8 +2869,10 @@ async function confirmPurchase(){
       if(!_jbCache)_jbCache=await jbRead();
       if(_jbCache.pending&&Array.isArray(_jbCache.pending))pending=_jbCache.pending;
     }catch(e){}
-    const newPendingOrder={id:'#'+(Math.floor(Math.random()*90000+10000)),userEmail:currentUser.email,userName:currentUser.name,userTgChatId:currentUser.tgChatId||'',product:p.name,short:p.short,color:p.color,tc:p.tc,productId:p.id,plan:planLabel,price,skey,date:dateStr,...extraFields};
+    const newPendingOrder={id:'#'+(Math.floor(Math.random()*90000+10000)),userEmail:currentUser.email,userName:currentUser.name,userTgChatId:currentUser.tgChatId||'',product:p.name,short:p.short,color:p.color,tc:p.tc,productId:p.id,plan:planLabel,price,skey,date:dateStr,createdAt:Date.now(),status:'awaiting_stock',statusHistory:[{stage:'placed',at:Date.now()},{stage:'awaiting_stock',at:Date.now()}],...extraFields};
     pending.unshift(newPendingOrder);
+    currentUser.transactions[0].pending=true;
+    currentUser.transactions[0].orderId=newPendingOrder.id;
     try{_jbCache.pending=pending;await jbWrite(_jbCache);}catch(e){console.warn('pending save error:',e);}
     await saveData();updateBal();renderSubs();renderTx();
     closeModal('buy-modal');
@@ -2472,7 +2886,7 @@ async function confirmPurchase(){
   }
   const accIdx=getAccounts(skey).indexOf(acc);markUsed(skey,accIdx);
   currentUser.balance-=price;
-  const order={id:'#'+(Math.floor(Math.random()*90000+10000)),product:p.name,short:p.short,color:p.color,tc:p.tc,productId:p.id,plan:planLabel,price,email:acc.email,pass:acc.pass,date:dateStr,expiryDate:acc.expiryDate||null,...extraFields,...(acc.extra?{extra:acc.extra}:{}),...(acc.profilePin?{profilePin:acc.profilePin}:{}),accKey:acc.accKey||'',mainEmail:acc.mainEmail||''};
+  const order={id:'#'+(Math.floor(Math.random()*90000+10000)),product:p.name,short:p.short,color:p.color,tc:p.tc,productId:p.id,plan:planLabel,price,email:acc.email,pass:acc.pass,date:dateStr,expiryDate:acc.expiryDate||null,...extraFields,...(accountProfileName(acc)?{profileName:accountProfileName(acc)}:{}),...(acc.profilePin?{profilePin:acc.profilePin}:{}),accKey:acc.accKey||'',mainEmail:acc.mainEmail||''};
   if(assignCustId!==null){
     const c=currentUser.myCustomers.find(x=>x.id===assignCustId);
     if(c){
@@ -2480,7 +2894,9 @@ async function confirmPurchase(){
       order.profileName=c.fname;
       c.subs=c.subs||[];c.subs.push(order);
     }
-    await saveData();closeModal('buy-modal');closeModal('assign-modal');renderSubs();renderMyCustomers();showToast('✓ Subscription assigned');
+    currentUser.transactions=currentUser.transactions||[];
+    currentUser.transactions.unshift({type:'purchase',label:'Bought '+p.name+' · '+planLabel+' (sub-customer)',amount:price,balance:currentUser.balance,date:dateStr});
+    await saveData();closeModal('buy-modal');closeModal('assign-modal');renderSubs();renderTx();renderMyCustomers();showToast('✓ Subscription assigned');
     // Send credentials + link to Customer1 only
     const cleanId=(order.id||'').replace('#','');
     const cleanId2=(order.id||'').replace('#','');
@@ -2507,26 +2923,17 @@ async function confirmPurchase(){
   }
   const custInfo=assignCustId!==null?(()=>{const c=currentUser.myCustomers.find(x=>x.id===assignCustId);return c?`\n👥 <b>Assigned to:</b> ${c.fname} ${c.lname} (${c.code}${c.phone})`:''})():'';
   let tgMsg=`🎉 <b>New Purchase</b>\n\n📦 <b>Product:</b> ${p.name}\n📋 <b>Plan:</b> ${planLabel}\n💵 <b>Price:</b> ${fmt(price)}\n👤 <b>Buyer:</b> ${currentUser.name} (${currentUser.email})\n📅 <b>Date:</b> ${dateStr}${custInfo}\n\n🔐 <b>Credentials:</b>\n📧 Email: <code>${acc.email}</code>\n🔑 Password: <code>${acc.pass}</code>`;
-  if(acc.extra)tgMsg+=`\nℹ️ Extra: <code>${acc.extra}</code>`;
+  if(accountProfileName(acc))tgMsg+=`\n👤 Profile: <code>${accountProfileName(acc)}</code>`;
   if(acc.expiryDate)tgMsg+=`\n📅 Expires: ${acc.expiryDate}`;
   await sendTelegram(tgMsg);
   // Send credentials to customer via Telegram bot
-  if(assignCustId===null&&currentUser.tgChatId){
-    const cleanId=(order.id||'').replace('#','');
-    const cleanId2=(order.id||'').replace('#','');
-    const data2={id:order.id,product:p.name,short:p.short,color:p.color,tc:p.tc,productId:p.id,plan:planLabel,email:acc.email,pass:acc.pass,expiryDate:acc.expiryDate||'',profileName:order.profileName||'',profilePin:order.profilePin||'',accKey:order.accKey||'',mainEmail:acc.mainEmail||'',codeEmail:acc.email,inboxEmail:acc.mainEmail||acc.email};
-    const subLink=await createSubLinkUrl(data2);
-    let custCred=`✅ <b>Your ${p.name} is ready!</b>\n\n📋 ${planLabel}\n\n🔐 <b>Your credentials:</b>\n📧 Email: <code>${acc.email}</code>\n🔑 Password: <code>${acc.pass}</code>`;
-    if(acc.extra)custCred+=`\nℹ️ Extra: <code>${acc.extra}</code>`;
-    if(acc.expiryDate)custCred+=`\n⏰ Expires: ${acc.expiryDate}`;
-    if(order.profilePin)custCred+=`\n🔢 PIN: <code>${order.profilePin}</code>`;
-    custCred+=`\n\n💰 New balance: ${fmt(currentUser.balance)}`;
-    custCred+=`\n\n🔗 <b>Your subscription link:</b>\n${subLink}\n\nEnjoy! 🌟`;
-    await sendTelegramToUser(currentUser.tgChatId,custCred);
+  if(currentUser.tgChatId){
+    const forCust=assignCustId!==null?currentUser.myCustomers?.find(x=>x.id===assignCustId):null;
+    await deliverPurchaseTelegram(order,p,planLabel,price,forCust||null);
   }
   if(assignCustId===null){
     let cl=`<div class="cred-line"><div class="cred-label">Email</div><div class="cred-val">${acc.email}</div></div><div class="cred-line"><div class="cred-label">Password</div><div class="cred-val">${acc.pass}</div></div>`;
-    if(acc.extra)cl+=`<div class="cred-line"><div class="cred-label">Extra</div><div class="cred-val">${acc.extra}</div></div>`;
+    if(accountProfileName(acc))cl+=`<div class="cred-line"><div class="cred-label">Profile</div><div class="cred-val">${accountProfileName(acc)}</div></div>`;
     if(acc.expiryDate)cl+=`<div class="cred-line"><div class="cred-label">Expires</div><div class="cred-val">${acc.expiryDate}</div></div>`;
     document.getElementById('modal-body').innerHTML=`<div class="success-wrap">
       <i class="ti ti-circle-check" style="font-size:40px;color:var(--green);display:block;margin-bottom:12px"></i>
@@ -2539,19 +2946,106 @@ async function confirmPurchase(){
   if(isAdmin)renderStockPanels();
 }
 
+function shahidActionButtons(orderId){
+  return `<div class="shahid-actions">
+    <button type="button" class="shahid-act-btn" ${jsOnClick('shahidReport',orderId)}>⚠️ ${t('reportIssue','Report')}</button>
+    <button type="button" class="shahid-act-btn" ${jsOnClick('shahidCopyInfo',orderId)}>📋 ${t('copyInfo','Copy info')}</button>
+    <button type="button" class="shahid-act-btn shahid-act-primary" ${jsOnClick('openShahidFixPassword',orderId)}>🔑 ${t('fixPassword','Fix password')}</button>
+  </div>`;
+}
+function shahidOrderForAction(orderId){
+  return findUserOrder(orderId)?.order
+    ||(_shahidFixOrder&&(orderId==='link'||orderIdsMatch(_shahidFixOrder.id,orderId))?_shahidFixOrder:null);
+}
+function shahidCopyInfo(orderId){
+  const o=shahidOrderForAction(orderId);
+  if(!o){showToast('Order not found');return;}
+  const text=`${o.product} · ${o.plan}\nEmail: ${o.email}\nPassword: ${o.pass}${o.expiryDate?`\nExpires: ${o.expiryDate}`:''}`;
+  navigator.clipboard.writeText(text).then(()=>showToast(t('copied','✓ Copied!'))).catch(()=>showToast('Could not copy'));
+}
+function shahidReport(orderId){
+  _currentSubId=orderId;
+  subOptionReport();
+}
+function openShahidFixPassword(orderId,orderOverride){
+  const o=orderOverride||shahidOrderForAction(orderId);
+  if(!o||!isShahidOrder(o)){showToast('Shahid subscription not found');return;}
+  _shahidFixOrderId=orderId||o.id;
+  _shahidFixOrder=o;
+  renderShahidFixModal(o);
+  openModal('shahid-fix-modal');
+}
+function renderShahidFixModal(o){
+  const ar=currentLang==='ar';
+  const title=ar?'إصلاح كلمة مرور شاهد':'Fix Shahid password';
+  const warn1=ar?'هام جداً: الرجاء وضع كلمة المرور هذه:':'Very important: You must set this password:';
+  const warn2=ar?'لا تقم بوضع كلمة مرور اخرى. استخدام كلمة مرور اخرى يؤدي الى ايقاف اليوزر':'Do not use a different password. Using another password will suspend your account.';
+  const step1=ar?'١- انسخ الايميل واضغط على الزر بالاسفل للانتقال الى صفحة شاهد واطلب اعادة تعيين كلمة المرور':'1 — Copy the email, open Shahid, and request a password reset.';
+  const step2=ar?'٢- انسخ كلمة المرور وانقر على الزر ادناه لرؤية رابط تعيين المرور':'2 — Copy the password below, then tap GET RESET LINK after you requested reset on Shahid.';
+  const goShahid=ar?'الانتقال الى صفحة شاهد لاعادة تعيين كلمة المرور':'Go to Shahid password reset page';
+  const getLink=ar?'GET RESET LINK':'GET RESET LINK';
+  const close=ar?'إغلاق':'Close';
+  document.getElementById('shahid-fix-title').textContent=title;
+  document.getElementById('shahid-fix-body').innerHTML=`
+    <div class="shahid-fix-warn" dir="${ar?'rtl':'ltr'}">
+      <div style="font-size:13px;font-weight:600;margin-bottom:8px">${warn1}</div>
+      <div class="shahid-copy-row"><span id="shahid-fix-pass-disp">${esc(o.pass||'')}</span><button type="button" class="shahid-copy-btn" ${jsOnClick('copyPlainText',o.pass||'')} title="Copy">📋</button></div>
+      <div style="font-size:12px;color:var(--red);font-weight:600;line-height:1.5">${warn2}</div>
+    </div>
+    <div class="shahid-fix-step" dir="${ar?'rtl':'ltr'}">${step1}</div>
+    <div class="shahid-copy-row"><span>${esc(o.email||'')}</span><button type="button" class="shahid-copy-btn" ${jsOnClick('copyPlainText',o.email||'')} title="Copy">📋</button></div>
+    <a class="shahid-ext-btn" href="${SHAHID_FORGET_URL}" target="_blank" rel="noopener">↗ ${goShahid}</a>
+    <div class="shahid-fix-step" dir="${ar?'rtl':'ltr'}" style="margin-top:16px">${step2}</div>
+    <div class="shahid-copy-row"><span>${esc(o.pass||'')}</span><button type="button" class="shahid-copy-btn" ${jsOnClick('copyPlainText',o.pass||'')} title="Copy">📋</button></div>
+    <button type="button" class="shahid-reset-btn" id="shahid-get-reset-btn" onclick="fetchShahidResetLink()">${getLink}</button>
+    <div id="shahid-reset-status" style="font-size:12px;color:var(--text3);margin-top:8px;text-align:center"></div>
+    <div id="shahid-reset-link-wrap"></div>
+    <button type="button" class="btn-secondary" onclick="closeModal('shahid-fix-modal')" style="width:100%;margin-top:14px">${close}</button>`;
+  document.querySelector('#shahid-fix-modal .modal').dir=ar?'rtl':'ltr';
+}
+function copyPlainText(text){
+  navigator.clipboard.writeText(String(text||'')).then(()=>showToast(t('copied','✓ Copied!'))).catch(()=>showToast('Could not copy'));
+}
+async function fetchShahidResetLink(){
+  const status=document.getElementById('shahid-reset-status');
+  const wrap=document.getElementById('shahid-reset-link-wrap');
+  const btn=document.getElementById('shahid-get-reset-btn');
+  if(status)status.textContent=currentLang==='ar'?'جاري البحث عن الرابط...':'Looking for reset link...';
+  if(wrap)wrap.innerHTML='';
+  if(btn)btn.disabled=true;
+  try{
+    const params=new URLSearchParams(location.search);
+    const token=params.get('t');
+    let j;
+    if(token&&!authToken){
+      j=await rtApi('/links/shahid-reset-link',{method:'POST',body:JSON.stringify({token})});
+    }else{
+      if(!_shahidFixOrderId)throw new Error('Subscription not found');
+      j=await rtApi('/customer/shahid-reset-link',{method:'POST',body:JSON.stringify({orderId:_shahidFixOrderId})});
+    }
+    if(!j.link)throw new Error(j.message||'No reset link found yet');
+    if(wrap)wrap.innerHTML=`<a class="shahid-reset-link" href="${esc(j.link)}" target="_blank" rel="noopener">${esc(j.link)}</a>`;
+    if(status)status.textContent=currentLang==='ar'?'✓ تم العثور على الرابط — استخدم كلمة المرور الأصلية أعلاه':'✓ Reset link found — use the original password above';
+  }catch(e){
+    if(status)status.textContent=e.message||'No reset link found yet';
+  }finally{
+    if(btn)btn.disabled=false;
+  }
+}
 function subRow(o,forCustomer){
   let ex='';
   if(forCustomer)ex+=`<div class="sub-for-badge"><i class="ti ti-user" style="font-size:12px"></i> ${t('forSubCustomer','For')}: <strong>${esc(forCustomer.fname)} ${esc(forCustomer.lname)}</strong> · ${esc(forCustomer.code)} ${esc(forCustomer.phone)}</div>`;
-  if(o.extra)ex+=`<div class="sub-cred">Extra: ${esc(o.extra)}</div>`;
-  if(o.profileName)ex+=`<div class="sub-cred">Profile: ${esc(o.profileName)}</div>`;
+  const prof=orderProfileName(o);
+  if(prof)ex+=`<div class="sub-cred">Profile: ${esc(prof)}</div>`;
   const ico=PRODUCT_ICONS[o.productId];
   const iconHtml=ico?`<img src="${ico}" width="40" height="40" style="border-radius:9px;object-fit:contain;background:#fff;padding:2px" onerror="this.outerHTML='<div style=\'width:40px;height:40px;border-radius:9px;background:${o.color};color:${o.tc};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700\'>${o.short}</div>'">`:`<div style="width:40px;height:40px;border-radius:9px;background:${o.color};color:${o.tc};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700">${o.short}</div>`;
+  const shahidBtns=isShahidOrder(o)?shahidActionButtons(o.id):'';
+  const deliveryNote=o.telegramDeliveredAt?`<div class="delivery-proof">✓ Delivered to Telegram · ${esc(formatTs(o.telegramDeliveredAt))}</div>`:(o.deliveredAt?`<div class="delivery-proof">✓ Delivered · ${esc(formatTs(o.deliveredAt))}</div>`:'');
   return `<div class="sub-card"><div class="sub-icon" style="background:${ico?'#fff':o.color};overflow:hidden;padding:0">${iconHtml}</div>
     <div class="sub-info"><div class="sub-name">${esc(o.product)}</div><div class="sub-plan">${esc(o.plan)} · ${esc(o.date)}</div>
-    <div class="sub-cred"><span class="cust-sub-cred-line">📧 ${esc(o.email)}</span><span class="cust-sub-cred-line">🔑 ${esc(o.pass)}</span></div>${ex}</div>
+    <div class="sub-cred"><span class="cust-sub-cred-line">📧 ${esc(o.email)}</span><span class="cust-sub-cred-line">🔑 ${esc(o.pass)}</span></div>${deliveryNote}${ex}${shahidBtns}</div>
     <div class="sub-right"><div class="sub-price">${fmt(o.price)}</div><span class="active-badge">${t('active','Active')}</span>
-    
-    <button onclick="openSubOptions('${o.id}')" style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px;color:var(--text2);cursor:pointer;margin-top:4px;display:block;width:100%">••• ${t('options','Options')}</button>
+    <button ${jsOnClick('openSubOptions',o.id)} style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px;color:var(--text2);cursor:pointer;margin-top:4px;display:block;width:100%">••• ${t('options','Options')}</button>
     </div></div>`;
 }
 function pendingSubRow(o){
@@ -2566,10 +3060,25 @@ function pendingSubRow(o){
       ${forBadge}
       <div class="sub-name">${esc(o.product||'Subscription')} <span style="font-size:11px;color:var(--orange);font-weight:700">PENDING</span></div>
       <div class="sub-plan">${esc(o.plan||'')}</div>
-      <div style="font-size:11px;color:var(--text3);margin-top:4px">Order ${esc(o.id||'')} · ${esc(o.date||'')}</div>
-      <div style="font-size:11px;color:var(--orange);margin-top:4px">Credentials will appear here once admin fulfills your order.</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:4px">Order ${esc(o.id||'')} · ${esc(o.date||'')}${pendingAgeLabel(o)?` · ${pendingAgeLabel(o)}`:''}</div>
+      ${pendingTimelineHtml(o)}
+      <div style="font-size:11px;color:var(--orange);margin-top:6px">Credentials will appear here once your order is fulfilled.</div>
     </div>
   </div>`;
+}
+function renderMyGameOrders(){
+  const el=document.getElementById('game-orders-list');
+  if(!el||!currentUser)return;
+  const go=(Array.isArray(_jbCache?.gameorders)?_jbCache.gameorders:[]).filter(o=>o&&normEmail(o.userEmail)===normEmail(currentUser.email));
+  if(!go.length){el.innerHTML='<div class="empty-state" style="padding:20px"><i class="ti ti-device-gamepad"></i>No game orders yet.</div>';return;}
+  el.innerHTML=go.map(o=>`<div class="sub-row" style="margin-bottom:8px">
+    <div class="sub-info" style="flex:1">
+      <div class="sub-name">${esc(o.product)} · ${esc(o.plan)}</div>
+      <div class="sub-plan">${o.playerPassword?'User: '+esc(o.playerId)+' · Pass: '+esc(o.playerPassword):'ID: '+esc(o.playerId)} · ${esc(o.date||'')}</div>
+      ${gameStatusTrack(o.status)}
+    </div>
+    <div class="sub-right"><div class="sub-price">${fmt(o.price)}</div></div>
+  </div>`).join('');
 }
 function renderSubs(){
   if(!currentUser)return;
@@ -2583,6 +3092,7 @@ function renderSubs(){
     return;
   }
   el.innerHTML=[...pending.map(pendingSubRow),...orders.map(o=>subRow(o)),...assigned.map(({order,customer})=>subRow(order,customer))].join('');
+  renderMyGameOrders();
   const nfPending=pending.filter(o=>o.productId==='netflix');
   const nfOwn=orders.filter(o=>o.productId==='netflix');
   const nfAssigned=assigned.filter(({order})=>order.productId==='netflix');
@@ -2692,7 +3202,7 @@ const LANG={
     myProfile:'My Profile',fullName:'Full Name',telegramChatId:'Telegram Chat ID',telegramHint:'Get your ID from @userinfobot on Telegram',
     saveChanges:'💾 Save Changes',contactUs:'📞 Contact Us',accountSecurity:'🔐 Account security',memberSince:'Member since',
     changePassword:'🔑 Change password',currentPassword:'Current password',newPassword:'New password',confirmPassword:'Confirm new password',
-    updatePassword:'Update password',logoutAll:'🔐 Logout all devices',requestRenewal:'🔄 Request Renewal',reportIssue:'⚠️ Report Issue',
+    updatePassword:'Update password',logoutAll:'🔐 Logout all devices',requestRenewal:'🔄 Request Renewal',reportIssue:'⚠️ Report Issue',copyInfo:'Copy info',fixPassword:'Fix password',copied:'✓ Copied!',
     topupHelp:'To top up your wallet, contact support on WhatsApp with payment proof.',
     netflix:'Netflix',options:'Options',active:'Active',goToStore:'Go to store',noSubscriptions:'No subscriptions yet',noNetflixSubs:'No Netflix subscriptions yet.',forSubCustomer:'For',
     analytics:'Analytics',exportOrders:'Export orders',bulkImport:'Bulk import',
@@ -2715,9 +3225,9 @@ const LANG={
     myProfile:'ملفي الشخصي',fullName:'الاسم الكامل',telegramChatId:'معرّف تيليجرام',telegramHint:'احصل على معرّفك من @userinfobot على تيليجرام',
     saveChanges:'💾 حفظ التغييرات',contactUs:'📞 تواصل معنا',accountSecurity:'🔐 أمان الحساب',memberSince:'عضو منذ',
     changePassword:'🔑 تغيير كلمة المرور',currentPassword:'كلمة المرور الحالية',newPassword:'كلمة المرور الجديدة',confirmPassword:'تأكيد كلمة المرور',
-    updatePassword:'تحديث كلمة المرور',logoutAll:'🔐 تسجيل الخروج من جميع الأجهزة',requestRenewal:'🔄 طلب تجديد',reportIssue:'⚠️ الإبلاغ عن مشكلة',
+    updatePassword:'تحديث كلمة المرور',logoutAll:'🔐 تسجيل الخروج من جميع الأجهزة',requestRenewal:'🔄 طلب تجديد',reportIssue:'⚠️ الإبلاغ عن مشكلة',copyInfo:'نسخ المعلومات',fixPassword:'إصلاح كلمة المرور',copied:'✓ تم النسخ!',
     topupHelp:'لشحن المحفظة، تواصل مع الدعم على واتساب وأرسل إثبات الدفع.',
-    netflix:'نتفليكس',options:'خيارات',active:'نشط',goToStore:'اذهب للمتجر',noSubscriptions:'لا توجد اشتراكات بعد',noNetflixSubs:'لا توجد اشتراكات نتفليكس بعد.',
+    netflix:'نتفليكس',options:'خيارات',active:'نشط',goToStore:'اذهب للمتجر',noSubscriptions:'لا توجد اشتراكات بعد',noNetflixSubs:'لا توجد اشتراكات نتفليكس بعد.',forSubCustomer:'لـ',
     analytics:'الإحصائيات',exportOrders:'تصدير الطلبات',bulkImport:'استيراد جماعي',
     storeSub:'توصيل فوري · شراء عبر المحفظة',subsSub:'جميع الحسابات والبيانات المشتراة',
     netflixSub:'اشتراكات نتفليكس الخاصة بك',expirySub:'راقب المدة المتبقية لاشتراكاتك',
@@ -2899,11 +3409,38 @@ async function renderDashboard(){
       </div>`).join('');
   }
   renderBackups();
+  renderPendingSlaCard();
+}
+async function renderPendingSlaCard(){
+  const el=document.getElementById('dashboard-pending-sla');
+  if(!el||!isAdmin)return;
+  try{
+    const r=await fetch(RT_SERVER+'/admin/analytics',{headers:authHeaders()});
+    const j=await r.json();
+    const a=j.analytics||{};
+    const pendingCount=Number(a.pending||0);
+    if(!pendingCount){el.style.display='none';return;}
+    const hrs=Math.floor(Number(a.oldestPendingMs||0)/3600000);
+    const breached=Boolean(a.pendingSlaBreached);
+    const oldest=a.oldestPending||{};
+    el.style.display='block';
+    el.style.borderColor=breached?'var(--red-border)':'var(--orange-border)';
+    el.style.background=breached?'var(--red-bg)':'var(--orange-bg)';
+    el.innerHTML=`<div style="font-size:13px;font-weight:700;margin-bottom:6px;color:${breached?'var(--red)':'var(--orange)'}">⏳ Pending orders SLA</div>
+      <div style="font-size:12px;line-height:1.6">
+        <b>${pendingCount}</b> waiting · oldest <b>${hrs}h</b>${breached?' · <span style="color:var(--red);font-weight:700">OVER 24h</span>':''}
+        ${oldest.product?`<div style="margin-top:4px;color:var(--text2)">${esc(oldest.product)} · ${esc(oldest.plan||'')} · ${esc(oldest.userName||'')}</div>`:''}
+      </div>
+      <button onclick="switchAdminTab('pending',null)" style="margin-top:8px;padding:6px 10px;border:1px solid var(--border);background:#fff;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600">Open pending orders</button>`;
+  }catch(e){el.style.display='none';}
 }
 
 function backupSummaryText(summary){
   summary=summary||{};
-  return `${summary.users||0} users · ${summary.stockAccounts||0} stock · ${summary.pending||0} pending · ${summary.gameorders||0} games`;
+  const avail=summary.stockAccounts||0;
+  const sold=summary.stockSold||0;
+  const stockTxt=sold?`${avail} avail (${sold} sold)`:`${avail} stock`;
+  return `${summary.users||0} users · ${stockTxt} · ${summary.pending||0} pending · ${summary.gameorders||0} games`;
 }
 function backupAgeText(ts){
   if(!ts)return 'unknown';
@@ -3022,26 +3559,79 @@ function getExpiryStatus(expiryDate){
   return{status:'ok',daysLeft,label:daysLeft+'d left',color:'var(--green)'};
 }
 
+function findUserOrderForRenew(user,orderId){
+  if(!user||!orderId)return null;
+  const direct=(user.orders||[]).find(o=>orderIdsMatch(o.id,orderId));
+  if(direct)return {order:direct,customer:null};
+  for(const c of user.myCustomers||[]){
+    const sub=(c.subs||[]).find(o=>orderIdsMatch(o.id,orderId));
+    if(sub)return {order:sub,customer:c};
+  }
+  return null;
+}
+function syncStockExpiryForOrder(order,newExpiry){
+  if(!order?.email||!newExpiry)return;
+  const targetEmail=String(order.email).trim().toLowerCase();
+  const targetKey=String(order.accKey||'');
+  Object.values(accountStock||{}).forEach(accs=>{
+    (accs||[]).forEach(acc=>{
+      if(!acc)return;
+      if(String(acc.email||'').trim().toLowerCase()!==targetEmail)return;
+      if(targetKey&&acc.accKey&&acc.accKey!==targetKey)return;
+      acc.expiryDate=newExpiry;
+    });
+  });
+}
 async function renewSubscription(userEmail, orderId){
   const newExpiry=prompt('Enter new expiry date (dd/mm/yyyy):');
   if(!newExpiry||!newExpiry.match(/\d{2}\/\d{2}\/\d{4}/)){showToast('Invalid date format');return;}
   const u=users.find(x=>x.email===userEmail);
   if(!u)return;
-  const o=u.orders.find(x=>x.id===orderId);
-  if(!o)return;
+  const found=findUserOrderForRenew(u,orderId);
+  if(!found?.order)return;
+  const o=found.order;
   o.expiryDate=newExpiry;
-  o.expiryReminderSent=false; // Reset so reminder sends again near new expiry
+  o.expiryReminderSent=false;
+  syncStockExpiryForOrder(o,newExpiry);
   await saveData();
   renderAdminExpiry();
   showToast('✅ Subscription renewed to '+newExpiry);
-  logActivity('Subscription renewed',userEmail+' · '+o.product+' → '+newExpiry);
-  // Notify customer
-  const cu=users.find(x=>x.email===userEmail);
-  if(cu?.tgChatId){
-    await sendTelegramToUser(cu.tgChatId,
-      `✅ <b>Subscription Renewed!</b>\n\n📺 ${o.product} · ${o.plan}\n📅 New expiry: ${newExpiry}\n\nEnjoy! 🎉`
+  const who=found.customer?`${found.customer.fname} ${found.customer.lname} (sub of ${userEmail})`:userEmail;
+  logActivity('Subscription renewed',who+' · '+o.product+' → '+newExpiry);
+  if(u.tgChatId){
+    const subNote=found.customer?`\n👥 ${found.customer.fname} ${found.customer.lname}`:'';
+    await sendTelegramToUser(u.tgChatId,
+      `✅ <b>Subscription Renewed!</b>\n\n📺 ${o.product} · ${o.plan}${subNote}\n📅 New expiry: ${newExpiry}\n\nEnjoy! 🎉`
     );
   }
+}
+function collectCustomerExpiryItems(){
+  const seen=new Set();
+  const custItems=[];
+  const add=(item,key)=>{
+    if(!key||seen.has(key))return;
+    seen.add(key);
+    custItems.push(item);
+  };
+  users.forEach(u=>{
+    (u.orders||[]).forEach(o=>{
+      if(!o.expiryDate)return;
+      add({
+        userEmail:u.email,userName:u.name,orderId:o.id,product:o.product,plan:o.plan,
+        expiryDate:o.expiryDate,daysLeft:daysLeft(o.expiryDate),subCustomer:null,email:o.email||''
+      },`${u.email}::${o.id}`);
+    });
+    (u.myCustomers||[]).forEach(c=>{
+      (c.subs||[]).forEach(o=>{
+        if(!o.expiryDate)return;
+        add({
+          userEmail:u.email,userName:u.name,orderId:o.id,product:o.product,plan:o.plan,
+          expiryDate:o.expiryDate,daysLeft:daysLeft(o.expiryDate),subCustomer:c,email:o.email||''
+        },`${u.email}::${o.id}`);
+      });
+    });
+  });
+  return custItems;
 }
 
 function renderAdminExpiry(){
@@ -3056,20 +3646,11 @@ function renderAdminExpiry(){
         const parts=key.split('__');
         const prod=products.find(p=>p.id===parts[0]);
         const prodName=prod?prod.name:parts[0];
-        items.push({key,idx:i,email:a.email,pass:a.pass,expiryDate:a.expiryDate,used:a.used,prodName,daysLeft:d});
+        items.push({key,idx:i,email:a.email,pass:a.pass,expiryDate:a.expiryDate,used:a.used,prodName,daysLeft:d,account:a});
       }
     });
   });
-  // Also collect customer orders with expiry
-  let custItems=[];
-  users.forEach(u=>{
-    (u.orders||[]).forEach(o=>{
-      if(o.expiryDate){
-        const d=daysLeft(o.expiryDate);
-        custItems.push({userEmail:u.email,userName:u.name,orderId:o.id,product:o.product,plan:o.plan,expiryDate:o.expiryDate,daysLeft:d});
-      }
-    });
-  });
+  const custItems=collectCustomerExpiryItems();
 
   if(!items.length&&!custItems.length){el.innerHTML='<div class="empty-state"><i class="ti ti-clock"></i>No accounts with expiry dates added yet.</div>';return;}
   items.sort((a,b)=>(a.daysLeft??9999)-(b.daysLeft??9999));
@@ -3086,12 +3667,16 @@ function renderAdminExpiry(){
       else if(d<=3){cls='exp-warning-row';dText=`🔴 ${d}d left`;dColor='var(--red)';}
       else if(d<=7){dText=`🟡 ${d}d left`;dColor='var(--orange)';}
       else{dText=`✅ ${d}d left`;dColor='var(--green)';}
+      const who=item.subCustomer
+        ?`👤 ${esc(item.subCustomer.fname)} ${esc(item.subCustomer.lname)} · reseller: ${esc(item.userName)}`
+        :`👤 ${esc(item.userName)}`;
+      const emailNote=item.email?` · 📧 ${esc(item.email)}`:'';
       return `<div class="admin-row ${cls}">
         <div class="admin-info" style="flex:1">
-          <div class="admin-name">${item.product} · ${item.plan}</div>
-          <div class="admin-sub">👤 ${item.userName} · 📅 ${item.expiryDate} · <span style="color:${dColor}">${dText}</span></div>
+          <div class="admin-name">${esc(item.product)} · ${esc(item.plan)}</div>
+          <div class="admin-sub">${who}${emailNote} · 📅 ${esc(item.expiryDate)} · <span style="color:${dColor}">${dText}</span></div>
         </div>
-        <button onclick="renewSubscription('${item.userEmail}','${item.orderId}')" style="background:var(--blue-bg);color:var(--blue);border:1px solid var(--blue-border);border-radius:6px;padding:6px 10px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap">🔄 Renew</button>
+        <button ${jsOnClick('renewSubscription',item.userEmail,item.orderId)} style="background:var(--blue-bg);color:var(--blue);border:1px solid var(--blue-border);border-radius:6px;padding:6px 10px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap">🔄 Renew</button>
       </div>`;
     }).join('')}
   </div>`:''}
@@ -3105,12 +3690,18 @@ function renderAdminExpiry(){
       else if(d<=3){cls='exp-warning-row';dText=`🔴 ${d}d left`;}
       else if(d<=7){dText=`🟡 ${d}d left`;}
       else{dText=`✅ ${d}d left`;}
+      const owner=item.used?findStockOwnerClient(item.account):null;
+      const ownerBtn=owner?`<button ${jsOnClick('jumpToCustomer',owner.userEmail)} style="background:var(--blue-bg);color:var(--blue);border:1px solid var(--blue-border);border-radius:6px;padding:6px 10px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap">👤 Customer</button>`:'';
+      const ownerNote=owner?(owner.assignCustName?` · ${esc(owner.assignCustName)}`:''):'';
       return `<div class="admin-row ${cls}">
-        <div class="admin-info">
-          <div class="admin-name">${item.prodName} — <span style="font-family:var(--mono);font-size:12px">${item.email}</span></div>
-          <div class="admin-sub">Expires: ${item.expiryDate} · ${dText} · ${item.used?'<span style="color:var(--text3)">Used</span>':'<span style="color:var(--green)">Available</span>'}</div>
+        <div class="admin-info" style="flex:1">
+          <div class="admin-name">${item.prodName} — <span style="font-family:var(--mono);font-size:12px">${esc(item.email)}</span></div>
+          <div class="admin-sub">Expires: ${esc(item.expiryDate)} · ${dText} · ${item.used?`<span style="color:var(--text3)">Used${owner?` · ${esc(owner.userName||owner.userEmail)}${ownerNote}`:''}</span>`:'<span style="color:var(--green)">Available</span>'}</div>
         </div>
-        <div style="font-size:13px;font-weight:600;color:${d!==null&&d<=3?'var(--red)':d!==null&&d<=7?'var(--orange)':'var(--text2)'}">${d!==null?d+'d':''}</div>
+        <div style="display:flex;align-items:center;gap:8px">
+          ${ownerBtn}
+          <div style="font-size:13px;font-weight:600;color:${d!==null&&d<=3?'var(--red)':d!==null&&d<=7?'var(--orange)':'var(--text2)'}">${d!==null?d+'d':''}</div>
+        </div>
       </div>`;
     }).join('')}
   </div>`:''}`;
@@ -3138,16 +3729,57 @@ async function checkExpiryAlerts(){
 }
 
 // CUSTOMERS
-function openAddMyCust(){document.getElementById('mc-phone').value='';document.getElementById('mc-fname').value='';document.getElementById('mc-lname').value='';document.getElementById('addmycust-err').style.display='none';openModal('addmycust-modal');}
-async function addMyCustomer(){
-  const code=document.getElementById('mc-code').value;const phone=document.getElementById('mc-phone').value.trim();
-  const fname=document.getElementById('mc-fname').value.trim();const lname=document.getElementById('mc-lname').value.trim();
-  const tgChatId='';
+function openAddMyCust(){
+  editingCustId=null;
+  document.getElementById('mc-phone').value='';
+  document.getElementById('mc-fname').value='';
+  document.getElementById('mc-lname').value='';
+  document.getElementById('mc-code').value='+961';
+  document.getElementById('addmycust-err').style.display='none';
+  document.getElementById('addmycust-title').textContent=currentLang==='ar'?'إضافة عميل':'Add customer';
+  document.getElementById('addmycust-submit-btn').textContent=currentLang==='ar'?'إضافة عميل':'Add customer';
+  openModal('addmycust-modal');
+}
+function openEditMyCust(custId){
+  const c=currentUser?.myCustomers?.find(x=>x.id===custId);
+  if(!c)return;
+  editingCustId=custId;
+  document.getElementById('mc-code').value=c.code||'+961';
+  document.getElementById('mc-phone').value=c.phone||'';
+  document.getElementById('mc-fname').value=c.fname||'';
+  document.getElementById('mc-lname').value=c.lname||'';
+  document.getElementById('addmycust-err').style.display='none';
+  document.getElementById('addmycust-title').textContent=currentLang==='ar'?'تعديل العميل':'Edit customer';
+  document.getElementById('addmycust-submit-btn').textContent=currentLang==='ar'?'حفظ التغييرات':'Save changes';
+  openModal('addmycust-modal');
+}
+async function saveMyCustomer(){
+  const code=document.getElementById('mc-code').value;
+  const phone=document.getElementById('mc-phone').value.trim();
+  const fname=document.getElementById('mc-fname').value.trim();
+  const lname=document.getElementById('mc-lname').value.trim();
   if(!phone||!fname||!lname){document.getElementById('addmycust-err').style.display='block';return;}
   document.getElementById('addmycust-err').style.display='none';
   currentUser.myCustomers=currentUser.myCustomers||[];
-  currentUser.myCustomers.push({id:Date.now(),code,phone,fname,lname,tgChatId,subs:[]});
-  await saveData();closeModal('addmycust-modal');renderMyCustomers();showToast('✓ Customer added');
+  if(editingCustId!=null){
+    const c=currentUser.myCustomers.find(x=>x.id===editingCustId);
+    if(c){c.code=code;c.phone=phone;c.fname=fname;c.lname=lname;}
+    await saveData();closeModal('addmycust-modal');editingCustId=null;renderMyCustomers();showToast(currentLang==='ar'?'✓ تم تحديث العميل':'✓ Customer updated');
+    return;
+  }
+  currentUser.myCustomers.push({id:Date.now(),code,phone,fname,lname,tgChatId:'',subs:[]});
+  await saveData();closeModal('addmycust-modal');renderMyCustomers();showToast(currentLang==='ar'?'✓ تمت إضافة العميل':'✓ Customer added');
+}
+async function deleteMyCustomer(custId){
+  const c=currentUser?.myCustomers?.find(x=>x.id===custId);
+  if(!c)return;
+  const subCount=(c.subs||[]).length;
+  const msg=subCount
+    ?`Delete ${c.fname} ${c.lname}? This will also remove ${subCount} subscription(s) under this customer.`
+    :`Delete ${c.fname} ${c.lname}?`;
+  if(!confirm(msg))return;
+  currentUser.myCustomers=(currentUser.myCustomers||[]).filter(x=>x.id!==custId);
+  await saveData();renderMyCustomers();renderSubs();showToast(currentLang==='ar'?'✓ تم حذف العميل':'✓ Customer deleted');
 }
 function renderMyCustomers(){
   if(!currentUser)return;const el=document.getElementById('my-cust-list');const cnt=document.getElementById('my-cust-count');
@@ -3158,12 +3790,12 @@ function renderMyCustomers(){
       const cleanId=(s.id||'').replace('#','');
       return `<div class="cust-sub-row">
       <div class="cust-sub-icon" style="background:${s.color};color:${s.tc}">${s.short}</div>
-      <div class="cust-sub-info"><div class="cust-sub-name">${esc(s.product)} · ${esc(s.plan)}</div><div class="cust-sub-cred"><span class="cust-sub-cred-line">📧 ${esc(s.email)}</span><span class="cust-sub-cred-line">🔑 ${esc(s.pass)}</span></div>${s.profilePin?`<div class="cust-sub-cred"><span class="cust-sub-cred-line">PIN: ${esc(s.profilePin)}</span></div>`:''}${s.expiryDate?`<div class="cust-sub-cred"><span class="cust-sub-cred-line">Exp: ${esc(s.expiryDate)}</span></div>`:''}</div>
+      <div class="cust-sub-info"><div class="cust-sub-name">${esc(s.product)} · ${esc(s.plan)}</div><div class="cust-sub-cred"><span class="cust-sub-cred-line">📧 ${esc(s.email)}</span><span class="cust-sub-cred-line">🔑 ${esc(s.pass)}</span></div>${orderProfileName(s)?`<div class="cust-sub-cred"><span class="cust-sub-cred-line">Profile: ${esc(orderProfileName(s))}</span></div>`:''}${s.profilePin?`<div class="cust-sub-cred"><span class="cust-sub-cred-line">PIN: ${esc(s.profilePin)}</span></div>`:''}${s.expiryDate?`<div class="cust-sub-cred"><span class="cust-sub-cred-line">Exp: ${esc(s.expiryDate)}</span></div>`:''}</div>
       <div style="text-align:right">
         <div style="font-size:11px;color:var(--text3);margin-bottom:4px">${s.date}</div>
         
         <button onclick="copySubLinkForCust('${cleanId}',${c.id})" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:3px 7px;font-size:10px;color:var(--text2);cursor:pointer;display:block;width:100%;margin-bottom:3px">🔗 Copy Link</button>
-        <button onclick="setSubCustProfileName('${s.id}',${c.id})" style="background:var(--blue-bg);color:var(--blue);border:1px solid var(--blue-border);border-radius:4px;padding:3px 7px;font-size:10px;font-weight:600;cursor:pointer;display:block;width:100%">👤 ${s.profileName?'Profile: '+s.profileName:'Set Profile'}</button>
+        <button ${jsOnClick('setSubCustProfileName',s.id,c.id)} style="background:var(--blue-bg);color:var(--blue);border:1px solid var(--blue-border);border-radius:4px;padding:3px 7px;font-size:10px;font-weight:600;cursor:pointer;display:block;width:100%">👤 ${orderProfileName(s)?'Profile: '+orderProfileName(s):'Set Profile'}</button>
       </div></div>`;}).join('')}</div>`:'';
     return `<div class="cust-card"><div class="cust-card-top">
       <div class="cust-avatar">${c.fname.charAt(0).toUpperCase()}</div>
@@ -3173,6 +3805,8 @@ function renderMyCustomers(){
         <button class="btn-add-sub" onclick="openCustomerChat(${c.id})">💬 Open chat</button>
         <button class="btn-add-sub" onclick="toggleCustomerSubs(${c.id})">📺 Subscriptions</button>
         <button class="btn-add-sub" onclick="openAssignSub(${c.id})"><i class="ti ti-plus" style="font-size:14px"></i> Add subscription</button>
+        <button class="btn-add-sub" onclick="openEditMyCust(${c.id})">✏️ Edit</button>
+        <button class="btn-add-sub" onclick="deleteMyCustomer(${c.id})" style="color:var(--red);border-color:var(--red-border)">🗑 Delete</button>
       </div>
     </div>${sh}</div>`;
   }).join('');
@@ -3293,12 +3927,118 @@ async function resolveRequest(id){
   sendTelegram(`✅ <b>Request fulfilled</b>\n📺 <b>${r.service}</b> has been added to the store!\n👥 ${r.requesters.length} customer${r.requesters.length!==1?'s':''} requested it`);
 }
 
+// PRICES
+const PRICE_CATEGORIES=[
+  {key:'video',label:'Video'},
+  {key:'arab',label:'Arab'},
+  {key:'music',label:'Music'},
+  {key:'games',label:'Games'},
+  {key:'tools',label:'Tools'},
+  {key:'giftcards',label:'Gift Cards'}
+];
+function adminPriceRow(label,key,value,type){
+  const id='price-'+String(key).replace(/[^a-zA-Z0-9_-]/g,'-');
+  return `<div class="admin-row" data-price-product="${esc((key.split('__')[0]||'').toLowerCase())}"><div class="admin-info"><div class="admin-name">${esc(label)}</div><div class="admin-sub" style="font-family:var(--mono);font-size:10px">${esc(key)}</div></div>
+    <input type="number" step="0.01" min="0" id="${id}" data-price-key="${esc(key)}"${type?` data-price-type="${type}"`:''} value="${value}" style="width:96px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg3);color:var(--text)"></div>`;
+}
+function adminPriceInputRow(label,inputId,value,extraAttrs){
+  return `<div class="admin-row" data-price-product="jawaker"><div class="admin-info"><div class="admin-name">${esc(label)}</div></div>
+    <input type="number" step="0.01" min="0" id="${inputId}" ${extraAttrs||''} value="${value}" style="width:96px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg3);color:var(--text)"></div>`;
+}
+function isJawakerProduct(p){return p&&(p.id==='jawaker'||p.customOrderType==='jawaker');}
+function renderJawakerPriceRows(){
+  const jaw=_rtPriceCatalog?.jawaker||{};
+  const per12k=Math.round((jaw.basePerToken??(1.5/12000))*12000*100)/100;
+  const tier50=Math.round((1-((jaw.tiers||[]).find(t=>t.min===50000)?.mult??0.96))*100);
+  const tier100=Math.round((1-((jaw.tiers||[]).find(t=>t.min===100000)?.mult??0.93))*100);
+  const tier500=Math.round((1-((jaw.tiers||[]).find(t=>t.min===500000)?.mult??0.9))*100);
+  const picks=[12000,50000,100000,250000,500000,1000000];
+  let html=adminPriceInputRow('Base price per 12,000 tokens','jawaker-base-12k',per12k);
+  html+=adminPriceInputRow('Discount at 50,000+ tokens (%)','jawaker-tier-50k',tier50,'data-jawaker-tier="50000"');
+  html+=adminPriceInputRow('Discount at 100,000+ tokens (%)','jawaker-tier-100k',tier100,'data-jawaker-tier="100000"');
+  html+=adminPriceInputRow('Discount at 500,000+ tokens (%)','jawaker-tier-500k',tier500,'data-jawaker-tier="500000"');
+  html+=`<div style="font-size:11px;color:var(--text3);padding:4px 0 8px;line-height:1.6">Store preview: ${picks.map(t=>`${t>=1000000?(t/1000000)+'M':t>=1000?(t/1000)+'K':t} = $${jawPrice(t)}`).join(' · ')}</div>`;
+  return html;
+}
+function renderProductPriceRows(p){
+  if(p.hasUserTypes){
+    return p.userTypes.map(ut=>{
+      let rows='';
+      if(ut.hasCustom)rows+=adminPriceRow(`${ut.name} — price per day`,`${p.id}__${ut.key}`,ut.customDayRate,'rate');
+      rows+=ut.durations.map(d=>adminPriceRow(`${ut.name} · ${d.label}`,sk(p.id,ut.key,d.key),d.price)).join('');
+      return rows;
+    }).join('');
+  }
+  if(isJawakerProduct(p))return renderJawakerPriceRows();
+  return (p.plans||[]).map((pl,i)=>adminPriceRow(pl.name,sk(p.id,null,i),pl.price)).join('');
+}
+function filterAdminPrices(){
+  const q=(document.getElementById('admin-prices-search')?.value||'').trim().toLowerCase();
+  document.querySelectorAll('#admin-prices-body [data-price-section]').forEach(section=>{
+    if(!q){section.style.display='';return;}
+    const text=section.textContent.toLowerCase();
+    section.style.display=text.includes(q)?'':'none';
+  });
+}
+function renderAdminPrices(){
+  const el=document.getElementById('admin-prices-body');
+  if(!el)return;
+  let html=`<div style="background:var(--blue-bg);border:1px solid var(--blue-border);border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px;color:var(--text2)">Completed purchases and wallet transactions are <b>not changed</b> when you save new prices here.</div>
+    <input id="admin-prices-search" placeholder="🔍 Search products (e.g. Jawaker, Netflix)..." oninput="filterAdminPrices()" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg2);color:var(--text);margin-bottom:14px">`;
+  PRICE_CATEGORIES.forEach(cat=>{
+    const items=products.filter(p=>p.cat===cat.key);
+    if(!items.length)return;
+    html+=`<div class="admin-section-title" data-price-section="1">${cat.label}</div>`;
+    items.forEach(p=>{
+      html+=`<div data-price-section="1"><div class="admin-section-title" style="font-size:12px;margin-top:10px">${p.name}</div><div class="admin-panel">${renderProductPriceRows(p)||'<div style="font-size:12px;color:var(--text3);padding:8px">No editable prices</div>'}</div></div>`;
+    });
+  });
+  html+=`<button class="btn-primary" style="margin-top:14px" onclick="saveAdminPrices()">Save all prices</button>`;
+  el.innerHTML=html;
+}
+function readJawakerTierMult(inputId,fallbackMult){
+  const pct=parseFloat(document.getElementById(inputId)?.value||'');
+  if(isNaN(pct)||pct<0)return fallbackMult;
+  return Math.max(0.01,Math.min(1,1-(pct/100)));
+}
+async function saveAdminPrices(){
+  const prices={};
+  const customDayRates={};
+  document.querySelectorAll('#admin-prices-body [data-price-key]').forEach(inp=>{
+    const v=parseFloat(inp.value);
+    if(isNaN(v)||v<0)return;
+    if(inp.dataset.priceType==='rate')customDayRates[inp.dataset.priceKey]=v;
+    else prices[inp.dataset.priceKey]=v;
+  });
+  const jaw12k=parseFloat(document.getElementById('jawaker-base-12k')?.value||'');
+  const jawaker={
+    basePerToken:(isNaN(jaw12k)?1.5:jaw12k)/12000,
+    tiers:[
+      {min:500000,mult:readJawakerTierMult('jawaker-tier-500k',0.9)},
+      {min:100000,mult:readJawakerTierMult('jawaker-tier-100k',0.93)},
+      {min:50000,mult:readJawakerTierMult('jawaker-tier-50k',0.96)}
+    ]
+  };
+  try{
+    const r=await fetch(RT_SERVER+'/admin/prices',{method:'POST',headers:authHeaders(),body:JSON.stringify({prices,customDayRates,jawaker})});
+    const j=await r.json();
+    if(!r.ok||!j.success)throw new Error(j.error||'Save failed');
+    applyPriceCatalog(j.catalog);
+    renderAdminPrices();renderStockPanels();
+    const activeCat=document.querySelector('.ftab.active')?.dataset?.cat||'all';
+    if(document.getElementById('page-app')?.classList.contains('active'))renderProducts(activeCat);
+    showToast('✓ Prices saved for new purchases');
+    logActivity('Prices updated','catalog');
+  }catch(e){showToast('⚠️ '+e.message);}
+}
+
 // STOCK
 function renderStockPanels(){
   document.getElementById('stock-panels').innerHTML=products.map(p=>`<div class="admin-section-title">${p.name}</div><div class="admin-panel">${renderStockRows(p)}</div>`).join('');
 }
 function renderStockRows(p){
-  if(p.hasUserTypes){return p.userTypes.map(ut=>ut.durations.map(d=>{
+  if(p.hasUserTypes){return p.userTypes.map(ut=>{
+    let rows=ut.durations.map(d=>{
     const skey=sk(p.id,ut.key,d.key);const av=availableCount(skey);const tot=totalCount(skey);const [sl,sc]=stockLabel(av);
     const blocked=isStockBlocked(skey);
     return `<div class="admin-row"><div class="admin-icon" style="background:${p.color};overflow:hidden">${prodIcon(p,34,8)}</div>
@@ -3309,7 +4049,23 @@ function renderStockRows(p){
         <button class="view-btn" onclick="openAccModal('${skey}','${p.name} — ${ut.name} · ${d.label}')">View</button>
         <button class="add-acc-btn" onclick="openAccModal('${skey}','${p.name} — ${ut.name} · ${d.label}',true)"><i class="ti ti-plus" style="font-size:11px;vertical-align:-1px"></i> Add</button>
       </div></div>`;
-  }).join('')).join('');}
+  }).join('');
+    if(ut.hasCustom){
+      const customKey=customDayBlockKey(p.id,ut.key);
+      const stockKey=sk(p.id,ut.key,'1m');
+      const av=availableCount(stockKey);const tot=totalCount(stockKey);const [sl,sc]=stockLabel(av);
+      const blocked=isStockBlocked(customKey);
+      rows+=`<div class="admin-row"><div class="admin-icon" style="background:${p.color};overflow:hidden">${prodIcon(p,34,8)}</div>
+      <div class="admin-info"><div class="admin-name">${ut.name} · Custom days</div>
+      <div class="admin-sub">$${ut.customDayRate}/day · uses 1 Month stock · <span class="spill ${sc}" style="padding:1px 6px">${sl}</span> &nbsp;·&nbsp; ${tot} total ${blocked?'&nbsp;·&nbsp;<span style="color:var(--red);font-weight:700">BLOCKED</span>':''}</div></div>
+      <div class="admin-actions">
+        <button class="view-btn" style="${blocked?'color:var(--green)':'color:var(--red)'}" onclick="toggleStockBlock('${customKey}',${blocked?'false':'true'})">${blocked?'Unblock':'Block'}</button>
+        <button class="view-btn" onclick="openAccModal('${stockKey}','${p.name} — ${ut.name} · 1 Month')">View</button>
+        <button class="add-acc-btn" onclick="openAccModal('${stockKey}','${p.name} — ${ut.name} · 1 Month',true)"><i class="ti ti-plus" style="font-size:11px;vertical-align:-1px"></i> Add</button>
+      </div></div>`;
+    }
+    return rows;
+  }).join('');}
   return(p.plans||[]).map((pl,i)=>{
     const skey=sk(p.id,null,i);const av=availableCount(skey);const tot=totalCount(skey);const [sl,sc]=stockLabel(av);
     const blocked=isStockBlocked(skey);
@@ -3334,42 +4090,108 @@ async function toggleStockBlock(skey,blocked){
     logActivity(blocked?'Stock blocked':'Stock unblocked',skey);
   }catch(e){showToast('⚠️ '+e.message);}
 }
-function openAccModal(skey,label,focusAdd=false){curAccModalKey=skey;document.getElementById('acc-modal-title').textContent=label;renderAccModal(focusAdd);openModal('accounts-modal');}
-function renderAccModal(showForm=false){
-  const skey=curAccModalKey;const list=getAccounts(skey);let html='';
-  if(list.length){
-    html+=`<div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">${list.length} accounts (${availableCount(skey)} available)</div>
-    <div class="acc-list">${list.map((a,i)=>`<div class="acc-item">
-      <div class="acc-item-info"><div class="acc-email">${a.email}</div><div class="acc-pass">${a.pass}</div>
-      ${a.extra?`<div class="acc-extra">${a.extra}</div>`:''}
-      ${a.expiryDate?`<div class="acc-extra" style="color:${daysLeft(a.expiryDate)!==null&&daysLeft(a.expiryDate)<=7?'var(--orange)':'var(--text3)'}">⏰ Expires: ${a.expiryDate}${daysLeft(a.expiryDate)!==null?' ('+daysLeft(a.expiryDate)+'d)':''}</div>`:''}
-      </div>
-      <span class="acc-badge ${a.used?'acc-used':'acc-avail'}">${a.used?'Used':'Available'}</span>
-      <button class="del-btn" onclick="delAccount(${i})" title="${a.used?'Remove sold account':'Delete account'}"><i class="ti ti-trash" style="font-size:13px"></i></button>
-    </div>`).join('')}</div><div style="height:1px;background:var(--border);margin:14px 0"></div>`;
-  } else {
-    html+=`<div class="empty-state" style="padding:24px"><i class="ti ti-inbox"></i>No accounts added yet.</div><div style="height:1px;background:var(--border);margin:14px 0"></div>`;
+function openAccModal(skey,label,focusAdd=false){curAccModalKey=skey;accAddMode=isNetflixOneUserKey(skey)?'bulk':'manual';document.getElementById('acc-modal-title').textContent=label;renderAccModal(focusAdd);openModal('accounts-modal');}
+function setAccAddMode(mode){accAddMode=mode;renderAccModal(true);}
+function loadNetflixBulkDefaults(){
+  try{return JSON.parse(localStorage.getItem(NETFLIX_BULK_DEFAULTS_KEY)||'{}')||{};}catch(e){return {};}
+}
+function saveNetflixBulkDefaults(data){
+  try{localStorage.setItem(NETFLIX_BULK_DEFAULTS_KEY,JSON.stringify(data));}catch(e){}
+}
+function netflixOneUserPlanKeys(){
+  return DURATIONS_NF_1U.map(d=>sk('netflix','1user',d.key));
+}
+function netflixProfileId(account){
+  if(!account)return '';
+  if(account.accKey)return String(account.accKey);
+  return `${account.email}__${accountProfileName(account)}__${account.profilePin||''}`;
+}
+function netflixBulkSlotsUsed(alias){
+  const ids=new Set();
+  netflixAliasAccounts(alias).filter(r=>isNetflixOneUserKey(r.key)).forEach(r=>ids.add(netflixProfileId(r.account)));
+  return ids.size;
+}
+function renderNetflixBulkForm(skey){
+  const defs=loadNetflixBulkDefaults();
+  const alias=defs.email||'';
+  const used=alias?netflixBulkSlotsUsed(alias):0;
+  const slotsLeft=Math.max(0,5-used);
+  return `<div class="acc-add-mode-row">
+    <button type="button" class="acc-add-mode-btn${accAddMode==='bulk'?' active':''}" onclick="setAccAddMode('bulk')">⚡ Quick add profiles</button>
+    <button type="button" class="acc-add-mode-btn${accAddMode==='manual'?' active':''}" onclick="setAccAddMode('manual')">Manual (one at a time)</button>
+  </div>
+  <div class="nf-bulk-shared">
+    <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:10px;text-transform:uppercase;letter-spacing:0.5px">Shared for all profiles</div>
+    <div class="field"><label>Netflix alias email</label><input type="text" id="nf-bulk-email" placeholder="alias@gmail.com" value="${esc(defs.email||'')}"></div>
+    <div class="field"><label>Alias password</label><input type="text" id="nf-bulk-pass" placeholder="alias password" value="${esc(defs.pass||'')}"></div>
+    <div class="field"><label>Expiry date — dd/mm/yyyy</label><input type="text" id="nf-bulk-expiry" placeholder="e.g. 15/08/2025" value="${esc(defs.expiryDate||'')}"></div>
+    <div class="field" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px">
+      <label style="color:var(--orange)">🔒 Main Gmail (Netflix codes — admin only)</label>
+      <input type="email" id="nf-bulk-main-email" placeholder="Gmail that receives Netflix codes" value="${esc(defs.mainEmail||'')}">
+      <input type="password" id="nf-bulk-main-pass" placeholder="Gmail app password" style="margin-top:6px">
+    </div>
+    ${alias?`<div style="font-size:11px;color:var(--text3);margin-top:8px">${used}/5 profiles for this alias · adds to all plans (1m, 3m, 6m, 1y) · ${slotsLeft} slot(s) left</div>`:''}
+  </div>
+  <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px">Profile name & PIN (only these change per user)</div>
+  <div class="nf-bulk-profiles">${[1,2,3,4,5].map(n=>`<div class="nf-bulk-row">
+    <div class="nf-bulk-row-num">${n}</div>
+    <input type="text" id="nf-bulk-name-${n}" placeholder="Profile name" value="${esc((defs.profiles&&defs.profiles[n-1]?.name)||'')}">
+    <input type="text" id="nf-bulk-pin-${n}" placeholder="PIN" maxlength="6" value="${esc((defs.profiles&&defs.profiles[n-1]?.pin)||'')}">
+  </div>`).join('')}</div>
+  <button class="inline-btn" onclick="addNetflixBulkAccounts()"><i class="ti ti-users" style="font-size:13px;vertical-align:-2px;margin-right:4px"></i>Add profiles to all Netflix 1-user plans</button>`;
+}
+function renderManualAddForm(skey,needsGmail,isShahidStock){
+  let modeToggle='';
+  if(isNetflixOneUserKey(skey)){
+    modeToggle=`<div class="acc-add-mode-row">
+      <button type="button" class="acc-add-mode-btn${accAddMode==='bulk'?' active':''}" onclick="setAccAddMode('bulk')">⚡ Quick add profiles</button>
+      <button type="button" class="acc-add-mode-btn${accAddMode==='manual'?' active':''}" onclick="setAccAddMode('manual')">Manual (one at a time)</button>
+    </div>`;
   }
-  html+=`<div class="add-acc-form"><div class="add-acc-form-title">Add new account</div>
+  return `${modeToggle}<div class="add-acc-form-title">Add new account</div>
     <div class="field"><label>Email</label><input type="text" id="new-acc-email" placeholder="account@example.com"></div>
     <div class="field"><label>Password</label><input type="text" id="new-acc-pass" placeholder="password123"></div>
-    <div class="field"><label>Extra info (optional)</label><input type="text" id="new-acc-extra" placeholder="e.g. profile pin, notes..."></div>
+    <div class="field"><label>Profile (optional)</label><input type="text" id="new-acc-profile" placeholder="e.g. Ali, Profile 1"></div>
     <div class="field"><label>Expiry date (optional) — dd/mm/yyyy</label><input type="text" id="new-acc-expiry" placeholder="e.g. 15/08/2025"></div>
     <div class="field">
       <label>Profile PIN (optional — for 1 User accounts)</label>
       <input type="text" id="new-acc-profile-pin" placeholder="e.g. 1234" maxlength="6">
       <div style="font-size:11px;color:var(--text3);margin-top:4px">Fixed PIN you set for this profile. Customer will see it on their subscription link.</div>
     </div>
-  <div class="field" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px">
-      <label style="color:var(--orange)">🔒 Main Gmail (for Netflix sign-in codes — never shown to customers)</label>
-      <input type="email" id="new-acc-main-email" placeholder="Gmail address that receives Netflix codes">
+  ${needsGmail?`<div class="field" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px">
+      <label style="color:var(--orange)">🔒 Main Gmail (${isShahidStock?'for Shahid reset emails':'for Netflix sign-in codes'} — admin only, never shown to customers)</label>
+      <input type="email" id="new-acc-main-email" placeholder="${isShahidStock?'Gmail inbox that receives Shahid reset emails':'Gmail address that receives Netflix codes'}">
       <input type="password" id="new-acc-main-pass" placeholder="Gmail app password" style="margin-top:6px">
-      <div style="font-size:11px;color:var(--text3);margin-top:4px">Use a 16-character Gmail app password with IMAP enabled. Spaces are okay; they will be removed automatically.</div>
-    </div>
-    <button class="inline-btn" onclick="addAccount()"><i class="ti ti-plus" style="font-size:13px;vertical-align:-2px;margin-right:4px"></i>Add to stock</button>
-  </div>`;
+      <div style="font-size:11px;color:var(--text3);margin-top:4px">Gmail only. Use a 16-character app password with IMAP enabled. Spaces are okay; they will be removed automatically.</div>
+  </div>`:''}
+    <button class="inline-btn" onclick="addAccount()"><i class="ti ti-plus" style="font-size:13px;vertical-align:-2px;margin-right:4px"></i>Add to stock</button>`;
+}
+function renderAccModal(showForm=false){
+  const skey=curAccModalKey;const list=getAccounts(skey);const isShahidStock=String(skey||'').startsWith('shahid__');const needsGmail=isNetflixKey(skey)||isShahidStock;let html='';
+  if(list.length){
+    html+=`<div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">${list.length} accounts (${availableCount(skey)} available)</div>
+    <div class="acc-list">${list.map((a,i)=>{const owner=a.used?findStockOwnerClient(a):null;return `<div class="acc-item">
+      <div class="acc-item-info"><div class="acc-email">${a.email}</div><div class="acc-pass">${a.pass}</div>
+      ${accountProfileName(a)?`<div class="acc-extra">👤 Profile: ${esc(accountProfileName(a))}</div>`:''}
+      ${a.profilePin?`<div class="acc-extra">🔢 PIN: ${esc(a.profilePin)}</div>`:''}
+      ${a.expiryDate?`<div class="acc-extra" style="color:${daysLeft(a.expiryDate)!==null&&daysLeft(a.expiryDate)<=7?'var(--orange)':'var(--text3)'}">⏰ Expires: ${a.expiryDate}${daysLeft(a.expiryDate)!==null?' ('+daysLeft(a.expiryDate)+'d)':''}</div>`:''}
+      </div>
+      <span class="acc-badge ${a.used?'acc-used':'acc-avail'}">${a.used?'Used':'Available'}</span>
+      ${!a.used?`<button class="view-btn" onclick="assignStockAccount(${i})" title="Assign to customer">Assign</button>`:(owner?`<button class="view-btn" ${jsOnClick('jumpToCustomer',owner.userEmail)}>Customer</button>`:'')}
+      <button class="del-btn" onclick="delAccount(${i})" title="${a.used?'Remove sold account':'Delete account'}"><i class="ti ti-trash" style="font-size:13px"></i></button>
+    </div>`;}).join('')}</div><div style="height:1px;background:var(--border);margin:14px 0"></div>`;
+  } else {
+    html+=`<div class="empty-state" style="padding:24px"><i class="ti ti-inbox"></i>No accounts added yet.</div><div style="height:1px;background:var(--border);margin:14px 0"></div>`;
+  }
+  html+=`<div class="add-acc-form">`;
+  if(isNetflixOneUserKey(skey)&&accAddMode==='bulk')html+=renderNetflixBulkForm(skey);
+  else html+=renderManualAddForm(skey,needsGmail,isShahidStock);
+  html+=`</div>`;
   document.getElementById('acc-modal-body').innerHTML=html;
-  if(showForm)setTimeout(()=>document.getElementById('new-acc-email')?.focus(),100);
+  if(showForm){
+    const focusId=isNetflixOneUserKey(skey)&&accAddMode==='bulk'?'nf-bulk-email':'new-acc-email';
+    setTimeout(()=>document.getElementById(focusId)?.focus(),100);
+  }
 }
 function isNetflixKey(k){return String(k||'').startsWith('netflix__');}
 function isNetflixOneUserKey(k){return /^netflix__1user__/.test(String(k||''));}
@@ -3386,13 +4208,34 @@ function netflixAliasAccounts(alias){
 function validateNetflixAliasForAdd(skey,email,pin){
   if(!isNetflixKey(skey))return '';
   const rows=netflixAliasAccounts(email);
-  const oneCount=rows.filter(r=>isNetflixOneUserKey(r.key)).length;
+  const oneCount=netflixBulkSlotsUsed(email);
   const fullCount=rows.filter(r=>isNetflixFullKey(r.key)).length;
   if(isNetflixFullKey(skey)&&(oneCount>0||fullCount>0))return 'This Netflix alias is already used/reserved. Full account can only be added once and cannot mix with 1-user profiles.';
   if(isNetflixOneUserKey(skey)&&fullCount>0)return 'This Netflix alias is already reserved as full account and cannot be used for 1-user profiles.';
   if(isNetflixOneUserKey(skey)&&oneCount>=5)return 'This Netflix alias already has 5 one-user profile slots.';
   if(isNetflixOneUserKey(skey)&&pin&&rows.some(r=>isNetflixOneUserKey(r.key)&&String(r.account.profilePin||'')===String(pin)))return 'This PIN is already used for this Netflix alias. Use a different profile PIN.';
   return '';
+}
+async function assignStockAccount(idx){
+  const acc=accountStock[curAccModalKey]?.[idx];
+  if(!acc||acc.used){showToast('Account not available');return;}
+  const userEmail=prompt('Customer email to assign this account to:');
+  if(!userEmail)return;
+  const u=users.find(x=>normEmail(x.email)===normEmail(userEmail));
+  let assignCustId=null;
+  if(u&&(u.myCustomers||[]).length){
+    const names=u.myCustomers.map(c=>`${c.fname} ${c.lname} (id ${c.id})`).join('\n');
+    const pick=prompt(`Optional sub-customer id (leave empty for direct assign):\n${names}`);
+    if(pick&&String(pick).trim())assignCustId=Number(pick)||null;
+  }
+  try{
+    const r=await fetch(RT_SERVER+'/admin/assign-stock',{method:'POST',headers:authHeaders(),body:JSON.stringify({skey:curAccModalKey,accKey:acc.accKey,userEmail,assignCustId})});
+    const j=await r.json();
+    if(!r.ok||!j.success)throw new Error(j.error||'Assign failed');
+    applyDataSnapshot(j.data||_jbCache);
+    renderAccModal(false);renderStockPanels();renderAdminExpiry();renderAdminCustomers();
+    showToast('✓ Account assigned to customer');
+  }catch(e){showToast('⚠️ '+e.message);}
 }
 async function delAccount(idx){
   const acc=accountStock[curAccModalKey]?.[idx];
@@ -3407,38 +4250,100 @@ async function delAccount(idx){
   logActivity('Stock account deleted',curAccModalKey);
 }
 
+async function setupGmailMonitor(mainEmail,mainPass){
+  if(!mainEmail||!mainPass)return false;
+  const setupRes=await fetch(`${RT_SERVER}/setup-gmail`,{
+    method:'POST',headers:authHeaders(),
+    body:JSON.stringify({email:mainEmail,password:mainPass})
+  });
+  const setupJson=await setupRes.json().catch(()=>({}));
+  if(!setupRes.ok||setupJson.success===false)throw new Error(setupJson.error||'Gmail setup failed');
+  return true;
+}
+function pushStockAccount(skey,fields,accKey){
+  if(!accountStock[skey])accountStock[skey]=[];
+  const key=accKey||skey+'__'+Date.now()+'_'+Math.random().toString(36).slice(2,6);
+  accountStock[skey].push({used:false,accKey:key,...fields});
+  return key;
+}
+function pushNetflixProfileToAllPlans(fields){
+  const accKey='nfprof__'+Date.now()+'_'+Math.random().toString(36).slice(2,8);
+  netflixOneUserPlanKeys().forEach(skey=>pushStockAccount(skey,fields,accKey));
+  return accKey;
+}
+async function addNetflixBulkAccounts(){
+  if(!isNetflixOneUserKey(curAccModalKey)){showToast('Quick add is only for Netflix 1-user plans');return;}
+  await refreshFromFirebase();
+  const email=document.getElementById('nf-bulk-email')?.value.trim()||'';
+  const pass=document.getElementById('nf-bulk-pass')?.value.trim()||'';
+  const expiryDate=document.getElementById('nf-bulk-expiry')?.value.trim()||'';
+  const mainEmail=document.getElementById('nf-bulk-main-email')?.value.trim()||'';
+  const mainPass=(document.getElementById('nf-bulk-main-pass')?.value||'').replace(/\s+/g,'');
+  if(!email||!pass){showToast('Alias email and password are required');return;}
+  const profiles=[];
+  for(let n=1;n<=5;n++){
+    const name=document.getElementById('nf-bulk-name-'+n)?.value.trim()||'';
+    const pin=document.getElementById('nf-bulk-pin-'+n)?.value.trim()||'';
+    if(name||pin)profiles.push({name,pin,row:n});
+  }
+  if(!profiles.length){showToast('Enter at least one profile name and PIN');return;}
+  const missing=profiles.find(p=>!p.name||!p.pin);
+  if(missing){showToast(`Profile ${missing.row}: enter both name and PIN`);return;}
+  const used=netflixBulkSlotsUsed(email);
+  if(used+profiles.length>5){showToast(`Only ${5-used} slot(s) left for this alias (max 5 profiles)`);return;}
+  const pins=new Set();
+  for(const p of profiles){
+    const aliasError=validateNetflixAliasForAdd(curAccModalKey,email,p.pin);
+    if(aliasError){showToast('⚠️ '+aliasError);return;}
+    if(pins.has(p.pin)){showToast('Duplicate PIN in this batch — each profile needs a unique PIN');return;}
+    pins.add(p.pin);
+  }
+  for(const p of profiles){
+    pushNetflixProfileToAllPlans({email,pass,profileName:p.name,profilePin:p.pin,expiryDate,mainEmail:mainEmail||'',...(mainPass?{mainPass}:{})});
+  }
+  saveNetflixBulkDefaults({email,pass,expiryDate,mainEmail,profiles:profiles.map(p=>({name:p.name,pin:''}))});
+  await saveData();
+  let gmailConfigured=false;
+  if(mainEmail&&mainPass){
+    try{gmailConfigured=await setupGmailMonitor(mainEmail,mainPass);}catch(e){showToast('⚠️ Profiles saved but Gmail error: '+e.message);}
+  }
+  renderAccModal(true);renderStockPanels();renderAdminExpiry();
+  const planCount=netflixOneUserPlanKeys().length;
+  showToast(gmailConfigured?`✓ Added ${profiles.length} profile(s) × ${planCount} plans + Gmail`:`✓ Added ${profiles.length} profile(s) to all ${planCount} plans`);
+  logActivity('Netflix bulk stock added',`${profiles.length} profiles · all plans`);
+  for(const planKey of netflixOneUserPlanKeys())await autoFulfillPending(planKey);
+}
+
 async function addAccount(){
   await refreshFromFirebase();
   const email=document.getElementById('new-acc-email').value.trim();
   const pass=document.getElementById('new-acc-pass').value.trim();
-  const extra=document.getElementById('new-acc-extra').value.trim();
+  const profileName=document.getElementById('new-acc-profile').value.trim();
   const expiryDate=document.getElementById('new-acc-expiry').value.trim();
   if(!email||!pass){showToast('Email and password are required');return;}
   if(!accountStock[curAccModalKey])accountStock[curAccModalKey]=[];
   const mainEmail=document.getElementById('new-acc-main-email')?.value.trim()||'';
   const mainPass=(document.getElementById('new-acc-main-pass')?.value||'').replace(/\s+/g,'');
   const profilePin=document.getElementById('new-acc-profile-pin')?.value.trim()||'';
+  const isShahidStock=String(curAccModalKey||'').startsWith('shahid__');
+  if(isShahidStock&&mainEmail&&!/@(gmail|googlemail)\.com$/i.test(mainEmail)){showToast('⚠️ Shahid reset links require a Gmail inbox');return;}
   const aliasError=validateNetflixAliasForAdd(curAccModalKey,email,profilePin);
   if(aliasError){showToast('⚠️ '+aliasError);return;}
-  const accKey=curAccModalKey+'__'+Date.now();
-  accountStock[curAccModalKey].push({email,pass,extra,expiryDate,used:false,accKey,profilePin,mainEmail:mainEmail||''});
+  if(isNetflixOneUserKey(curAccModalKey)){
+    pushNetflixProfileToAllPlans({email,pass,profileName,expiryDate,profilePin,mainEmail:mainEmail||'',...(mainPass?{mainPass}:{})});
+    saveNetflixBulkDefaults({email,pass,expiryDate,mainEmail,profiles:[{name:profileName,pin:''}]});
+  }else{
+    pushStockAccount(curAccModalKey,{email,pass,profileName,expiryDate,profilePin,mainEmail:mainEmail||'',...(mainPass?{mainPass}:{})});
+  }
   await saveData();
   let gmailConfigured=false;
-  // Save main email credentials to server for Netflix code monitoring
   if(mainEmail&&mainPass){
-    try{
-      const setupRes=await fetch(`${RT_SERVER}/setup-gmail`,{
-        method:'POST',headers:authHeaders(),
-        body:JSON.stringify({email:mainEmail,password:mainPass})
-      });
-      const setupJson=await setupRes.json().catch(()=>({}));
-      if(!setupRes.ok||setupJson.success===false)throw new Error(setupJson.error||'Gmail setup failed');
-      gmailConfigured=true;
-    }catch(e){showToast('⚠️ Account saved but email server error: '+e.message);}
+    try{gmailConfigured=await setupGmailMonitor(mainEmail,mainPass);}catch(e){showToast('⚠️ Account saved but email server error: '+e.message);}
   }
-  renderAccModal(false);renderStockPanels();renderAdminExpiry();showToast(gmailConfigured?'✓ Account added + Gmail monitoring started':'✓ Account added to stock');logActivity('Stock added',curAccModalKey);
-  // Auto-fulfill pending orders for this skey
-  await autoFulfillPending(curAccModalKey);
+  renderAccModal(false);renderStockPanels();renderAdminExpiry();showToast(gmailConfigured?(isNetflixOneUserKey(curAccModalKey)?'✓ Account added to all Netflix 1-user plans + Gmail':'✓ Account added + Gmail monitoring started'):(isNetflixOneUserKey(curAccModalKey)?'✓ Account added to all Netflix 1-user plans':'✓ Account added to stock'));logActivity('Stock added',curAccModalKey);
+  if(isNetflixOneUserKey(curAccModalKey)){
+    for(const planKey of netflixOneUserPlanKeys())await autoFulfillPending(planKey);
+  }else await autoFulfillPending(curAccModalKey);
 }
 
 async function autoFulfillPending(skey){
@@ -3454,19 +4359,31 @@ async function autoFulfillPending(skey){
   for(const po of waiting){
     const acc=getNextAcc(skey);
     if(!acc)break;
-    const idx=getAccounts(skey).indexOf(acc);markUsed(skey,idx);
+    const idx=getAccounts(skey).indexOf(acc);
     const u=users.find(x=>x.email===po.userEmail);
     const fu=freshUsers.find(x=>x.email===po.userEmail);
-    if(u)u.orders.unshift({id:po.id,product:po.product,short:po.short,color:po.color,tc:po.tc,productId:po.productId,plan:po.plan,price:po.price,email:acc.email,pass:acc.pass,date:po.date,expiryDate:acc.expiryDate||null,...(po.profileName?{profileName:po.profileName}:{}),...(acc.extra?{extra:acc.extra}:{}),...(acc.profilePin?{profilePin:acc.profilePin}:{}),accKey:acc.accKey||'',mainEmail:acc.mainEmail||''});
+    const assignedCustomer=po.assignCustId!=null?u?.myCustomers?.find(c=>c.id===po.assignCustId):null;
+    const soldTo={userEmail:po.userEmail,userName:po.userName,orderId:po.id,assignCustId:assignedCustomer?.id||null,assignCustName:assignedCustomer?`${assignedCustomer.fname||''} ${assignedCustomer.lname||''}`.trim():'',at:Date.now()};
+    markLinkedStockSoldClient(acc,soldTo);
+    const order={id:po.id,product:po.product,short:po.short,color:po.color,tc:po.tc,productId:po.productId,plan:po.plan,price:po.price,email:acc.email,pass:acc.pass,date:po.date,expiryDate:acc.expiryDate||null,profileName:po.profileName||accountProfileName(acc)||'',...(acc.profilePin?{profilePin:acc.profilePin}:{}),accKey:acc.accKey||'',mainEmail:acc.mainEmail||''};
+    if(u){
+      if(assignedCustomer){
+        order.profileName=order.profileName||assignedCustomer.fname;
+        assignedCustomer.subs=assignedCustomer.subs||[];
+        assignedCustomer.subs.unshift(order);
+      }else u.orders.unshift(order);
+    }
     pending.splice(pending.indexOf(po),1);
     fulfilled++;
     // Use freshest tgChatId
     const tgId=fu?.tgChatId||u?.tgChatId||po.userTgChatId||'';
+    if(u&&order){order.deliveredAt=Date.now();if(tgId)order.telegramDeliveredAt=Date.now();}
+    if(u&&Array.isArray(u.transactions))u.transactions.forEach(t=>{if(t.orderId===po.id)t.pending=false;});
     if(tgId){
       const linkData={id:po.id,product:po.product,short:po.short,color:po.color,tc:po.tc,productId:po.productId,plan:po.plan,email:acc.email,pass:acc.pass,expiryDate:acc.expiryDate||'',profileName:po.profileName||'',profilePin:acc.profilePin||'',accKey:acc.accKey||'',mainEmail:acc.mainEmail||'',codeEmail:acc.email,inboxEmail:acc.mainEmail||acc.email,linkExpiry:Date.now()+(90*24*60*60*1000)};
       const subLink=await createSubLinkUrl(linkData);
       let msg=`✅ <b>Your ${po.product} is ready!</b>\n\n📋 ${po.plan}\n\n🔐 <b>Credentials:</b>\n📧 Email: <code>${acc.email}</code>\n🔑 Password: <code>${acc.pass}</code>`;
-      if(acc.extra)msg+=`\nℹ️ <code>${acc.extra}</code>`;
+      if(accountProfileName(acc))msg+=`\n👤 Profile: <code>${accountProfileName(acc)}</code>`;
       if(acc.expiryDate)msg+=`\n⏰ Expires: ${acc.expiryDate}`;
       if(acc.profilePin)msg+=`\n🔢 PIN: <code>${acc.profilePin}</code>`;
       msg+=`\n\n🔗 <b>Your subscription link:</b>\n${subLink}\n\nEnjoy! 🌟`;
@@ -3650,14 +4567,19 @@ async function withdrawWallet(i){
 function renderAdminPendingHtml(pending){
   const el=document.getElementById('admin-pending-list');if(!el)return;
   if(!pending.length){el.innerHTML='<div class="empty-state" style="padding:32px">No pending orders. 🎉</div>';return;}
-  el.innerHTML=pending.map((po,i)=>`<div class="admin-wallet-row">
+  el.innerHTML=pending.map((po,i)=>{
+    const age=pendingAgeLabel(po);
+    const breached=(po.createdAt?(Date.now()-po.createdAt):0)>24*60*60*1000;
+    return `<div class="admin-wallet-row" style="${breached?'border:1px solid var(--red-border);background:var(--red-bg)':''}">
     <div class="admin-icon" style="background:${po.color||'#333'};color:${po.tc||'#fff'};font-size:10px;font-weight:700;width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0">${po.short||'?'}</div>
-    <div class="aw-info" style="flex:1"><div class="aw-name">${po.product} · ${po.plan}</div>
-    <div class="aw-email">👤 ${po.userName} · 📧 ${po.userEmail} · 💵 ${fmt(po.price)} · 📅 ${po.date}</div>
-    ${po.userTgChatId?`<div class="aw-email" style="color:var(--blue)">💬 TG: ${po.userTgChatId}</div>`:''}</div>
+    <div class="aw-info" style="flex:1"><div class="aw-name">${esc(po.product)} · ${esc(po.plan)}</div>
+    <div class="aw-email">👤 ${esc(po.userName)} · 📧 ${esc(po.userEmail)} · 💵 ${fmt(po.price)} · 📅 ${esc(po.date)}${age?` · ${age}`:''}</div>
+    ${pendingTimelineHtml(po)}
+    ${po.userTgChatId?`<div class="aw-email" style="color:var(--blue)">💬 TG: ${esc(po.userTgChatId)}</div>`:''}</div>
     <button class="aabtn" onclick="manualFulfillPending(${i})">✓ Fulfill</button>
-    <button class="aabtn" style="background:var(--red-bg);color:var(--red);border-color:var(--red-border)" onclick="cancelPendingOrder('${po.id}')">✕ Cancel & Refund</button>
-  </div>`).join('');
+    <button class="aabtn" style="background:var(--red-bg);color:var(--red);border-color:var(--red-border)" ${jsOnClick('cancelPendingOrder',po.id)}>✕ Cancel & Refund</button>
+  </div>`;
+  }).join('');
 }
 async function renderAdminPending(){
   const el=document.getElementById('admin-pending-list');
@@ -3666,17 +4588,21 @@ async function renderAdminPending(){
   try{if(_jbCache&&_jbCache.pending)pending=_jbCache.pending;else{_jbCache=await jbRead();if(_jbCache.pending)pending=_jbCache.pending;}}catch(e){}
   try{_jbCache=await jbRead();if(_jbCache&&_jbCache.pending)pending=_jbCache.pending;}catch(e){}
   if(!pending.length){el.innerHTML='<div class="empty-state" style="padding:32px">No pending orders. 🎉</div>';return;}
-  el.innerHTML=pending.map((po,i)=>`
-    <div class="admin-wallet-row">
+  el.innerHTML=pending.map((po,i)=>{
+    const age=pendingAgeLabel(po);
+    const breached=(po.createdAt?(Date.now()-po.createdAt):0)>24*60*60*1000;
+    return `<div class="admin-wallet-row" style="${breached?'border:1px solid var(--red-border);background:var(--red-bg)':''}">
       <div class="admin-icon" style="background:${po.color||'#333'};color:${po.tc||'#fff'};font-size:10px;font-weight:700;width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0">${po.short||'?'}</div>
       <div class="aw-info" style="flex:1">
-        <div class="aw-name">${po.product} · ${po.plan}</div>
-        <div class="aw-email">👤 ${po.userName} · 📧 ${po.userEmail} · 💵 ${fmt(po.price)} · 📅 ${po.date}</div>
-        ${po.userTgChatId?`<div class="aw-email" style="color:var(--blue)">💬 TG: ${po.userTgChatId}</div>`:''}
+        <div class="aw-name">${esc(po.product)} · ${esc(po.plan)} ${breached?'<span style="color:var(--red);font-weight:700">· SLA 24h+</span>':''}</div>
+        <div class="aw-email">👤 ${esc(po.userName)} · 📧 ${esc(po.userEmail)} · 💵 ${fmt(po.price)} · 📅 ${esc(po.date)}${age?` · ${age}`:''}</div>
+        ${pendingTimelineHtml(po)}
+        ${po.userTgChatId?`<div class="aw-email" style="color:var(--blue)">💬 TG: ${esc(po.userTgChatId)}</div>`:''}
       </div>
       <button class="aabtn" onclick="manualFulfillPending(${i})">✓ Fulfill</button>
-      <button class="aabtn" style="background:var(--red-bg);color:var(--red);border-color:var(--red-border)" onclick="cancelPendingOrder('${po.id}')">✕ Cancel & Refund</button>
-    </div>`).join('');
+      <button class="aabtn" style="background:var(--red-bg);color:var(--red);border-color:var(--red-border)" ${jsOnClick('cancelPendingOrder',po.id)}>✕ Cancel & Refund</button>
+    </div>`;
+  }).join('');
 }
 async function cancelPendingOrder(orderId){
   const reason=prompt('Reason for canceling this pending order (optional):')||'';
@@ -3715,10 +4641,11 @@ async function manualFulfillPending(i){
   // Notify customer
   const tgId=u?.tgChatId||po.userTgChatId||'';
   if(tgId){
-    const linkDataM={id:po.id,product:po.product,short:po.short,color:po.color,tc:po.tc,productId:po.productId,plan:po.plan,email:acc.email,pass:acc.pass,expiryDate:acc.expiryDate||'',profileName:po.profileName||'',profilePin:acc.profilePin||'',accKey:acc.accKey||'',mainEmail:acc.mainEmail||'',codeEmail:acc.email,inboxEmail:acc.mainEmail||acc.email,linkExpiry:Date.now()+(90*24*60*60*1000)};
+    const prof=po.profileName||accountProfileName(acc)||'';
+    const linkDataM={id:po.id,product:po.product,short:po.short,color:po.color,tc:po.tc,productId:po.productId,plan:po.plan,email:acc.email,pass:acc.pass,expiryDate:acc.expiryDate||'',profileName:prof,profilePin:acc.profilePin||'',accKey:acc.accKey||'',mainEmail:acc.mainEmail||'',codeEmail:acc.email,inboxEmail:acc.mainEmail||acc.email,linkExpiry:Date.now()+(90*24*60*60*1000)};
     const subLinkM=await createSubLinkUrl(linkDataM);
     let msg=`✅ <b>Your ${po.product} is ready!</b>\n\n📋 ${po.plan}\n\n🔐 <b>Credentials:</b>\n📧 Email: <code>${acc.email}</code>\n🔑 Password: <code>${acc.pass}</code>`;
-    if(acc.extra)msg+=`\nℹ️ <code>${acc.extra}</code>`;
+    if(prof)msg+=`\n👤 Profile: <code>${prof}</code>`;
     if(acc.expiryDate)msg+=`\n⏰ Expires: ${acc.expiryDate}`;
     msg+=`\n\n🔗 <b>Your subscription link:</b>\n${subLinkM}\n\nEnjoy! 🌟`;
     await sendTelegramToUser(tgId,msg);
@@ -3739,37 +4666,32 @@ function renderGameOrdersHtml(el,go){
     <div class="admin-wallet-row" style="${o.status==='done'?'opacity:0.55':''}">
       <div class="admin-icon" style="background:${o.color||'#333'};color:#fff;font-size:10px;font-weight:700;width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0">${o.short||'G'}</div>
       <div class="aw-info" style="flex:1">
-        <div class="aw-name">${o.product} · ${o.plan}</div>
-        <div class="aw-email">🆔 ${o.playerId} · 👤 ${o.userName} · 💵 ${fmt(o.price)} · ${o.date}</div>
-        <div class="aw-email" style="color:${o.status==='done'?'var(--green)':'var(--orange)'}">● ${o.status==='done'?'Done':'Pending'} · ${o.id}</div>
+        <div class="aw-name">${esc(o.product)} · ${esc(o.plan)}</div>
+        <div class="aw-email">${o.playerPassword?`👤 ${esc(o.playerId)} · 🔑 ${esc(o.playerPassword)}`:`🆔 ${esc(o.playerId)}`} · ${esc(o.userName)} · 💵 ${fmt(o.price)} · ${esc(o.date)}</div>
+        ${gameStatusTrack(o.status)}
       </div>
-      ${o.status==='pending'?`<button class="aabtn" onclick="fulfillGameOrder(${i})">✓ Done</button>`:`<span style="font-size:11px;background:var(--green-bg);color:var(--green);border:1px solid var(--green-border);padding:3px 9px;border-radius:4px;font-weight:600">✓ Done</span>`}
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        ${o.status==='pending'?`<button class="aabtn" onclick="setGameOrderStatus(${i},'processing')">Processing</button>`:''}
+        ${o.status!=='done'?`<button class="aabtn" onclick="setGameOrderStatus(${i},'done')">✓ Done</button>`:`<span style="font-size:11px;background:var(--green-bg);color:var(--green);border:1px solid var(--green-border);padding:3px 9px;border-radius:4px;font-weight:600">✓ Done</span>`}
+      </div>
     </div>`).join('');
 }
-async function fulfillGameOrder(i){
+async function setGameOrderStatus(i,status){
   await refreshFromFirebase();
-  let go=Array.isArray(_jbCache?.gameorders)?_jbCache.gameorders:[];
-  if(!go[i]||go[i].status==='done'){showToast('Already fulfilled');return;}
+  const go=Array.isArray(_jbCache?.gameorders)?_jbCache.gameorders:[];
   const o=go[i];
-  go[i].status='done';
-  try{}catch(e){}
-  try{if(!_jbCache)_jbCache=await jbRead();_jbCache.gameorders=go;await jbWrite(_jbCache);}catch(e){}
-  // Update customer transaction to remove pending flag
-  const u=users.find(x=>x.email===o.userEmail);
-  if(u){
-    const tx=u.transactions.find(t=>t.orderId===o.id);
-    if(tx){tx.pending=false;tx.label=tx.label.replace(' (pending)','');}
-    await saveData();
-    if(currentUser&&currentUser.email===u.email){currentUser=u;renderTx();}
-  }
-  renderGameOrders();
-  showToast(`✓ Order ${o.id} marked as done!`);
-  // Notify customer
-  if(o.userTgChatId){
-    await sendTelegramToUser(o.userTgChatId,`✅ <b>Your Order is Done!</b>\n\n🎮 <b>${o.product}</b>\n📋 ${o.plan}\n🆔 Player ID: <code>${o.playerId}</code>\n💵 ${fmt(o.price)}\n\nYour account has been charged. Enjoy! 🎉`);
-  }
-  await sendTelegram(`✅ Game order fulfilled: ${o.product} · ${o.plan} for ${o.userName} (ID: ${o.playerId})`);
+  if(!o)return;
+  try{
+    const r=await fetch(RT_SERVER+'/admin/game-order-status',{method:'POST',headers:authHeaders(),body:JSON.stringify({orderId:o.id,status})});
+    const j=await r.json();
+    if(!r.ok||!j.success)throw new Error(j.error||'Could not update status');
+    applyDataSnapshot(j.data||_jbCache);
+    renderGameOrders();
+    if(currentUser&&normEmail(currentUser.email)===normEmail(o.userEmail)){renderMyGameOrders();renderTx();}
+    showToast(status==='done'?'✓ Game order completed':'✓ Status updated');
+  }catch(e){showToast('⚠️ '+e.message);}
 }
+async function fulfillGameOrder(i){return setGameOrderStatus(i,'done');}
 function renderTopupRequests(){
   const el=document.getElementById('topupreqs-list');
   if(!el)return;
@@ -3970,6 +4892,7 @@ async function init(){
   initFirebase();
   initTheme();
   initLang();
+  await loadPriceCatalog();
   // Check for subscription link FIRST — hide all pages immediately
   const params=new URLSearchParams(location.search);
   if(params.get('sub')||params.get('s')||params.get('t')){
@@ -4032,6 +4955,14 @@ if(document.readyState==='loading'){
   init();
 }
 </script>
+<!-- SHAHID FIX PASSWORD MODAL -->
+<div class="modal-wrap" id="shahid-fix-modal" aria-hidden="true" onclick="closeModal('shahid-fix-modal')">
+  <div class="modal" onclick="event.stopPropagation()" style="max-width:420px;padding:20px">
+    <div class="modal-title" id="shahid-fix-title" style="margin-bottom:14px">Fix Shahid password</div>
+    <div id="shahid-fix-body"></div>
+  </div>
+</div>
+
 <!-- SUBSCRIPTION OPTIONS MODAL -->
 <div class="modal-wrap" id="sub-options-modal" aria-hidden="true" onclick="closeModal('sub-options-modal')">
   <div class="modal" onclick="event.stopPropagation()" style="max-width:340px">
@@ -4039,6 +4970,7 @@ if(document.readyState==='loading'){
     <div id="sub-options-product" style="font-size:13px;color:var(--text3);margin-bottom:16px"></div>
     <div style="display:flex;flex-direction:column;gap:2px">
       <button onclick="subOptionGenLink()" class="sub-option-btn">🔗 Generate Link</button>
+      <button onclick="subOptionResendTelegram()" class="sub-option-btn">📲 Resend to Telegram</button>
       <button onclick="subOptionAddNote()" class="sub-option-btn">📝 Add Note</button>
       <button onclick="subOptionRenew()" class="sub-option-btn" data-t="requestRenewal">🔄 Request Renewal</button>
       <button onclick="subOptionReport()" class="sub-option-btn" data-t="reportIssue">⚠️ Report Issue</button>
@@ -4152,7 +5084,7 @@ if(document.readyState==='loading'){
         </div>
         </div>
         <div id="sublink-extra-row" style="display:none;justify-content:space-between;align-items:center;margin-bottom:8px">
-          <span style="font-size:12px;color:var(--text2)">Extra</span>
+          <span style="font-size:12px;color:var(--text2)">Profile</span>
           <span id="sublink-extra" style="font-family:var(--mono);font-size:13px;font-weight:600"></span>
         </div>
         <div id="sublink-expiry-row" style="display:none;justify-content:space-between;align-items:center">
@@ -4168,6 +5100,8 @@ if(document.readyState==='loading'){
           <span id="sublink-profile-pin" style="font-family:var(--mono);font-size:16px;font-weight:700;letter-spacing:4px;cursor:pointer" onclick="copyText(this)"></span>
         </div>
       </div>
+      <div id="sublink-shahid-actions" style="display:none;margin-bottom:16px;text-align:left"></div>
+
       <!-- Netflix TV Activation -->
       <div id="sublink-tv-section" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;margin-bottom:16px">
         <div style="font-size:11px;color:var(--text3);margin-bottom:10px;font-weight:600;letter-spacing:0.5px">📺 ACTIVATE ON TV</div>
@@ -4220,25 +5154,16 @@ if(document.readyState==='loading'){
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
     </div>
     <div class="rt-chat-hdr-info">
-      <div class="rt-chat-hdr-name">Netflix Support</div>
-      <div class="rt-chat-hdr-status">Online — instant replies</div>
+      <div class="rt-chat-hdr-name" id="rt-chat-hdr-name">rashadtech Support</div>
+      <div class="rt-chat-hdr-status" id="rt-chat-hdr-status">Online — instant replies</div>
     </div>
     <button class="rt-chat-close" onclick="rtToggleChat()">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
     </button>
   </div>
-  <div class="rt-chat-msgs" id="rt-msgs">
-    <div class="rt-msg bot">Hi! I can help with Netflix login, sign-in codes, TV activation, renewal, wallet top-up, and subscription issues. 👋</div>
-  </div>
+  <div class="rt-chat-msgs" id="rt-msgs"></div>
   <div class="rt-typing" id="rt-typing"><span></span><span></span><span></span></div>
-  <div class="rt-quick-replies" id="rt-qrs">
-    <button class="rt-qr" onclick="rtAsk('How do I log in to Netflix?')">Netflix login</button>
-    <button class="rt-qr" onclick="rtAsk('I need a sign-in code')">Sign-in code</button>
-    <button class="rt-qr" onclick="rtAsk('My code is not working')">Code not working</button>
-    <button class="rt-qr" onclick="rtAsk('How to watch on TV?')">Watch on TV</button>
-    <button class="rt-qr" onclick="rtAsk('Report issue')">Report issue</button>
-    <button class="rt-qr" onclick="rtAsk('How do I renew?')">Renew</button>
-  </div>
+  <div class="rt-quick-replies" id="rt-qrs"></div>
   <div class="rt-chat-input-row">
     <input id="rt-chat-inp" type="text" placeholder="Type a message..." onkeydown="if(event.key==='Enter')rtSend()">
     <button class="rt-chat-send" onclick="rtSend()">
@@ -4247,48 +5172,183 @@ if(document.readyState==='loading'){
   </div>
 </div>
 <script>
-// ── RASHADTECH SUPPORT CHATBOT ──
-const RT_FAQ=[
-  {q:['top up','wallet','balance','credit','pay','topup'],
-   a:'To top up your wallet, contact support on <b>WhatsApp: <a href="https://wa.me/96179306701" target="_blank">+96179306701</a></b>. After confirmation, your wallet balance will update in your account.'},
-  {q:['subscription','buy','purchase','get','order','plan'],
-   a:'Go to the <b>Store</b>, choose your Netflix plan, and tap Buy. If delivery is not instant, you will see it as pending and support will finish it for you.'},
-  {q:['login','log in','password','credentials','netflix login'],
-   a:'Open your subscription link, copy the Netflix email and password, then log in on Netflix. If Netflix asks for a sign-in code, come back to the same subscription link and tap <b>Request Sign-in Code</b>.'},
-  {q:['tv','television','activate','smart tv','setup','install'],
-   a:'Open your subscription link and use the <b>Activate on TV</b> section. Log in to Netflix first, then enter the code shown on your TV.'},
-  {q:['sign in','signin','code','verify','verification','2fa','login code','netflix code'],
-   a:'Open your subscription link and tap <b>Request Sign-in Code</b>. Wait a moment, then tap Refresh if needed. Please avoid pressing many times quickly.'},
-  {q:['code not working','wrong code','expired code','invalid code'],
-   a:'If the Netflix code does not work, wait for a fresh code and tap Refresh on your subscription link. Codes expire quickly, so use the newest one shown.'},
-  {q:['renew','renewal','expire','expired','extend','extension'],
-   a:'To renew, top up your wallet and repurchase from the Store, or contact <b>Telegram: <a href="https://t.me/Rashadtech" target="_blank">@Rashadtech</a></b> for help.'},
-  {q:['issue','problem','not working','broken','error','bug','help','stuck','slow','buffering','freeze','report'],
-   a:'To report a Netflix issue, open your subscription options and tap <b>Report Issue</b>. Include what happened: password not working, code not received, profile locked, expired, TV activation, or playback problem.'},
-  {q:['pending','waiting'],
-   a:'If your order is pending, support is preparing it. You will receive your subscription details as soon as it is ready.'},
-  {q:['profile','name','pin','change'],
-   a:'You can change your Netflix profile name or PIN from <b>Subscription Options</b> on your subscription card.'},
-  {q:['contact','reach','support','human','agent','talk'],
-   a:`You can reach us on:<br>
-• <b>WhatsApp: <a href="https://wa.me/96179306701" target="_blank">+96179306701</a></b><br>
-• <b>Telegram: <a href="https://t.me/Rashadtech" target="_blank">@Rashadtech</a></b>`}
-];
+// ── RASHADTECH SUPPORT CHATBOT (customer-only — no admin/internal info) ──
+const RT_CHAT_I18N={
+  en:{
+    name:'rashadtech Support',
+    status:'Online — instant replies',
+    placeholder:'Type a message...',
+    greeting:'Hi! I can help with purchases, subscriptions, Telegram delivery, wallet, Netflix codes, TV, Shahid fix password, and sub-customers. 👋',
+    sensitive:'I can only help with customer store questions (buying, subscriptions, wallet, Telegram). For account administration or internal systems, please contact support on WhatsApp or Telegram.',
+    fallback:'I\'m not sure about that. Try a quick topic below, or contact us:<br>• <b>WhatsApp: <a href="https://wa.me/96179306701" target="_blank">+96179306701</a></b><br>• <b>Telegram: <a href="https://t.me/Rashadtech" target="_blank">@Rashadtech</a></b><br>• <b>Bot: <a href="https://t.me/Rashadtech_bot" target="_blank">@Rashadtech_bot</a></b>',
+    quick:[
+      {label:'Buy subscription',q:'How do I buy a subscription?'},
+      {label:'Telegram delivery',q:'I did not receive credentials on Telegram'},
+      {label:'My subscriptions',q:'Where are my subscriptions?'},
+      {label:'Sign-in code',q:'I need a Netflix sign-in code'},
+      {label:'Watch on TV',q:'How to watch on TV?'},
+      {label:'Top up wallet',q:'How do I top up my wallet?'},
+      {label:'Sub-customers',q:'How do sub-customers work?'},
+      {label:'Shahid fix password',q:'Someone changed my Shahid password'},
+      {label:'Contact support',q:'How do I contact support?'}
+    ],
+    faq:[
+      {q:['buy','purchase','order','store','plan','subscribe','subscription'],
+       a:'Open <b>Store</b>, pick a product (Netflix, Shahid, Disney+, etc.), choose a plan, and tap Buy. Credentials appear in <b>My Subscriptions</b> and are sent to your Telegram if Chat ID is set in Profile.'},
+      {q:['telegram','chat id','tgid','bot','rashadtech_bot','not received','delivery','credentials'],
+       a:'1) Start <b><a href="https://t.me/Rashadtech_bot" target="_blank">@Rashadtech_bot</a></b> and send /start<br>2) Copy your Chat ID into <b>Profile → Telegram Chat ID → Save</b><br>3) In <b>My Subscriptions → Options → Resend to Telegram</b> if you already purchased.'},
+      {q:['subscription','subscriptions','my subs','where are my','credentials','email','my subscriptions'],
+       a:'Go to <b>My Subscriptions</b> in the menu. Tap <b>Options</b> on a card to copy link, resend to Telegram, renew, or report an issue.'},
+      {q:['sub-customer','sub customer','my customers','assign','for customer'],
+       a:'Use <b>My Customers</b> to add people you buy for. Tap <b>Add subscription</b> on a customer to assign a purchase. Those subs also appear in <b>My Subscriptions</b> with a <b>For:</b> badge.'},
+      {q:['top up','wallet','balance','credit','pay','topup','deposit'],
+       a:'Tap <b>Wallet → Top up</b>, choose an amount, then pay via WhatsApp <b><a href="https://wa.me/96179306701" target="_blank">+96179306701</a></b>. Support credits your wallet after payment is confirmed.'},
+      {q:['login','log in','netflix login','credentials','sign in to netflix'],
+       a:'Open your subscription link or <b>My Subscriptions</b>, copy email and password, then log in on the service app or website. For Netflix codes, use <b>Request Sign-in Code</b> on the subscription link.'},
+      {q:['tv','television','activate','smart tv','chromecast','setup'],
+       a:'On your subscription link page, use <b>Activate on TV</b>. Log into Netflix in your browser first, then enter the code shown on your TV screen.'},
+      {q:['sign in code','signin code','verification code','2fa','netflix code','login code'],
+       a:'Open your subscription link → <b>Request Sign-in Code</b> → wait a few seconds → tap <b>Refresh</b>. Use the newest code; they expire quickly.'},
+      {q:['code not working','wrong code','expired code','invalid code'],
+       a:'Wait for a fresh code on your subscription link and tap Refresh. Do not request too many times in a row. If it still fails, use <b>Report Issue</b> in subscription options.'},
+      {q:['renew','renewal','expire','expired','extend'],
+       a:'Top up your wallet, buy again from the Store, or use <b>Options → Request Renewal</b> on the subscription. You can also message <b><a href="https://t.me/Rashadtech" target="_blank">@Rashadtech</a></b>.'},
+      {q:['pending','waiting','processing'],
+       a:'Pending means your order is queued until stock is available. You will get credentials in <b>My Subscriptions</b> and on Telegram when ready. Balance is already deducted.'},
+      {q:['profile','change password','chat id','name','settings'],
+       a:'Open <b>Profile</b> from the menu to change name, Telegram Chat ID, password, or language (EN/AR). Always save after editing Chat ID.'},
+      {q:['pin','profile name','change pin'],
+       a:'On a subscription card, tap <b>Options</b> → change profile name or PIN (for Netflix profiles).'},
+      {q:['issue','problem','not working','broken','error','report','help','stuck'],
+       a:'Open the subscription → <b>Options → Report Issue</b>. Describe the problem (login, code, TV, expired, playback). Support will contact you.'},
+      {q:['someone changed my shahid password','changed my shahid password','shahid password','fix password','password changed','wrong password','shahid reset','reset link','cannot login shahid','shahid login','fix shahid','shahid fix'],
+       a:'On <b>Shahid VIP</b> subscriptions in <b>My Subscriptions</b> use:<br>• <b>Copy info</b> — copy email & password<br>• <b>Report</b> — report a problem<br>• <b>Fix password</b> — if someone changed the Shahid password:<br>1) Open <b>Fix password</b> and read the <b>original password</b> shown (you must use this exact password)<br>2) Copy your Shahid email → open Shahid reset from the wizard → request password reset<br>3) Wait 1–2 minutes → tap <b>GET RESET LINK</b> → open the link and set the password back to the <b>original</b> one<br>⚠️ Do not use a different password — your account may be suspended.'},
+      {q:['shahid','shahid vip','mbc shahid'],
+       a:'Buy <b>Shahid VIP</b> from the <b>Store</b>. Credentials appear in <b>My Subscriptions</b>. Each Shahid card has <b>Copy info</b>, <b>Report</b>, and <b>Fix password</b>. If login fails because the password was changed, use <b>Fix password</b> (ask the chatbot: "Shahid password changed").'},
+      {q:['disney','osn','spotify','anghami','product','service'],
+       a:'All products are in the <b>Store</b> tab. Pick the service, select a plan, and buy with wallet balance. Credentials appear in <b>My Subscriptions</b> and on Telegram if Chat ID is set.'},
+      {q:['arabic','language','عربي','english'],
+       a:'Open <b>Profile</b> and use the language toggle (EN / AR) at the top of the profile page.'},
+      {q:['contact','whatsapp','support','human','agent','talk'],
+       a:'• <b>WhatsApp: <a href="https://wa.me/96179306701" target="_blank">+96179306701</a></b><br>• <b>Telegram: <a href="https://t.me/Rashadtech" target="_blank">@Rashadtech</a></b><br>• <b>Bot: <a href="https://t.me/Rashadtech_bot" target="_blank">@Rashadtech_bot</a></b>'}
+    ]
+  },
+  ar:{
+    name:'دعم rashadtech',
+    status:'متصل — رد فوري',
+    placeholder:'اكتب رسالة...',
+    greeting:'مرحباً! أستطيع مساعدتك في الشراء، الاشتراكات، تيليغرام، المحفظة، نتفليكس، شاهد، إصلاح كلمة المرور، والعملاء الفرعيين. 👋',
+    sensitive:'أستطيع مساعدتك في أسئلة المتجر فقط (الشراء، الاشتراكات، المحفظة، تيليغرام). للإدارة الداخلية تواصل مع الدعم على واتساب أو تيليغرام.',
+    fallback:'لم أفهم سؤالك. جرّب موضوعاً سريعاً أدناه، أو تواصل معنا:<br>• <b>واتساب: <a href="https://wa.me/96179306701" target="_blank">+96179306701</a></b><br>• <b>تيليغرام: <a href="https://t.me/Rashadtech" target="_blank">@Rashadtech</a></b><br>• <b>البوت: <a href="https://t.me/Rashadtech_bot" target="_blank">@Rashadtech_bot</a></b>',
+    quick:[
+      {label:'شراء اشتراك',q:'كيف أشتري اشتراك؟'},
+      {label:'تيليغرام',q:'لم أستلم البيانات على تيليغرام'},
+      {label:'اشتراكاتي',q:'أين اشتراكاتي؟'},
+      {label:'كود الدخول',q:'أحتاج كود دخول نتفليكس'},
+      {label:'التلفزيون',q:'كيف أشاهد على التلفزيون؟'},
+      {label:'شحن المحفظة',q:'كيف أشحن المحفظة؟'},
+      {label:'عملاء فرعيون',q:'كيف يعمل العملاء الفرعيين؟'},
+      {label:'إصلاح شاهد',q:'تم تغيير كلمة مرور شاهد'},
+      {label:'الدعم',q:'كيف أتواصل مع الدعم؟'}
+    ],
+    faq:[
+      {q:['شراء','اشتري','اشتراك','متجر','خطة','buy','purchase'],
+       a:'افتح <b>المتجر</b>، اختر المنتج (نتفليكس، شاهد، ديزني+...)، ثم اضغط شراء. البيانات تظهر في <b>اشتراكاتي</b> وتُرسل لتيليغرام إذا أضفت Chat ID في الملف الشخصي.'},
+      {q:['تيليغرام','chat id','بوت','لم يصل','توصيل','بيانات','telegram'],
+       a:'1) ابدأ <b><a href="https://t.me/Rashadtech_bot" target="_blank">@Rashadtech_bot</a></b> وأرسل /start<br>2) انسخ Chat ID في <b>الملف الشخصي → Telegram Chat ID → حفظ</b><br>3) من <b>اشتراكاتي → خيارات → إعادة الإرسال لتيليغرام</b>.'},
+      {q:['اشتراكاتي','اشتراك','أين','بيانات','email','أين اشتراكاتي'],
+       a:'اذهب إلى <b>اشتراكاتي</b> من القائمة. اضغط <b>خيارات</b> لنسخ الرابط أو إعادة الإرسال لتيليغرام أو طلب تجديد.'},
+      {q:['عميل فرعي','عملاء','sub-customer','تعيين'],
+       a:'استخدم <b>عملائي</b> لإضافة من تشتري لهم. اضغط <b>إضافة اشتراك</b> على العميل. تظهر أيضاً في <b>اشتراكاتي</b> مع علامة <b>لـ:</b>.'},
+      {q:['شحن','محفظة','رصيد','top up','wallet'],
+       a:'<b>المحفظة → شحن</b>، اختر المبلغ، ثم ادفع عبر واتساب <b><a href="https://wa.me/96179306701" target="_blank">+96179306701</a></b>. يُضاف الرصيد بعد التأكيد.'},
+      {q:['دخول','login','نتفليكس','credentials'],
+       a:'افتح رابط الاشتراك أو <b>اشتراكاتي</b>، انسخ البريد وكلمة المرور، ثم سجّل الدخول. لأكواد نتفليكس استخدم <b>طلب كود الدخول</b>.'},
+      {q:['تلفزيون','tv','تفعيل','smart tv'],
+       a:'في صفحة رابط الاشتراك استخدم <b>تفعيل على التلفزيون</b>. سجّل الدخول لنتفليكس أولاً ثم أدخل الكود من الشاشة.'},
+      {q:['كود','sign in','verification','دخول'],
+       a:'رابط الاشتراك → <b>طلب كود الدخول</b> → انتظر → <b>تحديث</b>. استخدم أحدث كود.'},
+      {q:['تجديد','renew','منتهي','expired'],
+       a:'اشحن المحفظة واشترِ من المتجر، أو <b>خيارات → طلب تجديد</b>، أو راسل <b><a href="https://t.me/Rashadtech" target="_blank">@Rashadtech</a></b>.'},
+      {q:['معلق','pending','انتظار'],
+       a:'المعلق يعني الطلب في الانتظار حتى يتوفر المخزون. ستصلك البيانات في <b>اشتراكاتي</b> وتيليغرام عند الجاهزية.'},
+      {q:['ملف شخصي','profile','كلمة المرور','لغة','عربي'],
+       a:'<b>الملف الشخصي</b> لتغيير الاسم وChat ID وكلمة المرور واللغة (EN/AR).'},
+      {q:['مشكلة','issue','report','لا يعمل','عطل'],
+       a:'الاشتراك → <b>خيارات → الإبلاغ عن مشكلة</b>. صف المشكلة وسيتواصل معك الدعم.'},
+      {q:['تم تغيير كلمة مرور شاهد','تغيير كلمة مرور شاهد','كلمة مرور شاهد','إصلاح كلمة المرور','fix password','شاهد لا يعمل','reset link','رابط تعيين','لا أستطيع الدخول شاهد','إصلاح شاهد'],
+       a:'في <b>اشتراكاتي</b> على اشتراك <b>شاهد VIP</b>:<br>• <b>نسخ المعلومات</b> — نسخ البريد وكلمة المرور<br>• <b>الإبلاغ</b> — الإبلاغ عن مشكلة<br>• <b>إصلاح كلمة المرور</b> — إذا غيّر أحد كلمة مرور شاهد:<br>1) افتح <b>إصلاح كلمة المرور</b> وانسخ <b>كلمة المرور الأصلية</b> المعروضة (يجب استخدامها بالضبط)<br>2) انسخ البريد → افتح صفحة إعادة التعيين من المعالج → اطلب إعادة تعيين من شاهد<br>3) انتظر 1–2 دقيقة → اضغط <b>GET RESET LINK</b> → افتح الرابط وضع نفس كلمة المرور الأصلية<br>⚠️ لا تستخدم كلمة مرور أخرى — قد يُوقَف الحساب.'},
+      {q:['شاهد','شاهد vip','shahid','mbc'],
+       a:'اشترِ <b>شاهد VIP</b> من <b>المتجر</b>. البيانات في <b>اشتراكاتي</b>. كل بطاقة شاهد فيها <b>نسخ المعلومات</b>، <b>الإبلاغ</b>، و<b>إصلاح كلمة المرور</b>. إذا فشل الدخول بسبب تغيير كلمة المرور، استخدم <b>إصلاح كلمة المرور</b>.'},
+      {q:['ديزني','سبوتيفاي','منتج','disney','osn'],
+       a:'كل المنتجات في <b>المتجر</b>. اختر الخدمة والخطة واشترِ من رصيد المحفظة. البيانات في <b>اشتراكاتي</b> وتيليغرام إذا أضفت Chat ID.'},
+      {q:['دعم','واتساب','تواصل','contact','whatsapp'],
+       a:'• <b>واتساب: <a href="https://wa.me/96179306701" target="_blank">+96179306701</a></b><br>• <b>تيليغرام: <a href="https://t.me/Rashadtech" target="_blank">@Rashadtech</a></b><br>• <b>البوت: <a href="https://t.me/Rashadtech_bot" target="_blank">@Rashadtech_bot</a></b>'}
+    ]
+  }
+};
 
 let rtOpen=false;
+let rtChatInited=false;
+
+function rtChatLang(){return(typeof currentLang!=='undefined'&&currentLang==='ar')?'ar':'en';}
+function rtChatPack(){return RT_CHAT_I18N[rtChatLang()]||RT_CHAT_I18N.en;}
+
+function rtIsSensitiveQuery(q){
+  const lower=String(q||'').toLowerCase();
+  return/\b(admin|stock|database|server|api|backend|jsonbin|render|bypass|hack|token|secret|imap|inbox)\b/.test(lower)
+    ||/admin panel|admin password|admin access|how to access admin|user list|all customers|wallet of|internal|inbox password|stock password|other customer|all passwords/.test(lower);
+}
+
+function rtSyncChatUI(){
+  const p=rtChatPack();
+  const nameEl=document.getElementById('rt-chat-hdr-name');
+  const statusEl=document.getElementById('rt-chat-hdr-status');
+  const inp=document.getElementById('rt-chat-inp');
+  const win=document.getElementById('rt-chat-win');
+  if(nameEl)nameEl.textContent=p.name;
+  if(statusEl)statusEl.textContent=p.status;
+  if(inp){inp.placeholder=p.placeholder;inp.dir=rtChatLang()==='ar'?'rtl':'ltr';}
+  if(win)win.dir=rtChatLang()==='ar'?'rtl':'ltr';
+  rtRenderQuickReplies();
+  const adminActive=document.getElementById('page-admin')?.classList.contains('active');
+  const bubble=document.getElementById('rt-chat-bubble');
+  if(bubble)bubble.style.display=adminActive?'none':'flex';
+}
+
+function rtRenderQuickReplies(){
+  const el=document.getElementById('rt-qrs');
+  if(!el)return;
+  const p=rtChatPack();
+  el.innerHTML=p.quick.map(q=>`<button type="button" class="rt-qr" ${jsOnClick('rtAsk',q.q)}>${esc(q.label)}</button>`).join('');
+  el.style.display='flex';
+}
+
+function rtInitChat(){
+  if(rtChatInited)return;
+  rtChatInited=true;
+  rtSyncChatUI();
+  const msgs=document.getElementById('rt-msgs');
+  if(msgs&&!msgs.children.length)rtAddMsg(rtChatPack().greeting,'bot');
+}
 
 function rtToggleChat(){
+  if(isAdmin&&document.getElementById('page-admin')?.classList.contains('active'))return;
+  rtInitChat();
   rtOpen=!rtOpen;
   const win=document.getElementById('rt-chat-win');
-  if(rtOpen){win.classList.add('open');document.getElementById('rt-chat-inp').focus();
+  if(rtOpen){
+    win.classList.add('open');
+    document.getElementById('rt-chat-inp').focus();
     document.getElementById('rt-chat-badge').classList.remove('show');
-  }else{win.classList.remove('open');}
+  }else{
+    win.classList.remove('open');
+  }
 }
 
 function rtAsk(q){
-  document.getElementById('rt-qrs').style.display='none';
-  rtAddMsg(q,'user');
-  setTimeout(()=>rtRespond(q),600);
+  rtInitChat();
+  rtRespondFlow(q,true);
 }
 
 function rtSend(){
@@ -4296,42 +5356,71 @@ function rtSend(){
   const q=(inp.value||'').trim();
   if(!q)return;
   inp.value='';
-  document.getElementById('rt-qrs').style.display='none';
-  rtAddMsg(q,'user');
-  setTimeout(()=>rtRespond(q),600);
+  rtRespondFlow(q,true);
+}
+
+function rtRespondFlow(q,hideQuick){
+  if(hideQuick){
+    const qrs=document.getElementById('rt-qrs');
+    if(qrs)qrs.style.display='none';
+  }
+  rtAddMsg(esc(q),'user');
+  setTimeout(()=>rtRespond(q),500);
 }
 
 function rtAddMsg(text,role){
   const msgs=document.getElementById('rt-msgs');
+  if(!msgs)return;
   const div=document.createElement('div');
   div.className='rt-msg '+role;
   div.innerHTML=text;
   msgs.appendChild(div);
   msgs.scrollTop=msgs.scrollHeight;
-  if(!rtOpen){document.getElementById('rt-chat-badge').classList.add('show');}
+  if(!rtOpen){const b=document.getElementById('rt-chat-badge');if(b)b.classList.add('show');}
+}
+
+function rtMatchFaq(lower,faq){
+  let best=null,bestScore=0;
+  faq.forEach(f=>{
+    let score=0;
+    f.q.forEach(kw=>{
+      const k=String(kw||'').toLowerCase().trim();
+      if(!k||!lower.includes(k))return;
+      const words=k.split(/\s+/).filter(Boolean).length;
+      score+=k.length+(words>1?k.length:0);
+    });
+    if(score>bestScore){bestScore=score;best=f;}
+  });
+  return bestScore>0?best:null;
 }
 
 function rtRespond(q){
   const typing=document.getElementById('rt-typing');
-  typing.classList.add('show');
   const msgs=document.getElementById('rt-msgs');
+  typing.classList.add('show');
   msgs.scrollTop=msgs.scrollHeight;
+  const p=rtChatPack();
   setTimeout(()=>{
     typing.classList.remove('show');
-    const lower=q.toLowerCase();
-    let best=null,bestScore=0;
-    RT_FAQ.forEach(f=>{
-      let score=0;
-      f.q.forEach(kw=>{if(lower.includes(kw))score++;});
-      if(score>bestScore){bestScore=score;best=f;}
-    });
-    if(best&&bestScore>0){
-      rtAddMsg(best.a,'bot');
+    const lower=String(q||'').toLowerCase();
+    if(rtIsSensitiveQuery(q)){
+      rtAddMsg(p.sensitive,'bot');
     }else{
-      rtAddMsg(`I'm not sure about that one. Please contact us directly on <b>WhatsApp: <a href="https://wa.me/96179306701" target="_blank">+96179306701</a></b> or <b>Telegram: <a href="https://t.me/Rashadtech" target="_blank">@Rashadtech</a></b> and we'll help you right away! 😊`,'bot');
+      const match=rtMatchFaq(lower,p.faq);
+      rtAddMsg(match?match.a:p.fallback,'bot');
     }
-  },900+Math.random()*400);
+    rtRenderQuickReplies();
+  },700+Math.random()*350);
 }
+
+const _rtSetLang=typeof setLang==='function'?setLang:null;
+if(_rtSetLang){
+  setLang=function(lang,skipPersist){
+    _rtSetLang(lang,skipPersist);
+    rtSyncChatUI();
+  };
+}
+document.addEventListener('DOMContentLoaded',()=>{rtSyncChatUI();});
 </script>
 <script src="features.js"></script>
 

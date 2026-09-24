@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1080, height=1920">
+<title>Netflix Sign-in Guide</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    width: 1080px; height: 1920px; overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0a0a0a; color: #fff;
+  }
+  .slide { display: none; width: 1080px; height: 1920px; padding: 80px 72px; flex-direction: column; }
+  .slide.active { display: flex; }
+  .brand { font-size: 28px; font-weight: 700; color: #E50914; letter-spacing: 1px; margin-bottom: 12px; }
+  .step-num {
+    width: 72px; height: 72px; border-radius: 50%; background: #E50914;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 36px; font-weight: 800; margin-bottom: 36px;
+  }
+  h1 { font-size: 64px; line-height: 1.15; font-weight: 800; margin-bottom: 28px; }
+  h2 { font-size: 52px; line-height: 1.2; font-weight: 700; margin-bottom: 24px; }
+  p { font-size: 36px; line-height: 1.55; color: #b3b3b3; margin-bottom: 20px; }
+  .highlight { color: #fff; font-weight: 600; }
+  .card {
+    background: #1a1a1a; border: 2px solid #333; border-radius: 24px;
+    padding: 40px; margin-top: 24px;
+  }
+  .card-row { display: flex; justify-content: space-between; font-size: 32px; margin-bottom: 20px; }
+  .card-label { color: #888; }
+  .card-value { font-family: monospace; font-weight: 700; color: #fff; }
+  .btn-mock {
+    background: #E50914; color: #fff; border-radius: 12px;
+    padding: 24px; text-align: center; font-size: 34px; font-weight: 700; margin-top: 20px;
+  }
+  .icon { font-size: 120px; margin-bottom: 40px; line-height: 1; }
+  .footer { margin-top: auto; font-size: 28px; color: #666; text-align: center; padding-top: 40px; }
+  .tag { display: inline-block; background: #E50914; color: #fff; padding: 8px 20px; border-radius: 8px; font-size: 26px; font-weight: 700; margin-bottom: 24px; }
+  .ar { direction: rtl; text-align: right; font-family: 'Noto Sans Arabic', -apple-system, sans-serif; }
+  .dual p { font-size: 30px; }
+  .dual .en-line { color: #b3b3b3; margin-bottom: 8px; }
+  .dual .ar-line { color: #fff; font-family: 'Noto Sans Arabic', sans-serif; direction: rtl; }
+</style>
+</head>
+<body>
+
+<div class="slide" id="slide-0">
+  <div class="brand">rashadtech.tv</div>
+  <div class="icon">🍿</div>
+  <h1 id="t0-title">How to sign in to Netflix</h1>
+  <p id="t0-sub">After your purchase — quick guide for phone, tablet &amp; TV</p>
+  <div class="footer">RashadTech · rashadtech.tv</div>
+</div>
+
+<div class="slide" id="slide-1">
+  <div class="step-num">1</div>
+  <h2 id="t1-title">Open your subscription link</h2>
+  <p id="t1-body">After purchase you receive a link on <span class="highlight">Telegram</span> or <span class="highlight">WhatsApp</span>. Tap it — it opens your private page on rashadtech.tv.</p>
+  <div class="card">
+    <div style="font-size:28px;color:#888;margin-bottom:16px">Example link</div>
+    <div style="font-size:30px;font-family:monospace;color:#4ade80;word-break:break-all">rashadtech.tv?t=••••••</div>
+  </div>
+  <div class="footer">rashadtech.tv</div>
+</div>
+
+<div class="slide" id="slide-2">
+  <div class="step-num">2</div>
+  <h2 id="t2-title">Copy email &amp; password</h2>
+  <p id="t2-body">On the subscription page, tap <span class="highlight">Email</span> or <span class="highlight">Password</span> to copy. Tap the 👁 icon to reveal the password.</p>
+  <div class="card">
+    <div class="card-row"><span class="card-label">Email</span><span class="card-value">you@email.com</span></div>
+    <div class="card-row"><span class="card-label">Password</span><span class="card-value">••••••••</span></div>
+    <div class="card-row"><span class="card-label">Profile PIN</span><span class="card-value">1234</span></div>
+  </div>
+  <p style="font-size:28px;margin-top:20px">PIN appears on <span class="highlight">1 User</span> plans only.</p>
+  <div class="footer">rashadtech.tv</div>
+</div>
+
+<div class="slide" id="slide-3">
+  <div class="step-num">3</div>
+  <h2 id="t3-title">Log in to Netflix</h2>
+  <p id="t3-body">Open the <span class="highlight">Netflix app</span> or go to <span class="highlight">netflix.com/login</span>. Paste the email and password you copied.</p>
+  <div class="card">
+    <div class="btn-mock" style="background:#333">Sign In to Netflix</div>
+    <div style="margin-top:24px;font-size:30px;color:#888">Email → Password → Sign In</div>
+  </div>
+  <p style="font-size:28px;margin-top:24px">For <span class="highlight">1 User</span> plans: choose <span class="highlight">your profile name</span> and enter your PIN.</p>
+  <div class="footer">rashadtech.tv</div>
+</div>
+
+<div class="slide" id="slide-4">
+  <div class="step-num">4</div>
+  <div class="tag">IF NETFLIX ASKS FOR A CODE</div>
+  <h2 id="t4-title">Request sign-in code</h2>
+  <p id="t4-body">Go back to your <span class="highlight">subscription link</span>. Tap <span class="highlight">Request Sign-in Code</span>, wait a few seconds, then tap <span class="highlight">Refresh</span>.</p>
+  <div class="card">
+    <div class="btn-mock">📲 Request Sign-in Code</div>
+    <div style="font-size:48px;font-family:monospace;letter-spacing:12px;text-align:center;margin:28px 0;font-weight:800">4 8 2 9</div>
+    <div class="btn-mock" style="background:#b20710">🔄 Refresh</div>
+  </div>
+  <p style="font-size:28px">Enter the code in Netflix. Codes expire quickly — use the newest one.</p>
+  <div class="footer">rashadtech.tv</div>
+</div>
+
+<div class="slide" id="slide-5">
+  <div class="step-num">5</div>
+  <div class="tag">WATCH ON TV</div>
+  <h2 id="t5-title">Activate on your TV</h2>
+  <p id="t5-body"><b>Step A:</b> Log in to Netflix on your phone or computer first.<br><b>Step B:</b> Open Netflix on TV — it shows a code.<br><b>Step C:</b> On your subscription link, enter the code under <span class="highlight">Activate on TV</span>.</p>
+  <div class="card">
+    <div style="font-size:36px;text-align:center;font-family:monospace;letter-spacing:8px;font-weight:800;padding:20px;border:2px dashed #444;border-radius:12px">A B 1 2 C D</div>
+    <div class="btn-mock">📺 Activate</div>
+  </div>
+  <div class="footer">rashadtech.tv</div>
+</div>
+
+<div class="slide" id="slide-6">
+  <div class="step-num">✓</div>
+  <h2 id="t6-title">You're all set!</h2>
+  <p id="t6-body">Enjoy Netflix. Keep your subscription link — you can open it anytime for credentials, codes, and TV activation.</p>
+  <div class="card dual">
+    <p class="en-line">❌ Don't change the Netflix password</p>
+    <p class="ar-line">❌ لا تغيّر كلمة مرور نتفليكس</p>
+    <p class="en-line" style="margin-top:20px">❌ Don't add your own phone number for 2FA</p>
+    <p class="ar-line">❌ لا تضف رقم هاتفك للتحقق بخطوتين</p>
+    <p class="en-line" style="margin-top:20px">✅ Use only your assigned profile (1 User plans)</p>
+    <p class="ar-line">✅ استخدم البروفايل المخصص لك فقط</p>
+  </div>
+  <div class="footer">rashadtech.tv</div>
+</div>
+
+<div class="slide" id="slide-7">
+  <div class="brand">rashadtech.tv</div>
+  <div class="icon">💬</div>
+  <h2 id="t7-title">Need help?</h2>
+  <p id="t7-body">Contact us anytime:</p>
+  <div class="card" style="font-size:34px;line-height:2">
+    <div>📱 WhatsApp: <span class="highlight">+961 79 306 701</span></div>
+    <div>✈️ Telegram: <span class="highlight">@Rashadtech</span></div>
+    <div>🤖 Bot: <span class="highlight">@Rashadtech_bot</span></div>
+    <div>🌐 <span class="highlight">rashadtech.tv</span></div>
+  </div>
+  <div class="footer">Thank you for choosing RashadTech 🌟</div>
+</div>
+
+<script>
+const EN = {
+  't0-title':'How to sign in to Netflix',
+  't0-sub':'After your purchase — quick guide for phone, tablet & TV',
+  't1-title':'Open your subscription link',
+  't1-body':'After purchase you receive a link on Telegram or WhatsApp. Tap it — it opens your private page on rashadtech.tv.',
+  't2-title':'Copy email & password',
+  't2-body':'On the subscription page, tap Email or Password to copy. Tap the 👁 icon to reveal the password.',
+  't3-title':'Log in to Netflix',
+  't3-body':'Open the Netflix app or go to netflix.com/login. Paste the email and password you copied.',
+  't4-title':'Request sign-in code',
+  't4-body':'Go back to your subscription link. Tap Request Sign-in Code, wait a few seconds, then tap Refresh.',
+  't5-title':'Activate on your TV',
+  't5-body':'Step A: Log in to Netflix on your phone or computer first. Step B: Open Netflix on TV — it shows a code. Step C: On your subscription link, enter the code under Activate on TV.',
+  't6-title':"You're all set!",
+  't6-body':'Enjoy Netflix. Keep your subscription link — you can open it anytime for credentials, codes, and TV activation.',
+  't7-title':'Need help?',
+  't7-body':'Contact us anytime:'
+};
+const AR = {
+  't0-title':'كيف تسجّل دخول نتفليكس',
+  't0-sub':'بعد الشراء — دليل سريع للموبايل والتابلت والتلفزيون',
+  't1-title':'افتح رابط الاشتراك',
+  't1-body':'بعد الشراء تستلم رابط على تيليغرام أو واتساب. اضغط عليه — يفتح صفحتك الخاصة على rashadtech.tv.',
+  't2-title':'انسخ الإيميل وكلمة المرور',
+  't2-body':'في صفحة الاشتراك، اضغط على الإيميل أو كلمة المرور للنسخ. اضغط 👁 لإظهار كلمة المرور.',
+  't3-title':'سجّل دخول نتفليكس',
+  't3-body':'افتح تطبيق نتفليكس أو netflix.com/login. الصق الإيميل وكلمة المرور.',
+  't4-title':'اطلب رمز تسجيل الدخول',
+  't4-body':'ارجع لرابط الاشتراك. اضغط Request Sign-in Code، انتظر ثوانٍ، ثم اضغط Refresh.',
+  't5-title':'فعّل على التلفزيون',
+  't5-body':'أولاً: سجّل دخول نتفليكس من الموبايل. ثانياً: افتح نتفليكس على التلفزيون — يظهر كود. ثالثاً: في رابط الاشتراك، أدخل الكود تحت Activate on TV.',
+  't6-title':'جاهز للمشاهدة!',
+  't6-body':'استمتع بنتفليكس. احفظ رابط الاشتراك — تقدر تفتحه أي وقت للبيانات والأكواد وتفعيل التلفزيون.',
+  't7-title':'تحتاج مساعدة؟',
+  't7-body':'تواصل معنا:'
+};
+function applyLang(lang) {
+  const t = lang === 'ar' ? AR : EN;
+  Object.keys(t).forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = t[id];
+  });
+  document.querySelectorAll('.slide').forEach(s => {
+    s.classList.toggle('ar', lang === 'ar');
+  });
+}
+function showSlide(n) {
+  document.querySelectorAll('.slide').forEach((s, i) => s.classList.toggle('active', i === n));
+}
+const hash = location.hash.replace('#', '');
+const parts = hash.split('-');
+const slideNum = parseInt(parts[0] || '0', 10);
+const lang = parts[1] === 'ar' ? 'ar' : 'en';
+applyLang(lang);
+showSlide(slideNum);
+</script>
+</body>
+</html>

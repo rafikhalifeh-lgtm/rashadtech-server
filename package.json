@@ -4,19 +4,19 @@
   "description": "RashadTech TV streaming store backend",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
-  },
-  "devDependencies": {
-    "netlify-cli": "^26.1.0"
+    "build": "node --check server.js && node --check smsRoutes.js && node --check strong8kRoutes.js && node --check strong8k.js && node --check phoneCountries.js && node --check disneyCodeExtract.js",
+    "start": "node server.js",
+    "test": "node tests/osn-extract.test.js && node tests/disney-extract.test.js && node tests/signin-code-store.test.js && node tests/price-catalog.test.js && node tests/sms-catalog.test.js && node tests/strong8k.test.js && node tests/phoneCountries.test.js && node tests/index-html-syntax.test.js && node tests/smoke-api.test.js"
   },
   "dependencies": {
     "@netlify/blobs": "^10.7.9",
+    "compression": "^1.8.1",
     "cors": "^2.8.5",
     "express": "^4.18.2",
     "imapflow": "^1.3.6",
     "mailparser": "^3.9.9"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.0.0"
   }
 }

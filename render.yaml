@@ -1,0 +1,10 @@
+# Optional Render Blueprint — cron only. Configure the web service manually in the dashboard:
+#   Build: npm install && npm run build
+#   Start: npm start
+#   Health Check Path: /ping
+services:
+  - type: cron
+    name: rashadtech-keep-awake
+    schedule: "*/3 * * * *"
+    buildCommand: "echo keep-awake"
+    startCommand: "curl -fsS https://rashadtech-server.onrender.com/ping || true"

@@ -38,39 +38,13 @@
   }
 
   window.placeFulfilledOrder=function(u,po,acc){
-    const order={id:po.id,product:po.product,short:po.short,color:po.color,tc:po.tc,productId:po.productId,plan:po.plan,price:po.price,email:acc.email,pass:acc.pass,date:po.date,expiryDate:acc.expiryDate||null,profileName:po.profileName||'',profilePin:acc.profilePin||'',accKey:acc.accKey||'',mainEmail:acc.mainEmail||'',...(acc.extra?{extra:acc.extra}:{})};
+    const order={id:po.id,product:po.product,short:po.short,color:po.color,tc:po.tc,productId:po.productId,plan:po.plan,price:po.price,email:acc.email,pass:acc.pass,date:po.date,expiryDate:acc.expiryDate||null,profileName:po.profileName||acc.profileName||acc.extra||'',profilePin:acc.profilePin||'',accKey:acc.accKey||'',mainEmail:acc.mainEmail||''};
     if(po.assignCustId!=null&&po.assignCustId!==undefined){
       const c=(u.myCustomers||[]).find(x=>x.id===po.assignCustId);
       if(c){order.profileName=order.profileName||c.fname;(c.subs=c.subs||[]).unshift(order);return order;}
     }
     (u.orders=u.orders||[]).unshift(order);return order;
   };
-
-  const _autoFulfill=window.autoFulfillPending;
-  if(typeof _autoFulfill==='function'){
-    window.autoFulfillPending=async function(skey){
-      let pending=[];try{if(_jbCache&&_jbCache.pending)pending=_jbCache.pending;else{_jbCache=await jbRead();if(_jbCache.pending)pending=_jbCache.pending;}}catch(e){}
-      const waiting=pending.filter(po=>po.skey===skey);if(!waiting.length)return;
-      let fulfilled=0;
-      for(const po of [...waiting]){
-        const acc=getNextAcc(skey);if(!acc)break;
-        const idx=getAccounts(skey).indexOf(acc);markUsed(skey,idx);
-        const u=users.find(x=>x.email===po.userEmail);
-        if(u)placeFulfilledOrder(u,po,acc);
-        pending.splice(pending.findIndex(x=>x.id===po.id),1);fulfilled++;
-        const tgId=u?.tgChatId||po.userTgChatId||'';
-        if(tgId){
-          const linkData={id:po.id,product:po.product,short:po.short,color:po.color,tc:po.tc,productId:po.productId,plan:po.plan,email:acc.email,pass:acc.pass,expiryDate:acc.expiryDate||'',profileName:po.profileName||'',profilePin:acc.profilePin||'',accKey:acc.accKey||'',mainEmail:acc.mainEmail||'',codeEmail:acc.email,inboxEmail:acc.mainEmail||acc.email};
-          const subLink=await createSubLinkUrl(linkData);
-          let msg=`✅ <b>Your ${po.product} is ready!</b>\n\n📋 ${po.plan}\n📧 <code>${acc.email}</code>\n🔑 <code>${acc.pass}</code>`;
-          if(acc.profilePin)msg+=`\n🔢 PIN: <code>${acc.profilePin}</code>`;
-          msg+=`\n\n🔗 ${subLink}`;
-          await sendTelegramToUser(tgId,msg);
-        }
-      }
-      if(fulfilled>0){try{if(!_jbCache)_jbCache=await jbRead();_jbCache.pending=pending;await jbWrite(_jbCache);}catch(e){}await saveData();showToast(`✓ Auto-fulfilled ${fulfilled} pending`);renderAdminPending();}
-    };
-  }
 
   const _manualFulfill=window.manualFulfillPending;
   window.manualFulfillPending=async function(i){
@@ -139,11 +113,12 @@
   async function loadAdminEnhancements(){
     if(!isAdmin)return;
     try{
-      const [analytics, aliases, activity, settings]=await Promise.all([
+      const [analytics, aliases, activity, settings, priceLog]=await Promise.all([
         api('/admin/analytics').catch(()=>({analytics:{}})),
         api('/admin/netflix-aliases').catch(()=>({aliases:[]})),
         api('/admin/activity').catch(()=>({activity:[]})),
-        api('/site-settings').catch(()=>({settings:{}}))
+        api('/site-settings').catch(()=>({settings:{}})),
+        api('/admin/price-change-log').catch(()=>({log:[]}))
       ]);
       const dash=document.getElementById('dashboard-analytics');
       if(dash&&analytics.analytics){
@@ -161,7 +136,13 @@
       }
       const actEl=document.getElementById('admin-activity-server');
       if(actEl){
-        actEl.innerHTML=(activity.activity||[]).slice(0,20).map(x=>`<div style="font-size:11px;padding:6px 0;border-bottom:1px solid var(--border)"><b>${esc(x.action)}</b> — ${esc(x.details||'')} <span style="color:var(--text3)">${esc(x.time||'')}</span></div>`).join('')||'<div style="color:var(--text3)">No activity yet.</div>';
+        const priceRows=(priceLog.log||[]).slice(0,5).map(entry=>{
+          const when=entry.ts?new Date(entry.ts).toLocaleString():'';
+          const lines=(entry.changes||[]).slice(0,4).map(c=>`${esc(c.key)}: ${c.old??'—'} → ${c.new??'—'}`).join('<br>');
+          return `<div style="font-size:11px;padding:8px 0;border-bottom:1px solid var(--border)"><b>Price change</b> · ${esc(entry.actor||'admin')} · <span style="color:var(--text3)">${esc(when)}</span><div style="color:var(--text2);margin-top:4px">${lines||'Updated'}</div></div>`;
+        }).join('');
+        const activityRows=(activity.activity||[]).slice(0,15).map(x=>`<div style="font-size:11px;padding:6px 0;border-bottom:1px solid var(--border)"><b>${esc(x.action)}</b> — ${esc(x.details||'')} <span style="color:var(--text3)">${esc(x.time||'')}</span></div>`).join('');
+        actEl.innerHTML=(priceRows+activityRows)||'<div style="color:var(--text3)">No activity yet.</div>';
       }
       const promoInp=document.getElementById('admin-promo-banner');
       const refInp=document.getElementById('admin-referral-code');
@@ -169,8 +150,169 @@
       if(promoInp)promoInp.value=settings.settings?.promoBanner||'';
       if(refInp)refInp.value=settings.settings?.referralCode||'';
       if(refDisc)refDisc.value=settings.settings?.referralDiscount||'';
+      const marketingTpl=document.getElementById('admin-emailjs-marketing-template');
+      if(marketingTpl)marketingTpl.value=settings.settings?.emailjsMarketingTemplateId||'';
+      rtLoadMarketingEmailStatus();
     }catch(e){console.warn('admin enhancements',e);}
   }
+
+  window.rtCopyText=async function(text,label){
+    try{
+      await navigator.clipboard.writeText(String(text||''));
+      showToast('✓ Copied '+(label||'value'));
+    }catch(e){
+      showToast('Could not copy — select and copy manually');
+    }
+  };
+
+  function rtRenderDnsRecords(records){
+    const box=document.getElementById('dashboard-email-dns-records');
+    if(!box||!Array.isArray(records)||!records.length){if(box)box.style.display='none';return;}
+    box.style.display='block';
+    box.innerHTML=`<div style="font-weight:600;color:var(--text2);margin-bottom:8px">📋 DNS records for rashadtech.tv</div>
+      <div style="font-size:10px;color:var(--text3);margin-bottom:8px">Add these in your domain DNS. Skip inbound-smtp (receiving only).</div>
+      ${records.map((row,i)=>`<div style="border:1px solid var(--border);border-radius:8px;padding:8px;margin-bottom:8px;background:var(--bg2)">
+        <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:4px">
+          <b>${esc(row.type)} · ${esc(row.name)}</b>
+          ${row.priority?`<span style="font-size:10px;color:var(--text3)">priority ${esc(row.priority)}</span>`:''}
+        </div>
+        <div style="font-family:var(--mono);font-size:10px;word-break:break-all;line-height:1.45;color:var(--text2)">${esc(row.value)}</div>
+        ${row.note?`<div style="font-size:10px;color:var(--text3);margin-top:4px">${esc(row.note)}</div>`:''}
+        <button type="button" data-v="${encodeURIComponent(row.value)}" onclick="rtCopyText(decodeURIComponent(this.dataset.v||''),'${esc(row.name).replace(/'/g,'')}')" style="margin-top:6px;padding:4px 8px;font-size:10px;border:1px solid var(--border);border-radius:6px;background:var(--bg3);cursor:pointer">Copy value</button>
+      </div>`).join('')}`;
+  }
+
+  window.rtCheckResendDomain=async function(){
+    const el=document.getElementById('dashboard-resend-domain-status');
+    try{
+      if(el){el.style.display='block';el.style.color='var(--text3)';el.textContent='Checking Resend domain…';}
+      const j=await api('/admin/resend-domain-status');
+      if(!el)return;
+      el.style.display='block';
+      if(j.verified){
+        el.style.color='var(--green)';
+        el.innerHTML=`✅ <b>${esc(j.domain)}</b> is verified on Resend (${esc(j.region||'eu-west-1')}). Paste API key below if not saved yet, then Send test.`;
+      }else if(j.status==='no_api_key'){
+        el.style.color='var(--orange)';
+        el.innerHTML=`⚠️ Add DNS records below first, then save your Resend API key to check verification automatically.`;
+      }else if(j.status==='not_found'){
+        el.style.color='var(--orange)';
+        el.innerHTML=`⚠️ ${esc(j.message||'Domain not found in Resend')}`;
+      }else{
+        el.style.color='var(--orange)';
+        el.innerHTML=`⏳ ${esc(j.message||'DNS pending')} · Status: <b>${esc(j.status||'pending')}</b>`;
+      }
+    }catch(e){
+      if(el){el.style.display='block';el.style.color='var(--red)';el.textContent=e.message||'Could not check domain';}
+    }
+  };
+
+  window.rtLoadMarketingEmailStatus=async function(){
+    const el=document.getElementById('dashboard-marketing-email-status');
+    const tipsEl=document.getElementById('dashboard-email-inbox-tips');
+    const dnsEl=document.getElementById('dashboard-email-dns-steps');
+    if(!el||!isAdmin)return;
+    try{
+      const j=await api('/admin/marketing-email-status');
+      const provider=j.provider==='resend'?'Resend (inbox delivery)':j.provider==='emailjs'?'EmailJS':'not configured';
+      if(j.configured){
+        el.style.color='var(--green)';
+        el.innerHTML=`✅ Email ready · <b>${esc(j.fromName||'RashadTech')}</b> &lt;${esc(j.fromAddress||'noreply@rashadtech.tv')}&gt; · ${esc(provider)}${j.serverEmailConfigured?' · server send':' · browser fallback'}`;
+      }else{
+        el.style.color='var(--orange)';
+        el.innerHTML=`⚠️ Step 1: Add DNS records below · Step 2: Save Resend API key · Step 3: Send test`;
+      }
+      rtRenderDnsRecords(j.dnsRecords||[]);
+      const fromInp=document.getElementById('admin-email-from-address');
+      const replyInp=document.getElementById('admin-email-reply-to');
+      const keyHint=document.getElementById('admin-resend-key-hint');
+      if(fromInp)fromInp.value=j.fromAddress||'noreply@rashadtech.tv';
+      if(replyInp)replyInp.value=j.replyTo||'support@rashadtech.tv';
+      const retailInp=document.getElementById('admin-retail-support-email');
+      const resellerInp=document.getElementById('admin-reseller-support-email');
+      if(retailInp)retailInp.value=j.retailSupportEmail||'';
+      if(resellerInp)resellerInp.value=j.resellerSupportEmail||'';
+      if(keyHint){
+        keyHint.textContent=j.resendConfigured
+          ?`Saved key: ${esc(j.resendApiKeyMasked||'configured')}${j.resendFromEnv?' (from Render env)':''}`
+          :'Resend → API Keys → create key (re_...)';
+      }
+      const keyInp=document.getElementById('admin-resend-api-key');
+      if(keyInp&&!keyInp.value&&j.resendApiKeyMasked)keyInp.placeholder=j.resendApiKeyMasked;
+      if(tipsEl){
+        const tips=Array.isArray(j.inboxTips)?j.inboxTips:[];
+        if(tips.length){
+          tipsEl.style.display='block';
+          tipsEl.innerHTML=`<div style="font-weight:600;color:var(--text2);margin-bottom:6px">📬 Keep emails out of spam</div><ul style="margin:0;padding-left:18px">${tips.map(t=>`<li style="margin-bottom:4px">${esc(t)}</li>`).join('')}</ul>`;
+        }else tipsEl.style.display='none';
+      }
+      if(dnsEl){
+        const steps=Array.isArray(j.dnsSteps)?j.dnsSteps:[];
+        if(steps.length){
+          dnsEl.style.display='block';
+          dnsEl.innerHTML=`<div style="font-weight:600;color:var(--text2);margin-bottom:6px">🛠 Setup steps</div><ol style="margin:0;padding-left:18px">${steps.map(t=>`<li style="margin-bottom:4px">${esc(t)}</li>`).join('')}</ol>`;
+        }else dnsEl.style.display='none';
+      }
+      if(j.resendConfigured)rtCheckResendDomain();
+      else{
+        const ds=document.getElementById('dashboard-resend-domain-status');
+        if(ds){
+          ds.style.display='block';
+          ds.style.color='var(--text3)';
+          ds.textContent='After DNS records are added, save API key and click Check domain verification.';
+        }
+      }
+    }catch(e){
+      el.style.color='var(--red)';
+      el.textContent=e.message||'Could not check marketing email setup';
+      if(tipsEl)tipsEl.style.display='none';
+      if(dnsEl)dnsEl.style.display='none';
+    }
+  };
+
+  window.rtSaveEmailDeliverySettings=async function(){
+    try{
+      const j=await api('/admin/email-settings',{
+        method:'POST',
+        body:JSON.stringify({
+          resendApiKey:document.getElementById('admin-resend-api-key')?.value||'',
+          emailFromAddress:document.getElementById('admin-email-from-address')?.value||'',
+          emailReplyTo:document.getElementById('admin-email-reply-to')?.value||'',
+          retailSupportEmail:document.getElementById('admin-retail-support-email')?.value||'',
+          resellerSupportEmail:document.getElementById('admin-reseller-support-email')?.value||''
+        })
+      });
+      const keyInp=document.getElementById('admin-resend-api-key');
+      if(keyInp)keyInp.value='';
+      showToast(j.resendConfigured?'✓ Inbox delivery settings saved':'✓ Settings saved — add Resend API key to enable');
+      rtLoadMarketingEmailStatus();
+      if(j.resendConfigured)rtCheckResendDomain();
+    }catch(e){showToast('⚠️ '+(e.message||'Could not save email settings'));}
+  };
+
+  window.rtSendTestEmail=async function(){
+    const to=String(document.getElementById('admin-test-email-to')?.value||'').trim();
+    if(!to){showToast('Enter your email for the test');return;}
+    try{
+      showToast('Sending test email…');
+      const j=await api('/admin/test-email',{method:'POST',body:JSON.stringify({to})});
+      showToast('✓ '+((j.message)||'Test email sent — check inbox and spam'));
+      rtLoadMarketingEmailStatus();
+    }catch(e){showToast('⚠️ '+(e.message||'Test email failed'));}
+  };
+
+  window.rtSaveMarketingEmailTemplate=async function(){
+    const value=String(document.getElementById('admin-emailjs-marketing-template')?.value||'').trim();
+    if(value&&value===EMAILJS_TEMPLATE_ID){
+      showToast('⚠️ Use a separate marketing template, not the verification-code template');
+      return;
+    }
+    try{
+      await api('/admin/site-settings',{method:'POST',body:JSON.stringify({emailjsMarketingTemplateId:value})});
+      showToast(value?'✓ Marketing template saved':'✓ Marketing template cleared');
+      rtLoadMarketingEmailStatus();
+    }catch(e){showToast('⚠️ '+e.message);}
+  };
 
   window.rtSaveSiteSettings=async function(){
     try{
@@ -199,7 +341,9 @@
   };
 
   window.rtTestGmail=async function(email){
-    try{rtShowLoading('Testing Gmail...');const j=await api('/admin/gmail-test',{method:'POST',body:JSON.stringify({email})});showToast('✓ '+j.message);loadGmailMonitorPanel();}
+    const clean=String(email||'').trim().toLowerCase();
+    if(!clean)return;
+    try{rtShowLoading('Testing Gmail...');const j=await api('/admin/gmail-test',{method:'POST',body:JSON.stringify({email:clean})});showToast('✓ '+j.message);loadGmailMonitorPanel();}
     catch(e){showToast('⚠️ '+e.message);}finally{rtHideLoading();}
   };
 
@@ -209,8 +353,15 @@
       const j=await api('/monitored-emails');
       el.innerHTML=(j.emails||[]).map(e=>`<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:12px">
         <div><b>${esc(e.email)}</b><div style="color:var(--text3)">Last check: ${e.lastCheckedAt?new Date(e.lastCheckedAt).toLocaleString():'never'}</div></div>
-        <button onclick="rtTestGmail('${esc(e.email)}')" style="padding:6px 10px;border:1px solid var(--border);background:var(--bg3);border-radius:6px;cursor:pointer">Test</button>
+        <button type="button" class="gmail-test-btn" data-gmail="${esc(e.email)}" style="padding:6px 10px;border:1px solid var(--border);background:var(--bg3);border-radius:6px;cursor:pointer">Test</button>
       </div>`).join('')||'<div style="color:var(--text3);font-size:12px">No Gmail monitors configured.</div>';
+      if(!el._gmailTestBound){
+        el._gmailTestBound=true;
+        el.addEventListener('click',(ev)=>{
+          const btn=ev.target.closest('.gmail-test-btn');
+          if(btn&&btn.dataset.gmail)rtTestGmail(btn.dataset.gmail);
+        });
+      }
     }catch(e){el.innerHTML='<div style="color:var(--red);font-size:12px">Could not load monitors</div>';}
   }
   window.loadGmailMonitorPanel=loadGmailMonitorPanel;
@@ -329,7 +480,7 @@
   const _origAdminLogin=window.doAdminLogin;
   if(typeof _origAdminLogin==='function'){
     window.doAdminLogin=async function(){
-      try{rtShowLoading('Signing in...');await _origAdminLogin();loadAdminEnhancements();loadGmailMonitorPanel();}
+      try{rtShowLoading('Signing in...');await _origAdminLogin();await loadAdminEnhancements();loadGmailMonitorPanel();}
       finally{rtHideLoading();}
     };
   }
